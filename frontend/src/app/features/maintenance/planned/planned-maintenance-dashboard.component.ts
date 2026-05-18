@@ -1,47 +1,50 @@
 // =============================================================================
-// planned-maintenance-dashboard.component.ts — Full page with CRUD
-// Same pattern as operations.component.ts and warehouse.component.ts
+// planned-maintenance-dashboard.component.ts — Full CRUD with real API
 // =============================================================================
 import { Component, OnInit, OnDestroy, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
-import { CommonModule, DatePipe } from '@angular/common';
+import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
+
 import { PlannedMaintenanceTask, CalendarIndicators } from '../../../core/models/interfaces';
 import { PlannedMaintenanceService } from './planned-maintenance.service';
-import { ToastService } from '../../../core/services/toast.service';
-import { ConfirmService } from '../../../core/services/confirm.service';
-import { MaintenanceCalendarComponent } from './maintenance-calendar/maintenance-calendar.component';
-import { TaskEventListComponent } from './task-event-list/task-event-list.component';
+import { ToastService } from '../../../core/services/services';
+import { ConfirmService } from '../../../core/services/services';
 
 @Component({
   selector: 'app-planned-maintenance-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, MaintenanceCalendarComponent, TaskEventListComponent],
+  imports: [CommonModule, FormsModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './planned-maintenance-dashboard.component.html',
   styleUrls: ['./planned-maintenance-dashboard.component.scss']
 })
 export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
+
   private destroy$ = new Subject<void>();
 
-  // Table data
+  // Table
   tasks: PlannedMaintenanceTask[] = [];
-  loading = true;
-  saving  = false;
-  total   = 0;
-  search  = '';
+  searchTerm = '';
+  loading = false;
 
-  // Calendar + Events
-  dayTasks: PlannedMaintenanceTask[] = [];
+  // Calendar
   indicators: CalendarIndicators = {};
-  selectedDate = this.todayStr();
-  calYear  = new Date().getFullYear();
+  calYear = new Date().getFullYear();
   calMonth = new Date().getMonth() + 1;
+  calendarDays: (number | null)[] = [];
+  weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+  // Event list
+  selectedDate = this.formatDateStr(new Date());
+  dayTasks: PlannedMaintenanceTask[] = [];
 
   // Modal
   showModal = false;
-  editing: PlannedMaintenanceTask | null = null;
+  editing = false;
+  saving = false;
+  editId: number | null = null;
   form: any = this.emptyForm();
 
   constructor(
@@ -53,180 +56,257 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.loadTasks();
-    this.loadDayTasks();
+    this.buildCalendar();
     this.loadIndicators();
+    this.loadDayTasks();
   }
 
-  ngOnDestroy(): void { this.destroy$.next(); this.destroy$.complete(); }
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
 
-  // ── Table ────────────────────────────────────────────────────────────────────
+  // ─── Table CRUD ───────────────────────────────────────────────────────────
+
   loadTasks(): void {
     this.loading = true;
-    this.svc.getTasks({ search: this.search, limit: 100 })
+    this.svc.getAll({ search: this.searchTerm })
       .pipe(takeUntil(this.destroy$))
-      .subscribe(res => {
-        this.tasks = res.items;
-        this.total = res.total;
-        this.loading = false;
-        this.cdr.markForCheck();
+      .subscribe({
+        next: tasks => {
+          this.tasks = tasks;
+          this.loading = false;
+          this.cdr.markForCheck();
+        },
+        error: () => {
+          this.loading = false;
+          this.toast.show('Failed to load tasks', 'error');
+          this.cdr.markForCheck();
+        }
       });
   }
 
-  // ── Calendar / Events ────────────────────────────────────────────────────────
-  onDateSelected(dateStr: string): void {
-    this.selectedDate = dateStr;
-    this.loadDayTasks();
+  onSearch(): void {
+    this.loadTasks();
   }
 
-  onMonthChanged(event: { year: number; month: number }): void {
-    this.calYear = event.year;
-    this.calMonth = event.month;
-    this.loadIndicators();
-  }
-
-  loadDayTasks(): void {
-    this.svc.getTasksForDate(this.selectedDate)
-      .pipe(takeUntil(this.destroy$))
-      .subscribe(tasks => { this.dayTasks = tasks; this.cdr.markForCheck(); });
-  }
-
-  loadIndicators(): void {
-    this.svc.getCalendarIndicators(this.calYear, this.calMonth)
-      .pipe(takeUntil(this.destroy$))
-      .subscribe(ind => { this.indicators = ind; this.cdr.markForCheck(); });
-  }
-
-  // ── CRUD Modal ───────────────────────────────────────────────────────────────
   openModal(task?: PlannedMaintenanceTask): void {
     if (task) {
-      this.editing = task;
+      this.editing = true;
+      this.editId = task.id;
       this.form = {
         system: task.system,
         subsystem: task.subsystem,
         task: task.task,
         reference: task.reference || '',
-        operation_date_start: this.toLocalDatetime(task.operation_date_start),
-        operation_date_end: this.toLocalDatetime(task.operation_date_end),
-        repeat_task_type: task.repeat_task_type,
-        repeat_task_number: task.repeat_task_number,
-        report_template: task.report_template || '',
-        status: task.status,
+        operationDateStart: task.operationDateStart?.replace('Z', '').substring(0, 16) || '',
+        operationDateEnd: task.operationDateEnd?.replace('Z', '').substring(0, 16) || '',
+        repeatTaskType: task.repeatTaskType || 'WEEK',
+        repeatTaskNumber: task.repeatTaskNumber || 1,
+        reportTemplate: task.reportTemplate || '',
+        status: task.status || 'TODO',
         optional: task.optional || false
       };
     } else {
-      this.editing = null;
+      this.editing = false;
+      this.editId = null;
       this.form = this.emptyForm();
     }
     this.showModal = true;
-    this.cdr.markForCheck();
   }
 
-  closeModal(e: MouseEvent): void {
-    if ((e.target as HTMLElement).classList.contains('modal-overlay')) this.showModal = false;
+  closeModal(event: MouseEvent): void {
+    if ((event.target as HTMLElement).classList.contains('modal-overlay')) {
+      this.showModal = false;
+    }
   }
 
   save(): void {
-    if (!this.form.system?.trim())   { this.toast.warning('System is required.'); return; }
-    if (!this.form.subsystem?.trim()) { this.toast.warning('Subsystem is required.'); return; }
-    if (!this.form.task?.trim())      { this.toast.warning('Task description is required.'); return; }
-    if (!this.form.operation_date_start) { this.toast.warning('Start date is required.'); return; }
-    if (!this.form.operation_date_end)   { this.toast.warning('End date is required.'); return; }
-
-    const payload = {
-      ...this.form,
-      operation_date_start: new Date(this.form.operation_date_start).toISOString(),
-      operation_date_end: new Date(this.form.operation_date_end).toISOString(),
-      repeat_task_number: Number(this.form.repeat_task_number) || 1,
-      optional: this.form.optional ? true : false
-    };
+    if (!this.form.system || !this.form.subsystem || !this.form.task || !this.form.operationDateStart) {
+      this.toast.show('Please fill required fields', 'error');
+      return;
+    }
 
     this.saving = true;
-    const isEdit = !!this.editing;
-    const req$ = isEdit
-      ? this.svc.updateTask(this.editing!.id, payload)
-      : this.svc.createTask(payload);
+    const payload: Partial<PlannedMaintenanceTask> = { ...this.form };
 
-    req$.subscribe({
+    const obs = this.editing && this.editId
+      ? this.svc.update(this.editId, payload)
+      : this.svc.create(payload);
+
+    obs.pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {
-        this.saving = false;
+        this.toast.show(this.editing ? 'Task updated' : 'Task created', 'success');
         this.showModal = false;
-        this.toast.success(isEdit ? 'Task updated.' : 'Task created.');
+        this.saving = false;
         this.loadTasks();
-        this.loadDayTasks();
         this.loadIndicators();
+        this.loadDayTasks();
         this.cdr.markForCheck();
       },
-      error: (e: any) => {
+      error: () => {
+        this.toast.show('Save failed', 'error');
         this.saving = false;
-        this.toast.error(e?.error?.message || 'Failed to save task.');
         this.cdr.markForCheck();
       }
     });
   }
 
-  async deleteTask(task: PlannedMaintenanceTask): Promise<void> {
-    const ok = await this.confirm.confirm(
-      `Delete "${task.task}"? This cannot be undone.`, 'Delete Task');
-    if (!ok) return;
-    this.svc.deleteTask(task.id).subscribe({
-      next: () => {
-        this.toast.success('Task deleted.');
-        this.loadTasks();
-        this.loadDayTasks();
-        this.loadIndicators();
-      },
-      error: (e: any) => this.toast.error(e?.error?.message || 'Failed to delete.')
+  deleteTask(task: PlannedMaintenanceTask): void {
+    this.confirm.ask({
+      title: 'Delete Task',
+      message: `Delete "${task.task}"?`,
+      confirmText: 'Delete',
+      cancelText: 'Cancel'
+    }).then(confirmed => {
+      if (!confirmed) return;
+      this.svc.delete(task.id).pipe(takeUntil(this.destroy$)).subscribe({
+        next: () => {
+          this.toast.show('Task deleted', 'success');
+          this.loadTasks();
+          this.loadIndicators();
+          this.loadDayTasks();
+        },
+        error: () => this.toast.show('Delete failed', 'error')
+      });
     });
   }
 
-  async toggleTaskStatus(task: PlannedMaintenanceTask): Promise<void> {
+  toggleStatus(task: PlannedMaintenanceTask): void {
     const newStatus = task.status === 'DONE' ? 'TODO' : 'DONE';
-    this.svc.updateTask(task.id, { status: newStatus }).subscribe({
-      next: () => {
-        this.toast.success(`Task marked as ${newStatus}.`);
-        this.loadTasks();
-        this.loadDayTasks();
-        this.loadIndicators();
-      },
-      error: (e: any) => this.toast.error(e?.error?.message || 'Failed to update.')
-    });
+    this.svc.update(task.id, { ...task, status: newStatus } as any)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: () => {
+          this.loadTasks();
+          this.loadIndicators();
+          this.loadDayTasks();
+        },
+        error: () => this.toast.show('Update failed', 'error')
+      });
   }
 
-  // ── Helpers ──────────────────────────────────────────────────────────────────
-  getRepeatBadge(type: string): string {
-    switch (type) {
-      case 'DAY':   return 'badge-day';
-      case 'WEEK':  return 'badge-week';
-      case 'MONTH': return 'badge-month';
-      default:      return '';
-    }
+  // ─── Calendar ─────────────────────────────────────────────────────────────
+
+  buildCalendar(): void {
+    const firstDay = new Date(this.calYear, this.calMonth - 1, 1);
+    const lastDay = new Date(this.calYear, this.calMonth, 0);
+    const startWeekday = (firstDay.getDay() + 6) % 7; // Monday=0
+    const totalDays = lastDay.getDate();
+
+    this.calendarDays = [];
+    for (let i = 0; i < startWeekday; i++) this.calendarDays.push(null);
+    for (let d = 1; d <= totalDays; d++) this.calendarDays.push(d);
   }
 
-  getStatusBadge(status: string): string {
-    return status === 'DONE' ? 'badge-completed' : 'badge-planned';
+  loadIndicators(): void {
+    this.svc.getCalendarIndicators(this.calYear, this.calMonth)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: ind => { this.indicators = ind; this.cdr.markForCheck(); },
+        error: () => {}
+      });
+  }
+
+  prevMonth(): void {
+    this.calMonth--;
+    if (this.calMonth < 1) { this.calMonth = 12; this.calYear--; }
+    this.buildCalendar();
+    this.loadIndicators();
+  }
+
+  nextMonth(): void {
+    this.calMonth++;
+    if (this.calMonth > 12) { this.calMonth = 1; this.calYear++; }
+    this.buildCalendar();
+    this.loadIndicators();
+  }
+
+  selectDay(day: number | null): void {
+    if (!day) return;
+    this.selectedDate = `${this.calYear}-${String(this.calMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    this.loadDayTasks();
+  }
+
+  isToday(day: number | null): boolean {
+    if (!day) return false;
+    const now = new Date();
+    return day === now.getDate() && this.calMonth === now.getMonth() + 1 && this.calYear === now.getFullYear();
+  }
+
+  isSelected(day: number | null): boolean {
+    if (!day) return false;
+    const sel = `${this.calYear}-${String(this.calMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    return sel === this.selectedDate;
+  }
+
+  getIndicators(day: number | null): any[] {
+    if (!day) return [];
+    return this.indicators[day] || [];
+  }
+
+  get monthLabel(): string {
+    const d = new Date(this.calYear, this.calMonth - 1, 1);
+    return d.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+  }
+
+  // ─── Event List ───────────────────────────────────────────────────────────
+
+  loadDayTasks(): void {
+    this.svc.getTasksForDate(this.selectedDate)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: tasks => { this.dayTasks = tasks; this.cdr.markForCheck(); },
+        error: () => {}
+      });
+  }
+
+  get selectedDateLabel(): string {
+    const d = new Date(this.selectedDate + 'T00:00:00');
+    return d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  }
+
+  getTypeColor(type: string): string {
+    if (type === 'DAY') return '#0288D1';
+    if (type === 'WEEK') return '#F59E0B';
+    if (type === 'MONTH') return '#EF4444';
+    return '#64748b';
+  }
+
+  // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  getRepeatBadgeClass(type: string): string {
+    if (type === 'DAY') return 'badge-day';
+    if (type === 'WEEK') return 'badge-week';
+    return 'badge-month';
+  }
+
+  getStatusBadgeClass(status: string): string {
+    return status === 'DONE' ? 'badge-completed' : 'badge-scheduled';
   }
 
   formatDate(iso: string): string {
-    if (!iso) return '';
-    return iso.replace('T', ' ').substring(0, 16);
+    if (!iso) return '—';
+    return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+
+  private formatDateStr(d: Date): string {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }
 
   private emptyForm(): any {
     return {
-      system: '', subsystem: '', task: '', reference: '',
-      operation_date_start: '', operation_date_end: '',
-      repeat_task_type: 'WEEK', repeat_task_number: 1,
-      report_template: '', status: 'TODO', optional: false
+      system: '',
+      subsystem: '',
+      task: '',
+      reference: '',
+      operationDateStart: '',
+      operationDateEnd: '',
+      repeatTaskType: 'WEEK',
+      repeatTaskNumber: 1,
+      reportTemplate: '',
+      status: 'TODO',
+      optional: false
     };
-  }
-
-  private todayStr(): string {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  }
-
-  private toLocalDatetime(iso: string): string {
-    if (!iso) return '';
-    return iso.substring(0, 16);
   }
 }

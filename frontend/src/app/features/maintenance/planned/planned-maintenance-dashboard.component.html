@@ -1,79 +1,60 @@
-<!-- ==========================================================================
-     planned-maintenance-dashboard.component.html
-     Same layout pattern as operations.component.html + warehouse.component.html
-     ========================================================================== -->
+<div class="pm-dashboard fade-in">
 
-<div class="planned-page fade-in">
-
-  <!-- ── Toolbar (same as warehouse) ──────────────────────────────────────── -->
+  <!-- ── Toolbar ───────────────────────────────────────────────────────────── -->
   <div class="flex items-center justify-between mb-6">
-    <div class="flex gap-2">
-      <div class="search-bar" style="width:260px">
-        <span class="search-icon">search</span>
-        <input placeholder="Search tasks..." [(ngModel)]="search" (input)="loadTasks()">
-      </div>
+    <div class="search-bar">
+      <span class="search-icon">search</span>
+      <input type="text" class="form-control" placeholder="Search tasks..."
+             [(ngModel)]="searchTerm" (input)="onSearch()">
     </div>
     <button class="btn btn-primary" (click)="openModal()">
-      <span class="btn-icon">add</span> Add Task
+      <span class="btn-icon">add</span> New Task
     </button>
   </div>
 
-  <!-- ── Loading ──────────────────────────────────────────────────────────── -->
-  <div *ngIf="loading" class="flex items-center justify-between" style="padding:40px;justify-content:center">
-    <div class="spinner"></div>
-  </div>
-
-  <!-- ── Table (same structure as operations) ─────────────────────────────── -->
-  <div class="table-container" *ngIf="!loading">
-    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
-      <span class="text-sm text-muted">{{total}} planned tasks found</span>
-    </div>
-
+  <!-- ── Task Table ────────────────────────────────────────────────────────── -->
+  <div class="table-container">
     <table class="data-table">
       <thead>
         <tr>
-          <th>#</th>
           <th>System</th>
           <th>Subsystem</th>
           <th>Task</th>
-          <th>Operation Date</th>
-          <th>Repeat Type</th>
-          <th>Repeat #</th>
+          <th>Start Date</th>
+          <th>Repeat</th>
+          <th>Every</th>
           <th>Status</th>
           <th>Actions</th>
         </tr>
       </thead>
       <tbody>
         <tr *ngFor="let t of tasks">
-          <td class="text-muted text-sm">{{t.id}}</td>
+          <td class="font-bold text-sm">{{ t.system }}</td>
+          <td class="text-sm">{{ t.subsystem }}</td>
           <td>
-            <span style="color:var(--primary);font-weight:500">{{t.system}}</span>
+            <div class="font-bold text-sm">{{ t.task }}</div>
+            <div class="text-sm text-muted truncate" style="max-width:220px">{{ t.reference }}</div>
           </td>
-          <td class="font-bold">{{t.subsystem}}</td>
+          <td class="text-sm">{{ formatDate(t.operation_date_start || t.operationDateStart) }}</td>
           <td>
-            <div class="truncate" style="max-width:260px">{{t.task}}</div>
-          </td>
-          <td class="text-sm" style="white-space:nowrap">
-            <div>{{formatDate(t.operation_date_start)}}</div>
-            <div class="text-muted">{{formatDate(t.operation_date_end)}}</div>
-          </td>
-          <td>
-            <span class="badge" [ngClass]="getRepeatBadge(t.repeat_task_type)">
-              {{t.repeat_task_type}}
+            <span class="badge" [ngClass]="getRepeatBadgeClass(t.repeat_task_type || t.repeatTaskType)">
+              {{ t.repeat_task_type || t.repeatTaskType }}
             </span>
           </td>
-          <td class="text-sm" style="text-align:center">{{t.repeat_task_number}}</td>
+          <td class="text-sm text-center">{{ t.repeat_task_number || t.repeatTaskNumber }}</td>
           <td>
-            <span class="badge" [ngClass]="getStatusBadge(t.status)">
-              {{t.status === 'DONE' ? 'Done' : 'To Do'}}
+            <span class="badge" [ngClass]="getStatusBadgeClass(t.status)">
+              {{ t.status }}
             </span>
           </td>
           <td>
             <div class="flex gap-1">
               <button class="btn btn-ghost btn-icon-only btn-sm"
-                      *ngIf="t.status === 'TODO'"
-                      (click)="toggleTaskStatus(t)" title="Mark done">
-                <span class="btn-icon" style="font-size:17px;color:#10B981">check_circle</span>
+                      (click)="toggleStatus(t)" [title]="t.status === 'DONE' ? 'Mark TODO' : 'Mark DONE'">
+                <span class="btn-icon" style="font-size:17px"
+                      [style.color]="t.status === 'DONE' ? '#6B7280' : '#10B981'">
+                  {{ t.status === 'DONE' ? 'undo' : 'check_circle' }}
+                </span>
               </button>
               <button class="btn btn-ghost btn-icon-only btn-sm" (click)="openModal(t)" title="Edit">
                 <span class="btn-icon" style="font-size:17px">edit</span>
@@ -87,42 +68,91 @@
       </tbody>
     </table>
 
-    <!-- Empty State -->
-    <div class="empty-state" *ngIf="!tasks.length">
-      <span class="empty-icon">event_repeat</span>
-      <h3>No planned maintenance tasks</h3>
-      <p>Create your first planned task to get started</p>
-      <button class="btn btn-primary mt-4" (click)="openModal()">
-        <span class="btn-icon">add</span> Add Task
-      </button>
+    <div class="empty-state" *ngIf="!tasks.length && !loading">
+      <span class="empty-icon">event_note</span>
+      <h3>No planned tasks</h3>
+      <p>Create your first planned maintenance task</p>
+      <button class="btn btn-primary mt-4" (click)="openModal()">New Task</button>
     </div>
   </div>
 
-  <!-- ── Bottom Row: Calendar + Event List ────────────────────────────────── -->
-  <div class="bottom-row" *ngIf="!loading">
-    <app-maintenance-calendar
-      [indicators]="indicators"
-      [selectedDate]="selectedDate"
-      (dateSelected)="onDateSelected($event)"
-      (monthChanged)="onMonthChanged($event)">
-    </app-maintenance-calendar>
+  <!-- ── Bottom: Calendar + Event List ─────────────────────────────────────── -->
+  <div class="bottom-row">
 
-    <app-task-event-list
-      [tasks]="dayTasks"
-      [selectedDate]="selectedDate"
-      (editTask)="openModal($event)"
-      (toggleStatus)="toggleTaskStatus($event)">
-    </app-task-event-list>
+    <!-- Calendar -->
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h3>{{ monthLabel }}</h3>
+          <p>Task occurrences (with repetitions)</p>
+        </div>
+        <div class="flex gap-1">
+          <button class="btn btn-ghost btn-icon-only btn-sm" (click)="prevMonth()">
+            <span class="btn-icon">chevron_left</span>
+          </button>
+          <button class="btn btn-ghost btn-icon-only btn-sm" (click)="nextMonth()">
+            <span class="btn-icon">chevron_right</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="calendar-grid">
+        <div class="cal-header" *ngFor="let wd of weekDays">{{ wd }}</div>
+        <div class="cal-day"
+             *ngFor="let day of calendarDays"
+             [class.empty]="!day"
+             [class.today]="isToday(day)"
+             [class.selected]="isSelected(day)"
+             (click)="selectDay(day)">
+          <span class="day-number" *ngIf="day">{{ day }}</span>
+          <div class="day-indicators" *ngIf="day && getIndicators(day).length">
+            <span class="dot" *ngFor="let ind of getIndicators(day)"
+                  [style.background]="ind.color"
+                  [title]="ind.count + ' task(s)'"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Event List for Selected Date -->
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h3>Tasks for {{ selectedDateLabel }}</h3>
+          <p>Recurring tasks on this date</p>
+        </div>
+      </div>
+
+      <div class="event-list">
+        <div class="event-item" *ngFor="let t of dayTasks">
+          <div class="event-color" [style.background]="getTypeColor(t.repeat_task_type || t.repeatTaskType)"></div>
+          <div class="event-info">
+            <div class="event-title">{{ t.task }}</div>
+            <div class="event-meta">{{ t.system }} › {{ t.subsystem }}</div>
+          </div>
+          <span class="badge" [ngClass]="getRepeatBadgeClass(t.repeat_task_type || t.repeatTaskType)">
+            {{ t.repeat_task_type || t.repeatTaskType }}
+          </span>
+          <span class="badge" [ngClass]="getStatusBadgeClass(t.status)">
+            {{ t.status }}
+          </span>
+        </div>
+        <div class="empty-state" *ngIf="!dayTasks.length" style="padding:24px">
+          <span class="empty-icon" style="font-size:32px">event_busy</span>
+          <p class="text-sm text-muted">No tasks on this date</p>
+        </div>
+      </div>
+    </div>
+
   </div>
-
 </div>
 
-<!-- ── Create / Edit Modal (same pattern as operations + warehouse) ──────── -->
+<!-- ── Create / Edit Modal ──────────────────────────────────────────────────── -->
 <div class="modal-overlay" *ngIf="showModal" (click)="closeModal($event)">
-  <div class="modal" style="max-width:620px" (click)="$event.stopPropagation()">
+  <div class="modal" style="max-width:600px" (click)="$event.stopPropagation()">
 
     <div class="modal-header">
-      <h3>{{editing ? 'Edit Task' : 'New Planned Task'}}</h3>
+      <h3>{{ editing ? 'Edit Task' : 'New Planned Task' }}</h3>
       <button class="btn btn-ghost btn-icon-only" (click)="showModal=false">
         <span class="btn-icon">close</span>
       </button>
@@ -142,57 +172,59 @@
         </div>
 
         <div class="form-group" style="grid-column:1/-1">
-          <label class="form-label">Task *</label>
-          <textarea class="form-control" [(ngModel)]="form.task" style="min-height:80px"
-                    placeholder="Describe the maintenance task..."></textarea>
+          <label class="form-label">Task Description *</label>
+          <textarea class="form-control" [(ngModel)]="form.task" style="min-height:60px"
+                    placeholder="What needs to be done..."></textarea>
         </div>
 
         <div class="form-group">
           <label class="form-label">Start Date *</label>
-          <input type="datetime-local" class="form-control" [(ngModel)]="form.operation_date_start">
+          <input type="datetime-local" class="form-control" [(ngModel)]="form.operationDateStart">
         </div>
 
         <div class="form-group">
-          <label class="form-label">End Date *</label>
-          <input type="datetime-local" class="form-control" [(ngModel)]="form.operation_date_end">
+          <label class="form-label">End Date</label>
+          <input type="datetime-local" class="form-control" [(ngModel)]="form.operationDateEnd">
         </div>
 
         <div class="form-group">
           <label class="form-label">Repeat Type *</label>
-          <select class="form-control" [(ngModel)]="form.repeat_task_type">
-            <option value="DAY">Day</option>
-            <option value="WEEK">Week</option>
-            <option value="MONTH">Month</option>
+          <select class="form-control" [(ngModel)]="form.repeatTaskType">
+            <option value="DAY">Every N Days</option>
+            <option value="WEEK">Every N Weeks</option>
+            <option value="MONTH">Every N Months</option>
           </select>
         </div>
 
         <div class="form-group">
-          <label class="form-label">Repeat Number *</label>
-          <input type="number" class="form-control" [(ngModel)]="form.repeat_task_number" min="1">
+          <label class="form-label">Every N *</label>
+          <input type="number" class="form-control" [(ngModel)]="form.repeatTaskNumber" min="1" max="365">
+          <span class="text-sm text-muted" style="margin-top:4px;display:block">
+            e.g. 1 = every week, 2 = every 2 weeks
+          </span>
         </div>
 
         <div class="form-group">
           <label class="form-label">Reference</label>
-          <input class="form-control" [(ngModel)]="form.reference" placeholder="Optional reference">
+          <input class="form-control" [(ngModel)]="form.reference" placeholder="Document ref (optional)">
         </div>
 
         <div class="form-group">
           <label class="form-label">Report Template</label>
-          <input class="form-control" [(ngModel)]="form.report_template" placeholder="Optional template">
+          <input class="form-control" [(ngModel)]="form.reportTemplate" placeholder="Template path (optional)">
         </div>
 
         <div class="form-group">
           <label class="form-label">Status</label>
           <select class="form-control" [(ngModel)]="form.status">
-            <option value="TODO">To Do</option>
-            <option value="DONE">Done</option>
+            <option value="TODO">TODO</option>
+            <option value="DONE">DONE</option>
           </select>
         </div>
 
         <div class="form-group" style="display:flex;align-items:center;gap:8px;padding-top:24px">
-          <input type="checkbox" id="optional-check" [(ngModel)]="form.optional"
-                 style="width:18px;height:18px;accent-color:var(--primary)">
-          <label for="optional-check" class="form-label" style="margin:0">Optional task (not shown in calendar)</label>
+          <input type="checkbox" id="optional" [(ngModel)]="form.optional">
+          <label for="optional" class="form-label" style="margin:0">Optional task</label>
         </div>
 
       </div>
@@ -203,7 +235,7 @@
       <button class="btn btn-primary" (click)="save()" [disabled]="saving">
         <div class="spinner" *ngIf="saving"
              style="width:16px;height:16px;border-width:2px;border-top-color:#fff;margin-right:6px"></div>
-        {{saving ? 'Saving...' : (editing ? 'Update Task' : 'Create Task')}}
+        {{ saving ? 'Saving…' : (editing ? 'Save Changes' : 'Create Task') }}
       </button>
     </div>
 

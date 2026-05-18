@@ -1,34 +1,181 @@
-/* ─── Planned Maintenance Dashboard Layout ────────────────────────────────── */
-.planned-page {
-  /* Uses global classes only — no custom styling needed here */
+/* ─── Planned Maintenance Dashboard ───────────────────────────────────────── */
+.pm-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
 
 .bottom-row {
   display: grid;
-  grid-template-columns: 380px 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 24px;
   align-items: start;
-  margin-top: 24px;
 }
 
-@media (max-width: 1024px) {
-  .bottom-row {
-    grid-template-columns: 1fr;
+@media (max-width: 1200px) {
+  .bottom-row { grid-template-columns: 1fr; }
+}
+
+/* ─── Calendar Grid ───────────────────────────────────────────────────────── */
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.cal-header {
+  text-align: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #6B7280;
+  text-transform: uppercase;
+  padding: 8px 0;
+}
+
+.cal-day {
+  position: relative;
+  min-height: 48px;
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: var(--transition);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+
+  &:hover:not(.empty) { background: var(--blue-50); }
+  &.empty { cursor: default; }
+
+  &.today .day-number {
+    background: var(--primary);
+    color: #fff;
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &.selected {
+    background: var(--blue-100);
+    border: 1px solid var(--blue-300);
   }
 }
 
-/* Repeat-type badge colors */
-:host ::ng-deep .badge-day {
-  background: #1a237e;
-  color: #fff;
+.day-number {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--blue-950);
 }
 
-:host ::ng-deep .badge-week {
-  background: #10B981;
-  color: #fff;
+.day-indicators {
+  display: flex;
+  gap: 3px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
-:host ::ng-deep .badge-month {
-  background: #F59E0B;
-  color: #fff;
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+/* ─── Event List ──────────────────────────────────────────────────────────── */
+.event-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.event-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  transition: var(--transition);
+
+  &:hover { background: var(--blue-50); }
+}
+
+.event-color {
+  width: 4px;
+  height: 36px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.event-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.event-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--blue-950);
+}
+
+.event-meta {
+  font-size: 0.75rem;
+  color: #6B7280;
+}
+
+/* ─── Badges ──────────────────────────────────────────────────────────────── */
+.badge-day {
+  background: rgba(2,136,209,0.12);
+  color: #0288D1;
+}
+
+.badge-week {
+  background: rgba(245,158,11,0.12);
+  color: #F59E0B;
+}
+
+.badge-month {
+  background: rgba(239,68,68,0.12);
+  color: #EF4444;
+}
+
+.badge-completed {
+  background: rgba(16,185,129,0.12);
+  color: #10B981;
+}
+
+.badge-scheduled {
+  background: rgba(92,107,192,0.12);
+  color: #5C6BC0;
+}
+
+/* ─── Search bar (same as warehouse) ──────────────────────────────────────── */
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0 12px;
+  flex: 1;
+  max-width: 360px;
+
+  .search-icon {
+    font-family: 'Material Icons Round';
+    font-style: normal;
+    font-size: 20px;
+    color: #9CA3AF;
+  }
+
+  .form-control {
+    border: none;
+    padding: 8px 0;
+    background: transparent;
+    box-shadow: none;
+
+    &:focus { outline: none; box-shadow: none; }
+  }
 }
