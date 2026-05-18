@@ -1,0 +1,227 @@
+<!-- ==========================================================================
+     maintenance.component.html — UPDATED
+     Changes vs original:
+      - Removed showDeleteConfirm / deleting modal (now handled by ConfirmService)
+      - Delete button calls deleteRecord(r) directly
+      - FAILED added to status dropdown
+      - [ngValue] on asset select
+      - Warning banner when no assets
+     ========================================================================== -->
+
+<div class="maintenance-page fade-in">
+
+  <!-- ── Toolbar ─────────────────────────────────────────────────────────── -->
+  <div class="flex items-center justify-between mb-6">
+    <div class="flex gap-2">
+      <select class="form-control" style="width:160px" [(ngModel)]="statusFilter" (change)="load()">
+        <option value="">All Statuses</option>
+        <option value="SCHEDULED">Scheduled</option>
+        <option value="IN_PROGRESS">In Progress</option>
+        <option value="COMPLETED">Completed</option>
+        <option value="FAILED">Failed</option>
+        <option value="DEFERRED">Deferred</option>
+      </select>
+      <select class="form-control" style="width:140px" [(ngModel)]="priorityFilter" (change)="load()">
+        <option value="">All Priorities</option>
+        <option value="LOW">Low</option>
+        <option value="MEDIUM">Medium</option>
+        <option value="HIGH">High</option>
+        <option value="CRITICAL">Critical</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" (click)="openModal()">
+      <span class="btn-icon">add</span> Log Maintenance
+    </button>
+  </div>
+
+  <!-- ── Stats Strip ─────────────────────────────────────────────────────── -->
+  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:24px">
+    <div *ngFor="let s of stats" class="kpi-card" [style]="'--kpi-color:'+s.color">
+      <div class="kpi-icon-wrap" style="font-size:20px">{{s.icon}}</div>
+      <div>
+        <div class="kpi-value" style="font-size:1.5rem">{{s.count}}</div>
+        <div class="kpi-label">{{s.label}}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── No assets warning ───────────────────────────────────────────────── -->
+  <div *ngIf="!loading && assets.length === 0"
+       style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:var(--radius-md);
+              padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;
+              gap:10px;font-size:0.875rem">
+    <span style="font-family:'Material Icons Round';font-style:normal;color:#F59E0B;font-size:20px">warning</span>
+    <span>No assets found. Add assets before logging maintenance records.</span>
+  </div>
+
+  <!-- ── Table ───────────────────────────────────────────────────────────── -->
+  <div class="table-container">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Title</th><th>Asset</th><th>Type</th><th>Status</th>
+          <th>Priority</th><th>Scheduled</th><th>Technician</th><th>Cost</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let r of records">
+          <td>
+            <div class="font-bold">{{r.title}}</div>
+            <div class="text-sm text-muted truncate" style="max-width:180px">{{r.description}}</div>
+          </td>
+          <td>
+            <div class="font-bold text-sm">{{r.asset?.name || '—'}}</div>
+            <div class="text-sm text-muted">{{r.asset?.serial_number || ''}}</div>
+          </td>
+          <td><span class="badge badge-in-progress">{{r.type | titlecase}}</span></td>
+          <td><span class="badge" [ngClass]="getStatusBadge(r.status)">{{r.status | titlecase}}</span></td>
+          <td><span class="badge" [ngClass]="getPriorityBadge(r.priority)">{{r.priority | titlecase}}</span></td>
+          <td class="text-sm">{{r.scheduled_date | date:'MMM d, y'}}</td>
+          <td class="text-sm">{{r.technician?.first_name}} {{r.technician?.last_name}}</td>
+          <td class="text-sm">{{r.cost ? ('$' + r.cost) : '—'}}</td>
+          <td>
+            <div class="flex gap-1">
+              <!-- Edit -->
+              <button class="btn btn-ghost btn-icon-only btn-sm" (click)="editRecord(r)" title="Edit">
+                <span class="btn-icon" style="font-size:17px">edit</span>
+              </button>
+              <!-- Quick complete -->
+              <button class="btn btn-ghost btn-icon-only btn-sm"
+                      *ngIf="r.status==='IN_PROGRESS'"
+                      (click)="completeRecord(r)" title="Mark complete">
+                <span class="btn-icon" style="font-size:17px;color:#10B981">check_circle</span>
+              </button>
+              <!-- Delete — calls ConfirmService, no local modal needed -->
+              <button class="btn btn-ghost btn-icon-only btn-sm"
+                      (click)="deleteRecord(r)" title="Delete">
+                <span class="btn-icon" style="font-size:17px;color:#EF4444">delete</span>
+              </button>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="empty-state" *ngIf="!records.length && !loading">
+      <span class="empty-icon">build_circle</span>
+      <h3>No maintenance records</h3>
+      <button class="btn btn-primary mt-4" (click)="openModal()">Log First Record</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Create / Edit Modal ──────────────────────────────────────────────────── -->
+<div class="modal-overlay" *ngIf="showModal" (click)="closeModal($event)">
+  <div class="modal" style="max-width:620px" (click)="$event.stopPropagation()">
+
+    <div class="modal-header">
+      <h3>{{editing ? 'Edit Record' : 'Log Maintenance'}}</h3>
+      <button class="btn btn-ghost btn-icon-only" (click)="showModal=false">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="form-row">
+
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">Title *</label>
+          <input class="form-control" [(ngModel)]="form.title"
+                 placeholder="e.g. Monthly server inspection">
+        </div>
+
+        <!-- Asset — [ngValue] preserves numeric type -->
+        <div class="form-group">
+          <label class="form-label">Asset *</label>
+          <select class="form-control" [(ngModel)]="form.asset_id">
+            <option [ngValue]="undefined">— Select asset —</option>
+            <option *ngFor="let a of assets" [ngValue]="a.id">
+              {{a.name}}<span *ngIf="a.serial_number"> — {{a.serial_number}}</span>
+            </option>
+          </select>
+          <div *ngIf="assets.length === 0"
+               style="font-size:0.75rem;color:#F59E0B;margin-top:4px">
+            ⚠ No assets in database.
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Type *</label>
+          <select class="form-control" [(ngModel)]="form.type">
+            <option value="PREVENTIVE">Preventive</option>
+            <option value="CORRECTIVE">Corrective</option>
+            <option value="PREDICTIVE">Predictive</option>
+            <option value="UPGRADE">Upgrade</option>
+            <option value="INSPECTION">Inspection</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Priority</label>
+          <select class="form-control" [(ngModel)]="form.priority">
+            <option value="LOW">Low</option>
+            <option value="MEDIUM">Medium</option>
+            <option value="HIGH">High</option>
+            <option value="CRITICAL">Critical</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Status</label>
+          <select class="form-control" [(ngModel)]="form.status">
+            <option value="SCHEDULED">Scheduled</option>
+            <option value="IN_PROGRESS">In Progress</option>
+            <option value="COMPLETED">Completed</option>
+            <option value="FAILED">Failed</option>
+            <option value="DEFERRED">Deferred</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Scheduled Date *</label>
+          <input type="datetime-local" class="form-control" [(ngModel)]="form.scheduled_date">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Est. Downtime (hrs)</label>
+          <input type="number" class="form-control" [(ngModel)]="form.downtime_hours"
+                 min="0" step="0.5">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Cost ($)</label>
+          <input type="number" class="form-control" [(ngModel)]="form.cost"
+                 min="0" step="0.01">
+        </div>
+
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">Description *</label>
+          <textarea class="form-control" [(ngModel)]="form.description"
+                    style="min-height:80px"
+                    placeholder="Describe what needs to be done…"></textarea>
+        </div>
+
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">Findings / Notes</label>
+          <textarea class="form-control" [(ngModel)]="form.findings"
+                    style="min-height:72px"
+                    placeholder="Post-maintenance findings (optional)…"></textarea>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" (click)="showModal=false">Cancel</button>
+      <button class="btn btn-primary" (click)="save()" [disabled]="saving">
+        <div class="spinner" *ngIf="saving"
+             style="width:16px;height:16px;border-width:2px;border-top-color:#fff;margin-right:6px"></div>
+        {{saving ? 'Saving…' : (editing ? 'Save Changes' : 'Log Record')}}
+      </button>
+    </div>
+
+  </div>
+</div>
+
+<!-- NOTE: No local delete confirm modal here.
+     Deletion is handled globally by ConfirmComponent in the shell. -->

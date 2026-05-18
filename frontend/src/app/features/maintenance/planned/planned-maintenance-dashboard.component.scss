@@ -1,0 +1,34 @@
+/* ─── Planned Maintenance Dashboard Layout ────────────────────────────────── */
+.planned-page {
+  /* Uses global classes only — no custom styling needed here */
+}
+
+.bottom-row {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  gap: 24px;
+  align-items: start;
+  margin-top: 24px;
+}
+
+@media (max-width: 1024px) {
+  .bottom-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Repeat-type badge colors */
+:host ::ng-deep .badge-day {
+  background: #1a237e;
+  color: #fff;
+}
+
+:host ::ng-deep .badge-week {
+  background: #10B981;
+  color: #fff;
+}
+
+:host ::ng-deep .badge-month {
+  background: #F59E0B;
+  color: #fff;
+}

@@ -1,0 +1,43 @@
+<div class="card" style="padding:20px">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between" style="margin-bottom:16px">
+    <span style="font-weight:700;font-size:0.9375rem;color:var(--blue-950)">{{ monthLabel }} ▾</span>
+    <div class="flex gap-2">
+      <button class="btn btn-ghost btn-icon-only btn-sm" (click)="prevMonth()">
+        <span class="btn-icon">chevron_left</span>
+      </button>
+      <button class="btn btn-ghost btn-icon-only btn-sm" (click)="nextMonth()">
+        <span class="btn-icon">chevron_right</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Weekday headers -->
+  <div class="cal-grid weekdays">
+    <div *ngFor="let wd of weekDays" class="cal-wd">{{ wd }}</div>
+  </div>
+
+  <!-- Weeks -->
+  <div *ngFor="let week of weeks" class="cal-grid week-row">
+    <div *ngFor="let day of week"
+         class="cal-day"
+         [class.empty]="!day"
+         [class.selected]="day === selectedDay"
+         [class.today]="isToday(day)"
+         (click)="selectDay(day)">
+
+      <span class="day-number" *ngIf="day">{{ day }}</span>
+
+      <!-- Indicators -->
+      <div class="indicator-row" *ngIf="day && getIndicators(day).length > 0">
+        <span *ngFor="let ind of getIndicators(day)"
+              class="indicator-dot"
+              [style.background]="ind.color">
+          {{ ind.count }}
+        </span>
+      </div>
+    </div>
+  </div>
+
+</div>

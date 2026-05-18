@@ -1,0 +1,134 @@
+<!-- ==========================================================================
+     analytics.component.html — Data Visualization Dashboard
+     ========================================================================== -->
+
+<div class="analytics-page fade-in">
+
+  <!-- ── Section Header ──────────────────────────────────────────────────── -->
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h2 style="margin-bottom:4px">Analytics & Reports</h2>
+      <p class="text-muted text-sm">Data visualization for {{dateLabel}}</p>
+    </div>
+    <button class="btn btn-secondary" (click)="exportReport()">
+      <span class="btn-icon">download</span> Export Report
+    </button>
+  </div>
+
+  <!-- ── Charts Row 1 ─────────────────────────────────────────────────────── -->
+  <div class="grid-2 mb-6">
+
+    <!-- Operations by Type (Bar) -->
+    <div class="chart-container">
+      <div class="card-header">
+        <div>
+          <h3>Operations by Type</h3>
+          <p>Volume and completion rate per category</p>
+        </div>
+      </div>
+      <canvas id="opsByTypeChart" height="280"></canvas>
+    </div>
+
+    <!-- Maintenance Overview (Horizontal Bar) -->
+    <div class="chart-container">
+      <div class="card-header">
+        <div>
+          <h3>Maintenance Overview</h3>
+          <p>By type and status distribution</p>
+        </div>
+      </div>
+      <canvas id="maintOverviewChart" height="280"></canvas>
+    </div>
+
+  </div>
+
+  <!-- ── Charts Row 2 ─────────────────────────────────────────────────────── -->
+  <div class="grid-2 mb-6">
+
+    <!-- Stock Movements (Area) -->
+    <div class="chart-container">
+      <div class="card-header">
+        <div>
+          <h3>Stock Movement Trend</h3>
+          <p>Inventory IN / OUT over time</p>
+        </div>
+      </div>
+      <canvas id="stockChart" height="260"></canvas>
+    </div>
+
+    <!-- Task Completion (Radar) -->
+    <div class="chart-container">
+      <div class="card-header">
+        <div>
+          <h3>Task Completion Rate</h3>
+          <p>By interval type — hours to complete</p>
+        </div>
+      </div>
+      <canvas id="taskCompChart" height="260"></canvas>
+    </div>
+
+  </div>
+
+  <!-- ── Charts Row 3 ─────────────────────────────────────────────────────── -->
+  <div class="grid-3 mb-6">
+
+    <!-- Shift Coverage (Stacked Bar) -->
+    <div class="chart-container" style="grid-column:1/3">
+      <div class="card-header">
+        <div>
+          <h3>Shift Coverage Heatmap</h3>
+          <p>Employees per shift per day (last 14 days)</p>
+        </div>
+      </div>
+      <canvas id="shiftCoverageChart" height="200"></canvas>
+    </div>
+
+    <!-- Status Donut -->
+    <div class="chart-container">
+      <div class="card-header"><h3>Operation Status</h3></div>
+      <canvas id="statusDonutChart" height="200"></canvas>
+    </div>
+
+  </div>
+
+  <!-- ── Summary Table ───────────────────────────────────────────────────── -->
+  <div class="card mb-6">
+    <div class="card-header">
+      <h3>Maintenance Cost Summary</h3>
+      <p>Total costs and downtime by maintenance type</p>
+    </div>
+    <div class="table-container" style="border:none;box-shadow:none">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Count</th>
+            <th>Avg Downtime (hrs)</th>
+            <th>Total Cost</th>
+            <th>Completion Rate</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let row of maintSummary">
+            <td><span class="badge badge-in-progress">{{row.type | titlecase}}</span></td>
+            <td>{{row.count}}</td>
+            <td>{{row.avg_downtime | number:'1.1-1'}}h</td>
+            <td>${{row.total_cost | number:'1.2-2'}}</td>
+            <td>
+              <div class="flex items-center gap-2">
+                <div class="progress-bar" style="flex:1">
+                  <div class="progress-fill" [style.width.%]="row.completion_rate" [style.background]="row.completion_rate > 80 ? '#15803D' : row.completion_rate > 50 ? '#D97706' : '#DC2626'"></div>
+                </div>
+                <span class="text-sm font-bold">{{row.completion_rate | number:'1.0-0'}}%</span>
+              </div>
+            </td>
+          </tr>
+          <tr *ngIf="!maintSummary?.length">
+            <td colspan="5" style="text-align:center;padding:24px;color:#9CA3AF">No maintenance data for selected period</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>

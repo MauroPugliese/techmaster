@@ -1,0 +1,599 @@
+<!-- ==========================================================================
+     admin.component.html — Admin Settings Panel  (FIXED)
+     - @ character replaced with &#64; to avoid Angular 17 block syntax error
+     - Tab title uses activeTabLabel getter instead of broken pipe chain
+     - Removed all template expressions that caused ICU/EOF parse errors
+     ========================================================================== -->
+
+<div class="admin-page fade-in" style="display:grid;grid-template-columns:220px 1fr;gap:24px;align-items:start">
+
+  <!-- ── Left sidebar ───────────────────────────────────────────────────── -->
+  <div class="card" style="position:sticky;top:calc(var(--header-height) + 24px);padding:12px">
+    <div style="font-size:0.7rem;font-weight:700;letter-spacing:0.08em;color:#9CA3AF;
+                text-transform:uppercase;padding:8px 12px 4px">Settings</div>
+
+    <button *ngFor="let tab of tabs"
+            (click)="setTab(tab.id)"
+            style="width:100%;text-align:left;padding:10px 12px;border-radius:var(--radius-md);
+                   display:flex;align-items:center;gap:10px;font-size:0.85rem;font-weight:600;
+                   border:none;cursor:pointer;transition:var(--transition);background:transparent"
+            [style.background]="activeTab===tab.id ? 'var(--blue-100)' : 'transparent'"
+            [style.color]="activeTab===tab.id ? 'var(--primary)' : 'var(--blue-900)'">
+      <span style="font-family:'Material Icons Round';font-style:normal;font-size:18px">{{tab.icon}}</span>
+      {{tab.label}}
+    </button>
+  </div>
+
+  <!-- ── Main content ───────────────────────────────────────────────────── -->
+  <div>
+
+    <!-- ==============================================================
+         OVERVIEW
+         ============================================================== -->
+    <ng-container *ngIf="activeTab==='overview'">
+      <h2 style="margin-bottom:4px">System Overview</h2>
+      <p class="text-muted text-sm" style="margin-bottom:24px">Platform health and record counts</p>
+
+      <ng-container *ngIf="systemInfo; else loadingTpl">
+
+        <!-- System info strip -->
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px">
+          <div class="card" style="padding:16px">
+            <div class="text-muted text-sm">DB Version</div>
+            <div style="font-weight:700;font-size:1.1rem;margin-top:4px">MySQL {{systemInfo.db_version}}</div>
+          </div>
+          <div class="card" style="padding:16px">
+            <div class="text-muted text-sm">Node.js</div>
+            <div style="font-weight:700;font-size:1.1rem;margin-top:4px">{{systemInfo.node_version}}</div>
+          </div>
+          <div class="card" style="padding:16px">
+            <div class="text-muted text-sm">Uptime</div>
+            <div style="font-weight:700;font-size:1.1rem;margin-top:4px">{{formatUptime(systemInfo.uptime)}}</div>
+          </div>
+        </div>
+
+        <!-- Record counts -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px">
+          <div *ngFor="let c of overviewCountCards" class="kpi-card" [style]="'--kpi-color:' + c.color">
+            <div class="kpi-icon-wrap">{{c.icon}}</div>
+            <div>
+              <div class="kpi-value">{{c.val}}</div>
+              <div class="kpi-label">{{c.label}}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Role breakdown -->
+        <div class="card" style="padding:20px">
+          <h3 style="margin-bottom:16px">Users by Role</h3>
+          <div style="display:flex;gap:12px;flex-wrap:wrap">
+            <div *ngFor="let r of systemInfo.role_breakdown"
+                 style="display:flex;align-items:center;gap:10px;padding:10px 16px;
+                        border:1px solid var(--border);border-radius:var(--radius-md)">
+              <div style="width:10px;height:10px;border-radius:50%"
+                   [style.background]="getRoleBadgeColor(r.role)"></div>
+              <span style="font-weight:700;text-transform:capitalize">{{r.role}}</span>
+              <span style="font-size:1.1rem;font-weight:800;color:var(--primary)">{{r.count}}</span>
+            </div>
+          </div>
+        </div>
+      </ng-container>
+    </ng-container>
+
+    <!-- ==============================================================
+         USERS
+         ============================================================== -->
+    <ng-container *ngIf="activeTab==='users'">
+      <div class="flex items-center justify-between mb-5">
+        <div>
+          <h2 style="margin-bottom:4px">User Management</h2>
+          <p class="text-muted text-sm">Create, edit, deactivate and reset passwords</p>
+        </div>
+        <button class="btn btn-primary" (click)="openUserModal()">
+          <span class="btn-icon">person_add</span> New User
+        </button>
+      </div>
+
+      <div class="search-bar" style="width:300px;margin-bottom:20px">
+        <span class="search-icon">search</span>
+        <input placeholder="Search by name, email, username…"
+               [(ngModel)]="userSearch" (input)="loadUsers()">
+      </div>
+
+      <div class="table-container">
+        <table class="data-table">
+          <thead><tr>
+            <th>User</th><th>Email</th><th>Role</th>
+            <th>Department</th><th>Last Login</th><th>Status</th><th>Actions</th>
+          </tr></thead>
+          <tbody>
+            <tr *ngFor="let u of users">
+              <td>
+                <div style="display:flex;align-items:center;gap:10px">
+                  <div style="width:34px;height:34px;border-radius:50%;background:var(--blue-200);
+                              display:flex;align-items:center;justify-content:center;
+                              font-size:0.7rem;font-weight:700;color:var(--primary);flex-shrink:0">
+                    {{u.first_name[0]}}{{u.last_name[0]}}
+                  </div>
+                  <div>
+                    <div class="font-bold text-sm">{{u.first_name}} {{u.last_name}}</div>
+                    <!-- FIX: @ escaped as &#64; to avoid Angular 17 block syntax error -->
+                    <div class="text-muted" style="font-size:0.72rem">&#64;{{u.username}}</div>
+                  </div>
+                </div>
+              </td>
+              <td class="text-sm">{{u.email}}</td>
+              <td>
+                <span class="badge"
+                      [style.background]="getRoleBadgeColor(u.role?.name) + '22'"
+                      [style.color]="getRoleBadgeColor(u.role?.name)"
+                      style="text-transform:capitalize">
+                  {{u.role?.name}}
+                </span>
+              </td>
+              <td class="text-sm">{{u.department || '—'}}</td>
+              <td class="text-sm">{{u.last_login ? (u.last_login | date:'MMM d, y') : 'Never'}}</td>
+              <td>
+                <span class="badge"
+                      [style.background]="u.is_active ? '#DCFCE7' : '#FEE2E2'"
+                      [style.color]="u.is_active ? '#15803D' : '#B91C1C'">
+                  {{u.is_active ? 'Active' : 'Inactive'}}
+                </span>
+              </td>
+              <td>
+                <div class="flex gap-1">
+                  <button class="btn btn-ghost btn-icon-only btn-sm" (click)="openUserModal(u)" title="Edit">
+                    <span class="btn-icon" style="font-size:16px">edit</span>
+                  </button>
+                  <button class="btn btn-ghost btn-icon-only btn-sm" (click)="openResetModal(u)" title="Reset password">
+                    <span class="btn-icon" style="font-size:16px;color:#F59E0B">lock_reset</span>
+                  </button>
+                  <button class="btn btn-ghost btn-icon-only btn-sm" (click)="toggleUserActive(u)"
+                          [title]="u.is_active ? 'Deactivate' : 'Activate'">
+                    <span class="btn-icon" style="font-size:16px"
+                          [style.color]="u.is_active ? '#EF4444' : '#10B981'">
+                      {{u.is_active ? 'person_off' : 'how_to_reg'}}
+                    </span>
+                  </button>
+                  <button class="btn btn-ghost btn-icon-only btn-sm" (click)="deleteUser(u)" title="Delete">
+                    <span class="btn-icon" style="font-size:16px;color:#EF4444">delete</span>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="empty-state" *ngIf="!users.length && !userLoading">
+          <span class="empty-icon">group</span><h3>No users found</h3>
+        </div>
+      </div>
+    </ng-container>
+
+    <!-- ==============================================================
+         GENERIC CONFIG TABS
+         ============================================================== -->
+    <ng-container *ngIf="activeTab!=='overview' && activeTab!=='users'">
+      <div class="flex items-center justify-between mb-5">
+        <div>
+          <!-- FIX: activeTabLabel getter used instead of broken pipe chain -->
+          <h2 style="margin-bottom:4px">{{activeTabLabel}}</h2>
+          <p class="text-muted text-sm">Manage lookup values used across the platform</p>
+        </div>
+        <button class="btn btn-primary" (click)="openItemModal()">
+          <span class="btn-icon">add</span> Add New
+        </button>
+      </div>
+
+      <ng-container *ngIf="!listLoading; else loadingTpl">
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr *ngIf="activeTab==='operation-types'">
+                <th>Name</th><th>Color</th><th>Icon</th><th>Description</th><th>Actions</th>
+              </tr>
+              <tr *ngIf="activeTab==='shift-types'">
+                <th>Name</th><th>Code</th><th>Start</th><th>End</th><th>Color</th><th>Actions</th>
+              </tr>
+              <tr *ngIf="activeTab==='asset-categories'">
+                <th>Name</th><th>Type</th><th>Description</th><th>Actions</th>
+              </tr>
+              <tr *ngIf="activeTab==='item-categories'">
+                <th>Name</th><th>Description</th><th>Actions</th>
+              </tr>
+              <tr *ngIf="activeTab==='wiki-categories'">
+                <th>Name</th><th>Icon</th><th>Sort</th><th>Slug</th><th>Actions</th>
+              </tr>
+              <tr *ngIf="activeTab==='warehouse-locations'">
+                <th>Name</th><th>Code</th><th>Description</th><th>Active</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let item of listData">
+
+                <!-- Operation Types -->
+                <ng-container *ngIf="activeTab==='operation-types'">
+                  <td class="font-bold text-sm">{{item.name}}</td>
+                  <td>
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <div style="width:20px;height:20px;border-radius:4px"
+                           [style.background]="item.color"></div>
+                      <code style="font-size:0.75rem">{{item.color}}</code>
+                    </div>
+                  </td>
+                  <td>
+                    <span style="font-family:'Material Icons Round';font-style:normal;
+                                 font-size:20px;color:var(--primary)">{{item.icon}}</span>
+                  </td>
+                  <td class="text-sm text-muted truncate" style="max-width:200px">{{item.description || '—'}}</td>
+                </ng-container>
+
+                <!-- Shift Types -->
+                <ng-container *ngIf="activeTab==='shift-types'">
+                  <td class="font-bold text-sm">{{item.name}}</td>
+                  <td><code style="font-size:0.8rem">{{item.code}}</code></td>
+                  <td class="text-sm">{{item.start_time?.slice(0,5)}}</td>
+                  <td class="text-sm">{{item.end_time?.slice(0,5)}}</td>
+                  <td>
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <div style="width:20px;height:20px;border-radius:50%"
+                           [style.background]="item.color"></div>
+                      <code style="font-size:0.75rem">{{item.color}}</code>
+                    </div>
+                  </td>
+                </ng-container>
+
+                <!-- Asset Categories -->
+                <ng-container *ngIf="activeTab==='asset-categories'">
+                  <td class="font-bold text-sm">{{item.name}}</td>
+                  <td><span class="badge badge-in-progress">{{item.type}}</span></td>
+                  <td class="text-sm text-muted">{{item.description || '—'}}</td>
+                </ng-container>
+
+                <!-- Item Categories -->
+                <ng-container *ngIf="activeTab==='item-categories'">
+                  <td class="font-bold text-sm">{{item.name}}</td>
+                  <td class="text-sm text-muted">{{item.description || '—'}}</td>
+                </ng-container>
+
+                <!-- Wiki Categories -->
+                <ng-container *ngIf="activeTab==='wiki-categories'">
+                  <td class="font-bold text-sm">{{item.name}}</td>
+                  <td>
+                    <span style="font-family:'Material Icons Round';font-style:normal;
+                                 font-size:18px;color:var(--primary)">{{item.icon || 'folder'}}</span>
+                  </td>
+                  <td class="text-sm">{{item.sort_order}}</td>
+                  <td><code style="font-size:0.75rem">{{item.slug}}</code></td>
+                </ng-container>
+
+                <!-- Warehouse Locations -->
+                <ng-container *ngIf="activeTab==='warehouse-locations'">
+                  <td class="font-bold text-sm">{{item.name}}</td>
+                  <td><code style="font-size:0.8rem">{{item.code}}</code></td>
+                  <td class="text-sm text-muted">{{item.description || '—'}}</td>
+                  <td>
+                    <span class="badge"
+                          [style.background]="item.is_active ? '#DCFCE7' : '#FEE2E2'"
+                          [style.color]="item.is_active ? '#15803D' : '#B91C1C'">
+                      {{item.is_active ? 'Active' : 'Inactive'}}
+                    </span>
+                  </td>
+                </ng-container>
+
+                <!-- Actions -->
+                <td>
+                  <div class="flex gap-1">
+                    <button class="btn btn-ghost btn-icon-only btn-sm" (click)="openItemModal(item)">
+                      <span class="btn-icon" style="font-size:16px">edit</span>
+                    </button>
+                    <button class="btn btn-ghost btn-icon-only btn-sm" (click)="deleteItem(item)">
+                      <span class="btn-icon" style="font-size:16px;color:#EF4444">delete</span>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="empty-state" *ngIf="!listData.length">
+            <span class="empty-icon">category</span>
+            <h3>No items yet</h3>
+            <button class="btn btn-primary" (click)="openItemModal()">Add First</button>
+          </div>
+        </div>
+      </ng-container>
+    </ng-container>
+
+  </div><!-- /main -->
+</div>
+
+<!-- Loading template -->
+<ng-template #loadingTpl>
+  <div style="display:flex;justify-content:center;padding:60px">
+    <div class="spinner"></div>
+  </div>
+</ng-template>
+
+<!-- ================================================================
+     USER MODAL
+     ================================================================ -->
+<div class="modal-overlay" *ngIf="showUserModal" (click)="showUserModal=false">
+  <div class="modal" style="max-width:560px" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h3>{{editingUser ? 'Edit User' : 'New User'}}</h3>
+      <button class="btn btn-ghost btn-icon-only" (click)="showUserModal=false">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">First Name *</label>
+          <input class="form-control" [(ngModel)]="userForm.first_name">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Last Name *</label>
+          <input class="form-control" [(ngModel)]="userForm.last_name">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Username *</label>
+          <input class="form-control" [(ngModel)]="userForm.username" [disabled]="!!editingUser">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email *</label>
+          <input type="email" class="form-control" [(ngModel)]="userForm.email">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Role *</label>
+          <select class="form-control" [(ngModel)]="userForm.role_id">
+            <option [ngValue]="null">— Select role —</option>
+            <option *ngFor="let r of roles" [ngValue]="r.id">{{r.name | titlecase}}</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password {{editingUser ? '(blank = keep current)' : '*'}}</label>
+          <input type="password" class="form-control" [(ngModel)]="userForm.password"
+                 [placeholder]="editingUser ? 'Leave blank to keep' : 'Min 8 characters'">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Department</label>
+          <input class="form-control" [(ngModel)]="userForm.department">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Job Title</label>
+          <input class="form-control" [(ngModel)]="userForm.job_title">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Phone</label>
+          <input class="form-control" [(ngModel)]="userForm.phone">
+        </div>
+        <div class="form-group" style="display:flex;align-items:center;gap:10px;padding-top:28px">
+          <input type="checkbox" id="uActive" [(ngModel)]="userForm.is_active" style="width:16px;height:16px">
+          <label for="uActive" style="font-weight:600;cursor:pointer">Active account</label>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" (click)="showUserModal=false">Cancel</button>
+      <button class="btn btn-primary" (click)="saveUser()" [disabled]="saving">
+        {{saving ? 'Saving…' : (editingUser ? 'Save Changes' : 'Create User')}}
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================
+     RESET PASSWORD MODAL
+     ================================================================ -->
+<div class="modal-overlay" *ngIf="showResetModal" (click)="showResetModal=false">
+  <div class="modal" style="max-width:400px" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h3>Reset Password — {{editingUser?.username}}</h3>
+      <button class="btn btn-ghost btn-icon-only" (click)="showResetModal=false">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">New Password *</label>
+        <input type="password" class="form-control" [(ngModel)]="newPassword"
+               placeholder="Min 8 characters">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" (click)="showResetModal=false">Cancel</button>
+      <button class="btn btn-primary" (click)="resetPassword()" [disabled]="saving">
+        {{saving ? 'Resetting…' : 'Reset Password'}}
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================
+     GENERIC ITEM MODAL
+     ================================================================ -->
+<div class="modal-overlay" *ngIf="showModal" (click)="showModal=false">
+  <div class="modal" style="max-width:480px" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h3>{{editingItem ? 'Edit' : 'New'}} — {{activeTabLabel}}</h3>
+      <button class="btn btn-ghost btn-icon-only" (click)="showModal=false">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+    <div class="modal-body">
+
+      <!-- Operation Types -->
+      <ng-container *ngIf="activeTab==='operation-types'">
+        <div class="form-group">
+          <label class="form-label">Name *</label>
+          <input class="form-control" [(ngModel)]="itemForm.name" placeholder="e.g. Deployment">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Color</label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input type="color" [(ngModel)]="itemForm.color"
+                     style="width:40px;height:36px;border:1px solid var(--border);
+                            border-radius:6px;cursor:pointer;padding:2px">
+              <input class="form-control" [(ngModel)]="itemForm.color"
+                     placeholder="#1565C0" style="flex:1">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Icon (Material icon name)</label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <span style="font-family:'Material Icons Round';font-style:normal;font-size:24px;
+                           color:var(--primary);width:32px;text-align:center">
+                {{itemForm.icon}}
+              </span>
+              <input class="form-control" [(ngModel)]="itemForm.icon"
+                     placeholder="rocket_launch" style="flex:1">
+            </div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Description</label>
+          <textarea class="form-control" [(ngModel)]="itemForm.description"
+                    style="min-height:72px"></textarea>
+        </div>
+      </ng-container>
+
+      <!-- Shift Types -->
+      <ng-container *ngIf="activeTab==='shift-types'">
+        <div class="form-row">
+          <div class="form-group" style="flex:2">
+            <label class="form-label">Name *</label>
+            <input class="form-control" [(ngModel)]="itemForm.name" placeholder="e.g. Morning">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Code *</label>
+            <input class="form-control" [(ngModel)]="itemForm.code"
+                   placeholder="MOR" maxlength="10">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Start Time</label>
+            <input type="time" class="form-control" [(ngModel)]="itemForm.start_time">
+          </div>
+          <div class="form-group">
+            <label class="form-label">End Time</label>
+            <input type="time" class="form-control" [(ngModel)]="itemForm.end_time">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Color</label>
+            <div style="display:flex;gap:6px;align-items:center">
+              <input type="color" [(ngModel)]="itemForm.color"
+                     style="width:36px;height:36px;border:1px solid var(--border);
+                            border-radius:6px;cursor:pointer;padding:2px">
+              <input class="form-control" [(ngModel)]="itemForm.color" style="flex:1">
+            </div>
+          </div>
+        </div>
+      </ng-container>
+
+      <!-- Asset Categories -->
+      <ng-container *ngIf="activeTab==='asset-categories'">
+        <div class="form-group">
+          <label class="form-label">Name *</label>
+          <input class="form-control" [(ngModel)]="itemForm.name">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Type</label>
+          <select class="form-control" [(ngModel)]="itemForm.type">
+            <option value="HARDWARE">Hardware</option>
+            <option value="SOFTWARE">Software</option>
+            <option value="NETWORK">Network</option>
+            <option value="OTHER">Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Description</label>
+          <textarea class="form-control" [(ngModel)]="itemForm.description"
+                    style="min-height:72px"></textarea>
+        </div>
+      </ng-container>
+
+      <!-- Item Categories -->
+      <ng-container *ngIf="activeTab==='item-categories'">
+        <div class="form-group">
+          <label class="form-label">Name *</label>
+          <input class="form-control" [(ngModel)]="itemForm.name"
+                 placeholder="e.g. Cables and Connectors">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Description</label>
+          <textarea class="form-control" [(ngModel)]="itemForm.description"
+                    style="min-height:72px"></textarea>
+        </div>
+      </ng-container>
+
+      <!-- Wiki Categories -->
+      <ng-container *ngIf="activeTab==='wiki-categories'">
+        <div class="form-row">
+          <div class="form-group" style="flex:2">
+            <label class="form-label">Name *</label>
+            <input class="form-control" [(ngModel)]="itemForm.name"
+                   placeholder="e.g. Infrastructure">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Sort Order</label>
+            <input type="number" class="form-control" [(ngModel)]="itemForm.sort_order" min="0">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Icon (Material icon name)</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span style="font-family:'Material Icons Round';font-style:normal;font-size:24px;
+                         color:var(--primary);width:32px;text-align:center">
+              {{itemForm.icon || 'folder'}}
+            </span>
+            <input class="form-control" [(ngModel)]="itemForm.icon"
+                   placeholder="folder" style="flex:1">
+          </div>
+        </div>
+      </ng-container>
+
+      <!-- Warehouse Locations -->
+      <ng-container *ngIf="activeTab==='warehouse-locations'">
+        <div class="form-row">
+          <div class="form-group" style="flex:2">
+            <label class="form-label">Name *</label>
+            <input class="form-control" [(ngModel)]="itemForm.name"
+                   placeholder="e.g. Main Warehouse">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Code *</label>
+            <input class="form-control" [(ngModel)]="itemForm.code"
+                   placeholder="WH-MAIN" maxlength="20">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Description</label>
+          <textarea class="form-control" [(ngModel)]="itemForm.description"
+                    style="min-height:72px"></textarea>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:8px">
+          <input type="checkbox" id="locActive" [(ngModel)]="itemForm.is_active"
+                 style="width:16px;height:16px">
+          <label for="locActive" style="font-weight:600;cursor:pointer">Active location</label>
+        </div>
+      </ng-container>
+
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" (click)="showModal=false">Cancel</button>
+      <button class="btn btn-primary" (click)="saveItem()" [disabled]="saving">
+        {{saving ? 'Saving…' : (editingItem ? 'Save Changes' : 'Create')}}
+      </button>
+    </div>
+  </div>
+</div>

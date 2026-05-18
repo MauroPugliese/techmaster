@@ -1,0 +1,42 @@
+# =============================================================================
+# backend/.dockerignore
+# =============================================================================
+
+# Never send local node_modules — they're installed inside the image
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Local runtime logs
+logs/
+*.log
+
+# Local env overrides — secrets must come from docker-compose env_file
+.env
+.env.*
+!.env.example
+
+# Test artifacts
+coverage/
+__tests__/
+*.test.js
+*.spec.js
+
+# Editor and OS metadata
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Git history
+.git/
+.gitignore
+
+# Documentation
+*.md
+LICENSE
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+Jenkinsfile

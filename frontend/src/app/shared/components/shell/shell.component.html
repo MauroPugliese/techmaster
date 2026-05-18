@@ -1,0 +1,205 @@
+<!-- ==========================================================================
+     app-shell.component.html — Main layout with sidebar
+     ========================================================================== -->
+<div class="app-shell">
+
+  <!-- ── Sidebar ─────────────────────────────────────────────────────────── -->
+  <aside class="sidebar" [class.collapsed]="sidebarCollapsed">
+
+    <!-- Logo -->
+    <div class="sidebar-logo">
+      <div class="logo-icon">
+        <span style="font-family:'Material Icons Round';font-style:normal;color:#fff;font-size:22px">dns</span>
+      </div>
+      <div class="logo-text">
+        TechManager
+        <span class="logo-sub">Operations Platform</span>
+      </div>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="sidebar-nav">
+
+      <div class="nav-section-label">Overview</div>
+
+      <a class="nav-item" routerLink="/dashboard" routerLinkActive="active">
+        <span class="nav-icon">dashboard</span>
+        <span class="nav-label">Dashboard</span>
+      </a>
+
+      <div class="nav-section-label">Operations</div>
+
+      <a class="nav-item" routerLink="/operations" routerLinkActive="active">
+        <span class="nav-icon">rocket_launch</span>
+        <span class="nav-label">Operations & Sorties</span>
+        <span class="nav-badge" *ngIf="activeOpsCount > 0">{{activeOpsCount}}</span>
+      </a>
+
+      <a class="nav-item" routerLink="/maintenance" routerLinkActive="active">
+        <span class="nav-icon">build_circle</span>
+        <span class="nav-label">Maintenance</span>
+        <span class="nav-badge" *ngIf="pendingMaintCount > 0">{{pendingMaintCount}}</span>
+      </a>
+
+      <a class="nav-item" routerLink="/warehouse" routerLinkActive="active">
+        <span class="nav-icon">inventory_2</span>
+        <span class="nav-label">Warehouse</span>
+        <span class="nav-badge" *ngIf="lowStockCount > 0">{{lowStockCount}}</span>
+      </a>
+
+      <a class="nav-item" routerLink="/shifts" routerLinkActive="active">
+        <span class="nav-icon">schedule</span>
+        <span class="nav-label">Shifts</span>
+      </a>
+
+      <div class="nav-section-label">Intelligence</div>
+
+      <a class="nav-item" routerLink="/analytics" routerLinkActive="active">
+        <span class="nav-icon">insights</span>
+        <span class="nav-label">Analytics & Reports</span>
+      </a>
+
+      <a class="nav-item" routerLink="/analytics/operations" routerLinkActive="active" [routerLinkActiveOptions]="{exact: false}">
+        <span class="nav-icon">analytics</span>
+        <span class="nav-label">Operations Analytics</span>
+      </a>
+
+      <a class="nav-item" routerLink="/tasks" routerLinkActive="active">
+        <span class="nav-icon">task_alt</span>
+        <span class="nav-label">Task Manager</span>
+        <span class="nav-badge" *ngIf="openTasksCount > 0">{{openTasksCount}}</span>
+      </a>
+
+      <div class="nav-section-label">Knowledge</div>
+
+      <a class="nav-item" routerLink="/wiki" routerLinkActive="active">
+        <span class="nav-icon">menu_book</span>
+        <span class="nav-label">Wiki & Docs</span>
+      </a>
+
+      <div class="nav-section-label">Administration</div>
+
+      <a class="nav-item" routerLink="/admin" routerLinkActive="active">
+        <span class="nav-icon">admin_panel_settings</span>
+        <span class="nav-label">Admin Settings</span>
+      </a>
+
+    </nav>
+
+    <!-- User Footer -->
+    <div class="sidebar-user" [routerLink]="['/settings/profile']">
+      <div class="user-avatar">
+        <img *ngIf="currentUser?.avatar_url" [src]="currentUser!.avatar_url" [alt]="fullName">
+        <span *ngIf="!currentUser?.avatar_url">{{initials}}</span>
+      </div>
+      <div class="user-info">
+        <div class="user-name">{{fullName}}</div>
+        <div class="user-role">{{currentUser?.role?.name | titlecase}}</div>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ── Main Area ────────────────────────────────────────────────────────── -->
+  <div class="main-area" [class.sidebar-collapsed]="sidebarCollapsed">
+
+    <!-- Header -->
+    <header class="app-header" [class.sidebar-collapsed]="sidebarCollapsed">
+
+      <!-- Hamburger -->
+      <button class="btn btn-ghost btn-icon-only" (click)="toggleSidebar()">
+        <span class="btn-icon">menu</span>
+      </button>
+
+      <!-- Page Title -->
+      <div class="header-title">
+        <h2>{{pageTitle}}</h2>
+        <p>{{pageSubtitle}}</p>
+      </div>
+
+      <!-- Global Date Filter -->
+      <div class="flex items-center gap-2">
+
+        <div class="preset-chips">
+          <button class="chip" [class.active]="activePreset==='today'"   (click)="setPreset('today')">Today</button>
+          <button class="chip" [class.active]="activePreset==='week'"    (click)="setPreset('week')">7D</button>
+          <button class="chip" [class.active]="activePreset==='month'"   (click)="setPreset('month')">30D</button>
+          <button class="chip" [class.active]="activePreset==='quarter'" (click)="setPreset('quarter')">90D</button>
+        </div>
+
+        <div class="date-filter-bar" (click)="openDatePicker()">
+          <span class="date-icon">date_range</span>
+          {{dateLabel}}
+          <span class="date-icon" style="font-size:14px">arrow_drop_down</span>
+        </div>
+
+        <button class="btn btn-ghost btn-icon-only" *ngIf="hasDateFilter" (click)="clearDate()" title="Clear filter">
+          <span class="btn-icon">close</span>
+        </button>
+
+      </div>
+
+      <!-- Notifications -->
+      <button class="btn btn-ghost btn-icon-only" style="position:relative" (click)="toggleNotifications()">
+        <span class="btn-icon">notifications</span>
+        <span *ngIf="unreadNotifications > 0" style="
+          position:absolute; top:6px; right:6px;
+          width:8px; height:8px; background:#EF4444; border-radius:50%;
+          border:2px solid white;">
+        </span>
+      </button>
+
+      <!-- Logout -->
+      <button class="btn btn-ghost btn-icon-only" (click)="logout()" title="Sign out">
+        <span class="btn-icon">logout</span>
+      </button>
+
+    </header>
+
+    <!-- Router Outlet -->
+    <main class="page-content">
+      <router-outlet></router-outlet>
+    </main>
+
+  </div>
+
+  <app-toast></app-toast>
+<app-confirm></app-confirm>
+
+</div>
+
+<!-- Date Picker Modal -->
+<div class="modal-overlay" *ngIf="showDatePicker" (click)="closeDatePicker($event)">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-header">
+      <h3>Select Date Range</h3>
+      <button class="btn btn-ghost btn-icon-only" (click)="showDatePicker=false">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group">
+          <mat-form-field appearance="fill" style="width:100%">
+            <mat-label>From Date</mat-label>
+            <input matInput [matDatepicker]="fromPicker" [(ngModel)]="pickerFrom">
+            <mat-datepicker-toggle matSuffix [for]="fromPicker"></mat-datepicker-toggle>
+            <mat-datepicker #fromPicker></mat-datepicker>
+          </mat-form-field>
+        </div>
+        <div class="form-group">
+          <mat-form-field appearance="fill" style="width:100%">
+            <mat-label>To Date</mat-label>
+            <input matInput [matDatepicker]="toPicker" [(ngModel)]="pickerTo">
+            <mat-datepicker-toggle matSuffix [for]="toPicker"></mat-datepicker-toggle>
+            <mat-datepicker #toPicker></mat-datepicker>
+          </mat-form-field>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" (click)="clearDate()">Clear</button>
+      <button class="btn btn-primary" (click)="applyDatePicker()">Apply Filter</button>
+    </div>
+  </div>
+</div>

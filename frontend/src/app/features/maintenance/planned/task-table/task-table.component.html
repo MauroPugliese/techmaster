@@ -1,0 +1,111 @@
+<div class="card fade-in">
+
+  <!-- Title Row -->
+  <div class="card-header">
+    <div>
+      <h3 style="color:var(--blue-800)">Planned Maintenance Task Table</h3>
+    </div>
+    <div class="flex gap-2">
+      <button class="btn btn-ghost btn-icon-only btn-sm" (click)="addTask.emit()" title="Add task">
+        <span class="btn-icon">add</span>
+      </button>
+      <button class="btn btn-ghost btn-icon-only btn-sm" title="Download">
+        <span class="btn-icon">download</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Search bar (centered) -->
+  <div style="display:flex;justify-content:center;margin-bottom:16px">
+    <div class="search-bar" style="width:340px">
+      <span class="search-icon">search</span>
+      <input type="text" placeholder="Search..."
+             [(ngModel)]="searchTerm" (ngModelChange)="onSearchChange()">
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="table-container" style="border:none;box-shadow:none">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>SYSTEM</th>
+          <th>SUBSYSTEM</th>
+          <th>TASK</th>
+          <th>REFERENCE</th>
+          <th>OPERATION DATE</th>
+          <th>REPEATTASK TYPE</th>
+          <th>REPEATTASK NUMBER</th>
+          <th>REPORT TEMPLATE</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let t of paginatedTasks">
+          <td>
+            <div class="flex items-center gap-2">
+              <span class="btn-icon" style="font-size:16px;color:var(--status-planned)">settings</span>
+              <span class="font-bold">{{ t.id }}</span>
+            </div>
+          </td>
+          <td><span class="text-primary font-bold">{{ t.system }}</span></td>
+          <td><span class="font-bold">{{ t.subsystem }}</span></td>
+          <td style="max-width:280px">{{ t.task }}</td>
+          <td class="text-sm text-muted">{{ t.reference || '' }}</td>
+          <td class="text-sm" style="white-space:nowrap">
+            <div>{{ formatDate(t.operation_date_start) }}</div>
+            <div class="text-muted">{{ formatDate(t.operation_date_end) }}</div>
+          </td>
+          <td>
+            <span class="badge" [ngClass]="getRepeatBadgeClass(t.repeat_task_type)">
+              {{ t.repeat_task_type }}
+            </span>
+          </td>
+          <td style="text-align:center">{{ t.repeat_task_number }}</td>
+          <td class="text-sm text-muted">{{ t.report_template || '' }}</td>
+          <td>
+            <div class="flex gap-1">
+              <button class="btn btn-ghost btn-icon-only btn-sm" (click)="deleteTask.emit(t)" title="Delete">
+                <span class="btn-icon" style="font-size:17px;color:#EF4444">delete</span>
+              </button>
+              <button class="btn btn-ghost btn-icon-only btn-sm" (click)="editTask.emit(t)" title="Edit">
+                <span class="btn-icon" style="font-size:17px;color:var(--status-planned)">edit</span>
+              </button>
+            </div>
+          </td>
+        </tr>
+        <tr *ngIf="paginatedTasks.length === 0">
+          <td colspan="10">
+            <div class="empty-state" style="padding:32px 0">
+              <span class="empty-icon" style="font-size:40px">event_busy</span>
+              <h3>No tasks found</h3>
+              <p>Try adjusting your search or add a new task.</p>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pagination -->
+  <div class="pagination-bar">
+    <div class="flex items-center gap-2">
+      <span class="text-sm text-muted">Items per page:</span>
+      <select class="form-control" style="width:70px;padding:4px 8px;font-size:0.8rem"
+              [(ngModel)]="pageSize" (ngModelChange)="onPageSizeChange()">
+        <option [ngValue]="5">5</option>
+        <option [ngValue]="10">10</option>
+        <option [ngValue]="25">25</option>
+      </select>
+    </div>
+    <span class="text-sm" style="font-weight:500">{{ rangeLabel }}</span>
+    <div class="flex gap-1">
+      <button class="btn btn-ghost btn-sm" (click)="goFirst()" [disabled]="currentPage === 1">|&lt;</button>
+      <button class="btn btn-ghost btn-sm" (click)="goPrev()"  [disabled]="currentPage === 1">&lt;</button>
+      <button class="btn btn-ghost btn-sm" (click)="goNext()"  [disabled]="currentPage === totalPages">&gt;</button>
+      <button class="btn btn-ghost btn-sm" (click)="goLast()"  [disabled]="currentPage === totalPages">&gt;|</button>
+    </div>
+  </div>
+
+</div>

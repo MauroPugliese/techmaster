@@ -1,0 +1,262 @@
+<!-- ==========================================================================
+     operations.component.html — Full Operations Management
+     ========================================================================== -->
+
+<div class="operations-page fade-in">
+
+  <!-- ── Toolbar ─────────────────────────────────────────────────────────── -->
+  <div class="flex items-center justify-between mb-6">
+    <div class="flex items-center gap-2">
+
+      <!-- Search -->
+      <div class="search-bar" style="width:260px">
+        <span class="search-icon">search</span>
+        <input placeholder="Search operations..." [(ngModel)]="searchQuery" (input)="onSearch()">
+      </div>
+
+      <!-- Status Filter -->
+      <select class="form-control" style="width:160px" [(ngModel)]="statusFilter" (change)="loadOperations()">
+        <option value="">All Statuses</option>
+        <option value="PLANNED">Planned</option>
+        <option value="IN_PROGRESS">In Progress</option>
+        <option value="COMPLETED">Completed</option>
+        <option value="CANCELLED">Cancelled</option>
+        <option value="ON_HOLD">On Hold</option>
+      </select>
+
+      <!-- Priority Filter -->
+      <select class="form-control" style="width:140px" [(ngModel)]="priorityFilter" (change)="loadOperations()">
+        <option value="">All Priorities</option>
+        <option value="LOW">Low</option>
+        <option value="MEDIUM">Medium</option>
+        <option value="HIGH">High</option>
+        <option value="CRITICAL">Critical</option>
+      </select>
+
+    </div>
+
+    <button class="btn btn-primary" (click)="openModal()">
+      <span class="btn-icon">add</span>
+      New Operation
+    </button>
+  </div>
+
+  <!-- ── Loading ─────────────────────────────────────────────────────────── -->
+  <div *ngIf="loading" class="flex items-center justify-between" style="padding:40px;justify-content:center">
+    <div class="spinner"></div>
+  </div>
+
+  <!-- ── Table ───────────────────────────────────────────────────────────── -->
+  <div class="table-container" *ngIf="!loading">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+      <span class="text-sm text-muted">{{total}} operations found</span>
+      <div class="flex gap-2">
+        <button class="btn btn-ghost btn-sm" [class.active]="viewMode==='table'" (click)="viewMode='table'">
+          <span class="btn-icon">table_rows</span>
+        </button>
+        <button class="btn btn-ghost btn-sm" [class.active]="viewMode==='cards'" (click)="viewMode='cards'">
+          <span class="btn-icon">grid_view</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Table View -->
+    <table class="data-table" *ngIf="viewMode==='table'">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Title</th>
+          <th>Type</th>
+          <th>Status</th>
+          <th>Priority</th>
+          <th>Location</th>
+          <th>Start Date</th>
+          <th>Creator</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let op of operations; let i = index">
+          <td class="text-muted text-sm">{{op.id}}</td>
+          <td>
+            <div class="font-bold">{{op.title}}</div>
+            <div class="text-sm text-muted truncate" style="max-width:220px">{{op.description}}</div>
+          </td>
+          <td>
+            <span style="display:inline-flex;align-items:center;gap:5px">
+              <span style="width:8px;height:8px;border-radius:50%;flex-shrink:0"
+                    [style.background]="op.type?.color"></span>
+              {{op.type?.name}}
+            </span>
+          </td>
+          <td><span class="badge" [ngClass]="getStatusBadge(op.status)">{{op.status | titlecase}}</span></td>
+          <td><span class="badge" [ngClass]="getPriorityBadge(op.priority)">{{op.priority | titlecase}}</span></td>
+          <td class="text-sm">{{op.location || '—'}}</td>
+          <td class="text-sm">{{op.start_date | date:'MMM d, y'}}</td>
+          <td>
+            <div style="display:flex;align-items:center;gap:6px">
+              <div style="width:24px;height:24px;border-radius:50%;background:var(--blue-200);
+                          display:flex;align-items:center;justify-content:center;font-size:0.65rem;font-weight:700;color:var(--primary)">
+                {{getInitials(op.creator)}}
+              </div>
+              <span class="text-sm">{{op.creator?.first_name}}</span>
+            </div>
+          </td>
+          <td>
+            <div class="flex gap-2">
+              <button class="btn btn-ghost btn-icon-only btn-sm" (click)="editOperation(op)" title="Edit">
+                <span class="btn-icon" style="font-size:17px">edit</span>
+              </button>
+              <button class="btn btn-ghost btn-icon-only btn-sm" (click)="deleteOperation(op)" title="Delete">
+                <span class="btn-icon" style="font-size:17px;color:#EF4444">delete</span>
+              </button>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Cards View -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;padding:20px" *ngIf="viewMode==='cards'">
+      <div *ngFor="let op of operations"
+           style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);
+                  padding:18px;transition:var(--transition);cursor:pointer;
+                  border-left:4px solid {{op.type?.color || 'var(--primary)'}}"
+           (click)="editOperation(op)"
+           [style.border-left-color]="op.type?.color">
+        <div class="flex items-center justify-between mb-4">
+          <span class="badge" [ngClass]="getStatusBadge(op.status)">{{op.status}}</span>
+          <span class="badge" [ngClass]="getPriorityBadge(op.priority)">{{op.priority}}</span>
+        </div>
+        <h4 style="margin-bottom:6px">{{op.title}}</h4>
+        <p class="text-sm text-muted" style="margin-bottom:12px">{{op.description || 'No description'}}</p>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <div class="flex items-center gap-2 text-sm text-muted">
+            <span style="font-family:'Material Icons Round';font-style:normal;font-size:14px">location_on</span>
+            {{op.location || 'No location'}}
+          </div>
+          <div class="flex items-center gap-2 text-sm text-muted">
+            <span style="font-family:'Material Icons Round';font-style:normal;font-size:14px">calendar_today</span>
+            {{op.start_date | date:'MMM d, y'}}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Empty State -->
+    <div class="empty-state" *ngIf="!operations.length">
+      <span class="empty-icon">rocket_launch</span>
+      <h3>No operations found</h3>
+      <p>Create your first operation to get started</p>
+      <button class="btn btn-primary" (click)="openModal()">
+        <span class="btn-icon">add</span> New Operation
+      </button>
+    </div>
+
+    <!-- Pagination -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-top:1px solid var(--border)" *ngIf="total > pageSize">
+      <span class="text-sm text-muted">Showing {{(page-1)*pageSize+1}}–{{Math.min(page*pageSize,total)}} of {{total}}</span>
+      <div class="flex gap-2">
+        <button class="btn btn-secondary btn-sm" [disabled]="page <= 1" (click)="changePage(page-1)">
+          <span class="btn-icon">chevron_left</span>
+        </button>
+        <span style="padding:5px 12px;font-size:0.85rem;font-weight:600">{{page}} / {{totalPages}}</span>
+        <button class="btn btn-secondary btn-sm" [disabled]="page >= totalPages" (click)="changePage(page+1)">
+          <span class="btn-icon">chevron_right</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Create / Edit Modal ──────────────────────────────────────────────────── -->
+<div class="modal-overlay" *ngIf="showModal" (click)="closeModal($event)">
+  <div class="modal" style="max-width:620px">
+    <div class="modal-header">
+      <h3>{{editingOp ? 'Edit Operation' : 'New Operation'}}</h3>
+      <button class="btn btn-ghost btn-icon-only" (click)="showModal=false">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">Title *</label>
+          <input class="form-control" [(ngModel)]="form.title" placeholder="Operation title">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Type *</label>
+          <select class="form-control" [(ngModel)]="form.type_id">
+            <option *ngFor="let t of opTypes" [value]="t.id">{{t.name}}</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Priority</label>
+          <select class="form-control" [(ngModel)]="form.priority">
+            <option value="LOW">Low</option>
+            <option value="MEDIUM">Medium</option>
+            <option value="HIGH">High</option>
+            <option value="CRITICAL">Critical</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Status</label>
+          <select class="form-control" [(ngModel)]="form.status">
+            <option value="PLANNED">Planned</option>
+            <option value="IN_PROGRESS">In Progress</option>
+            <option value="COMPLETED">Completed</option>
+            <option value="CANCELLED">Cancelled</option>
+            <option value="ON_HOLD">On Hold</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Location</label>
+          <input class="form-control" [(ngModel)]="form.location" placeholder="e.g. Server Room A">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Start Date *</label>
+          <input type="datetime-local" class="form-control" [(ngModel)]="form.start_date">
+        </div>
+        <div class="form-group">
+          <label class="form-label">End Date</label>
+          <input type="datetime-local" class="form-control" [(ngModel)]="form.end_date">
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">Description</label>
+          <textarea class="form-control" [(ngModel)]="form.description" placeholder="Describe this operation..."></textarea>
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">Notes</label>
+          <textarea class="form-control" [(ngModel)]="form.notes" style="min-height:80px" placeholder="Additional notes..."></textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" (click)="showModal=false">Cancel</button>
+      <button class="btn btn-primary" (click)="saveOperation()" [disabled]="saving">
+        <div class="spinner" *ngIf="saving" style="width:16px;height:16px;border-width:2px;border-top-color:#fff"></div>
+        {{saving ? 'Saving...' : (editingOp ? 'Update' : 'Create')}}
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Confirm -->
+<!-- <div class="modal-overlay" *ngIf="showDeleteConfirm" (click)="showDeleteConfirm=false">
+  <div class="modal" style="max-width:400px" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h3>Delete Operation</h3>
+      <button class="btn btn-ghost btn-icon-only" (click)="showDeleteConfirm=false"><span class="btn-icon">close</span></button>
+    </div>
+    <div class="modal-body">
+      <p>Are you sure you want to delete <strong>"{{deletingOp?.title}}"</strong>? This action cannot be undone.</p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" (click)="showDeleteConfirm=false">Cancel</button>
+      <button class="btn btn-danger" (click)="confirmDelete()">Delete</button>
+    </div>
+  </div>
+</div> -->

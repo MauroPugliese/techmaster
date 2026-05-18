@@ -1,0 +1,175 @@
+<!-- ==========================================================================
+     operations-analytics.component.html — Operations Analytics Dashboard
+     ========================================================================== -->
+
+<div class="operations-analytics-page fade-in">
+
+  <!-- ── Header ───────────────────────────────────────────────────────────── -->
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h2 style="margin-bottom:4px">Operations Analytics</h2>
+      <p class="text-muted text-sm">Comprehensive insights into operation performance and trends</p>
+    </div>
+    <div class="flex gap-3">
+      <button class="btn btn-secondary" (click)="exportReport()">
+        <span class="btn-icon">download</span> Export Report
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Controls ─────────────────────────────────────────────────────────── -->
+  <div class="controls-section mb-6">
+    <div class="flex items-center gap-4">
+      <div class="control-group">
+        <label class="control-label">Time Period</label>
+        <select
+          class="form-select"
+          [(ngModel)]="selectedPeriod"
+          (change)="onPeriodChange()">
+          <option *ngFor="let option of periodOptions" [value]="option.value">
+            {{ option.label }}
+          </option>
+        </select>
+      </div>
+
+      <div class="control-group" *ngIf="showCustomRange">
+        <mat-form-field appearance="fill" style="width:100%">
+          <mat-label>From Date</mat-label>
+          <input matInput [matDatepicker]="fromPicker" [(ngModel)]="customFromDate">
+          <mat-datepicker-toggle matSuffix [for]="fromPicker"></mat-datepicker-toggle>
+          <mat-datepicker #fromPicker></mat-datepicker>
+        </mat-form-field>
+      </div>
+
+      <div class="control-group" *ngIf="showCustomRange">
+        <mat-form-field appearance="fill" style="width:100%">
+          <mat-label>To Date</mat-label>
+          <input matInput [matDatepicker]="toPicker" [(ngModel)]="customToDate">
+          <mat-datepicker-toggle matSuffix [for]="toPicker"></mat-datepicker-toggle>
+          <mat-datepicker #toPicker></mat-datepicker>
+        </mat-form-field>
+      </div>
+
+      <div class="control-group" *ngIf="showCustomRange">
+        <button
+          class="btn btn-primary"
+          (click)="onCustomRangeApply()"
+          [disabled]="!customFromDate || !customToDate">
+          Apply Range
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Loading State ────────────────────────────────────────────────────── -->
+  <div *ngIf="loading" class="loading-state">
+    <div class="loading-spinner"></div>
+    <p>Loading operations data...</p>
+  </div>
+
+  <!-- ── Metrics Cards ────────────────────────────────────────────────────── -->
+  <div *ngIf="!loading" class="metrics-grid mb-6">
+
+    <div class="metric-card">
+      <div class="metric-icon">analytics</div>
+      <div class="metric-content">
+        <div class="metric-value">{{ metrics.totalOperations || 0 }}</div>
+        <div class="metric-label">Total Operations</div>
+      </div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-icon">schedule</div>
+      <div class="metric-content">
+        <div class="metric-value">{{ metrics.totalHours || 0 }}h {{ metrics.remainingMinutes || 0 }}m</div>
+        <div class="metric-label">Total Time Spent</div>
+      </div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-icon">timer</div>
+      <div class="metric-content">
+        <div class="metric-value">{{ (metrics.avgDuration || 0) | number:'1.0-0' }} min</div>
+        <div class="metric-label">Average Duration</div>
+      </div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-icon">check_circle</div>
+      <div class="metric-content">
+        <div class="metric-value">{{ metrics.completionRate || 0 }}%</div>
+        <div class="metric-label">Completion Rate</div>
+      </div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-icon">trending_up</div>
+      <div class="metric-content">
+        <div class="metric-value">{{ (metrics.maxDuration || 0) | number:'1.0-0' }} min</div>
+        <div class="metric-label">Longest Operation</div>
+      </div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-icon">speed</div>
+      <div class="metric-content">
+        <div class="metric-value">{{ (metrics.minDuration || 0) | number:'1.0-0' }} min</div>
+        <div class="metric-label">Shortest Operation</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Insights Cards ───────────────────────────────────────────────────── -->
+  <div *ngIf="!loading" class="insights-grid mb-6">
+
+    <div class="insight-card">
+      <h4>Most Active Type</h4>
+      <p class="insight-value">{{ insights.mostActiveType || 'N/A' }}</p>
+    </div>
+
+    <div class="insight-card">
+      <h4>Peak Day</h4>
+      <p class="insight-value">{{ insights.peakDay || 'N/A' }}</p>
+    </div>
+
+    <div class="insight-card">
+      <h4>Peak Hour</h4>
+      <p class="insight-value">{{ insights.peakHour || 'N/A' }}:00</p>
+    </div>
+
+  </div>
+
+  <!-- ── Charts Section ───────────────────────────────────────────────────── -->
+  <div *ngIf="!loading" class="charts-grid">
+
+    <!-- Operations Trend -->
+    <div class="chart-container">
+      <div class="card-header">
+        <h3>Operations Trend</h3>
+        <p>Daily operations count and average duration</p>
+      </div>
+      <canvas id="trendChart" height="300"></canvas>
+    </div>
+
+    <!-- Time Distribution -->
+    <div class="chart-container">
+      <div class="card-header">
+        <h3>Time Distribution by Type</h3>
+        <p>Total time spent per operation category</p>
+      </div>
+      <canvas id="timeDistributionChart" height="300"></canvas>
+    </div>
+
+    <!-- Status Breakdown -->
+    <div class="chart-container">
+      <div class="card-header">
+        <h3>Operation Status Breakdown</h3>
+        <p>Distribution of operation statuses</p>
+      </div>
+      <canvas id="statusBreakdownChart" height="300"></canvas>
+    </div>
+
+  </div>
+
+</div>

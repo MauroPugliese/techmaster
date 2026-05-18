@@ -1,0 +1,279 @@
+<!-- ==========================================================================
+     dashboard.component.html — TechManager Dashboard
+     ========================================================================== -->
+
+<div class="dashboard-page fade-in">
+
+  <!-- ── KPI Row ─────────────────────────────────────────────────────────── -->
+  <div class="kpi-grid">
+
+    <div class="kpi-card" style="--kpi-color: #1565C0">
+      <div class="kpi-icon-wrap">dashboard</div>
+      <div>
+        <div class="kpi-value">{{kpis?.totalOps ?? '—'}}</div>
+        <div class="kpi-label">Total Operations</div>
+      </div>
+      <div class="kpi-change positive">
+        <span style="font-family:'Material Icons Round';font-style:normal;font-size:14px">trending_up</span>
+        +12% this month
+      </div>
+    </div>
+
+    <div class="kpi-card" style="--kpi-color: #00B0FF">
+      <div class="kpi-icon-wrap">rocket_launch</div>
+      <div>
+        <div class="kpi-value">{{kpis?.activeOps ?? '—'}}</div>
+        <div class="kpi-label">Active Operations</div>
+      </div>
+      <div class="kpi-change" [class.positive]="!kpis?.activeOps" [class.negative]="kpis?.activeOps">
+        In progress now
+      </div>
+    </div>
+
+    <div class="kpi-card" style="--kpi-color: #F59E0B">
+      <div class="kpi-icon-wrap">build_circle</div>
+      <div>
+        <div class="kpi-value">{{kpis?.pendingMaint ?? '—'}}</div>
+        <div class="kpi-label">Pending Maintenance</div>
+      </div>
+      <div class="kpi-change" [class.negative]="(kpis?.pendingMaint ?? 0) > 0">
+        Requires attention
+      </div>
+    </div>
+
+    <div class="kpi-card" style="--kpi-color: #EF4444">
+      <div class="kpi-icon-wrap">inventory_2</div>
+      <div>
+        <div class="kpi-value">{{kpis?.lowStockCount ?? '—'}}</div>
+        <div class="kpi-label">Low Stock Alerts</div>
+      </div>
+      <div class="kpi-change negative" *ngIf="(kpis?.lowStockCount ?? 0) > 0">
+        <span style="font-family:'Material Icons Round';font-style:normal;font-size:14px">warning</span>
+        Below reorder point
+      </div>
+    </div>
+
+    <div class="kpi-card" style="--kpi-color: #8B5CF6">
+      <div class="kpi-icon-wrap">task_alt</div>
+      <div>
+        <div class="kpi-value">{{kpis?.openTasks ?? '—'}}</div>
+        <div class="kpi-label">Open Tasks</div>
+      </div>
+      <div class="kpi-change">Across all intervals</div>
+    </div>
+
+    <div class="kpi-card" style="--kpi-color: #10B981">
+      <div class="kpi-icon-wrap">group</div>
+      <div>
+        <div class="kpi-value">{{kpis?.activeUsers ?? '—'}}</div>
+        <div class="kpi-label">Active Team Members</div>
+      </div>
+      <div class="kpi-change positive">Online today</div>
+    </div>
+
+  </div>
+
+  <!-- ── Charts Row ──────────────────────────────────────────────────────── -->
+  <div class="grid-2 mb-6">
+
+    <!-- Operations Trend -->
+    <div class="chart-container">
+      <div class="card-header">
+        <div>
+          <h3>Operations Trend</h3>
+          <p>{{dateFilterLabel}}</p>
+        </div>
+        <button class="btn btn-secondary btn-sm" routerLink="/analytics">
+          <span class="btn-icon">open_in_new</span> Full Report
+        </button>
+      </div>
+      <canvas id="opsTrendChart" height="260"></canvas>
+    </div>
+
+    <!-- Task Distribution -->
+    <div class="chart-container">
+      <div class="card-header">
+        <div>
+          <h3>Task Distribution</h3>
+          <p>By interval type</p>
+        </div>
+      </div>
+      <canvas id="taskDistChart" height="260"></canvas>
+    </div>
+
+  </div>
+
+  <!-- ── Activity + Quick Actions ─────────────────────────────────────────── -->
+  <div style="display:grid;grid-template-columns:1fr 340px;gap:20px" class="mb-6">
+
+    <!-- Recent Operations -->
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h3>Recent Operations</h3>
+          <p>Latest sorties and activities</p>
+        </div>
+        <button class="btn btn-secondary btn-sm" routerLink="/operations">View all</button>
+      </div>
+
+      <div *ngIf="loading" class="flex items-center gap-2" style="padding:20px 0">
+        <div class="spinner" style="width:20px;height:20px"></div>
+        <span class="text-muted text-sm">Loading...</span>
+      </div>
+
+      <div class="timeline" *ngIf="!loading">
+        <div class="timeline-item" *ngFor="let op of recentOps">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="font-bold text-sm">{{op.title}}</div>
+              <div class="text-sm text-muted" style="margin-top:2px">
+                <span [style.color]="op.type?.color">{{op.type?.name}}</span>
+                · {{op.location || 'No location'}}
+                · {{op.start_date | date:'MMM d, y'}}
+              </div>
+            </div>
+            <span class="badge" [ngClass]="getStatusBadge(op.status)">{{op.status | titlecase}}</span>
+          </div>
+        </div>
+        <div class="empty-state" *ngIf="!recentOps?.length" style="padding:30px">
+          <span class="empty-icon" style="font-size:40px">event_note</span>
+          <p>No recent operations</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Actions + Upcoming -->
+    <div style="display:flex;flex-direction:column;gap:16px">
+
+      <!-- Quick Actions -->
+      <div class="card">
+        <div class="card-header"><h3>Quick Actions</h3></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <button class="btn btn-secondary" style="justify-content:flex-start;gap:10px" routerLink="/operations" [queryParams]="{action:'new'}">
+            <span class="btn-icon" style="color:var(--primary)">rocket_launch</span>
+            New Sortie
+          </button>
+          <button class="btn btn-secondary" style="justify-content:flex-start;gap:10px" routerLink="/maintenance" [queryParams]="{action:'new'}">
+            <span class="btn-icon" style="color:#F59E0B">build_circle</span>
+            Log Maint.
+          </button>
+          <button class="btn btn-secondary" style="justify-content:flex-start;gap:10px" routerLink="/tasks" [queryParams]="{action:'new'}">
+            <span class="btn-icon" style="color:#8B5CF6">task_alt</span>
+            New Task
+          </button>
+          <button class="btn btn-secondary" style="justify-content:flex-start;gap:10px" routerLink="/warehouse" [queryParams]="{action:'movement'}">
+            <span class="btn-icon" style="color:#10B981">swap_horiz</span>
+            Stock Move
+          </button>
+          <button class="btn btn-secondary" style="justify-content:flex-start;gap:10px" routerLink="/wiki" [queryParams]="{action:'new'}">
+            <span class="btn-icon" style="color:#0288D1">menu_book</span>
+            Write Doc
+          </button>
+          <button class="btn btn-secondary" style="justify-content:flex-start;gap:10px" routerLink="/shifts" [queryParams]="{action:'new'}">
+            <span class="btn-icon" style="color:#E65100">schedule</span>
+            Plan Shift
+          </button>
+        </div>
+      </div>
+
+      <!-- Upcoming Maintenance -->
+      <div class="card" style="flex:1">
+        <div class="card-header">
+          <h3>Upcoming Maintenance</h3>
+          <button class="btn btn-ghost btn-sm" routerLink="/maintenance">All</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div *ngFor="let m of recentMaintenance" class="flex items-center gap-3"
+               style="padding:10px;background:var(--blue-50);border-radius:var(--radius-md)">
+            <div style="width:36px;height:36px;border-radius:var(--radius-sm);background:var(--blue-100);
+                        display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px"
+                 [ngStyle]="{'color': getPriorityColor(m.priority)}">
+              <span style="font-family:'Material Icons Round';font-style:normal">build</span>
+            </div>
+            <div style="flex:1;min-width:0">
+              <div class="font-bold text-sm truncate">{{m.title}}</div>
+              <div class="text-sm text-muted">{{m.scheduled_date | date:'MMM d'}}</div>
+            </div>
+            <span class="badge" [ngClass]="getPriorityBadge(m.priority)">{{m.priority | titlecase}}</span>
+          </div>
+          <div class="empty-state" *ngIf="!recentMaintenance?.length" style="padding:20px">
+            <p>No upcoming maintenance</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- ── Inventory Alerts ─────────────────────────────────────────────────── -->
+  <div class="card mb-6" *ngIf="(kpis?.lowStockCount ?? 0) > 0">
+    <div class="card-header">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-family:'Material Icons Round';font-style:normal;font-size:22px;color:#EF4444">warning</span>
+        <div>
+          <h3 style="color:#EF4444">Low Stock Alerts ({{kpis?.lowStockCount}} items)</h3>
+          <p>These items are below their reorder point</p>
+        </div>
+      </div>
+      <button class="btn btn-danger btn-sm" routerLink="/warehouse" [queryParams]="{filter:'low_stock'}">
+        View Inventory
+      </button>
+    </div>
+    <div class="table-container" style="border:none;box-shadow:none">
+      <table class="data-table">
+        <thead><tr>
+          <th>Item</th><th>SKU</th><th>Current Stock</th><th>Reorder Point</th><th>Status</th>
+        </tr></thead>
+        <tbody>
+          <tr *ngFor="let item of lowStockItems">
+            <td class="font-bold">{{item.name}}</td>
+            <td><code>{{item.sku}}</code></td>
+            <td>
+              <span style="color:#EF4444;font-weight:700">{{item.quantity}}</span>
+              <span class="text-muted"> {{item.unit}}</span>
+            </td>
+            <td>{{item.reorder_point}} {{item.unit}}</td>
+            <td>
+              <div class="progress-bar" style="width:100px">
+                <div class="progress-fill"
+                     [style.width.%]="item.reorder_point ? (item.quantity/item.reorder_point)*100 : 0"
+                     style="background:#EF4444">
+                </div>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Shift Coverage Today ─────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <h3>Today's Shift Coverage</h3>
+        <p>{{today | date:'EEEE, MMMM d, y'}}</p>
+      </div>
+      <button class="btn btn-secondary btn-sm" routerLink="/shifts">Manage Shifts</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">
+      <div *ngFor="let shift of todayShifts"
+           style="background:var(--blue-50);border:1px solid var(--border);
+                  border-radius:var(--radius-md);padding:14px;
+                  border-left:4px solid {{shift.shiftType?.color ?? '#1565C0'}}">
+        <div class="font-bold text-sm">{{shift.shiftType?.name}} Shift</div>
+        <div class="text-muted text-sm">{{shift.shiftType?.start_time}} – {{shift.shiftType?.end_time}}</div>
+        <div style="margin-top:8px;font-size:0.8rem">
+          <span style="font-family:'Material Icons Round';font-style:normal;font-size:16px;vertical-align:middle">person</span>
+          {{shift.employee?.first_name}} {{shift.employee?.last_name}}
+        </div>
+        <span class="badge" style="margin-top:8px" [ngClass]="getShiftStatusBadge(shift.status)">{{shift.status}}</span>
+      </div>
+      <div class="empty-state" *ngIf="!todayShifts?.length" style="padding:30px">
+        <p>No shifts scheduled for today</p>
+      </div>
+    </div>
+  </div>
+
+</div>

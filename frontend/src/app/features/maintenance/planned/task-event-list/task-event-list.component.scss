@@ -1,0 +1,203 @@
+/* ─── Event Card ──────────────────────────────────────────────────────────── */
+.event-card {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  padding: 20px;
+  min-height: 380px;
+}
+
+/* Header */
+.event-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.event-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.view-toggle {
+  display: flex;
+  gap: 4px;
+}
+
+.view-btn {
+  padding: 4px 14px;
+  border: none;
+  border-radius: 16px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  cursor: pointer;
+  color: #64748b;
+  background: #f1f5f9;
+  transition: all 0.15s;
+
+  &.active {
+    color: #fff;
+    background: var(--btn-color, #2563eb);
+  }
+
+  &:hover:not(.active) { background: #e2e8f0; }
+}
+
+.selected-date-label {
+  font-size: 0.8125rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+/* Sub-header */
+.event-subheader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.tasks-event-label {
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: #334155;
+}
+
+.optional-note {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+.action-btns {
+  display: flex;
+  gap: 8px;
+}
+
+.outline-btn {
+  padding: 6px 18px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.15s;
+
+  &:hover { border-color: #94a3b8; background: #f8fafc; }
+}
+
+/* Event list */
+.event-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.event-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid #f1f5f9;
+
+  &:last-child { border-bottom: none; }
+}
+
+.event-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.event-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.event-system {
+  font-weight: 700;
+  font-size: 0.8125rem;
+  color: #1e293b;
+}
+
+.optional-tag {
+  font-weight: 400;
+  color: #64748b;
+}
+
+.event-task {
+  font-size: 0.8125rem;
+  color: #475569;
+  margin-top: 2px;
+}
+
+.event-time {
+  font-size: 0.6875rem;
+  color: #94a3b8;
+  margin-top: 4px;
+}
+
+/* Status */
+.event-status-col {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 3px 14px;
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  white-space: nowrap;
+
+  &.todo {
+    background: #dbeafe;
+    color: #2563eb;
+  }
+
+  &.done {
+    background: #d1fae5;
+    color: #059669;
+  }
+}
+
+.icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: inline-flex;
+  flex-shrink: 0;
+
+  &:hover { background: #eef2ff; }
+}
+
+/* Empty */
+.empty-events {
+  text-align: center;
+  padding: 40px 0;
+  color: #94a3b8;
+  font-style: italic;
+}

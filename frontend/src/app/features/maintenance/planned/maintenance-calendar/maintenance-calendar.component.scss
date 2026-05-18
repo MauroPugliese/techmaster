@@ -1,0 +1,131 @@
+/* ─── Calendar Card ───────────────────────────────────────────────────────── */
+.calendar-card {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  padding: 20px;
+}
+
+/* Header */
+.cal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.cal-month-label {
+  font-weight: 700;
+  font-size: 0.9375rem;
+  color: #1e293b;
+}
+
+.cal-nav {
+  display: flex;
+  gap: 4px;
+}
+
+.nav-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: #f1f5f9;
+  border-radius: 50%;
+  font-size: 1rem;
+  cursor: pointer;
+  color: #475569;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &:hover { background: #e2e8f0; }
+}
+
+/* Grid */
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+}
+
+.weekdays {
+  margin-bottom: 8px;
+}
+
+.cal-wd {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: #94a3b8;
+  padding: 4px 0;
+}
+
+.month-name-row {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #94a3b8;
+  padding: 8px 0 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* Day cells */
+.week-row {
+  margin-bottom: 4px;
+}
+
+.cal-day {
+  position: relative;
+  padding: 6px 2px;
+  min-height: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background 0.1s;
+
+  &:hover:not(.empty) { background: #f8fafc; }
+
+  &.empty { cursor: default; }
+
+  &.selected {
+    .day-number {
+      width: 32px;
+      height: 32px;
+      border: 2px solid #cbd5e1;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+  }
+}
+
+.day-number {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #334155;
+  line-height: 1;
+}
+
+/* Indicators */
+.indicator-row {
+  display: flex;
+  gap: 3px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.indicator-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 0.5625rem;
+  font-weight: 700;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}

@@ -1,0 +1,71 @@
+<div class="event-card">
+
+  <!-- Header -->
+  <div class="event-header">
+    <h2 class="event-title">Planned Maintenance Task Event</h2>
+    <div class="header-right">
+      <div class="view-toggle">
+        <button
+          *ngFor="let m of viewModes"
+          class="view-btn"
+          [class.active]="viewMode === m"
+          [style.--btn-color]="viewModeColor(m)"
+          (click)="setViewMode(m)">
+          {{ m }}
+        </button>
+      </div>
+      <span class="selected-date-label">{{ selectedDate }}</span>
+    </div>
+  </div>
+
+  <!-- Sub-header -->
+  <div class="event-subheader">
+    <div>
+      <div class="tasks-event-label">Tasks Event</div>
+      <div class="optional-note">Optional tasks are not included in the calendar.</div>
+    </div>
+    <div class="action-btns">
+      <button class="outline-btn">CHECKLIST +</button>
+      <button class="outline-btn">REPORT +</button>
+    </div>
+  </div>
+
+  <!-- Event list -->
+  <div class="event-list">
+    <div *ngFor="let t of tasks" class="event-item">
+      <div class="event-icon" [style.background]="iconColor(t)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff">
+          <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+        </svg>
+      </div>
+
+      <div class="event-body">
+        <div class="event-system">
+          {{ t.subsystem }}
+          <span *ngIf="t.optional" class="optional-tag"> - Optional</span>
+        </div>
+        <div class="event-task">{{ t.task }}</div>
+        <div class="event-time">
+          {{ formatDateLine(t.operationDateStart) }} &gt; {{ formatDateLine(t.operationDateEnd) }}
+        </div>
+      </div>
+
+      <div class="event-status-col">
+        <span class="status-badge" [class.done]="t.status === 'DONE'" [class.todo]="t.status === 'TODO'">
+          {{ t.status === 'DONE' ? 'Done' : 'To Do' }}
+        </span>
+      </div>
+
+      <button class="icon-btn" (click)="editTask.emit(t)" title="Edit">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="#5b6abf">
+          <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+        </svg>
+      </button>
+    </div>
+
+    <div *ngIf="tasks.length === 0" class="empty-events">
+      No tasks for this date.
+    </div>
+  </div>
+
+</div>

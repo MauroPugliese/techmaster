@@ -1,0 +1,18 @@
+<!-- ==========================================================================
+     MODIFICA da apportare a warehouse-item-modal.html (o all'HTML del modal
+     che hai già creato nella sessione precedente).
+
+     Aggiungere questo form-group come PRIMO campo del modal body,
+     prima del row SKU/Name.
+     ========================================================================== -->
+
+<!-- Category (required for DB) -->
+<div class="form-group">
+  <label class="form-label">Category *</label>
+  <select class="form-control" [(ngModel)]="itemForm.category_id">
+    <option [ngValue]="null">— Select category —</option>
+    <option *ngFor="let c of categories" [ngValue]="c.id">{{c.name}}</option>
+  </select>
+</div>
+
+<!-- Poi seguono i form-row già esistenti (SKU + Name, Unit + Qty, ecc.) -->

@@ -1,0 +1,257 @@
+<!-- ==========================================================================
+     wiki.component.html — Internal Knowledge Base
+     ========================================================================== -->
+
+<div class="wiki-page fade-in" style="display:grid;grid-template-columns:260px 1fr;gap:24px;align-items:start">
+
+  <!-- ── Left: Category Tree ─────────────────────────────────────────────── -->
+  <div class="card" style="position:sticky;top:calc(var(--header-height) + 24px)">
+    <div class="card-header" style="margin-bottom:16px">
+      <h3>Categories</h3>
+      <button class="btn btn-ghost btn-icon-only btn-sm" (click)="clearCategory()" title="All articles">
+        <span class="btn-icon" style="font-size:18px">apps</span>
+      </button>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:2px">
+      <button *ngFor="let cat of categories"
+              class="nav-item"
+              style="background:var(--surface);color:var(--blue-900);padding:9px 12px;border-radius:var(--radius-md)"
+              [style.background]="selectedCategory===cat.id ? 'var(--blue-100)' : ''"
+              [style.color]="selectedCategory===cat.id ? 'var(--primary)' : ''"
+              [style.font-weight]="selectedCategory===cat.id ? '700' : '500'"
+              (click)="filterByCategory(cat.id)">
+        <span style="font-family:'Material Icons Round';font-style:normal;font-size:18px">{{cat.icon || 'folder'}}</span>
+        <span class="nav-label">{{cat.name}}</span>
+        <span *ngIf="cat.children?.length"
+              style="margin-left:auto;background:var(--blue-100);color:var(--primary);
+                     border-radius:8px;padding:1px 6px;font-size:0.65rem;font-weight:700">
+          {{cat.children!.length}}
+        </span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Right: Article List / Detail ────────────────────────────────────── -->
+  <div>
+
+    <!-- Toolbar -->
+    <div class="flex items-center justify-between mb-6">
+      <div class="search-bar" style="flex:1;max-width:360px">
+        <span class="search-icon">search</span>
+        <input placeholder="Search articles..." [(ngModel)]="searchQuery" (input)="onSearch()">
+      </div>
+      <div class="flex gap-2">
+        <select class="form-control" style="width:150px" [(ngModel)]="statusFilter" (change)="loadArticles()">
+          <option value="PUBLISHED">Published</option>
+          <option value="DRAFT">Drafts</option>
+          <option value="REVIEW">In Review</option>
+          <option value="ARCHIVED">Archived</option>
+        </select>
+        <button class="btn btn-secondary btn-sm" type="button" (click)="exportArticlesCsv()">
+          <span class="btn-icon">file_download</span> Export CSV
+        </button>
+        <button class="btn btn-primary" (click)="openEditor()">
+          <span class="btn-icon">add</span> New Article
+        </button>
+      </div>
+    </div>
+
+    <!-- Article List View -->
+    <div *ngIf="!viewingArticle">
+
+      <!-- Pinned Articles -->
+      <div *ngIf="pinnedArticles.length" class="mb-6">
+        <div class="flex items-center gap-2 mb-3">
+          <span style="font-family:'Material Icons Round';font-style:normal;font-size:18px;color:#F59E0B">push_pin</span>
+          <span style="font-weight:700;font-size:0.85rem;color:#6B7280;text-transform:uppercase;letter-spacing:0.06em">Pinned</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">
+          <div *ngFor="let a of pinnedArticles"
+               class="card" style="cursor:pointer;border-left:4px solid var(--primary);padding:16px"
+               (click)="viewArticle(a)">
+            <div style="font-weight:700;margin-bottom:4px">{{a.title}}</div>
+            <div class="text-sm text-muted truncate">{{a.excerpt || 'No excerpt'}}</div>
+            <div class="flex items-center gap-4 mt-3 text-sm text-muted">
+              <span>
+                <span style="font-family:'Material Icons Round';font-style:normal;font-size:14px;vertical-align:middle">visibility</span>
+                {{a.view_count}}
+              </span>
+              <span>{{a.updated_at | date:'MMM d, y'}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- All Articles -->
+      <div class="table-container">
+        <div style="padding:14px 20px;border-bottom:1px solid var(--border)">
+          <span class="text-sm text-muted">{{total}} articles</span>
+        </div>
+        <table class="data-table">
+          <thead><tr>
+            <th>Title</th><th>Category</th><th>Status</th><th>Author</th>
+            <th>Views</th><th>Last Updated</th><th>Actions</th>
+          </tr></thead>
+          <tbody>
+            <tr *ngFor="let a of articles" style="cursor:pointer" (click)="viewArticle(a)">
+              <td>
+                <div class="flex items-center gap-2">
+                  <span *ngIf="a.is_pinned"
+                        style="font-family:'Material Icons Round';font-style:normal;font-size:14px;color:#F59E0B">push_pin</span>
+                  <div>
+                    <div class="font-bold">{{a.title}}</div>
+                    <div class="text-sm text-muted">v{{a.version}}</div>
+                  </div>
+                </div>
+              </td>
+              <td class="text-sm">{{a.category?.name || '—'}}</td>
+              <td><span class="badge" [ngClass]="getArticleStatusBadge(a.status)">{{a.status}}</span></td>
+              <td class="text-sm">{{a.author?.first_name}} {{a.author?.last_name}}</td>
+              <td>
+                <div class="flex items-center gap-1 text-sm">
+                  <span style="font-family:'Material Icons Round';font-style:normal;font-size:14px;color:#9CA3AF">visibility</span>
+                  {{a.view_count}}
+                </div>
+              </td>
+              <td class="text-sm text-muted">{{a.updated_at | date:'MMM d, y'}}</td>
+              <td (click)="$event.stopPropagation()">
+                <div class="flex gap-1">
+                  <button class="btn btn-ghost btn-icon-only btn-sm" (click)="editArticle(a)">
+                    <span class="btn-icon" style="font-size:17px">edit</span>
+                  </button>
+                  <button class="btn btn-ghost btn-icon-only btn-sm" (click)="togglePin(a)">
+                    <span class="btn-icon" style="font-size:17px;color:#F59E0B">push_pin</span>
+                  </button>
+                  <button class="btn btn-ghost btn-icon-only btn-sm" (click)="deleteArticle(a)">
+                    <span class="btn-icon" style="font-size:17px;color:#EF4444">delete</span>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="empty-state" *ngIf="!articles.length && !loading">
+          <span class="empty-icon">menu_book</span>
+          <h3>No articles found</h3>
+          <p>Start building your knowledge base</p>
+          <button class="btn btn-primary" (click)="openEditor()">Write First Article</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Article Detail View -->
+    <div *ngIf="viewingArticle" class="card" style="max-width:800px">
+      <div class="flex items-center justify-between mb-6">
+        <button class="btn btn-ghost" (click)="viewingArticle=null">
+          <span class="btn-icon">arrow_back</span> Back to list
+        </button>
+        <div class="flex gap-2">
+          <button class="btn btn-secondary btn-sm" (click)="editArticle(viewingArticle!)">
+            <span class="btn-icon">edit</span> Edit
+          </button>
+          <span class="badge" [ngClass]="getArticleStatusBadge(viewingArticle!.status)">{{viewingArticle!.status}}</span>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap-8px;margin-bottom:8px">
+        <span *ngIf="viewingArticle!.category"
+              style="background:var(--blue-100);color:var(--primary);border-radius:4px;
+                     padding:2px 10px;font-size:0.75rem;font-weight:700">
+          {{viewingArticle!.category?.name}}
+        </span>
+        <span *ngFor="let tag of (viewingArticle!.tags || [])"
+              style="background:#F3F4F6;color:#6B7280;border-radius:4px;padding:2px 8px;font-size:0.75rem;margin-left:6px">
+          #{{tag}}
+        </span>
+      </div>
+
+      <h1 style="font-size:1.75rem;margin-bottom:12px">{{viewingArticle!.title}}</h1>
+
+      <div class="flex items-center gap-4 text-sm text-muted mb-6"
+           style="padding-bottom:16px;border-bottom:1px solid var(--border)">
+        <span>By {{viewingArticle!.author?.first_name}} {{viewingArticle!.author?.last_name}}</span>
+        <span>·</span>
+        <span>{{viewingArticle!.published_at | date:'MMMM d, y'}}</span>
+        <span>·</span>
+        <span>v{{viewingArticle!.version}}</span>
+        <span>·</span>
+        <span>
+          <span style="font-family:'Material Icons Round';font-style:normal;font-size:14px;vertical-align:middle">visibility</span>
+          {{viewingArticle!.view_count}} views
+        </span>
+      </div>
+
+      <div class="wiki-content" style="line-height:1.8;color:var(--blue-900)"
+           [innerHTML]="renderContent(viewingArticle!.content)">
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── Article Editor Modal ──────────────────────────────────────────────────── -->
+<div class="modal-overlay" *ngIf="showEditor" (click)="closeEditor($event)">
+  <div class="modal" style="max-width:780px;max-height:92vh">
+    <div class="modal-header">
+      <h3>{{editingArticle ? 'Edit Article' : 'New Article'}}</h3>
+      <div class="flex gap-2">
+        <select class="form-control" style="width:140px" [(ngModel)]="articleForm.status">
+          <option value="DRAFT">Draft</option>
+          <option value="REVIEW">Send for Review</option>
+          <option value="PUBLISHED">Publish</option>
+        </select>
+        <button class="btn btn-ghost btn-icon-only" (click)="showEditor=false">
+          <span class="btn-icon">close</span>
+        </button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Title *</label>
+        <input class="form-control" [(ngModel)]="articleForm.title" placeholder="Article title" style="font-size:1.1rem;font-weight:600">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Category</label>
+          <select class="form-control" [(ngModel)]="articleForm.category_id">
+            <option [ngValue]="null">— Uncategorized —</option>
+            <option *ngFor="let c of categories" [value]="c.id">{{c.name}}</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Tags (comma separated)</label>
+          <input class="form-control" [(ngModel)]="articleTagsInput" placeholder="e.g. sop, network, security">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Excerpt</label>
+        <input class="form-control" [(ngModel)]="articleForm.excerpt" placeholder="Brief summary shown in article list">
+      </div>
+      <div class="form-group" style="display:grid;grid-template-columns:1fr 120px;gap:12px;align-items:start">
+        <div>
+          <label class="form-label">Content (Markdown supported) *</label>
+          <textarea class="form-control" [(ngModel)]="articleForm.content"
+                    style="min-height:300px;font-family:var(--font-mono);font-size:0.875rem"
+                    placeholder="# Heading&#10;&#10;Write your article content here..."></textarea>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:12px;margin-top:24px">
+          <button class="btn btn-secondary btn-sm" type="button" (click)="togglePreview()">
+            <span class="btn-icon">preview</span>
+            {{ showPreview ? 'Hide Preview' : 'Show Preview' }}
+          </button>
+          <div *ngIf="showPreview" class="card" style="background:var(--gray-50);padding:12px;min-height:300px;overflow:auto">
+            <div [innerHTML]="renderContent(articleForm.content || '')"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" (click)="showEditor=false">Cancel</button>
+      <button class="btn btn-primary" (click)="saveArticle()" [disabled]="saving">
+        <div class="spinner" *ngIf="saving" style="width:16px;height:16px;border-width:2px;border-top-color:#fff"></div>
+        {{saving ? 'Saving…' : (editingArticle ? 'Update' : 'Publish')}}
+      </button>
+    </div>
+  </div>
+</div>

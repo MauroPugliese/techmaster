@@ -1,0 +1,52 @@
+# =============================================================================
+# frontend/.dockerignore
+# Excludes files that must NOT be sent to the Docker build context.
+# Smaller context = faster builds and no secret leakage.
+# =============================================================================
+
+# Node dependencies (re-installed inside the container)
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Angular build output (built fresh inside the container)
+dist/
+.angular/
+.angular/cache/
+
+# Test & coverage artifacts
+coverage/
+e2e/
+*.spec.ts
+karma.conf.js
+protractor.conf.js
+
+# Editor & OS metadata
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+.DS_Store
+Thumbs.db
+
+# Git history
+.git/
+.gitignore
+.gitattributes
+
+# CI/CD configs (not needed in the image)
+.github/
+.gitlab-ci.yml
+.travis.yml
+Jenkinsfile
+
+# Documentation
+*.md
+LICENSE
+
+# Env files — never bake secrets into the image
+.env
+.env.*
+!.env.example

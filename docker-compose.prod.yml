@@ -1,0 +1,48 @@
+# =============================================================================
+# docker-compose.prod.yml
+# Use explicitly:  docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Disables the automatic override file and adds production hardening.
+# =============================================================================
+
+version: "3.9"
+
+services:
+
+  db:
+    # Read replicas or managed RDS? Replace with an external network and
+    # remove the db service entirely for cloud deployments.
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus:   "0.75"
+
+  backend:
+    deploy:
+      replicas: 2            # Scale horizontally behind a load balancer
+      resources:
+        limits:
+          memory: 256M
+          cpus:   "0.50"
+      restart_policy:
+        condition: on-failure
+        delay:     5s
+        max_attempts: 3
+    # Read-only filesystem in production (logs go to Docker logging driver)
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/logs
+
+  frontend:
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 64M
+          cpus:   "0.25"
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+      - /var/run

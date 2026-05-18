@@ -1,0 +1,211 @@
+<!-- ==========================================================================
+     planned-maintenance-dashboard.component.html
+     Same layout pattern as operations.component.html + warehouse.component.html
+     ========================================================================== -->
+
+<div class="planned-page fade-in">
+
+  <!-- ── Toolbar (same as warehouse) ──────────────────────────────────────── -->
+  <div class="flex items-center justify-between mb-6">
+    <div class="flex gap-2">
+      <div class="search-bar" style="width:260px">
+        <span class="search-icon">search</span>
+        <input placeholder="Search tasks..." [(ngModel)]="search" (input)="loadTasks()">
+      </div>
+    </div>
+    <button class="btn btn-primary" (click)="openModal()">
+      <span class="btn-icon">add</span> Add Task
+    </button>
+  </div>
+
+  <!-- ── Loading ──────────────────────────────────────────────────────────── -->
+  <div *ngIf="loading" class="flex items-center justify-between" style="padding:40px;justify-content:center">
+    <div class="spinner"></div>
+  </div>
+
+  <!-- ── Table (same structure as operations) ─────────────────────────────── -->
+  <div class="table-container" *ngIf="!loading">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+      <span class="text-sm text-muted">{{total}} planned tasks found</span>
+    </div>
+
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>System</th>
+          <th>Subsystem</th>
+          <th>Task</th>
+          <th>Operation Date</th>
+          <th>Repeat Type</th>
+          <th>Repeat #</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let t of tasks">
+          <td class="text-muted text-sm">{{t.id}}</td>
+          <td>
+            <span style="color:var(--primary);font-weight:500">{{t.system}}</span>
+          </td>
+          <td class="font-bold">{{t.subsystem}}</td>
+          <td>
+            <div class="truncate" style="max-width:260px">{{t.task}}</div>
+          </td>
+          <td class="text-sm" style="white-space:nowrap">
+            <div>{{formatDate(t.operation_date_start)}}</div>
+            <div class="text-muted">{{formatDate(t.operation_date_end)}}</div>
+          </td>
+          <td>
+            <span class="badge" [ngClass]="getRepeatBadge(t.repeat_task_type)">
+              {{t.repeat_task_type}}
+            </span>
+          </td>
+          <td class="text-sm" style="text-align:center">{{t.repeat_task_number}}</td>
+          <td>
+            <span class="badge" [ngClass]="getStatusBadge(t.status)">
+              {{t.status === 'DONE' ? 'Done' : 'To Do'}}
+            </span>
+          </td>
+          <td>
+            <div class="flex gap-1">
+              <button class="btn btn-ghost btn-icon-only btn-sm"
+                      *ngIf="t.status === 'TODO'"
+                      (click)="toggleTaskStatus(t)" title="Mark done">
+                <span class="btn-icon" style="font-size:17px;color:#10B981">check_circle</span>
+              </button>
+              <button class="btn btn-ghost btn-icon-only btn-sm" (click)="openModal(t)" title="Edit">
+                <span class="btn-icon" style="font-size:17px">edit</span>
+              </button>
+              <button class="btn btn-ghost btn-icon-only btn-sm" (click)="deleteTask(t)" title="Delete">
+                <span class="btn-icon" style="font-size:17px;color:#EF4444">delete</span>
+              </button>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Empty State -->
+    <div class="empty-state" *ngIf="!tasks.length">
+      <span class="empty-icon">event_repeat</span>
+      <h3>No planned maintenance tasks</h3>
+      <p>Create your first planned task to get started</p>
+      <button class="btn btn-primary mt-4" (click)="openModal()">
+        <span class="btn-icon">add</span> Add Task
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Bottom Row: Calendar + Event List ────────────────────────────────── -->
+  <div class="bottom-row" *ngIf="!loading">
+    <app-maintenance-calendar
+      [indicators]="indicators"
+      [selectedDate]="selectedDate"
+      (dateSelected)="onDateSelected($event)"
+      (monthChanged)="onMonthChanged($event)">
+    </app-maintenance-calendar>
+
+    <app-task-event-list
+      [tasks]="dayTasks"
+      [selectedDate]="selectedDate"
+      (editTask)="openModal($event)"
+      (toggleStatus)="toggleTaskStatus($event)">
+    </app-task-event-list>
+  </div>
+
+</div>
+
+<!-- ── Create / Edit Modal (same pattern as operations + warehouse) ──────── -->
+<div class="modal-overlay" *ngIf="showModal" (click)="closeModal($event)">
+  <div class="modal" style="max-width:620px" (click)="$event.stopPropagation()">
+
+    <div class="modal-header">
+      <h3>{{editing ? 'Edit Task' : 'New Planned Task'}}</h3>
+      <button class="btn btn-ghost btn-icon-only" (click)="showModal=false">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="form-row">
+
+        <div class="form-group">
+          <label class="form-label">System *</label>
+          <input class="form-control" [(ngModel)]="form.system" placeholder="e.g. Server Room">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Subsystem *</label>
+          <input class="form-control" [(ngModel)]="form.subsystem" placeholder="e.g. DEHUMIDIFIER">
+        </div>
+
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">Task *</label>
+          <textarea class="form-control" [(ngModel)]="form.task" style="min-height:80px"
+                    placeholder="Describe the maintenance task..."></textarea>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Start Date *</label>
+          <input type="datetime-local" class="form-control" [(ngModel)]="form.operation_date_start">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">End Date *</label>
+          <input type="datetime-local" class="form-control" [(ngModel)]="form.operation_date_end">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Repeat Type *</label>
+          <select class="form-control" [(ngModel)]="form.repeat_task_type">
+            <option value="DAY">Day</option>
+            <option value="WEEK">Week</option>
+            <option value="MONTH">Month</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Repeat Number *</label>
+          <input type="number" class="form-control" [(ngModel)]="form.repeat_task_number" min="1">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Reference</label>
+          <input class="form-control" [(ngModel)]="form.reference" placeholder="Optional reference">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Report Template</label>
+          <input class="form-control" [(ngModel)]="form.report_template" placeholder="Optional template">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Status</label>
+          <select class="form-control" [(ngModel)]="form.status">
+            <option value="TODO">To Do</option>
+            <option value="DONE">Done</option>
+          </select>
+        </div>
+
+        <div class="form-group" style="display:flex;align-items:center;gap:8px;padding-top:24px">
+          <input type="checkbox" id="optional-check" [(ngModel)]="form.optional"
+                 style="width:18px;height:18px;accent-color:var(--primary)">
+          <label for="optional-check" class="form-label" style="margin:0">Optional task (not shown in calendar)</label>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" (click)="showModal=false">Cancel</button>
+      <button class="btn btn-primary" (click)="save()" [disabled]="saving">
+        <div class="spinner" *ngIf="saving"
+             style="width:16px;height:16px;border-width:2px;border-top-color:#fff;margin-right:6px"></div>
+        {{saving ? 'Saving...' : (editing ? 'Update Task' : 'Create Task')}}
+      </button>
+    </div>
+
+  </div>
+</div>

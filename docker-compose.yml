@@ -1,0 +1,229 @@
+# =============================================================================
+# docker-compose.yml — TechManager Platform
+# Start everything:  docker-compose up --build
+# Stop & clean:      docker-compose down -v
+# =============================================================================
+#
+# Services
+#   db        → MySQL 8.0  (port 3306, auto-initialized from 01-schema.sql)
+#   backend   → Node.js API (port 3000, waits for db healthcheck)
+#   frontend  → Angular/Nginx (port 4200, proxies /api/* to backend)
+#
+# Networks
+#   techmanager-net  → internal bridge; containers talk via service names
+#
+# Volumes
+#   mysql-data   → persistent DB data survives container restarts
+#   mysql-logs   → MySQL slow/error logs on the host
+
+version: "3.9"
+
+# =============================================================================
+services:
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # DATABASE — MySQL 8.0
+  # ──────────────────────────────────────────────────────────────────────────
+  db:
+    image: mysql:8.0
+    container_name: techmanager_db
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # ── Secrets & config via .env ──────────────────────────────────────────
+    env_file: .env
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE:      ${MYSQL_DATABASE}
+      MYSQL_USER:          ${MYSQL_USER}
+      MYSQL_PASSWORD:      ${MYSQL_PASSWORD}
+      # Use the UTC timezone inside the container
+      TZ: UTC
+
+    # ── Volumes ───────────────────────────────────────────────────────────
+    volumes:
+      # ① Persistent data — survives `docker-compose down` but NOT `down -v`
+      - mysql-data:/var/lib/mysql
+
+      # ② Auto-init: any *.sql / *.sh in this folder runs on first start
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
+
+      # ③ Custom MySQL config (charset, InnoDB tuning, slow log)
+      - ./docker/mysql/conf/my.cnf:/etc/mysql/conf.d/techmanager.cnf:ro
+
+      # ④ Log output accessible on the host for debugging
+      - mysql-logs:/var/log/mysql
+
+    # ── Expose DB port ────────────────────────────────────────────────────
+    # Bound to 127.0.0.1 by default so it's NOT reachable from outside the
+    # host.  Change to "3306:3306" if you need external access (dev only).
+    ports:
+      - "${DB_HOST_PORT:-127.0.0.1:3306}:3306"
+
+    # ── Performance flags ─────────────────────────────────────────────────
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+      --max-connections=150
+      --sql-mode=STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION
+
+    # ── Healthcheck ───────────────────────────────────────────────────────
+    # The backend service's `depends_on` uses `condition: service_healthy`,
+    # which means Node.js will NOT start until this passes.
+    # mysqladmin ping is the official lightweight check recommended by MySQL.
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mysqladmin", "ping",
+          "--host=127.0.0.1",
+          "--user=$$MYSQL_USER",
+          "--password=$$MYSQL_PASSWORD",
+          "--silent"
+        ]
+      interval:     15s   # Check every 15 s
+      timeout:      5s    # Fail if no response within 5 s
+      retries:      8     # Try 8 times before giving up (~2 min total)
+      start_period: 30s   # Grace period for MySQL cold-start initialization
+
+    networks:
+      - techmanager-net
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # BACKEND — Node.js / Express
+  # ──────────────────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      # Pass NODE_ENV so the image can be built differently if needed
+      args:
+        NODE_ENV: ${NODE_ENV:-production}
+
+    image: techmanager/backend:${IMAGE_TAG:-latest}
+    container_name: techmanager_backend
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # ── Wait for a healthy DB before starting ─────────────────────────────
+    depends_on:
+      db:
+        condition: service_healthy
+
+    # ── Runtime environment ───────────────────────────────────────────────
+    env_file: .env
+    environment:
+      NODE_ENV:     ${NODE_ENV:-production}
+      PORT:         3000
+
+      # DB connection — "db" resolves to the MySQL container via Docker DNS
+      DB_HOST:      db
+      DB_PORT:      3306
+      DB_NAME:      ${MYSQL_DATABASE}
+      DB_USER:      ${MYSQL_USER}
+      DB_PASSWORD:  ${MYSQL_PASSWORD}
+
+      # JWT (read from .env — never hard-coded here)
+      JWT_SECRET:          ${JWT_SECRET}
+      JWT_REFRESH_SECRET:  ${JWT_REFRESH_SECRET}
+      JWT_EXPIRES_IN:      ${JWT_EXPIRES_IN:-15m}
+
+      # CORS — accept requests from the frontend container
+      FRONTEND_URL: ${FRONTEND_ORIGIN:-http://localhost:4200}
+
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+
+    # ── Port mapping ──────────────────────────────────────────────────────
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"
+
+    # ── Read-only source mount (dev only — remove in strict prod) ─────────
+    # Uncomment for live-reload development with nodemon:
+    # volumes:
+    #   - ./backend/src:/app/src:ro
+
+    # ── Backend healthcheck ───────────────────────────────────────────────
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 20s
+      timeout:  5s
+      retries:  5
+      start_period: 20s
+
+    networks:
+      - techmanager-net
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # FRONTEND — Angular / Nginx
+  # ──────────────────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # With the Nginx proxy in place, /api works for same-origin calls.
+        # Override for external API: --build-arg API_URL=https://api.example.com/api
+        API_URL: ${FRONTEND_API_URL:-/api}
+
+    image: techmanager/frontend:${IMAGE_TAG:-latest}
+    container_name: techmanager_frontend
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # ── Wait for a healthy backend before serving ─────────────────────────
+    depends_on:
+      backend:
+        condition: service_healthy
+
+    # ── Port mapping ──────────────────────────────────────────────────────
+    # Host port 4200 → container port 80 (Nginx)
+    ports:
+      - "${FRONTEND_PORT:-4200}:80"
+
+    # ── Frontend healthcheck ──────────────────────────────────────────────
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/health"]
+      interval: 30s
+      timeout:  5s
+      retries:  3
+      start_period: 15s
+
+    networks:
+      - techmanager-net
+
+# =============================================================================
+# NETWORKS
+# =============================================================================
+networks:
+  techmanager-net:
+    name:   techmanager-net
+    driver: bridge
+    # Custom subnet keeps this stack isolated from other Docker projects
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+# =============================================================================
+# VOLUMES
+# =============================================================================
+volumes:
+  # MySQL data directory — keeps your DB alive across container recreations
+  mysql-data:
+    name: techmanager_mysql_data
+
+  # MySQL log files accessible from the host for debugging
+  mysql-logs:
+    name: techmanager_mysql_logs

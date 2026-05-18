@@ -1,0 +1,311 @@
+<!-- ==========================================================================
+     warehouse.component.html — COMPLETE WITH ALL FIXES
+     • Item create/edit modal fully added
+     • Category select uses [ngValue] (numeric type preserved)
+     • Delete button added in table rows
+     ========================================================================== -->
+
+<div class="warehouse-page fade-in">
+
+  <!-- ── KPI Strip ───────────────────────────────────────────────────────── -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px">
+    <div class="kpi-card" style="--kpi-color:#1565C0">
+      <div class="kpi-icon-wrap">inventory_2</div>
+      <div><div class="kpi-value">{{totalItems}}</div><div class="kpi-label">Total SKUs</div></div>
+    </div>
+    <div class="kpi-card" style="--kpi-color:#10B981">
+      <div class="kpi-icon-wrap">check_circle</div>
+      <div><div class="kpi-value">{{healthyItems}}</div><div class="kpi-label">Healthy Stock</div></div>
+    </div>
+    <div class="kpi-card" style="--kpi-color:#EF4444">
+      <div class="kpi-icon-wrap">warning</div>
+      <div><div class="kpi-value">{{lowItems}}</div><div class="kpi-label">Low Stock</div></div>
+    </div>
+    <div class="kpi-card" style="--kpi-color:#F59E0B">
+      <div class="kpi-icon-wrap">remove_shopping_cart</div>
+      <div><div class="kpi-value">{{outOfStock}}</div><div class="kpi-label">Out of Stock</div></div>
+    </div>
+  </div>
+
+  <!-- ── Toolbar ─────────────────────────────────────────────────────────── -->
+  <div class="flex items-center justify-between mb-5">
+    <div class="flex gap-2">
+      <div class="search-bar" style="width:260px">
+        <span class="search-icon">search</span>
+        <input placeholder="Search items..." [(ngModel)]="search" (input)="loadItems()">
+      </div>
+      <button class="btn btn-secondary btn-sm"
+              [class.btn-primary]="lowStockOnly"
+              (click)="toggleLowStock()">
+        <span class="btn-icon">warning</span> Low Stock Only
+      </button>
+    </div>
+    <button class="btn btn-primary" (click)="openItemModal()">
+      <span class="btn-icon">add</span> Add Item
+    </button>
+  </div>
+
+  <!-- ── Table ───────────────────────────────────────────────────────────── -->
+  <div class="table-container">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>SKU</th>
+          <th>Item Name</th>
+          <th>Quantity</th>
+          <th>Status</th>
+          <th>Reorder Point</th>
+          <th>Unit Cost</th>
+          <th>Supplier</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let item of items">
+          <td><code style="font-size:0.8rem">{{item.sku}}</code></td>
+          <td>
+            <div class="font-bold">{{item.name}}</div>
+            <div class="text-sm text-muted">{{item.unit}}</div>
+          </td>
+          <td>
+            <div style="display:flex;align-items:center;gap:10px">
+              <span [style.color]="getStockColor(item)" style="font-weight:700;font-size:1rem">
+                {{item.quantity}}
+              </span>
+              <div class="progress-bar" style="width:80px">
+                <div class="progress-fill"
+                     [style.width.%]="item.max_stock ? (item.quantity/item.max_stock)*100 : 50"
+                     [style.background]="getStockColor(item)">
+                </div>
+              </div>
+            </div>
+          </td>
+          <td>
+            <span class="badge"
+                  [style.background]="getStockBadgeBg(item)"
+                  [style.color]="getStockColor(item)">
+              {{getStockStatus(item)}}
+            </span>
+          </td>
+          <td class="text-sm">{{item.reorder_point}} {{item.unit}}</td>
+          <td class="text-sm">${{item.unit_cost | number:'1.2-2'}}</td>
+          <td class="text-sm truncate" style="max-width:120px">{{item.supplier || '—'}}</td>
+          <td>
+            <div class="flex gap-1">
+              <!-- Stock movement -->
+              <button class="btn btn-ghost btn-icon-only btn-sm"
+                      (click)="openMovementModal(item)" title="Stock movement">
+                <span class="btn-icon" style="font-size:17px;color:#1565C0">swap_horiz</span>
+              </button>
+              <!-- Edit -->
+              <button class="btn btn-ghost btn-icon-only btn-sm"
+                      (click)="editItem(item)" title="Edit">
+                <span class="btn-icon" style="font-size:17px">edit</span>
+              </button>
+              <!-- Delete -->
+              <button class="btn btn-ghost btn-icon-only btn-sm"
+                      (click)="deleteItem(item)" title="Delete">
+                <span class="btn-icon" style="font-size:17px;color:#EF4444">delete</span>
+              </button>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="empty-state" *ngIf="!items.length && !loading">
+      <span class="empty-icon">inventory_2</span>
+      <h3>No inventory items</h3>
+      <button class="btn btn-primary" (click)="openItemModal()">Add First Item</button>
+    </div>
+  </div>
+</div>
+
+<!-- =====================================================================
+     ITEM CREATE / EDIT MODAL
+     ===================================================================== -->
+<div class="modal-overlay" *ngIf="showItemModal" (click)="closeItemModal($event)">
+  <div class="modal" style="max-width:560px" (click)="$event.stopPropagation()">
+
+    <div class="modal-header">
+      <h3>{{editingItem ? 'Edit Item' : 'Add New Item'}}</h3>
+      <button class="btn btn-ghost btn-icon-only" (click)="showItemModal=false">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+
+      <!-- Category — [ngValue] preserves numeric ID -->
+      <div class="form-group">
+        <label class="form-label">Category *</label>
+        <select class="form-control" [(ngModel)]="itemForm.category_id">
+          <option [ngValue]="null">— Select category —</option>
+          <option *ngFor="let c of categories" [ngValue]="c.id">{{c.name}}</option>
+        </select>
+        <div *ngIf="categories.length === 0"
+             style="font-size:0.75rem;color:#F59E0B;margin-top:4px">
+          ⚠ No categories found — check the database seed data.
+        </div>
+      </div>
+
+      <!-- SKU + Name -->
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">SKU *</label>
+          <input class="form-control" [(ngModel)]="itemForm.sku"
+                 placeholder="e.g. BOLT-M8-50"
+                 [disabled]="!!editingItem">
+        </div>
+        <div class="form-group" style="flex:2">
+          <label class="form-label">Item Name *</label>
+          <input class="form-control" [(ngModel)]="itemForm.name"
+                 placeholder="e.g. Hex Bolt M8×50">
+        </div>
+      </div>
+
+      <!-- Unit + Initial Quantity -->
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Unit</label>
+          <input class="form-control" [(ngModel)]="itemForm.unit" placeholder="pcs">
+        </div>
+        <div class="form-group">
+          <label class="form-label">
+            Initial Qty
+            <span *ngIf="editingItem"
+                  style="font-weight:400;color:#9CA3AF;font-size:0.72rem">
+              (use Stock Movement to change)
+            </span>
+          </label>
+          <input type="number" class="form-control" [(ngModel)]="itemForm.quantity"
+                 min="0" [disabled]="!!editingItem">
+        </div>
+      </div>
+
+      <!-- Min / Reorder / Max -->
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Min Stock</label>
+          <input type="number" class="form-control" [(ngModel)]="itemForm.min_stock" min="0">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Reorder Point</label>
+          <input type="number" class="form-control" [(ngModel)]="itemForm.reorder_point" min="0">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Max Stock</label>
+          <input type="number" class="form-control" [(ngModel)]="itemForm.max_stock"
+                 min="0" placeholder="optional">
+        </div>
+      </div>
+
+      <!-- Unit Cost + Supplier -->
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Unit Cost ($)</label>
+          <input type="number" class="form-control" [(ngModel)]="itemForm.unit_cost"
+                 min="0" step="0.01" placeholder="0.00">
+        </div>
+        <div class="form-group" style="flex:2">
+          <label class="form-label">Supplier</label>
+          <input class="form-control" [(ngModel)]="itemForm.supplier"
+                 placeholder="e.g. Acme Corp">
+        </div>
+      </div>
+
+      <!-- Description -->
+      <div class="form-group">
+        <label class="form-label">Description</label>
+        <textarea class="form-control" [(ngModel)]="itemForm.description"
+                  style="min-height:72px" placeholder="Optional notes…"></textarea>
+      </div>
+
+    </div>
+
+    <div class="modal-footer">
+      <!-- Delete (edit mode only) -->
+      <button *ngIf="editingItem" class="btn btn-ghost"
+              style="color:#EF4444;margin-right:auto"
+              (click)="deleteItem(editingItem!); showItemModal=false">
+        <span class="btn-icon" style="font-size:17px">delete</span> Delete
+      </button>
+
+      <button class="btn btn-ghost" (click)="showItemModal=false">Cancel</button>
+      <button class="btn btn-primary" (click)="saveItem()" [disabled]="saving">
+        <div class="spinner" *ngIf="saving"
+             style="width:16px;height:16px;border-width:2px;border-top-color:#fff;margin-right:6px">
+        </div>
+        {{saving ? 'Saving…' : (editingItem ? 'Save Changes' : 'Create Item')}}
+      </button>
+    </div>
+
+  </div>
+</div>
+
+<!-- =====================================================================
+     STOCK MOVEMENT MODAL
+     ===================================================================== -->
+<div class="modal-overlay" *ngIf="showMovementModal" (click)="closeMovementModal($event)">
+  <div class="modal" style="max-width:440px" (click)="$event.stopPropagation()">
+
+    <div class="modal-header">
+      <h3>Stock Movement — {{movementItem?.name}}</h3>
+      <button class="btn btn-ghost btn-icon-only" (click)="showMovementModal=false">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <!-- Type buttons -->
+      <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap">
+        <button *ngFor="let t of movementTypes" class="btn btn-sm"
+                [style.background]="movementForm.type===t.value ? t.color : 'var(--blue-50)'"
+                [style.color]="movementForm.type===t.value ? '#fff' : '#6B7280'"
+                [style.border-color]="movementForm.type===t.value ? t.color : 'var(--border)'"
+                style="border:1px solid"
+                (click)="movementForm.type=t.value">
+          {{t.label}}
+        </button>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Quantity *</label>
+          <input type="number" class="form-control" [(ngModel)]="movementForm.quantity" min="1">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Reference</label>
+          <input class="form-control" [(ngModel)]="movementForm.reference" placeholder="PO-1234">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Reason / Note</label>
+        <textarea class="form-control" [(ngModel)]="movementForm.reason" style="min-height:80px"></textarea>
+      </div>
+
+      <!-- Stock preview -->
+      <div style="background:var(--blue-50);border-radius:var(--radius-md);padding:12px;font-size:0.875rem">
+        <div class="flex items-center justify-between">
+          <span class="text-muted">Current stock:</span>
+          <span class="font-bold">{{movementItem?.quantity}} {{movementItem?.unit}}</span>
+        </div>
+        <div class="flex items-center justify-between mt-2">
+          <span class="text-muted">After movement:</span>
+          <span class="font-bold" [style.color]="getProjectedColor()">
+            {{getProjectedQty()}} {{movementItem?.unit}}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" (click)="showMovementModal=false">Cancel</button>
+      <button class="btn btn-primary" (click)="submitMovement()" [disabled]="saving">
+        {{saving ? 'Processing…' : 'Submit Movement'}}
+      </button>
+    </div>
+
+  </div>
+</div>

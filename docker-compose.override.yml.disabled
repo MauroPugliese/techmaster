@@ -1,0 +1,60 @@
+# =============================================================================
+# docker-compose.override.yml — Development overrides
+#
+# Docker Compose automatically merges this file with docker-compose.yml when
+# you run `docker-compose up` locally. It is NOT used in CI/CD.
+#
+# Key differences from production:
+#  • NODE_ENV = development (enables verbose logging, Sequelize sync)
+#  • Backend source mounted for nodemon hot-reload
+#  • MySQL port exposed on all interfaces for GUI tools (TablePlus, DBeaver)
+#  • Angular runs ng serve instead of the Nginx static bundle
+# =============================================================================
+
+version: "3.9"
+
+services:
+
+  # ── Dev DB: expose MySQL to host tools ────────────────────────────────────
+  db:
+    ports:
+      - "3306:3306"   # Allow external MySQL clients in dev
+    environment:
+      TZ: UTC
+
+  # ── Dev Backend: hot-reload via nodemon ───────────────────────────────────
+  backend:
+    build:
+      target: base    # Stop at the base stage — don't optimise for prod
+      args:
+        NODE_ENV: development
+    environment:
+      NODE_ENV:  development
+      LOG_LEVEL: debug
+    volumes:
+      # Live-mount source so nodemon picks up changes without rebuild
+      - ./backend/src:/app/src
+      # Persist logs on host for easy access
+      - ./backend/logs:/app/logs
+    # Override CMD to use nodemon for hot-reload
+    command: ["npx", "nodemon", "--watch", "src", "src/server.js"]
+
+  # ── Dev Frontend: Angular dev server (optional, replaces Nginx) ───────────
+  # Uncomment this block to use `ng serve` instead of the built Nginx image.
+  # Note: comment out the standard `frontend` service in docker-compose.yml
+  #       or it will conflict.
+  #
+  # frontend-dev:
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: Dockerfile.dev    # A simpler Dockerfile that just runs ng serve
+  #   container_name: techmanager_frontend_dev
+  #   volumes:
+  #     - ./frontend/src:/app/src
+  #     - ./frontend/angular.json:/app/angular.json
+  #   ports:
+  #     - "4200:4200"
+  #   environment:
+  #     API_URL: http://backend:3000/api
+  #   networks:
+  #     - techmanager-net
