@@ -80,7 +80,7 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
         },
         error: () => {
           this.loading = false;
-          this.toast.show('Failed to load tasks', 'error');
+          this.toast.error('Failed to load tasks');
           this.cdr.markForCheck();
         }
       });
@@ -123,12 +123,24 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
 
   save(): void {
     if (!this.form.system || !this.form.subsystem || !this.form.task || !this.form.operationDateStart) {
-      this.toast.show('Please fill required fields', 'error');
+      this.toast.error('Please fill required fields');
       return;
     }
 
     this.saving = true;
-    const payload: Partial<PlannedMaintenanceTask> = { ...this.form };
+    const payload: Partial<PlannedMaintenanceTask> = {
+      system: this.form.system,
+      subsystem: this.form.subsystem,
+      task: this.form.task,
+      reference: this.form.reference,
+      operationDateStart: this.form.operationDateStart,
+      operationDateEnd: this.form.operationDateEnd,
+      repeatTaskType: this.form.repeatTaskType,
+      repeatTaskNumber: this.form.repeatTaskNumber,
+      reportTemplate: this.form.reportTemplate,
+      status: this.form.status,
+      optional: this.form.optional
+    };
 
     const obs = this.editing && this.editId
       ? this.svc.update(this.editId, payload)
@@ -136,7 +148,7 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
 
     obs.pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {
-        this.toast.show(this.editing ? 'Task updated' : 'Task created', 'success');
+        this.toast.success(this.editing ? 'Task updated' : 'Task created');
         this.showModal = false;
         this.saving = false;
         this.loadTasks();
@@ -145,7 +157,7 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
         this.cdr.markForCheck();
       },
       error: () => {
-        this.toast.show('Save failed', 'error');
+        this.toast.error('Save failed');
         this.saving = false;
         this.cdr.markForCheck();
       }
@@ -153,21 +165,16 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
   }
 
   deleteTask(task: PlannedMaintenanceTask): void {
-    this.confirm.ask({
-      title: 'Delete Task',
-      message: `Delete "${task.task}"?`,
-      confirmText: 'Delete',
-      cancelText: 'Cancel'
-    }).then(confirmed => {
+    this.confirm.confirm(`Delete "${task.task}"?`, 'Delete Task', true).then(confirmed => {
       if (!confirmed) return;
       this.svc.delete(task.id).pipe(takeUntil(this.destroy$)).subscribe({
         next: () => {
-          this.toast.show('Task deleted', 'success');
+          this.toast.success('Task deleted');
           this.loadTasks();
           this.loadIndicators();
           this.loadDayTasks();
         },
-        error: () => this.toast.show('Delete failed', 'error')
+        error: () => this.toast.error('Delete failed')
       });
     });
   }
@@ -182,7 +189,7 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
           this.loadIndicators();
           this.loadDayTasks();
         },
-        error: () => this.toast.show('Update failed', 'error')
+        error: () => this.toast.error('Update failed')
       });
   }
 
