@@ -21,6 +21,8 @@ const taskRoutes              = require('./routes/task.routes');
 const wikiRoutes              = require('./routes/wiki.routes');
 const analyticsRoutes         = require('./routes/analytics.routes');
 const adminRoutes             = require('./routes/admin.routes');
+const notificationRoutes      = require('./routes/notification.routes');
+const exportRoutes            = require('./routes/export.routes');
 
 const { errorHandler } = require('./middleware/error.middleware');
 const { authenticate, authorize } = require('./middleware/auth.middleware');
@@ -28,8 +30,31 @@ const { auditLog } = require('./middleware/audit.middleware');
 
 const app = express();
 
+// Trust first proxy (required for correct client IP behind reverse proxies/load balancers)
+app.set('trust proxy', 1);
+
 // ── Security & Performance ────────────────────────────────────────────────────
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "ws:", "wss:", "http://localhost:3000", "http://127.0.0.1:3000"],
+      frameAncestors: ["'none'"]
+    }
+  },
+  referrerPolicy: { policy: 'same-origin' },
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true
+  },
+  frameguard: { action: 'deny' },
+  noSniff: true
+}));
 app.use(compression());
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:4200',
@@ -39,9 +64,15 @@ app.use(cors({
 }));
 
 // ── Rate Limiting ─────────────────────────────────────────────────────────────
-const globalLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 500 });
-const authLimiter   = rateLimit({ windowMs: 15 * 60 * 1000, max: 20,
-  message: { success: false, message: 'Too many auth attempts, please wait.' }
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 500,
+  message: { success: false, message: 'Too many requests from this IP, please try again later.' }
+});
+const authLimiter   = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { success: false, message: 'Too many login attempts. Please try again after 15 minutes.' }
 });
 app.use('/api/', globalLimiter);
 
@@ -54,7 +85,8 @@ app.use(morgan('combined'));
 app.use(auditLog);
 
 // ── Public Routes ─────────────────────────────────────────────────────────────
-app.use('/api/auth', authLimiter, authRoutes);
+app.post('/api/auth/login', authLimiter);
+app.use('/api/auth', authRoutes);
 
 // ── Protected Routes ──────────────────────────────────────────────────────────
 app.use('/api/users',       authenticate, userRoutes);
@@ -67,6 +99,8 @@ app.use('/api/shifts',      authenticate, shiftRoutes);
 app.use('/api/tasks',       authenticate, taskRoutes);
 app.use('/api/wiki',        authenticate, wikiRoutes);
 app.use('/api/analytics',   authenticate, analyticsRoutes);
+app.use('/api/notifications', authenticate, notificationRoutes);
+app.use('/api/export',        exportRoutes);
 app.use('/api/admin', authenticate, authorize('admin'), adminRoutes);
 
 // ── Health Check ──────────────────────────────────────────────────────────────
@@ -99,3 +133,4 @@ app.use((req, res) => {
 app.use(errorHandler);
 
 module.exports = app;
+

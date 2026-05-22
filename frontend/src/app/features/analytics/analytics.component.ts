@@ -6,11 +6,14 @@ import { CommonModule, DecimalPipe, TitleCasePipe } from '@angular/common';
 import { Subject, forkJoin } from 'rxjs';
 import { takeUntil, switchMap } from 'rxjs/operators';
 import { Chart, registerables, ChartConfiguration } from 'chart.js';
+import zoomPlugin from 'chartjs-plugin-zoom';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 
 import { ApiService } from '../../core/services/services';
 import { DateFilterService } from '../../core/services/services';
 
-Chart.register(...registerables);
+Chart.register(...registerables, zoomPlugin);
 
 @Component({
   selector: 'app-analytics',
@@ -77,7 +80,13 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
         data: { labels: [], datasets: [] },
         options: {
           responsive: true, maintainAspectRatio: false,
-          plugins: { legend: { position: 'top', labels: { font: baseFont, usePointStyle: true, padding: 14 } } },
+          plugins: {
+            legend: { position: 'top', labels: { font: baseFont, usePointStyle: true, padding: 14 } },
+            zoom: {
+              pan: { enabled: true, mode: 'x' },
+              zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }
+            }
+          },
           scales: {
             x: { grid: { display: false }, ticks: { font: baseFont } },
             y: { beginAtZero: true, grid: { color: gridColor }, ticks: { font: baseFont, precision: 0 } }
@@ -95,7 +104,13 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
         data: { labels: [], datasets: [] },
         options: {
           indexAxis: 'y', responsive: true, maintainAspectRatio: false,
-          plugins: { legend: { position: 'top', labels: { font: baseFont, usePointStyle: true } } },
+          plugins: {
+            legend: { position: 'top', labels: { font: baseFont, usePointStyle: true } },
+            zoom: {
+              pan: { enabled: true, mode: 'x' },
+              zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }
+            }
+          },
           scales: {
             x: { beginAtZero: true, stacked: true, grid: { color: gridColor }, ticks: { font: baseFont, precision: 0 } },
             y: { stacked: true, grid: { display: false }, ticks: { font: baseFont } }
@@ -113,7 +128,13 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
         data: { labels: [], datasets: [] },
         options: {
           responsive: true, maintainAspectRatio: false,
-          plugins: { legend: { position: 'top', labels: { font: baseFont, usePointStyle: true } } },
+          plugins: {
+            legend: { position: 'top', labels: { font: baseFont, usePointStyle: true } },
+            zoom: {
+              pan: { enabled: true, mode: 'x' },
+              zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }
+            }
+          },
           scales: {
             x: { grid: { color: gridColor }, ticks: { font: baseFont } },
             y: { beginAtZero: true, stacked: true, grid: { color: gridColor }, ticks: { font: baseFont, precision: 0 } }
@@ -131,7 +152,13 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
         data: { labels: ['Daily','Weekly','Monthly','Yearly','Once'], datasets: [] },
         options: {
           responsive: true, maintainAspectRatio: false,
-          plugins: { legend: { position: 'top', labels: { font: baseFont, usePointStyle: true } } },
+          plugins: {
+            legend: { position: 'top', labels: { font: baseFont, usePointStyle: true } },
+            zoom: {
+              pan: { enabled: true, mode: 'xy' },
+              zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' }
+            }
+          },
           scales: {
             r: {
               beginAtZero: true,
@@ -153,7 +180,13 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
         data: { labels: [], datasets: [] },
         options: {
           responsive: true, maintainAspectRatio: false,
-          plugins: { legend: { position: 'top', labels: { font: baseFont, usePointStyle: true, padding: 12 } } },
+          plugins: {
+            legend: { position: 'top', labels: { font: baseFont, usePointStyle: true, padding: 12 } },
+            zoom: {
+              pan: { enabled: true, mode: 'x' },
+              zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }
+            }
+          },
           scales: {
             x: { stacked: true, grid: { display: false }, ticks: { font: baseFont } },
             y: { stacked: true, beginAtZero: true, grid: { color: gridColor }, ticks: { font: baseFont, precision: 0 } }
@@ -171,7 +204,13 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
         data: { labels: [], datasets: [{ data: [], backgroundColor: [], borderWidth: 0, hoverOffset: 8 }] },
         options: {
           responsive: true, maintainAspectRatio: false, cutout: '70%',
-          plugins: { legend: { position: 'bottom', labels: { font: baseFont, usePointStyle: true, padding: 12 } } }
+          plugins: {
+            legend: { position: 'bottom', labels: { font: baseFont, usePointStyle: true, padding: 12 } },
+            zoom: {
+              pan: { enabled: true, mode: 'xy' },
+              zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' }
+            }
+          }
         }
       });
     }
@@ -308,8 +347,41 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
     const report: any = { generated: new Date().toISOString(), period: this.dateLabel, summary: this.maintSummary };
     const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
     const url  = URL.createObjectURL(blob);
-    const a    = Object.assign(document.createElement('a'), { href: url, download: `techmanager-report-${Date.now()}.json` });
+    const a    = Object.assign(document.createElement('a'), { href: url, download: `smart-report-${Date.now()}.json` });
     a.click(); URL.revokeObjectURL(url);
+  }
+
+  async exportPdf(): Promise<void> {
+    const dashboard = document.getElementById('analytics-dashboard');
+    if (!dashboard) return;
+
+    const canvas = await html2canvas(dashboard, {
+      scale: 2,
+      backgroundColor: '#F0F4F8',
+      useCORS: true
+    });
+    const imgData = canvas.toDataURL('image/png');
+    const pdf = new jsPDF('p', 'mm', 'a4');
+
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const imgWidth = pageWidth;
+    const imgHeight = (canvas.height * pageWidth) / canvas.width;
+
+    let heightLeft = imgHeight;
+    let position = 0;
+
+    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+    heightLeft -= pageHeight;
+
+    while (heightLeft > 0) {
+      position = heightLeft - imgHeight;
+      pdf.addPage();
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+    }
+
+    pdf.save(`smart-analytics-${new Date().toISOString().slice(0, 10)}.pdf`);
   }
 
   ngOnDestroy(): void {

@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS `planned_maintenance_tasks` (
   `status`               ENUM('TODO','DONE') NOT NULL DEFAULT 'TODO',
   `optional`             TINYINT(1) NOT NULL DEFAULT 0,
   `created_by`           INT UNSIGNED DEFAULT NULL,
+  `deleted_at`           DATETIME DEFAULT NULL,
   `created_at`           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),

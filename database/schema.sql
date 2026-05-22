@@ -3,8 +3,8 @@
 -- Version: 1.0.0 | Engine: MySQL 8.0+ | Charset: utf8mb4
 -- =============================================================================
 
-CREATE DATABASE IF NOT EXISTS techmanager CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE techmanager;
+CREATE DATABASE IF NOT EXISTS smart CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE smart;
 
 SET FOREIGN_KEY_CHECKS = 0;
 
@@ -150,6 +150,7 @@ CREATE TABLE maintenance_records (
     parts_used      JSON,
     findings        TEXT,
     next_scheduled  DATETIME,
+    deleted_at      DATETIME NULL,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT fk_maint_asset FOREIGN KEY (asset_id)     REFERENCES assets(id),
@@ -194,6 +195,7 @@ CREATE TABLE inventory_items (
     supplier_ref    VARCHAR(100),
     image_url       VARCHAR(500),
     is_active       BOOLEAN DEFAULT TRUE,
+    deleted_at      DATETIME NULL,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT fk_inv_cat      FOREIGN KEY (category_id) REFERENCES item_categories(id),
@@ -241,6 +243,7 @@ CREATE TABLE shifts (
     check_out       DATETIME,
     notes           TEXT,
     overtime_hours  DECIMAL(5,2) DEFAULT 0,
+    deleted_at      DATETIME NULL,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_shift_user_date (user_id, date),
@@ -376,6 +379,23 @@ CREATE TABLE notifications (
     is_read     BOOLEAN DEFAULT FALSE,
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_notif_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- =============================================================================
+-- SECTION 9: AUDIT LOGS
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id     INT UNSIGNED,
+    username    VARCHAR(60),
+    action      VARCHAR(100),
+    ip          VARCHAR(45),
+    method      VARCHAR(10),
+    path        VARCHAR(255),
+    status      INT,
+    details     JSON,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_audit_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
 -- =============================================================================

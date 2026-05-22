@@ -1,7 +1,7 @@
 <!-- ==========================================================================
      app-shell.component.html — Main layout with sidebar
      ========================================================================== -->
-<div class="app-shell">
+<div class="app-shell" (click)="closeNotifications($event)">
 
   <!-- ── Sidebar ─────────────────────────────────────────────────────────── -->
   <aside class="sidebar" [class.collapsed]="sidebarCollapsed">
@@ -12,7 +12,7 @@
         <span style="font-family:'Material Icons Round';font-style:normal;color:#fff;font-size:22px">dns</span>
       </div>
       <div class="logo-text">
-        TechManager
+        SMaRT
         <span class="logo-sub">Operations Platform</span>
       </div>
     </div>
@@ -140,7 +140,7 @@
       </div>
 
       <!-- Notifications -->
-      <button class="btn btn-ghost btn-icon-only" style="position:relative" (click)="toggleNotifications()">
+      <button class="btn btn-ghost btn-icon-only" style="position:relative" (click)="toggleNotifications($event)">
         <span class="btn-icon">notifications</span>
         <span *ngIf="unreadNotifications > 0" style="
           position:absolute; top:6px; right:6px;
@@ -148,6 +148,45 @@
           border:2px solid white;">
         </span>
       </button>
+
+      <div *ngIf="showNotifications" (click)="$event.stopPropagation()" style="
+        position:absolute;
+        top:68px;
+        right:72px;
+        width:360px;
+        max-height:420px;
+        overflow:auto;
+        background:#fff;
+        border:1px solid #E5E7EB;
+        border-radius:8px;
+        box-shadow:0 16px 32px rgba(15,23,42,0.18);
+        z-index:1200;">
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 14px; border-bottom:1px solid #EEF2F7;">
+          <strong style="font-size:0.95rem;">Notifications</strong>
+          <button class="btn btn-ghost" style="padding:4px 8px; font-size:0.78rem;" (click)="markAllAsRead($event)">Mark all read</button>
+        </div>
+
+        <div *ngIf="notifications.length === 0" style="padding:18px 14px; color:#64748B; font-size:0.9rem;">
+          No notifications yet.
+        </div>
+
+        <div *ngFor="let n of notifications; trackBy: trackByNotificationId"
+             (click)="openNotification(n, $event)"
+             style="display:block; width:100%; text-align:left; border:0; background:#fff; padding:12px 14px; border-bottom:1px solid #F1F5F9; cursor:pointer;"
+             [style.background]="n.is_read ? '#FFFFFF' : '#F8FAFF'">
+          <div style="display:flex; gap:10px; align-items:flex-start;">
+            <span [style.background]="n.is_read ? '#CBD5E1' : '#3B82F6'" style="margin-top:6px; width:8px; height:8px; border-radius:50%; flex:0 0 auto;"></span>
+            <div style="min-width:0; flex:1 1 auto;">
+              <div style="font-size:0.86rem; font-weight:600; color:#0F172A; margin-bottom:2px;">{{ n.title }}</div>
+              <div *ngIf="n.body" style="font-size:0.82rem; color:#475569; line-height:1.35; white-space:normal;">{{ n.body }}</div>
+              <div style="font-size:0.74rem; color:#94A3B8; margin-top:6px;">{{ n.created_at | date:'short' }}</div>
+            </div>
+            <button *ngIf="!n.is_read" class="btn btn-ghost btn-icon-only" style="width:24px; height:24px;" (click)="markAsRead(n, $event)" title="Mark as read">
+              <span class="btn-icon" style="font-size:16px;">done</span>
+            </button>
+          </div>
+        </div>
+      </div>
 
       <!-- Logout -->
       <button class="btn btn-ghost btn-icon-only" (click)="logout()" title="Sign out">

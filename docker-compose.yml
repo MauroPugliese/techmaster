@@ -1,5 +1,5 @@
 # =============================================================================
-# docker-compose.yml — TechManager Platform
+# docker-compose.yml — SMaRT Platform
 # Start everything:  docker-compose up --build
 # Stop & clean:      docker-compose down -v
 # =============================================================================
@@ -10,7 +10,7 @@
 #   frontend  → Angular/Nginx (port 4200, proxies /api/* to backend)
 #
 # Networks
-#   techmanager-net  → internal bridge; containers talk via service names
+#   smart-net  → internal bridge; containers talk via service names
 #
 # Volumes
 #   mysql-data   → persistent DB data survives container restarts
@@ -26,7 +26,7 @@ services:
   # ──────────────────────────────────────────────────────────────────────────
   db:
     image: mysql:8.0
-    container_name: techmanager_db
+    container_name: smart_db
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -53,7 +53,7 @@ services:
       - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
 
       # ③ Custom MySQL config (charset, InnoDB tuning, slow log)
-      - ./docker/mysql/conf/my.cnf:/etc/mysql/conf.d/techmanager.cnf:ro
+      - ./docker/mysql/conf/my.cnf:/etc/mysql/conf.d/smart.cnf:ro
 
       # ④ Log output accessible on the host for debugging
       - mysql-logs:/var/log/mysql
@@ -92,7 +92,7 @@ services:
       start_period: 30s   # Grace period for MySQL cold-start initialization
 
     networks:
-      - techmanager-net
+      - smart-net
 
   # ──────────────────────────────────────────────────────────────────────────
   # BACKEND — Node.js / Express
@@ -105,8 +105,8 @@ services:
       args:
         NODE_ENV: ${NODE_ENV:-production}
 
-    image: techmanager/backend:${IMAGE_TAG:-latest}
-    container_name: techmanager_backend
+    image: smart/backend:${IMAGE_TAG:-latest}
+    container_name: smart_backend
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -160,7 +160,7 @@ services:
       start_period: 20s
 
     networks:
-      - techmanager-net
+      - smart-net
 
   # ──────────────────────────────────────────────────────────────────────────
   # FRONTEND — Angular / Nginx
@@ -174,8 +174,8 @@ services:
         # Override for external API: --build-arg API_URL=https://api.example.com/api
         API_URL: ${FRONTEND_API_URL:-/api}
 
-    image: techmanager/frontend:${IMAGE_TAG:-latest}
-    container_name: techmanager_frontend
+    image: smart/frontend:${IMAGE_TAG:-latest}
+    container_name: smart_frontend
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -202,14 +202,14 @@ services:
       start_period: 15s
 
     networks:
-      - techmanager-net
+      - smart-net
 
 # =============================================================================
 # NETWORKS
 # =============================================================================
 networks:
-  techmanager-net:
-    name:   techmanager-net
+  smart-net:
+    name:   smart-net
     driver: bridge
     # Custom subnet keeps this stack isolated from other Docker projects
     ipam:
@@ -222,8 +222,8 @@ networks:
 volumes:
   # MySQL data directory — keeps your DB alive across container recreations
   mysql-data:
-    name: techmanager_mysql_data
+    name: smart_mysql_data
 
   # MySQL log files accessible from the host for debugging
   mysql-logs:
-    name: techmanager_mysql_logs
+    name: smart_mysql_logs

@@ -1,5 +1,5 @@
 # =============================================================================
-# Dockerfile — TechManager Backend (Node.js + Express)
+# Dockerfile — SMaRT Backend (Node.js + Express)
 # Strategy: separate dependency install from source copy for maximum layer cache
 #            reuse; run as a non-root user in production.
 # =============================================================================
@@ -63,8 +63,8 @@ ENV NODE_ENV=production \
     # DB — overridden at runtime, shown here for documentation
     DB_HOST=db \
     DB_PORT=3306 \
-    DB_NAME=techmanager \
-    DB_USER=techmanager \
+    DB_NAME=smart \
+    DB_USER=smart \
     DB_PASSWORD=changeme \
     # JWT — MUST be overridden to a secret value in production
     JWT_SECRET=CHANGE_ME_IN_PRODUCTION \

@@ -31,7 +31,7 @@ RUN sed -i "s|__API_URL__|${API_URL}|g" src/environments/environment.prod.ts
 
 # ── Build for production ──────────────────────────────────────────────────────
 # --output-path keeps the artifact in a predictable location.
-RUN npx ng build --configuration production --output-path=/app/dist/techmanager
+RUN npx ng build --configuration production --output-path=/app/dist/smart
 
 # =============================================================================
 # Stage 2 — SERVE
@@ -44,7 +44,7 @@ FROM nginx:1.27-alpine AS production
 RUN rm -rf /usr/share/nginx/html/*
 
 # Copy the compiled Angular app from the builder stage
-COPY --from=builder /app/dist/techmanager /usr/share/nginx/html
+COPY --from=builder /app/dist/smart /usr/share/nginx/html
 
 # Bring in our custom Nginx config (handles SPA deep-linking, gzip, security)
 COPY nginx.conf /etc/nginx/conf.d/default.conf

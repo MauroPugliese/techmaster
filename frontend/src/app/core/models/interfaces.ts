@@ -255,3 +255,14 @@ export interface WikiArticle {
 
 // ── Date Filter ───────────────────────────────────────────────────────────────
 export interface DateRange { from: Date | null; to: Date | null; }
+
+export interface Notification {
+  id: number;
+  user_id: number;
+  type: string;
+  title: string;
+  body?: string;
+  link?: string;
+  is_read: boolean;
+  created_at: string;
+}

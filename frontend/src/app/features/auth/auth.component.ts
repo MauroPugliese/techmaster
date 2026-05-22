@@ -31,7 +31,7 @@ import { AuthService } from '../../core/services/services';
         <span style="font-family:'Material Icons Round';font-style:normal;font-size:28px;color:#fff">dns</span>
       </div>
       <h1 style="font-size:1.6rem;margin-bottom:6px;font-weight:800">Welcome back</h1>
-      <p style="color:#6B7280;font-size:0.9rem">Sign in to TechManager Platform</p>
+      <p style="color:#6B7280;font-size:0.9rem">Sign in to SMaRT Platform</p>
     </div>
 
     <div class="form-group">
@@ -120,7 +120,7 @@ export class LoginComponent {
         <span style="font-family:'Material Icons Round';font-style:normal;font-size:28px;color:#fff">person_add</span>
       </div>
       <h1 style="font-size:1.5rem;font-weight:800;margin-bottom:4px">Create your account</h1>
-      <p style="color:#6B7280;font-size:0.9rem">Join the TechManager Platform</p>
+      <p style="color:#6B7280;font-size:0.9rem">Join the SMaRT Platform</p>
     </div>
 
     <div class="form-row">

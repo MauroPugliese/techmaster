@@ -38,15 +38,30 @@ router.get('/operations-metrics', parseDateFilter, async (req, res, next) => {
       WHERE o.end_date IS NOT NULL ${dateFilter}
     `;
 
-    // Trend data for charts
+    // Trend data for charts with dynamic granularity
+    const granularity = req.query.granularity || 'day';
+    let selectExpr = 'DATE(o.start_date)';
+    let groupExpr = 'DATE(o.start_date)';
+
+    if (granularity === 'hour') {
+      selectExpr = "DATE_FORMAT(o.start_date, '%Y-%m-%d %H:00:00')";
+      groupExpr = "DATE_FORMAT(o.start_date, '%Y-%m-%d %H:00:00')";
+    } else if (granularity === 'week') {
+      selectExpr = "DATE_FORMAT(DATE_SUB(o.start_date, INTERVAL WEEKDAY(o.start_date) DAY), '%Y-%m-%d')";
+      groupExpr = "YEARWEEK(o.start_date, 1)";
+    } else if (granularity === 'month') {
+      selectExpr = "DATE_FORMAT(o.start_date, '%Y-%m-01')";
+      groupExpr = "DATE_FORMAT(o.start_date, '%Y-%m')";
+    }
+
     const trendQuery = `
       SELECT
-        DATE(o.start_date) as date,
+        ${selectExpr} as date,
         COUNT(*) as count,
         COALESCE(AVG(TIMESTAMPDIFF(MINUTE, o.start_date, o.end_date)), 0) as avgDuration
       FROM operations o
       WHERE o.end_date IS NOT NULL ${dateFilter}
-      GROUP BY DATE(o.start_date)
+      GROUP BY ${groupExpr}
       ORDER BY date
     `;
 

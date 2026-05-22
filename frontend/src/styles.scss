@@ -1,5 +1,5 @@
 /* =============================================================================
-   styles.scss — TechManager Global Styles
+   styles.scss — SMaRT Global Styles
    Blue & White Professional Theme | Azuro Typeface family
    ============================================================================= */
 
@@ -855,3 +855,16 @@ textarea.form-control { resize: vertical; min-height: 100px; }
 .grid-2      { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .grid-3      { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
 .grid-4      { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+
+.wiki-category-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: var(--transition);
+}

@@ -1,6 +1,6 @@
 // =============================================================================
 // ANGULAR PROJECT STRUCTURE
-// ng new techmanager-frontend --routing --style=scss
+// ng new smart-frontend --routing --style=scss
 // ng add @angular/material
 // npm install chart.js ng2-charts date-fns
 //

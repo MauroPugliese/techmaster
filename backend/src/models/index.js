@@ -93,8 +93,9 @@ const MaintenanceRecord = sequelize.define('MaintenanceRecord', {
   cost:           { type: DataTypes.DECIMAL(10,2) },
   parts_used:     { type: DataTypes.JSON },
   findings:       { type: DataTypes.TEXT },
-  next_scheduled: { type: DataTypes.DATE }
-}, { tableName: 'maintenance_records' });
+  next_scheduled: { type: DataTypes.DATE },
+  deleted_at:     { type: DataTypes.DATE }
+}, { tableName: 'maintenance_records', paranoid: true, deletedAt: 'deleted_at' });
 
 // ── Planned Maintenance Tasks ────────────────────────────────────────────────
 const PlannedMaintenanceTask = sequelize.define('PlannedMaintenanceTask', {
@@ -110,8 +111,9 @@ const PlannedMaintenanceTask = sequelize.define('PlannedMaintenanceTask', {
   report_template:     { type: DataTypes.STRING(300) },
   status:              { type: DataTypes.ENUM('TODO', 'DONE'), allowNull: false, defaultValue: 'TODO' },
   optional:            { type: DataTypes.BOOLEAN, defaultValue: false },
-  created_by:          { type: DataTypes.INTEGER.UNSIGNED }
-}, { tableName: 'planned_maintenance_tasks' });
+  created_by:          { type: DataTypes.INTEGER.UNSIGNED },
+  deleted_at:          { type: DataTypes.DATE }
+}, { tableName: 'planned_maintenance_tasks', paranoid: true, deletedAt: 'deleted_at' });
 
 // ── Inventory Categories ─────────────────────────────────────────────────────
 const ItemCategory = sequelize.define('ItemCategory', {
@@ -136,8 +138,9 @@ const InventoryItem = sequelize.define('InventoryItem', {
   reorder_point: { type: DataTypes.INTEGER, defaultValue: 0 },
   unit_cost:     { type: DataTypes.DECIMAL(10,2) },
   supplier:      { type: DataTypes.STRING(200) },
-  is_active:     { type: DataTypes.BOOLEAN, defaultValue: true }
-}, { tableName: 'inventory_items' });
+  is_active:     { type: DataTypes.BOOLEAN, defaultValue: true },
+  deleted_at:    { type: DataTypes.DATE }
+}, { tableName: 'inventory_items', paranoid: true, deletedAt: 'deleted_at' });
 
 const StockMovement = sequelize.define('StockMovement', {
   id:              { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
@@ -173,8 +176,9 @@ const Shift = sequelize.define('Shift', {
   check_in:       { type: DataTypes.DATE },
   check_out:      { type: DataTypes.DATE },
   notes:          { type: DataTypes.TEXT },
-  overtime_hours: { type: DataTypes.DECIMAL(5,2), defaultValue: 0 }
-}, { tableName: 'shifts' });
+  overtime_hours: { type: DataTypes.DECIMAL(5,2), defaultValue: 0 },
+  deleted_at:     { type: DataTypes.DATE }
+}, { tableName: 'shifts', paranoid: true, deletedAt: 'deleted_at' });
 
 // ── Tasks ────────────────────────────────────────────────────────────────────
 const Task = sequelize.define('Task', {
@@ -243,6 +247,27 @@ const RefreshToken = sequelize.define('RefreshToken', {
   is_revoked:  { type: DataTypes.BOOLEAN, defaultValue: false }
 }, { tableName: 'refresh_tokens' });
 
+// ── TaskComment ──────────────────────────────────────────────────────────────
+const TaskComment = sequelize.define('TaskComment', {
+  id:      { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
+  task_id: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+  user_id: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+  content: { type: DataTypes.TEXT, allowNull: false }
+}, { tableName: 'task_comments' });
+
+// ── AuditLog ─────────────────────────────────────────────────────────────────
+const AuditLog = sequelize.define('AuditLog', {
+  id:        { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
+  user_id:   { type: DataTypes.INTEGER.UNSIGNED },
+  username:  { type: DataTypes.STRING },
+  action:    { type: DataTypes.STRING },
+  ip:        { type: DataTypes.STRING },
+  method:    { type: DataTypes.STRING },
+  path:      { type: DataTypes.STRING },
+  status:    { type: DataTypes.INTEGER },
+  details:   { type: DataTypes.JSON }
+}, { tableName: 'audit_logs', updatedAt: false });
+
 // =============================================================================
 // ASSOCIATIONS
 // =============================================================================
@@ -282,6 +307,12 @@ Notification.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 RefreshToken.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 User.hasMany(RefreshToken, { foreignKey: 'user_id', as: 'refreshTokens' });
 
+Task.hasMany(TaskComment, { foreignKey: 'task_id', as: 'comments' });
+TaskComment.belongsTo(Task, { foreignKey: 'task_id', as: 'task' });
+TaskComment.belongsTo(User, { foreignKey: 'user_id', as: 'author' });
+
+AuditLog.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+
 ItemCategory.hasMany(InventoryItem, { foreignKey: 'category_id', as: 'items' });
 InventoryItem.belongsTo(ItemCategory, { foreignKey: 'category_id', as: 'category' });
 
@@ -291,8 +322,8 @@ module.exports = {
   PlannedMaintenanceTask,
   ItemCategory, InventoryItem, StockMovement,
   Shift, ShiftType,
-  Task,
+  Task, TaskComment,
   WikiArticle, WikiCategory,
   Notification,
-  RefreshToken
+  RefreshToken, AuditLog
 };

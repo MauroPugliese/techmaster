@@ -23,3 +23,5 @@ coverage/
 
 # Docker temporary
 tmp/
+docker_setup_guide.txt
+implementation_plan.md

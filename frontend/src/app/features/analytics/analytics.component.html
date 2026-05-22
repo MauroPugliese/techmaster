@@ -2,7 +2,7 @@
      analytics.component.html — Data Visualization Dashboard
      ========================================================================== -->
 
-<div class="analytics-page fade-in">
+<div class="analytics-page fade-in" id="analytics-dashboard">
 
   <!-- ── Section Header ──────────────────────────────────────────────────── -->
   <div class="flex items-center justify-between mb-6">
@@ -10,9 +10,14 @@
       <h2 style="margin-bottom:4px">Analytics & Reports</h2>
       <p class="text-muted text-sm">Data visualization for {{dateLabel}}</p>
     </div>
-    <button class="btn btn-secondary" (click)="exportReport()">
-      <span class="btn-icon">download</span> Export Report
-    </button>
+    <div class="flex items-center gap-2">
+      <button class="btn btn-secondary" (click)="exportReport()">
+        <span class="btn-icon">download</span> Export Data
+      </button>
+      <button class="btn btn-primary" (click)="exportPdf()">
+        <span class="btn-icon">picture_as_pdf</span> Export PDF
+      </button>
+    </div>
   </div>
 
   <!-- ── Charts Row 1 ─────────────────────────────────────────────────────── -->

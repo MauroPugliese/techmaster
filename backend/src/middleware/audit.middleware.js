@@ -2,6 +2,7 @@
 // middleware/audit.middleware.js — Audit Logging for Critical Operations
 // =============================================================================
 const logger = require('../config/logger');
+const { AuditLog } = require('../models');
 
 // List of endpoints that should be audited (sensitive operations)
 const AUDIT_PATTERNS = [
@@ -28,40 +29,69 @@ const shouldAudit = (method, path) => {
   return AUDIT_PATTERNS.some(pattern => pattern.test(signature));
 };
 
+const sanitizeBody = (body) => {
+  if (!body) return null;
+  const copy = { ...body };
+  const sensitiveKeys = ['password', 'password_confirm', 'token', 'accessToken', 'refreshToken', 'secret'];
+  sensitiveKeys.forEach(k => {
+    if (k in copy) copy[k] = '[REDACTED]';
+  });
+  return copy;
+};
+
 const auditLog = (req, res, next) => {
   // Override res.json to capture response after it's sent
   const originalJson = res.json;
   res.json = function(data) {
     // Only log if method and path should be audited
-    if (shouldAudit(req.method, req.path)) {
+    const routePath = `${req.baseUrl || ''}${req.path || ''}`;
+
+    if (shouldAudit(req.method, routePath)) {
+      let resolvedUserId = req.user?.id || null;
+      let resolvedUsername = req.user?.username || 'anonymous';
+
+      // Attempt to resolve user info for successful login/registration
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        if (!resolvedUserId && data?.data?.user) {
+          resolvedUserId = data.data.user.id;
+          resolvedUsername = data.data.user.username;
+        }
+      }
+      if (resolvedUsername === 'anonymous' && req.body?.username) {
+        resolvedUsername = req.body.username;
+      }
+
       const auditEntry = {
-        timestamp: new Date().toISOString(),
-        action: `${req.method} ${req.path}`,
-        user_id: req.user?.id || 'unauthenticated',
-        username: req.user?.username || 'anonymous',
-        ip: req.ip,
+        user_id: resolvedUserId,
+        username: resolvedUsername,
+        action: `${req.method} ${routePath}`,
+        ip: req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress,
         method: req.method,
-        path: req.path,
+        path: routePath,
         status: res.statusCode,
         details: {
-          body_keys: Object.keys(req.body || {}),
+          body: sanitizeBody(req.body),
           params: req.params,
           query: req.query
         }
       };
-      
-      // Log success if status 200-299
+
+      // Write to console/log files
       if (res.statusCode >= 200 && res.statusCode < 300) {
         logger.info(`AUDIT: ${auditEntry.action}`, auditEntry);
       } else if (res.statusCode >= 400) {
-        // Log failures for warnings
         logger.warn(`AUDIT: ${auditEntry.action} (${res.statusCode})`, auditEntry);
       }
+
+      // Asynchronously persist to database in the background
+      AuditLog.create(auditEntry).catch(err => {
+        logger.error('❌ Failed to save AuditLog to database:', err);
+      });
     }
-    
+
     return originalJson.call(this, data);
   };
-  
+
   next();
 };
 

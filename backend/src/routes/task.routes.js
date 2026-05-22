@@ -3,7 +3,7 @@
 // =============================================================================
 const router = require('express').Router();
 const { Op } = require('sequelize');
-const { Task, User } = require('../models');
+const { Task, User, TaskComment, Notification } = require('../models');
 const { parseDateFilter } = require('../middleware/error.middleware');
 
 router.get('/', parseDateFilter, async (req, res, next) => {
@@ -72,4 +72,77 @@ router.delete('/:id', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /:id/comments — Retrieve all comments for a task
+router.get('/:id/comments', async (req, res, next) => {
+  try {
+    const comments = await TaskComment.findAll({
+      where: { task_id: req.params.id },
+      include: [{ model: User, as: 'author', attributes: ['id', 'first_name', 'last_name', 'username', 'avatar_url'] }],
+      order: [['created_at', 'ASC']]
+    });
+    res.json({ success: true, data: comments });
+  } catch (err) { next(err); }
+});
+
+// POST /:id/comments — Add a comment and parse mentions
+router.post('/:id/comments', async (req, res, next) => {
+  try {
+    const task = await Task.findByPk(req.params.id);
+    if (!task) return res.status(404).json({ success: false, message: 'Task not found' });
+
+    const { content } = req.body;
+    if (!content) return res.status(400).json({ success: false, message: 'Content is required' });
+
+    const comment = await TaskComment.create({
+      task_id: task.id,
+      user_id: req.user.id,
+      content
+    });
+
+    // Parse mentions: @username
+    const mentionRegex = /@([a-zA-Z0-9_\-]+)/g;
+    let match;
+    const usernames = new Set();
+    while ((match = mentionRegex.exec(content)) !== null) {
+      usernames.add(match[1]);
+    }
+
+    if (usernames.size > 0) {
+      const mentionedUsers = await User.findAll({
+        where: {
+          username: { [Op.in]: Array.from(usernames) }
+        }
+      });
+
+      const io = req.app.get('io');
+
+      for (const user of mentionedUsers) {
+        // Don't notify yourself
+        if (user.id === req.user.id) continue;
+
+        const notif = await Notification.create({
+          user_id: user.id,
+          type: 'MENTION',
+          title: `Mentioned in Task: ${task.title}`,
+          body: `${req.user.first_name} ${req.user.last_name} (@${req.user.username}) mentioned you in a comment on task "${task.title}": "${content.slice(0, 60)}${content.length > 60 ? '...' : ''}"`,
+          link: `/tasks?id=${task.id}`
+        });
+
+        // Real-time emit if Socket.io is configured
+        if (io) {
+          io.to(`user_${user.id}`).emit('notification', notif);
+        }
+      }
+    }
+
+    // Load author details to return
+    const commentWithAuthor = await TaskComment.findByPk(comment.id, {
+      include: [{ model: User, as: 'author', attributes: ['id', 'first_name', 'last_name', 'username', 'avatar_url'] }]
+    });
+
+    res.status(201).json({ success: true, data: commentWithAuthor });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;
+

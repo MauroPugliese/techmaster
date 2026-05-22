@@ -3,7 +3,7 @@
   "version": 1,
   "newProjectRoot": "projects",
   "projects": {
-    "techmanager": {
+    "smart": {
       "projectType": "application",
       "root": "",
       "sourceRoot": "src",
@@ -12,7 +12,7 @@
         "build": {
           "builder": "@angular-devkit/build-angular:browser",
           "options": {
-            "outputPath":  "dist/techmanager",
+            "outputPath":  "dist/smart",
             "index":       "src/index.html",
             "main":        "src/main.ts",
             "polyfills":   ["zone.js"],
@@ -26,7 +26,7 @@
               "budgets": [
                 {
                   "type": "initial",
-                  "maximumWarning": "500kb",
+                  "maximumWarning": "550kb",
                   "maximumError": "2mb"
                 }
               ],
@@ -56,8 +56,8 @@
         "serve": {
           "builder": "@angular-devkit/build-angular:dev-server",
           "configurations": {
-            "production":  { "buildTarget": "techmanager:build:production" },
-            "development": { "buildTarget": "techmanager:build:development" }
+            "production":  { "buildTarget": "smart:build:production" },
+            "development": { "buildTarget": "smart:build:development" }
           },
           "defaultConfiguration": "development",
           "options": {

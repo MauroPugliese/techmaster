@@ -1,9 +1,9 @@
-# TechManager Platform — Full Technical Documentation
+# SMaRT Platform — Full Technical Documentation
 
 ## Architecture Overview
 
 ```
-techmanager/
+smart/
 ├── database/
 │   └── schema.sql              ← Complete MySQL schema + seed data
 ├── backend/                    ← Node.js + Express REST API
@@ -77,7 +77,7 @@ npm run dev                 # Starts on http://localhost:3000
 # Requires Node.js 18+ and Angular CLI 17+
 npm install -g @angular/cli
 cd frontend
-ng new techmanager-frontend --routing --style=scss --standalone
+ng new smart-frontend --routing --style=scss --standalone
 # Copy src files into the new project
 npm install chart.js
 ng serve                    # Starts on http://localhost:4200
@@ -375,3 +375,4 @@ ng build --configuration production
 # Deploy dist/ to CDN or static host
 # Set FRONTEND_URL in backend .env to production domain
 ```
+

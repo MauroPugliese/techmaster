@@ -1,4 +1,4 @@
-# TechManager — Docker Containerisation Guide
+# SMaRT — Docker Containerisation Guide
 
 ## Container Architecture
 
@@ -9,7 +9,7 @@
 │   Host Port 4200          Host Port 3000        Host Port 3306*     │
 │        │                       │                      │             │
 │  ┌─────▼──────────────────┐    │    ┌──────────────────▼──────────┐ │
-│  │   techmanager_frontend │    │    │      techmanager_db          │ │
+│  │   smart_frontend │    │    │      smart_db          │ │
 │  │   (nginx:1.27-alpine)  │    │    │      (mysql:8.0)             │ │
 │  │                        │    │    │                              │ │
 │  │  /usr/share/nginx/html │    │    │  /var/lib/mysql              │ │
@@ -20,7 +20,7 @@
 │  └────────────────────────┘  │ │    └──────────────────────────────┘ │
 │                               │ │                  │                  │
 │  ┌────────────────────────────▼─▼────────────────┐ │                  │
-│  │           techmanager_backend                  │ │                  │
+│  │           smart_backend                  │ │                  │
 │  │           (node:20-alpine)                     │ │                  │
 │  │                                                │ │                  │
 │  │  src/server.js → Express API                   │ │                  │
@@ -28,7 +28,7 @@
 │  │  Connects to db:3306 via Docker DNS ───────────┼─┘                  │
 │  └────────────────────────────────────────────────┘                    │
 │                                                                         │
-│  ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄  techmanager-net (bridge 172.30.0.0/24) ┄┄┄┄┄┄┄┄ │
+│  ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄  smart-net (bridge 172.30.0.0/24) ┄┄┄┄┄┄┄┄ │
 └─────────────────────────────────────────────────────────────────────────┘
 
 * DB port only exposed on 127.0.0.1 by default (configurable via .env)
@@ -40,7 +40,7 @@
 
 ```bash
 # 1. Clone / enter the project
-cd techmanager
+cd smart
 
 # 2. Create your .env from the template (REQUIRED)
 cp .env.example .env
@@ -50,7 +50,7 @@ cp .env.example .env
 docker-compose up --build
 
 # That's it. Open http://localhost:4200
-# Default admin login:  admin@techmanager.local / Admin@1234
+# Default admin login:  admin@smart.local / Admin@1234
 ```
 
 ---
@@ -58,7 +58,7 @@ docker-compose up --build
 ## 📁 Docker File Structure
 
 ```
-techmanager/
+SMaRT/
 ├── docker-compose.yml           ← Main stack definition
 ├── docker-compose.override.yml  ← Dev overrides (auto-merged locally)
 ├── docker-compose.prod.yml      ← Production hardening
@@ -96,7 +96,7 @@ techmanager/
 ```
 Stage 1: builder (node:20-alpine)          Stage 2: production (nginx:1.27-alpine)
 ────────────────────────────────           ────────────────────────────────────────
-COPY package*.json                         COPY --from=builder /app/dist/techmanager
+COPY package*.json                         COPY --from=builder /app/dist/smart
 npm ci                          ───────►   COPY nginx.conf
 COPY src/                                  EXPOSE 80
 sed inject API_URL placeholder             CMD nginx -g "daemon off;"
@@ -137,7 +137,7 @@ package.json changes
 
 ## 🌐 Networking
 
-All containers share the `techmanager-net` bridge network (`172.30.0.0/24`).
+All containers share the `smart-net` bridge network (`172.30.0.0/24`).
 Docker's internal DNS lets containers reference each other **by service name**:
 
 | From         | To         | Resolves to   | Port |
@@ -187,8 +187,8 @@ This guarantees:
 | Variable               | Used by          | Description                              | Default                |
 |------------------------|------------------|------------------------------------------|------------------------|
 | `MYSQL_ROOT_PASSWORD`  | db               | MySQL root password                      | —                      |
-| `MYSQL_DATABASE`       | db, backend      | Database name                            | `techmanager`          |
-| `MYSQL_USER`           | db, backend      | App DB user                              | `techmanager`          |
+| `MYSQL_DATABASE`       | db, backend      | Database name                            | `smart`          |
+| `MYSQL_USER`           | db, backend      | App DB user                              | `smart`          |
 | `MYSQL_PASSWORD`       | db, backend      | App DB password                          | —                      |
 | `DB_HOST_PORT`         | db (host)        | Host binding for MySQL port              | `127.0.0.1:3306`       |
 | `NODE_ENV`             | backend          | Node environment                         | `production`           |
@@ -241,10 +241,10 @@ docker-compose up -d --no-deps frontend
 # ── Shell access ──────────────────────────────────────────────────────────────
 
 # Open a shell in the backend container
-docker exec -it techmanager_backend sh
+docker exec -it smart_backend sh
 
 # MySQL client inside the db container
-docker exec -it techmanager_db mysql -u techmanager -p techmanager
+docker exec -it smart_db mysql -u SMaRT -p SMaRT
 
 # ── Health status ──────────────────────────────────────────────────────────────
 docker-compose ps
@@ -303,4 +303,6 @@ docker-compose ps
 | `ng build` fails in Docker | Missing `package-lock.json` | Run `npm install` locally first to generate it |
 | `404` on Angular routes | Nginx missing try_files | Ensure `nginx.conf` is copied correctly into the image |
 | API returns CORS error | `FRONTEND_ORIGIN` mismatch | Set it to the exact origin the browser uses |
-| DB data lost on restart | Volume not created | Check `docker volume ls` — ensure `techmanager_mysql_data` exists |
+| DB data lost on restart | Volume not created | Check `docker volume ls` — ensure `smart_mysql_data` exists |
+
+

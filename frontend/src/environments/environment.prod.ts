@@ -20,6 +20,6 @@ export const environment = {
   // Default value used when building outside Docker:
   apiUrl: '__API_URL__',
 
-  appName: 'TechManager',
+  appName: 'SMaRT',
   version: '1.0.0',
 };

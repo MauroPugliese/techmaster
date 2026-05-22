@@ -1,10 +1,12 @@
 // =============================================================================
-// server.js — TechManager API Entry Point
+// server.js — SMaRT API Entry Point
 // =============================================================================
 require('dotenv').config();
+const http = require('http');
 const app     = require('./app');
 const { sequelize } = require('./config/database');
 const logger  = require('./config/logger');
+const { initSocket } = require('./config/socket');
 
 const PORT = process.env.PORT || 3000;
 
@@ -15,11 +17,15 @@ async function bootstrap() {
 
     // Sync models without dropping tables in production
     if (process.env.NODE_ENV !== 'production') {
-      await sequelize.sync({ alter: false });
+      await sequelize.sync({ alter: true });
     }
 
-    app.listen(PORT, () => {
-      logger.info(`🚀 TechManager API running on port ${PORT} [${process.env.NODE_ENV}]`);
+    const server = http.createServer(app);
+    const io = initSocket(server);
+    app.set('io', io);
+
+    server.listen(PORT, () => {
+      logger.info(`🚀 SMaRT API running on port ${PORT} [${process.env.NODE_ENV}]`);
     });
   } catch (err) {
     logger.error('❌ Failed to start server:', err);
@@ -28,3 +34,4 @@ async function bootstrap() {
 }
 
 bootstrap();
+

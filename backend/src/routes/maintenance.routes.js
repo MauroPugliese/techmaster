@@ -89,7 +89,36 @@ router.put('/:id', async (req, res, next) => {
   try {
     const rec = await MaintenanceRecord.findByPk(req.params.id);
     if (!rec) return res.status(404).json({ success: false, message: 'Not found' });
+    
+    const previousStatus = rec.status;
     await rec.update(req.body);
+
+    // Cyclic maintenance: auto-generate next scheduled record upon completion
+    if (rec.status === 'COMPLETED' && previousStatus !== 'COMPLETED' && rec.next_scheduled) {
+      const alreadyScheduled = await MaintenanceRecord.findOne({
+        where: {
+          asset_id: rec.asset_id,
+          scheduled_date: rec.next_scheduled,
+          status: 'SCHEDULED'
+        }
+      });
+
+      if (!alreadyScheduled) {
+        await MaintenanceRecord.create({
+          asset_id: rec.asset_id,
+          performed_by: rec.performed_by || req.user.id,
+          type: rec.type,
+          title: rec.title,
+          description: `Automatically generated recurring maintenance record following the completion of task #${rec.id}.\n\nOriginal description: ${rec.description}`,
+          status: 'SCHEDULED',
+          priority: rec.priority,
+          scheduled_date: rec.next_scheduled,
+          cost: 0.00,
+          parts_used: []
+        });
+      }
+    }
+
     res.json({ success: true, data: rec });
   } catch (err) { next(err); }
 });

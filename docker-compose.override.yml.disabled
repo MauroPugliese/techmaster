@@ -48,7 +48,7 @@ services:
   #   build:
   #     context: ./frontend
   #     dockerfile: Dockerfile.dev    # A simpler Dockerfile that just runs ng serve
-  #   container_name: techmanager_frontend_dev
+  #   container_name: smart_frontend_dev
   #   volumes:
   #     - ./frontend/src:/app/src
   #     - ./frontend/angular.json:/app/angular.json
@@ -57,4 +57,5 @@ services:
   #   environment:
   #     API_URL: http://backend:3000/api
   #   networks:
-  #     - techmanager-net
+  #     - smart-net
+

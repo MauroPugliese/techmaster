@@ -5,3 +5,4 @@ export { DateFilterService }  from './date-filter.service';
 export { OperationsService }  from './operations.service';
 export { ToastService }   from './toast.service';
 export { ConfirmService } from './confirm.service';
+export { SocketService }  from './socket.service';

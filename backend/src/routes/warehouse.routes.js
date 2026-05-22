@@ -5,7 +5,7 @@
 // =============================================================================
 const router = require('express').Router();
 const { Op, literal } = require('sequelize');
-const { InventoryItem, StockMovement, ItemCategory, User, sequelize } = require('../models');
+const { InventoryItem, StockMovement, ItemCategory, User, sequelize, Notification, Task } = require('../models');
 const { parseDateFilter } = require('../middleware/error.middleware');
 const { validateInventoryItem, validateStockMovement, validateIdParam } = require('../middleware/validation.middleware');
 const { authenticate } = require('../middleware/auth.middleware');
@@ -90,6 +90,52 @@ router.post('/:id/movement', authenticate, validateIdParam, validateStockMovemen
     await item.update({ quantity: qty_after }, { transaction });
     
     await transaction.commit();
+
+    // Automated Low Stock Warning
+    if (qty_after < item.min_stock && qty_before >= item.min_stock) {
+      try {
+        const staffToNotify = await User.findAll({
+          where: { role_id: { [Op.in]: [1, 2] } }
+        });
+        const notifications = staffToNotify.map(u => ({
+          user_id: u.id,
+          type: 'LOW_STOCK',
+          title: `Low Stock Warning: ${item.name}`,
+          body: `Stock for item "${item.name}" (SKU: ${item.sku}) is now at ${qty_after}, below the minimum limit of ${item.min_stock}.`,
+          link: `/warehouse?search=${item.sku}`
+        }));
+
+        if (!staffToNotify.some(u => u.id === req.user.id)) {
+          notifications.push({
+            user_id: req.user.id,
+            type: 'LOW_STOCK',
+            title: `Low Stock Warning: ${item.name}`,
+            body: `Stock for item "${item.name}" (SKU: ${item.sku}) is now at ${qty_after}, below the minimum limit of ${item.min_stock}.`,
+            link: `/warehouse?search=${item.sku}`
+          });
+        }
+        await Notification.bulkCreate(notifications);
+
+        await Task.create({
+          created_by: req.user.id,
+          category_id: 1, // General Infrastructure
+          title: `Restock Request: ${item.name}`,
+          description: `Automated restock request: Inventory item "${item.name}" (SKU: ${item.sku}) has fallen below minimum stock level.\n\nCurrent Stock: ${qty_after}\nMinimum Required: ${item.min_stock}`,
+          status: 'TODO',
+          priority: 'HIGH',
+          due_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
+        });
+
+        // Emit real-time WebSocket notifications if active
+        if (req.app.get('io')) {
+          notifications.forEach(n => {
+            req.app.get('io').to(`user_${n.user_id}`).emit('notification', n);
+          });
+        }
+      } catch (errCheck) {
+        console.error('Failed to run automated low-stock warnings:', errCheck);
+      }
+    }
 
     res.status(201).json({ success: true, data: { movement, new_quantity: qty_after } });
   } catch (err) {

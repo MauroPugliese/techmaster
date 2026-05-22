@@ -13,11 +13,11 @@
 
 -- Use the database created by MYSQL_DATABASE env var
 -- (MySQL already created it; this just makes sure we're on it)
-CREATE DATABASE IF NOT EXISTS techmanager
+CREATE DATABASE IF NOT EXISTS smart
     CHARACTER SET utf8mb4
     COLLATE utf8mb4_unicode_ci;
 
-USE techmanager;
+USE smart;
 
 SET FOREIGN_KEY_CHECKS = 0;
 SET time_zone = '+00:00';
@@ -159,6 +159,7 @@ CREATE TABLE IF NOT EXISTS maintenance_records (
     parts_used      JSON,
     findings        TEXT,
     next_scheduled  DATETIME,
+    deleted_at      DATETIME NULL,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT fk_maint_asset FOREIGN KEY (asset_id)     REFERENCES assets(id),
@@ -202,6 +203,7 @@ CREATE TABLE IF NOT EXISTS inventory_items (
     supplier_ref    VARCHAR(100),
     image_url       VARCHAR(500),
     is_active       BOOLEAN DEFAULT TRUE,
+    deleted_at      DATETIME NULL,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT fk_inv_cat      FOREIGN KEY (category_id) REFERENCES item_categories(id),
@@ -248,6 +250,7 @@ CREATE TABLE IF NOT EXISTS shifts (
     check_out       DATETIME,
     notes           TEXT,
     overtime_hours  DECIMAL(5,2) DEFAULT 0,
+    deleted_at      DATETIME NULL,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_shift_user_date (user_id, date),
@@ -383,6 +386,23 @@ CREATE TABLE IF NOT EXISTS notifications (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================================================
+-- AUDIT LOGS
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id     INT UNSIGNED,
+    username    VARCHAR(60),
+    action      VARCHAR(100),
+    ip          VARCHAR(45),
+    method      VARCHAR(10),
+    path        VARCHAR(255),
+    status      INT,
+    details     JSON,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_audit_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =============================================================================
 -- REFRESH TOKENS
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS refresh_tokens (
@@ -500,7 +520,7 @@ VALUES
 -- Demo admin user
 -- Password: Admin@1234  (bcrypt hash, 12 rounds)
 INSERT IGNORE INTO users (id, role_id, username, email, password_hash, first_name, last_name, department, job_title) VALUES
-(1, 1, 'admin', 'admin@techmanager.local',
+(1, 1, 'admin', 'admin@smart.local',
  '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewFX5nGLPBhDvb4W',
  'System', 'Admin', 'IT', 'Platform Administrator');
 
@@ -513,6 +533,6 @@ SET FOREIGN_KEY_CHECKS = 1;
 
 -- Confirmation message (visible in docker logs on first boot)
 SELECT CONCAT(
-    '✅  TechManager schema initialised. ',
+    '✅  SMaRT schema initialised. ',
     COUNT(*), ' roles loaded.'
 ) AS init_status FROM roles;
