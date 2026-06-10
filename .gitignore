@@ -18,6 +18,9 @@ Thumbs.db
 .vscode/
 
 # Angular / build artifacts
+frontend/.angular/
+frontend/dist/
+frontend/coverage/
 dist/
 coverage/
 

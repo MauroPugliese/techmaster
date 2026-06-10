@@ -62,10 +62,10 @@ export class WarehouseComponent implements OnInit, OnDestroy {
       const href = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = href;
-      a.download = warehouse_inventory_.;
+      a.download = `warehouse_inventory.${format}`;
       a.click();
       URL.revokeObjectURL(href);
-      this.toast.success(Warehouse report exported ().);
+      this.toast.success('Warehouse report exported.');
     } catch {
       this.toast.error('Warehouse export failed.');
     }
