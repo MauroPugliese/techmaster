@@ -138,9 +138,15 @@ export interface PlannedMaintenanceTask {
   operationDateEnd: string;
   repeatTaskType: RepeatTaskType;
   repeatTaskNumber: number;
+  recurrenceEndDate?: string | null;
   reportTemplate?: string;
   status: PlannedTaskStatus;
   optional?: boolean;
+  masterId?: number;
+  instanceId?: number | null;
+  occurrenceDate?: string | null;
+  isOccurrence?: boolean;
+  exceptionType?: 'OVERRIDE' | 'DELETED' | null;
 }
 
 export interface CalendarIndicator {

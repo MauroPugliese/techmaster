@@ -157,6 +157,54 @@ CREATE TABLE maintenance_records (
     CONSTRAINT fk_maint_user  FOREIGN KEY (performed_by) REFERENCES users(id)
 ) ENGINE=InnoDB;
 
+CREATE TABLE planned_maintenance_tasks (
+    id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    system               VARCHAR(150) NOT NULL,
+    subsystem            VARCHAR(150) NOT NULL,
+    task                 TEXT NOT NULL,
+    reference            VARCHAR(200),
+    operation_date_start  DATETIME NOT NULL,
+    operation_date_end    DATETIME NOT NULL,
+    repeat_task_type      ENUM('DAY','WEEK','MONTH') NOT NULL DEFAULT 'WEEK',
+    repeat_task_number    INT NOT NULL DEFAULT 1,
+    recurrence_end_date   DATETIME NULL,
+    report_template       VARCHAR(300),
+    status                ENUM('TODO','DONE') NOT NULL DEFAULT 'TODO',
+    optional              BOOLEAN NOT NULL DEFAULT FALSE,
+    created_by            INT UNSIGNED,
+    deleted_at            DATETIME NULL,
+    created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_pmt_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE planned_maintenance_task_instances (
+    id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    planned_task_id      INT UNSIGNED NOT NULL,
+    occurrence_date      DATE NOT NULL,
+    exception_type       ENUM('OVERRIDE','DELETED') NOT NULL DEFAULT 'OVERRIDE',
+    system               VARCHAR(150),
+    subsystem            VARCHAR(150),
+    task                 TEXT,
+    reference            VARCHAR(200),
+    operation_date_start  DATETIME,
+    operation_date_end    DATETIME,
+    repeat_task_type      ENUM('DAY','WEEK','MONTH'),
+    repeat_task_number    INT,
+    recurrence_end_date   DATETIME NULL,
+    report_template      VARCHAR(300),
+    status               ENUM('TODO','DONE') DEFAULT 'TODO',
+    optional             BOOLEAN DEFAULT FALSE,
+    created_by           INT UNSIGNED,
+    created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_pmti_task_date (planned_task_id, occurrence_date),
+    INDEX idx_pmti_task_date (planned_task_id, occurrence_date),
+    INDEX idx_pmti_date      (occurrence_date),
+    CONSTRAINT fk_pmti_master FOREIGN KEY (planned_task_id) REFERENCES planned_maintenance_tasks(id) ON DELETE CASCADE,
+    CONSTRAINT fk_pmti_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
 -- =============================================================================
 -- SECTION 4: WAREHOUSE / INVENTORY
 -- =============================================================================
@@ -408,6 +456,14 @@ CREATE INDEX idx_operations_type       ON operations(type_id);
 CREATE INDEX idx_maint_asset           ON maintenance_records(asset_id);
 CREATE INDEX idx_maint_scheduled       ON maintenance_records(scheduled_date);
 CREATE INDEX idx_maint_status          ON maintenance_records(status);
+CREATE INDEX idx_pmt_system            ON planned_maintenance_tasks(system);
+CREATE INDEX idx_pmt_subsystem         ON planned_maintenance_tasks(subsystem);
+CREATE INDEX idx_pmt_operation_date    ON planned_maintenance_tasks(operation_date_start);
+CREATE INDEX idx_pmt_status            ON planned_maintenance_tasks(status);
+CREATE INDEX idx_pmt_repeat_type       ON planned_maintenance_tasks(repeat_task_type);
+CREATE INDEX idx_pmt_recurrence_end    ON planned_maintenance_tasks(recurrence_end_date);
+CREATE INDEX idx_pmti_task_date        ON planned_maintenance_task_instances(planned_task_id, occurrence_date);
+CREATE INDEX idx_pmti_date             ON planned_maintenance_task_instances(occurrence_date);
 CREATE INDEX idx_inventory_sku         ON inventory_items(sku);
 CREATE INDEX idx_inventory_qty         ON inventory_items(quantity);
 CREATE INDEX idx_stock_date            ON stock_movements(movement_date);
@@ -509,6 +565,7 @@ SET FOREIGN_KEY_CHECKS = 1;
 -- users (1) ──< operation_members (M) via user_id
 -- users (1) ──< maintenance_records (M) via performed_by
 -- assets (1) ──< maintenance_records (M) via asset_id
+-- users (1) ──< planned_maintenance_tasks (M) via created_by
 -- inventory_items (1) ──< stock_movements (M) via item_id
 -- users (1) ──< shifts (M) via user_id
 -- tasks (1) ──< tasks (M) via parent_id [recursive]

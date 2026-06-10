@@ -43,8 +43,10 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
   // Modal
   showModal = false;
   editing = false;
+  editingScope: 'series' | 'occurrence' = 'series';
   saving = false;
   editId: number | null = null;
+  occurrenceMeta: { masterId: number; occurrenceDate: string } | null = null;
   form: any = this.emptyForm();
 
   constructor(
@@ -91,6 +93,8 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
   }
 
   openModal(task?: PlannedMaintenanceTask): void {
+    this.editingScope = 'series';
+    this.occurrenceMeta = null;
     if (task) {
       this.editing = true;
       this.editId = task.id;
@@ -99,10 +103,11 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
         subsystem: task.subsystem,
         task: task.task,
         reference: task.reference || '',
-        operationDateStart: task.operationDateStart?.replace('Z', '').substring(0, 16) || '',
-        operationDateEnd: task.operationDateEnd?.replace('Z', '').substring(0, 16) || '',
+        operationDateStart: this.toDateTimeLocalValue(task.operationDateStart),
+        operationDateEnd: this.toDateTimeLocalValue(task.operationDateEnd),
         repeatTaskType: task.repeatTaskType || 'WEEK',
         repeatTaskNumber: task.repeatTaskNumber || 1,
+        recurrenceEndDate: this.toDateInputValue(task.recurrenceEndDate),
         reportTemplate: task.reportTemplate || '',
         status: task.status || 'TODO',
         optional: task.optional || false
@@ -112,6 +117,31 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
       this.editId = null;
       this.form = this.emptyForm();
     }
+    this.showModal = true;
+  }
+
+  openOccurrenceModal(task: PlannedMaintenanceTask): void {
+    this.editingScope = 'occurrence';
+    this.occurrenceMeta = {
+      masterId: task.masterId || task.id,
+      occurrenceDate: task.occurrenceDate || this.selectedDate
+    };
+    this.editing = true;
+    this.editId = task.masterId || task.id;
+    this.form = {
+      system: task.system,
+      subsystem: task.subsystem,
+      task: task.task,
+      reference: task.reference || '',
+      operationDateStart: this.toDateTimeLocalValue(task.operationDateStart),
+      operationDateEnd: this.toDateTimeLocalValue(task.operationDateEnd),
+      repeatTaskType: task.repeatTaskType || 'WEEK',
+      repeatTaskNumber: task.repeatTaskNumber || 1,
+      recurrenceEndDate: this.toDateInputValue(task.recurrenceEndDate),
+      reportTemplate: task.reportTemplate || '',
+      status: task.status || 'TODO',
+      optional: task.optional || false
+    };
     this.showModal = true;
   }
 
@@ -128,23 +158,28 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
     }
 
     this.saving = true;
+    const operationDateStart = this.toIsoString(this.form.operationDateStart);
+    const operationDateEnd = this.toIsoString(this.form.operationDateEnd || this.form.operationDateStart);
     const payload: Partial<PlannedMaintenanceTask> = {
       system: this.form.system,
       subsystem: this.form.subsystem,
       task: this.form.task,
       reference: this.form.reference,
-      operationDateStart: this.form.operationDateStart,
-      operationDateEnd: this.form.operationDateEnd,
+      operationDateStart,
+      operationDateEnd,
       repeatTaskType: this.form.repeatTaskType,
       repeatTaskNumber: this.form.repeatTaskNumber,
+      recurrenceEndDate: this.form.recurrenceEndDate || null,
       reportTemplate: this.form.reportTemplate,
       status: this.form.status,
       optional: this.form.optional
     };
 
-    const obs = this.editing && this.editId
-      ? this.svc.update(this.editId, payload)
-      : this.svc.create(payload);
+    const obs = this.editing && this.occurrenceMeta
+      ? this.svc.updateOccurrence(this.occurrenceMeta.masterId, this.occurrenceMeta.occurrenceDate, payload)
+      : this.editing && this.editId
+        ? this.svc.update(this.editId, payload)
+        : this.svc.create(payload);
 
     obs.pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {
@@ -179,9 +214,32 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
     });
   }
 
+  deleteOccurrence(task: PlannedMaintenanceTask): void {
+    const masterId = task.masterId || task.id;
+    const occurrenceDate = task.occurrenceDate || this.selectedDate;
+    this.confirm.confirm(`Delete this occurrence of "${task.task}"?`, 'Delete Occurrence', true).then(confirmed => {
+      if (!confirmed) return;
+      this.svc.deleteOccurrence(masterId, occurrenceDate).pipe(takeUntil(this.destroy$)).subscribe({
+        next: () => {
+          this.toast.success('Occurrence deleted');
+          this.loadTasks();
+          this.loadIndicators();
+          this.loadDayTasks();
+        },
+        error: () => this.toast.error('Failed to delete occurrence')
+      });
+    });
+  }
+
   toggleStatus(task: PlannedMaintenanceTask): void {
     const newStatus = task.status === 'DONE' ? 'TODO' : 'DONE';
-    this.svc.update(task.id, { ...task, status: newStatus } as any)
+    const masterId = task.masterId || task.id;
+    const occurrenceDate = task.occurrenceDate || this.selectedDate;
+    const obs = task.isOccurrence
+      ? this.svc.updateOccurrence(masterId, occurrenceDate, { status: newStatus })
+      : this.svc.update(task.id, { status: newStatus });
+
+    obs
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: () => {
@@ -220,6 +278,8 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
     if (this.calMonth < 1) { this.calMonth = 12; this.calYear--; }
     this.buildCalendar();
     this.loadIndicators();
+    this.selectedDate = `${this.calYear}-${String(this.calMonth).padStart(2, '0')}-01`;
+    this.loadDayTasks();
   }
 
   nextMonth(): void {
@@ -227,6 +287,8 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
     if (this.calMonth > 12) { this.calMonth = 1; this.calYear++; }
     this.buildCalendar();
     this.loadIndicators();
+    this.selectedDate = `${this.calYear}-${String(this.calMonth).padStart(2, '0')}-01`;
+    this.loadDayTasks();
   }
 
   selectDay(day: number | null): void {
@@ -301,6 +363,33 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }
 
+  private toDateInputValue(value?: string | null): string {
+    if (!value) return '';
+    const date = new Date(value);
+    if (isNaN(date.getTime())) return String(value).slice(0, 10);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  private toDateTimeLocalValue(value?: string): string {
+    if (!value) return '';
+    const date = new Date(value);
+    if (isNaN(date.getTime())) return value.slice(0, 16);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  }
+
+  private toIsoString(value: string): string {
+    const date = new Date(value);
+    return isNaN(date.getTime()) ? value : date.toISOString();
+  }
+
   
   async exportPlanned(format: 'xlsx' | 'pdf' | 'docx'): Promise<void> {
     try {
@@ -332,6 +421,7 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
       operationDateEnd: '',
       repeatTaskType: 'WEEK',
       repeatTaskNumber: 1,
+      recurrenceEndDate: '',
       reportTemplate: '',
       status: 'TODO',
       optional: false

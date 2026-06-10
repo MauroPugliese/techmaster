@@ -108,12 +108,39 @@ const PlannedMaintenanceTask = sequelize.define('PlannedMaintenanceTask', {
   operation_date_end:  { type: DataTypes.DATE, allowNull: false },
   repeat_task_type:    { type: DataTypes.ENUM('DAY', 'WEEK', 'MONTH'), allowNull: false, defaultValue: 'WEEK' },
   repeat_task_number:  { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
+  recurrence_end_date: { type: DataTypes.DATE },
   report_template:     { type: DataTypes.STRING(300) },
   status:              { type: DataTypes.ENUM('TODO', 'DONE'), allowNull: false, defaultValue: 'TODO' },
   optional:            { type: DataTypes.BOOLEAN, defaultValue: false },
   created_by:          { type: DataTypes.INTEGER.UNSIGNED },
   deleted_at:          { type: DataTypes.DATE }
 }, { tableName: 'planned_maintenance_tasks', paranoid: true, deletedAt: 'deleted_at' });
+
+const PlannedMaintenanceTaskInstance = sequelize.define('PlannedMaintenanceTaskInstance', {
+  id:                   { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
+  planned_task_id:      { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+  occurrence_date:      { type: DataTypes.DATEONLY, allowNull: false },
+  exception_type:       { type: DataTypes.ENUM('OVERRIDE', 'DELETED'), allowNull: false, defaultValue: 'OVERRIDE' },
+  system:               { type: DataTypes.STRING(150) },
+  subsystem:            { type: DataTypes.STRING(150) },
+  task:                 { type: DataTypes.TEXT },
+  reference:            { type: DataTypes.STRING(200) },
+  operation_date_start: { type: DataTypes.DATE },
+  operation_date_end:   { type: DataTypes.DATE },
+  repeat_task_type:     { type: DataTypes.ENUM('DAY', 'WEEK', 'MONTH') },
+  repeat_task_number:   { type: DataTypes.INTEGER },
+  recurrence_end_date:  { type: DataTypes.DATE },
+  report_template:      { type: DataTypes.STRING(300) },
+  status:               { type: DataTypes.ENUM('TODO', 'DONE'), defaultValue: 'TODO' },
+  optional:             { type: DataTypes.BOOLEAN, defaultValue: false },
+  created_by:           { type: DataTypes.INTEGER.UNSIGNED }
+}, {
+  tableName: 'planned_maintenance_task_instances',
+  timestamps: true,
+  createdAt: 'created_at',
+  updatedAt: 'updated_at',
+  indexes: [{ unique: true, name: 'uniq_pmti_task_date', fields: ['planned_task_id', 'occurrence_date'] }]
+});
 
 // ── Inventory Categories ─────────────────────────────────────────────────────
 const ItemCategory = sequelize.define('ItemCategory', {
@@ -283,6 +310,9 @@ MaintenanceRecord.belongsTo(Asset, { foreignKey: 'asset_id', as: 'asset' });
 MaintenanceRecord.belongsTo(User, { foreignKey: 'performed_by', as: 'technician' });
 
 PlannedMaintenanceTask.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
+PlannedMaintenanceTask.hasMany(PlannedMaintenanceTaskInstance, { foreignKey: 'planned_task_id', as: 'occurrences' });
+PlannedMaintenanceTaskInstance.belongsTo(PlannedMaintenanceTask, { foreignKey: 'planned_task_id', as: 'master' });
+PlannedMaintenanceTaskInstance.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
 
 InventoryItem.hasMany(StockMovement, { foreignKey: 'item_id', as: 'movements' });
 StockMovement.belongsTo(InventoryItem, { foreignKey: 'item_id', as: 'item' });
@@ -319,7 +349,7 @@ InventoryItem.belongsTo(ItemCategory, { foreignKey: 'category_id', as: 'category
 module.exports = {
   sequelize, User, Role, Operation, OperationType,
   Asset, AssetCategory, MaintenanceRecord,
-  PlannedMaintenanceTask,
+  PlannedMaintenanceTask, PlannedMaintenanceTaskInstance,
   ItemCategory, InventoryItem, StockMovement,
   Shift, ShiftType,
   Task, TaskComment,

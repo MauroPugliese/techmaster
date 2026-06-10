@@ -13,7 +13,8 @@ const validateCreate = [
   body('operation_date_start').isISO8601().withMessage('Valid start date required.'),
   body('operation_date_end').isISO8601().withMessage('Valid end date required.'),
   body('repeat_task_type').isIn(['DAY', 'WEEK', 'MONTH']).withMessage('repeat_task_type must be DAY, WEEK, or MONTH.'),
-  body('repeat_task_number').isInt({ min: 1 }).withMessage('repeat_task_number must be >= 1.')
+  body('repeat_task_number').isInt({ min: 1 }).withMessage('repeat_task_number must be >= 1.'),
+  body('recurrence_end_date').optional({ nullable: true }).isISO8601().withMessage('recurrence_end_date must be a valid date.')
 ];
 
 const validateUpdate = [
@@ -24,7 +25,17 @@ const validateUpdate = [
   body('operation_date_end').optional().isISO8601(),
   body('repeat_task_type').optional().isIn(['DAY', 'WEEK', 'MONTH']),
   body('repeat_task_number').optional().isInt({ min: 1 }),
+  body('recurrence_end_date').optional({ nullable: true }).isISO8601(),
   body('status').optional().isIn(['TODO', 'DONE'])
+];
+
+const validateOccurrenceUpdate = [
+  body('operation_date_start').optional().isISO8601(),
+  body('operation_date_end').optional().isISO8601(),
+  body('status').optional().isIn(['TODO', 'DONE']),
+  body('repeat_task_type').optional().isIn(['DAY', 'WEEK', 'MONTH']),
+  body('repeat_task_number').optional().isInt({ min: 1 }),
+  body('recurrence_end_date').optional({ nullable: true }).isISO8601()
 ];
 
 // ── Validation error handler ─────────────────────────────────────────────────
@@ -47,6 +58,12 @@ router.get('/calendar/:year/:month', ctrl.getCalendarIndicators);
 
 // GET /api/maintenance/planned/date/:date — tasks for specific date (YYYY-MM-DD)
 router.get('/date/:date', ctrl.getByDate);
+
+// PUT /api/maintenance/planned/:id/occurrence/:date — update a single occurrence
+router.put('/:id/occurrence/:date', validateOccurrenceUpdate, handleValidation, ctrl.updateOccurrence);
+
+// DELETE /api/maintenance/planned/:id/occurrence/:date — delete one occurrence only
+router.delete('/:id/occurrence/:date', ctrl.deleteOccurrence);
 
 // GET /api/maintenance/planned/:id — single task
 router.get('/:id', ctrl.getById);

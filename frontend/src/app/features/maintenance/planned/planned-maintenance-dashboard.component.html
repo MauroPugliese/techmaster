@@ -34,6 +34,7 @@
           <th>Start Date</th>
           <th>Repeat</th>
           <th>Every</th>
+          <th>Repeat Until</th>
           <th>Status</th>
           <th>Actions</th>
         </tr>
@@ -53,6 +54,7 @@
             </span>
           </td>
           <td class="text-sm text-center">{{ t.repeat_task_number || t.repeatTaskNumber }}</td>
+          <td class="text-sm">{{ formatDate(t.recurrence_end_date || t.recurrenceEndDate) }}</td>
           <td>
             <span class="badge" [ngClass]="getStatusBadgeClass(t.status)">
               {{ t.status }}
@@ -140,6 +142,7 @@
           <div class="event-info">
             <div class="event-title">{{ t.task }}</div>
             <div class="event-meta">{{ t.system }} › {{ t.subsystem }}</div>
+            <div class="event-meta" *ngIf="t.isOccurrence && t.occurrenceDate">Occurrence: {{ t.occurrenceDate }}</div>
           </div>
           <span class="badge" [ngClass]="getRepeatBadgeClass(t.repeat_task_type || t.repeatTaskType)">
             {{ t.repeat_task_type || t.repeatTaskType }}
@@ -147,6 +150,15 @@
           <span class="badge" [ngClass]="getStatusBadgeClass(t.status)">
             {{ t.status }}
           </span>
+          <span class="badge" *ngIf="t.isOccurrence" style="background:#E0F2FE;color:#075985">Occurrence</span>
+          <div class="flex gap-1" style="margin-left:auto">
+            <button class="btn btn-ghost btn-icon-only btn-sm" (click)="openOccurrenceModal(t)" title="Edit occurrence">
+              <span class="btn-icon" style="font-size:17px">event_repeat</span>
+            </button>
+            <button class="btn btn-ghost btn-icon-only btn-sm" (click)="deleteOccurrence(t)" title="Delete occurrence">
+              <span class="btn-icon" style="font-size:17px;color:#EF4444">delete</span>
+            </button>
+          </div>
         </div>
         <div class="empty-state" *ngIf="!dayTasks.length" style="padding:24px">
           <span class="empty-icon" style="font-size:32px">event_busy</span>
@@ -163,7 +175,7 @@
   <div class="modal" style="max-width:600px" (click)="$event.stopPropagation()">
 
     <div class="modal-header">
-      <h3>{{ editing ? 'Edit Task' : 'New Planned Task' }}</h3>
+      <h3>{{ editing ? (editingScope === 'occurrence' ? 'Edit Occurrence' : 'Edit Task') : 'New Planned Task' }}</h3>
       <button class="btn btn-ghost btn-icon-only" (click)="showModal=false">
         <span class="btn-icon">close</span>
       </button>
@@ -198,7 +210,7 @@
           <input type="datetime-local" class="form-control" [(ngModel)]="form.operationDateEnd">
         </div>
 
-        <div class="form-group">
+        <div *ngIf="editingScope === 'series'" class="form-group">
           <label class="form-label">Repeat Type *</label>
           <select class="form-control" [(ngModel)]="form.repeatTaskType">
             <option value="DAY">Every N Days</option>
@@ -207,12 +219,26 @@
           </select>
         </div>
 
-        <div class="form-group">
+        <div *ngIf="editingScope === 'series'" class="form-group">
           <label class="form-label">Every N *</label>
           <input type="number" class="form-control" [(ngModel)]="form.repeatTaskNumber" min="1" max="365">
           <span class="text-sm text-muted" style="margin-top:4px;display:block">
             e.g. 1 = every week, 2 = every 2 weeks
           </span>
+        </div>
+
+        <div *ngIf="editingScope === 'series'" class="form-group">
+          <label class="form-label">Repeat Until</label>
+          <input type="date" class="form-control" [(ngModel)]="form.recurrenceEndDate">
+          <span class="text-sm text-muted" style="margin-top:4px;display:block">
+            Leave blank for an open-ended series.
+          </span>
+        </div>
+
+        <div *ngIf="editingScope === 'occurrence'" class="form-group" style="grid-column:1/-1">
+          <div style="padding:12px 14px;border-radius:12px;background:#EFF6FF;border:1px solid #BFDBFE;color:#1D4ED8;font-size:0.875rem">
+            You are editing one calendar occurrence only. The master task in the table will not change.
+          </div>
         </div>
 
         <div class="form-group">
