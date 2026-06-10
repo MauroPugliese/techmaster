@@ -301,6 +301,27 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }
 
+  
+  async exportPlanned(format: 'xlsx' | 'pdf' | 'docx'): Promise<void> {
+    try {
+      const token = localStorage.getItem('access_token');
+      const periodStart = `${this.calYear}-${String(this.calMonth).padStart(2, '0')}-01`;
+      const periodEnd = `${this.calYear}-${String(this.calMonth).padStart(2, '0')}-${String(new Date(this.calYear, this.calMonth, 0).getDate()).padStart(2, '0')}`;
+      const url = this.svc.getExportUrl(format, periodStart, periodEnd);
+      const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      if (!res.ok) throw new Error('Export failed');
+      const blob = await res.blob();
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = `planned_maintenance_${periodStart}_${periodEnd}.${format}`;
+      a.click();
+      URL.revokeObjectURL(href);
+      this.toast.success(`Planned maintenance report exported (${format.toUpperCase()}).`);
+    } catch {
+      this.toast.error('Planned maintenance export failed.');
+    }
+  }
   private emptyForm(): any {
     return {
       system: '',
@@ -317,3 +338,4 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
     };
   }
 }
+

@@ -44,4 +44,8 @@ export class PlannedMaintenanceService {
   delete(id: number): Observable<any> {
     return this.api.delete<any>(`${this.basePath}/${id}`);
   }
+
+  getExportUrl(format: 'xlsx' | 'pdf' | 'docx', from: string, to: string): string {
+    return `${this.api.baseUrl}/export/planned-maintenance-report?format=${format}&from=${from}&to=${to}`;
+  }
 }

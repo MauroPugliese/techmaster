@@ -40,9 +40,20 @@
         <span class="btn-icon">warning</span> Low Stock Only
       </button>
     </div>
-    <button class="btn btn-primary" (click)="openItemModal()">
-      <span class="btn-icon">add</span> Add Item
-    </button>
+    <div class="flex gap-2">
+      <button class="btn btn-secondary btn-sm" (click)="exportWarehouse('xlsx')">
+        <span class="btn-icon">table_view</span> Excel
+      </button>
+      <button class="btn btn-secondary btn-sm" (click)="exportWarehouse('pdf')">
+        <span class="btn-icon">picture_as_pdf</span> PDF
+      </button>
+      <button class="btn btn-secondary btn-sm" (click)="exportWarehouse('docx')">
+        <span class="btn-icon">description</span> Word
+      </button>
+      <button class="btn btn-primary" (click)="openItemModal()">
+        <span class="btn-icon">add</span> Add Item
+      </button>
+    </div>
   </div>
 
   <!-- ── Table ───────────────────────────────────────────────────────────── -->
@@ -309,3 +320,4 @@
 
   </div>
 </div>
+

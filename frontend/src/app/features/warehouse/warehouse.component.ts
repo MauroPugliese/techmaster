@@ -52,6 +52,25 @@ export class WarehouseComponent implements OnInit, OnDestroy {
   get lowItems():     number { return this.items.filter(i => i.quantity > 0 && i.quantity <= i.reorder_point).length; }
   get outOfStock():   number { return this.items.filter(i => i.quantity === 0).length; }
 
+  async exportWarehouse(format: 'xlsx' | 'pdf' | 'docx'): Promise<void> {
+    try {
+      const token = localStorage.getItem('access_token');
+      const url = `${this.api.baseUrl}/export/warehouse?format=${format}`;
+      const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      if (!res.ok) throw new Error('Export failed');
+      const blob = await res.blob();
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = warehouse_inventory_.;
+      a.click();
+      URL.revokeObjectURL(href);
+      this.toast.success(Warehouse report exported ().);
+    } catch {
+      this.toast.error('Warehouse export failed.');
+    }
+  }
+
   constructor(
     private api:     ApiService,
     private dateFilter: DateFilterService,
@@ -196,3 +215,5 @@ export class WarehouseComponent implements OnInit, OnDestroy {
     return '#DCFCE7';
   }
 }
+
+

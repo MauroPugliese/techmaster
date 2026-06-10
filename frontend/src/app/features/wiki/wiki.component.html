@@ -147,6 +147,15 @@
           <span class="btn-icon">arrow_back</span> Back to list
         </button>
         <div class="flex gap-2">
+          <button class="btn btn-secondary btn-sm" (click)="exportCurrentArticle('xlsx')">
+            <span class="btn-icon">table_view</span> Excel
+          </button>
+          <button class="btn btn-secondary btn-sm" (click)="exportCurrentArticle('pdf')">
+            <span class="btn-icon">picture_as_pdf</span> PDF
+          </button>
+          <button class="btn btn-secondary btn-sm" (click)="exportCurrentArticle('docx')">
+            <span class="btn-icon">description</span> Word
+          </button>
           <button class="btn btn-secondary btn-sm" (click)="editArticle(viewingArticle!)">
             <span class="btn-icon">edit</span> Edit
           </button>
@@ -255,3 +264,4 @@
     </div>
   </div>
 </div>
+

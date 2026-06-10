@@ -191,6 +191,29 @@ export class WikiComponent implements OnInit, OnDestroy {
       .replace(/^(?!<[h|l|p|u])(.+)$/gm, '<p>$1</p>');
   }
 
+  
+  async exportCurrentArticle(format: 'xlsx' | 'pdf' | 'docx'): Promise<void> {
+    if (!this.viewingArticle?.id) {
+      this.toast.info('Open an article first to export it.');
+      return;
+    }
+    try {
+      const token = localStorage.getItem('access_token');
+      const url = `${this.api.baseUrl}/export/wiki/${this.viewingArticle.id}?format=${format}`;
+      const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      if (!res.ok) throw new Error('Export failed');
+      const blob = await res.blob();
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = `wiki_${this.viewingArticle.slug || this.viewingArticle.id}.${format}`;
+      a.click();
+      URL.revokeObjectURL(href);
+      this.toast.success(`Wiki article exported (${format.toUpperCase()}).`);
+    } catch {
+      this.toast.error('Wiki export failed.');
+    }
+  }
   togglePreview(): void {
     this.showPreview = !this.showPreview;
   }
@@ -206,4 +229,5 @@ export class WikiComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void { this.destroy$.next(); this.destroy$.complete(); }
 }
+
 

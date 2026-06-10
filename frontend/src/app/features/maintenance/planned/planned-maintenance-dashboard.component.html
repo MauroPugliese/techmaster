@@ -7,9 +7,20 @@
       <input type="text" class="form-control" placeholder="Search tasks..."
              [(ngModel)]="searchTerm" (input)="onSearch()">
     </div>
-    <button class="btn btn-primary" (click)="openModal()">
-      <span class="btn-icon">add</span> New Task
-    </button>
+    <div class="flex gap-2">
+      <button class="btn btn-secondary btn-sm" (click)="exportPlanned('xlsx')">
+        <span class="btn-icon">table_view</span> Excel
+      </button>
+      <button class="btn btn-secondary btn-sm" (click)="exportPlanned('pdf')">
+        <span class="btn-icon">picture_as_pdf</span> PDF
+      </button>
+      <button class="btn btn-secondary btn-sm" (click)="exportPlanned('docx')">
+        <span class="btn-icon">description</span> Word
+      </button>
+      <button class="btn btn-primary" (click)="openModal()">
+        <span class="btn-icon">add</span> New Task
+      </button>
+    </div>
   </div>
 
   <!-- ── Task Table ────────────────────────────────────────────────────────── -->
