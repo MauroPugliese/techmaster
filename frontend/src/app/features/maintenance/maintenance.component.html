@@ -179,7 +179,15 @@
 
         <div class="form-group">
           <label class="form-label">Scheduled Date *</label>
-          <input type="datetime-local" class="form-control" [(ngModel)]="form.scheduled_date">
+          <div class="datetime-picker-wrapper">
+            <input class="form-control"
+                   [owlDateTime]="dtScheduled"
+                   [owlDateTimeTrigger]="dtScheduled"
+                   [(ngModel)]="form.scheduled_date"
+                   placeholder="Select scheduled date & time">
+            <span class="picker-trigger-icon" [owlDateTimeTrigger]="dtScheduled">event</span>
+            <owl-date-time #dtScheduled></owl-date-time>
+          </div>
         </div>
 
         <div class="form-group">

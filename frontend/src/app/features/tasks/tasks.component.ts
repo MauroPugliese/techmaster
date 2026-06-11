@@ -12,13 +12,14 @@ import { ConfirmService } from '../../core/services/confirm.service';
 import { ApiService } from '../../core/services/services';
 import { DateFilterService } from '../../core/services/services';
 import { Task, IntervalType, TaskStatus, Priority } from '../../core/models/interfaces';
+import { OwlDateTimeModule, OwlNativeDateTimeModule } from '@danielmoncada/angular-datetime-picker';
 
 interface Column { status: TaskStatus; label: string; color: string; }
 
 @Component({
   selector: 'app-tasks',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe],
+  imports: [CommonModule, FormsModule, DatePipe, OwlDateTimeModule, OwlNativeDateTimeModule],
   templateUrl: './tasks.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -35,7 +36,7 @@ export class TasksComponent implements OnInit, OnDestroy {
 
   showModal   = false;
   editingTask: Task | null = null;
-  form:        Partial<Task> = this.emptyForm();
+  form:        any = this.emptyForm();
   tagsInput   = '';
 
   intervals = [
@@ -140,7 +141,10 @@ export class TasksComponent implements OnInit, OnDestroy {
 
   editTask(task: Task): void {
     this.editingTask = task;
-    this.form = { ...task };
+    this.form = {
+      ...task,
+      due_date: task.due_date ? new Date(task.due_date) : null
+    };
     this.tagsInput = (task.tags || []).join(', ');
     this.showModal = true;
   }
@@ -224,10 +228,10 @@ export class TasksComponent implements OnInit, OnDestroy {
     return `${user.first_name?.[0] || ''}${user.last_name?.[0] || ''}`.toUpperCase();
   }
 
-  private emptyForm(): Partial<Task> {
+  private emptyForm(): any {
     return {
       title: '', description: '', interval_type: 'ONCE', status: 'TODO',
-      priority: 'MEDIUM', due_date: '', estimated_hours: undefined,
+      priority: 'MEDIUM', due_date: null, estimated_hours: undefined,
       parent_id: undefined, tags: []
     };
   }

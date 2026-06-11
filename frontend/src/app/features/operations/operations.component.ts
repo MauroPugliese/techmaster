@@ -11,11 +11,12 @@ import { DateFilterService } from '../../core/services/services';
 import { ToastService }     from '../../core/services/toast.service';
 import { ConfirmService }   from '../../core/services/confirm.service';
 import { Operation, OperationType } from '../../core/models/interfaces';
+import { OwlDateTimeModule, OwlNativeDateTimeModule } from '@danielmoncada/angular-datetime-picker';
 
 @Component({
   selector: 'app-operations',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, TitleCasePipe],
+  imports: [CommonModule, FormsModule, DatePipe, TitleCasePipe, OwlDateTimeModule, OwlNativeDateTimeModule],
   templateUrl: './operations.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -38,7 +39,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
 
   showModal  = false;
   editingOp: Operation | null = null;
-  form:      Partial<Operation> = this.emptyForm();
+  form:      any = this.emptyForm();
   Math = Math;
 
   constructor(
@@ -84,7 +85,11 @@ export class OperationsComponent implements OnInit, OnDestroy {
 
   openModal(op?: Operation): void {
     this.editingOp = op || null;
-    this.form      = op ? { ...op } : this.emptyForm();
+    this.form      = op ? {
+      ...op,
+      start_date: op.start_date ? new Date(op.start_date) : null,
+      end_date: op.end_date ? new Date(op.end_date) : null
+    } : this.emptyForm();
     this.showModal = true;
   }
   editOperation(op: Operation): void { this.openModal(op); }
@@ -138,7 +143,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
     if (!u) return '?';
     return `${u.first_name?.[0]||''}${u.last_name?.[0]||''}`.toUpperCase();
   }
-  private emptyForm(): Partial<Operation> {
-    return { title:'', description:'', status:'PLANNED', priority:'MEDIUM', location:'', start_date:'', end_date:'', notes:'' };
+  private emptyForm(): any {
+    return { title:'', description:'', status:'PLANNED', priority:'MEDIUM', location:'', start_date:null, end_date:null, notes:'' };
   }
 }

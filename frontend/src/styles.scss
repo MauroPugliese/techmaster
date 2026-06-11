@@ -6,6 +6,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 @import url('https://fonts.googleapis.com/icon?family=Material+Icons+Round');
 @import '~@angular/material/prebuilt-themes/indigo-pink.css';
+@import "@danielmoncada/angular-datetime-picker/assets/style/picker.min.css";
+
 
 /* ── CSS Custom Properties ─────────────────────────────────────────────────── */
 :root {
@@ -867,4 +869,97 @@ textarea.form-control { resize: vertical; min-height: 100px; }
   font-size: 0.9rem;
   font-weight: 500;
   transition: var(--transition);
+}
+
+/* ── Owl Datetime Picker Overrides ────────────────────────────────────────── */
+.owl-dt-container {
+  font-family: var(--font-sans) !important;
+  font-size: 0.9rem !important;
+  background-color: var(--surface) !important;
+  color: var(--blue-950) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-lg) !important;
+  border: 1px solid var(--border) !important;
+}
+
+.owl-dt-container-buttons {
+  color: var(--primary) !important;
+  font-family: var(--font-sans) !important;
+  font-weight: 600 !important;
+  
+  button:hover {
+    background-color: var(--blue-50) !important;
+  }
+}
+
+.owl-dt-calendar-header {
+  font-family: var(--font-sans) !important;
+  color: var(--blue-900) !important;
+  font-weight: 600 !important;
+}
+
+.owl-dt-calendar-table .owl-dt-calendar-header {
+  color: #6B7280 !important;
+  font-size: 0.75rem !important;
+  font-weight: 700 !important;
+}
+
+.owl-dt-calendar-cell-selected {
+  background-color: var(--primary) !important;
+  color: #ffffff !important;
+}
+
+.owl-dt-calendar-cell-today {
+  border: 1px solid var(--primary) !important;
+}
+
+.owl-dt-timer-hour12-box .owl-dt-timer-hour12-button {
+  background: var(--primary) !important;
+  color: #ffffff !important;
+}
+
+.owl-dt-timer-content {
+  font-family: var(--font-sans) !important;
+}
+
+.owl-dt-timer-input {
+  font-family: var(--font-sans) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm) !important;
+  outline: none !important;
+  &:focus {
+    border-color: var(--border-focus) !important;
+  }
+}
+
+.owl-dt-control-button {
+  color: var(--primary) !important;
+}
+
+/* Container to position calendar icon inside .form-control input */
+.datetime-picker-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+
+  .form-control {
+    padding-right: 36px !important; /* Space for the calendar icon */
+  }
+
+  .picker-trigger-icon {
+    position: absolute;
+    right: 12px;
+    cursor: pointer;
+    color: #9CA3AF;
+    font-size: 20px;
+    font-family: 'Material Icons Round';
+    font-style: normal;
+    user-select: none;
+    transition: var(--transition);
+
+    &:hover {
+      color: var(--primary);
+    }
+  }
 }

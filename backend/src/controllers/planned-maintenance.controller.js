@@ -193,9 +193,11 @@ function taskOccursOnDate(task, targetDate) {
 async function loadSeriesAndInstances(startDate, endDate) {
   const { PlannedMaintenanceTask, PlannedMaintenanceTaskInstance } = require('../models');
 
+  const queryEnd = `${endDate}T23:59:59.999Z`;
+
   const masters = await PlannedMaintenanceTask.findAll({
     where: {
-      operation_date_start: { [Op.lte]: endDate }
+      operation_date_start: { [Op.lte]: queryEnd }
     },
     order: [['operation_date_start', 'ASC']]
   });
@@ -245,6 +247,7 @@ function resolveOccurrencesForDate(dateStr, masters, instancesByKey, deletedKeys
   for (const [key, instance] of instancesByKey.entries()) {
     if (seen.has(key)) continue;
     if (deletedKeys.has(key)) continue;
+    if (instance.occurrence_date !== dateStr) continue;
     const master = masters.find((m) => m.id === instance.planned_task_id);
     if (!master) continue;
     const occurrence = normalizeOccurrence(master, instance.occurrence_date, instance);

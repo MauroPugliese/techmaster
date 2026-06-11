@@ -11,11 +11,12 @@ import { DateFilterService } from '../../core/services/services';
 import { ToastService }     from '../../core/services/toast.service';
 import { ConfirmService }   from '../../core/services/confirm.service';
 import { MaintenanceRecord, Asset } from '../../core/models/interfaces';
+import { OwlDateTimeModule, OwlNativeDateTimeModule } from '@danielmoncada/angular-datetime-picker';
 
 @Component({
   selector: 'app-maintenance',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, TitleCasePipe],
+  imports: [CommonModule, FormsModule, DatePipe, TitleCasePipe, OwlDateTimeModule, OwlNativeDateTimeModule],
   templateUrl: './maintenance.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -68,7 +69,7 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
 
   private emptyForm() {
     return { asset_id: undefined, type:'PREVENTIVE', priority:'MEDIUM', status:'SCHEDULED',
-             title:'', description:'', findings:'', scheduled_date:'',
+             title:'', description:'', findings:'', scheduled_date: null,
              downtime_hours: undefined, cost: undefined };
   }
 
@@ -77,7 +78,12 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
   }
   editRecord(r: MaintenanceRecord): void {
     this.editing = r;
-    this.form    = { ...r, description: r.description ?? '', findings: r.findings ?? '' };
+    this.form    = { 
+      ...r, 
+      description: r.description ?? '', 
+      findings: r.findings ?? '',
+      scheduled_date: r.scheduled_date ? new Date(r.scheduled_date) : null
+    };
     this.showModal = true; this.cdr.markForCheck();
   }
   closeModal(e: MouseEvent): void {

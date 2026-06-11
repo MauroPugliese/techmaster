@@ -202,12 +202,28 @@
 
         <div class="form-group">
           <label class="form-label">Start Date *</label>
-          <input type="datetime-local" class="form-control" [(ngModel)]="form.operationDateStart">
+          <div class="datetime-picker-wrapper">
+            <input class="form-control"
+                   [owlDateTime]="dtStart"
+                   [owlDateTimeTrigger]="dtStart"
+                   [(ngModel)]="form.operationDateStart"
+                   placeholder="Select start date & time">
+            <span class="picker-trigger-icon" [owlDateTimeTrigger]="dtStart">event</span>
+            <owl-date-time #dtStart pickerMode="dialog"></owl-date-time>
+          </div>
         </div>
 
         <div class="form-group">
           <label class="form-label">End Date</label>
-          <input type="datetime-local" class="form-control" [(ngModel)]="form.operationDateEnd">
+          <div class="datetime-picker-wrapper">
+            <input class="form-control"
+                   [owlDateTime]="dtEnd"
+                   [owlDateTimeTrigger]="dtEnd"
+                   [(ngModel)]="form.operationDateEnd"
+                   placeholder="Select end date & time">
+            <span class="picker-trigger-icon" [owlDateTimeTrigger]="dtEnd">event</span>
+            <owl-date-time #dtEnd pickerMode="dialog"></owl-date-time>
+          </div>
         </div>
 
         <div *ngIf="editingScope === 'series'" class="form-group">
@@ -229,7 +245,16 @@
 
         <div *ngIf="editingScope === 'series'" class="form-group">
           <label class="form-label">Repeat Until</label>
-          <input type="date" class="form-control" [(ngModel)]="form.recurrenceEndDate">
+          <div class="datetime-picker-wrapper">
+            <input class="form-control"
+                   [owlDateTime]="dtRecurrence"
+                   [owlDateTimeTrigger]="dtRecurrence"
+                   [pickerType]="'calendar'"
+                   [(ngModel)]="form.recurrenceEndDate"
+                   placeholder="Select date">
+            <span class="picker-trigger-icon" [owlDateTimeTrigger]="dtRecurrence">event</span>
+            <owl-date-time #dtRecurrence pickerMode="dialog"></owl-date-time>
+          </div>
           <span class="text-sm text-muted" style="margin-top:4px;display:block">
             Leave blank for an open-ended series.
           </span>

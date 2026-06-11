@@ -212,7 +212,15 @@
         <!-- Due Date -->
         <div class="form-group">
           <label class="form-label">Due Date</label>
-          <input type="datetime-local" class="form-control" [(ngModel)]="form.due_date">
+          <div class="datetime-picker-wrapper">
+            <input class="form-control"
+                   [owlDateTime]="dtDue"
+                   [owlDateTimeTrigger]="dtDue"
+                   [(ngModel)]="form.due_date"
+                   placeholder="Select due date & time">
+            <span class="picker-trigger-icon" [owlDateTimeTrigger]="dtDue">event</span>
+            <owl-date-time #dtDue></owl-date-time>
+          </div>
         </div>
         <!-- Estimated hrs -->
         <div class="form-group">

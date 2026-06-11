@@ -11,11 +11,12 @@ import { PlannedMaintenanceTask, CalendarIndicators } from '../../../core/models
 import { PlannedMaintenanceService } from './planned-maintenance.service';
 import { ToastService } from '../../../core/services/services';
 import { ConfirmService } from '../../../core/services/services';
+import { OwlDateTimeModule, OwlNativeDateTimeModule } from '@danielmoncada/angular-datetime-picker';
 
 @Component({
   selector: 'app-planned-maintenance-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, OwlDateTimeModule, OwlNativeDateTimeModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './planned-maintenance-dashboard.component.html',
   styleUrls: ['./planned-maintenance-dashboard.component.scss']
@@ -103,11 +104,11 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
         subsystem: task.subsystem,
         task: task.task,
         reference: task.reference || '',
-        operationDateStart: this.toDateTimeLocalValue(task.operationDateStart),
-        operationDateEnd: this.toDateTimeLocalValue(task.operationDateEnd),
+        operationDateStart: task.operationDateStart ? new Date(task.operationDateStart) : null,
+        operationDateEnd: task.operationDateEnd ? new Date(task.operationDateEnd) : null,
         repeatTaskType: task.repeatTaskType || 'WEEK',
         repeatTaskNumber: task.repeatTaskNumber || 1,
-        recurrenceEndDate: this.toDateInputValue(task.recurrenceEndDate),
+        recurrenceEndDate: task.recurrenceEndDate ? new Date(task.recurrenceEndDate) : null,
         reportTemplate: task.reportTemplate || '',
         status: task.status || 'TODO',
         optional: task.optional || false
@@ -133,11 +134,11 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
       subsystem: task.subsystem,
       task: task.task,
       reference: task.reference || '',
-      operationDateStart: this.toDateTimeLocalValue(task.operationDateStart),
-      operationDateEnd: this.toDateTimeLocalValue(task.operationDateEnd),
+      operationDateStart: task.operationDateStart ? new Date(task.operationDateStart) : null,
+      operationDateEnd: task.operationDateEnd ? new Date(task.operationDateEnd) : null,
       repeatTaskType: task.repeatTaskType || 'WEEK',
       repeatTaskNumber: task.repeatTaskNumber || 1,
-      recurrenceEndDate: this.toDateInputValue(task.recurrenceEndDate),
+      recurrenceEndDate: task.recurrenceEndDate ? new Date(task.recurrenceEndDate) : null,
       reportTemplate: task.reportTemplate || '',
       status: task.status || 'TODO',
       optional: task.optional || false
@@ -158,8 +159,13 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
     }
 
     this.saving = true;
-    const operationDateStart = this.toIsoString(this.form.operationDateStart);
-    const operationDateEnd = this.toIsoString(this.form.operationDateEnd || this.form.operationDateStart);
+    const operationDateStart = this.form.operationDateStart ? new Date(this.form.operationDateStart).toISOString() : '';
+    const operationDateEnd = this.form.operationDateEnd ? new Date(this.form.operationDateEnd).toISOString() : operationDateStart;
+    const recurrenceEndDate = this.form.recurrenceEndDate
+      ? (this.form.recurrenceEndDate instanceof Date
+          ? this.form.recurrenceEndDate.toISOString().slice(0, 10)
+          : new Date(this.form.recurrenceEndDate).toISOString().slice(0, 10))
+      : null;
     const payload: Partial<PlannedMaintenanceTask> = {
       system: this.form.system,
       subsystem: this.form.subsystem,
@@ -169,7 +175,7 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
       operationDateEnd,
       repeatTaskType: this.form.repeatTaskType,
       repeatTaskNumber: this.form.repeatTaskNumber,
-      recurrenceEndDate: this.form.recurrenceEndDate || null,
+      recurrenceEndDate,
       reportTemplate: this.form.reportTemplate,
       status: this.form.status,
       optional: this.form.optional
@@ -417,11 +423,11 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
       subsystem: '',
       task: '',
       reference: '',
-      operationDateStart: '',
-      operationDateEnd: '',
+      operationDateStart: null,
+      operationDateEnd: null,
       repeatTaskType: 'WEEK',
       repeatTaskNumber: 1,
-      recurrenceEndDate: '',
+      recurrenceEndDate: null,
       reportTemplate: '',
       status: 'TODO',
       optional: false
