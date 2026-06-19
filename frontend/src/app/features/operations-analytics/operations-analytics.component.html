@@ -33,21 +33,29 @@
       </div>
 
       <div class="control-group" *ngIf="showCustomRange">
-        <mat-form-field appearance="fill" style="width:100%">
-          <mat-label>From Date</mat-label>
-          <input matInput [matDatepicker]="fromPicker" [(ngModel)]="customFromDate">
-          <mat-datepicker-toggle matSuffix [for]="fromPicker"></mat-datepicker-toggle>
-          <mat-datepicker #fromPicker></mat-datepicker>
-        </mat-form-field>
+        <label class="control-label">From Date</label>
+        <div class="datetime-picker-wrapper">
+          <input class="form-control"
+                 [owlDateTime]="fromPicker"
+                 [owlDateTimeTrigger]="fromPicker"
+                 [(ngModel)]="customFromDate"
+                 placeholder="Select start date">
+          <span class="picker-trigger-icon" [owlDateTimeTrigger]="fromPicker">event</span>
+          <owl-date-time #fromPicker pickerType="calendar" pickerMode="dialog"></owl-date-time>
+        </div>
       </div>
 
       <div class="control-group" *ngIf="showCustomRange">
-        <mat-form-field appearance="fill" style="width:100%">
-          <mat-label>To Date</mat-label>
-          <input matInput [matDatepicker]="toPicker" [(ngModel)]="customToDate">
-          <mat-datepicker-toggle matSuffix [for]="toPicker"></mat-datepicker-toggle>
-          <mat-datepicker #toPicker></mat-datepicker>
-        </mat-form-field>
+        <label class="control-label">To Date</label>
+        <div class="datetime-picker-wrapper">
+          <input class="form-control"
+                 [owlDateTime]="toPicker"
+                 [owlDateTimeTrigger]="toPicker"
+                 [(ngModel)]="customToDate"
+                 placeholder="Select end date">
+          <span class="picker-trigger-icon" [owlDateTimeTrigger]="toPicker">event</span>
+          <owl-date-time #toPicker pickerType="calendar" pickerMode="dialog"></owl-date-time>
+        </div>
       </div>
 
       <div class="control-group" *ngIf="showCustomRange">

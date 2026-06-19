@@ -4,12 +4,7 @@
 import { Component, OnInit, AfterViewInit, OnDestroy, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { MatButtonModule } from '@angular/material/button';
-import { MatDatepickerModule } from '@angular/material/datepicker';
-import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatIconModule } from '@angular/material/icon';
-import { MatInputModule } from '@angular/material/input';
-import { MatNativeDateModule } from '@angular/material/core';
+import { OwlDateTimeModule, OwlNativeDateTimeModule } from '@danielmoncada/angular-datetime-picker';
 import { Subject, combineLatest } from 'rxjs';
 import { takeUntil, debounceTime } from 'rxjs/operators';
 import { Chart, registerables } from 'chart.js';
@@ -22,7 +17,7 @@ Chart.register(...registerables);
 @Component({
   selector: 'app-operations-analytics',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatButtonModule, MatDatepickerModule, MatFormFieldModule, MatIconModule, MatInputModule, MatNativeDateModule],
+  imports: [CommonModule, FormsModule, OwlDateTimeModule, OwlNativeDateTimeModule],
   templateUrl: './operations-analytics.component.html',
   styleUrls: ['./operations-analytics.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush

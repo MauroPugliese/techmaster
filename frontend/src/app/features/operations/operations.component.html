@@ -224,7 +224,7 @@
                    [(ngModel)]="form.start_date"
                    placeholder="Select start date & time">
             <span class="picker-trigger-icon" [owlDateTimeTrigger]="dtStart">event</span>
-            <owl-date-time #dtStart></owl-date-time>
+            <owl-date-time #dtStart pickerMode="dialog"></owl-date-time>
           </div>
         </div>
         <div class="form-group">
@@ -236,7 +236,7 @@
                    [(ngModel)]="form.end_date"
                    placeholder="Select end date & time">
             <span class="picker-trigger-icon" [owlDateTimeTrigger]="dtEnd">event</span>
-            <owl-date-time #dtEnd></owl-date-time>
+            <owl-date-time #dtEnd pickerMode="dialog"></owl-date-time>
           </div>
         </div>
         <div class="form-group" style="grid-column:1/-1">

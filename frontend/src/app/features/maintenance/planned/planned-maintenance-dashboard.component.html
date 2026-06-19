@@ -249,11 +249,10 @@
             <input class="form-control"
                    [owlDateTime]="dtRecurrence"
                    [owlDateTimeTrigger]="dtRecurrence"
-                   [pickerType]="'calendar'"
                    [(ngModel)]="form.recurrenceEndDate"
                    placeholder="Select date">
             <span class="picker-trigger-icon" [owlDateTimeTrigger]="dtRecurrence">event</span>
-            <owl-date-time #dtRecurrence pickerMode="dialog"></owl-date-time>
+            <owl-date-time #dtRecurrence pickerType="calendar" pickerMode="dialog"></owl-date-time>
           </div>
           <span class="text-sm text-muted" style="margin-top:4px;display:block">
             Leave blank for an open-ended series.

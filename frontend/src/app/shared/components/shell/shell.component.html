@@ -219,20 +219,28 @@
     <div class="modal-body">
       <div class="form-row">
         <div class="form-group">
-          <mat-form-field appearance="fill" style="width:100%">
-            <mat-label>From Date</mat-label>
-            <input matInput [matDatepicker]="fromPicker" [(ngModel)]="pickerFrom">
-            <mat-datepicker-toggle matSuffix [for]="fromPicker"></mat-datepicker-toggle>
-            <mat-datepicker #fromPicker></mat-datepicker>
-          </mat-form-field>
+          <label class="form-label">From Date</label>
+          <div class="datetime-picker-wrapper">
+            <input class="form-control"
+                   [owlDateTime]="fromPicker"
+                   [owlDateTimeTrigger]="fromPicker"
+                   [(ngModel)]="pickerFrom"
+                   placeholder="Select start date">
+            <span class="picker-trigger-icon" [owlDateTimeTrigger]="fromPicker">event</span>
+            <owl-date-time #fromPicker pickerType="calendar" pickerMode="dialog"></owl-date-time>
+          </div>
         </div>
         <div class="form-group">
-          <mat-form-field appearance="fill" style="width:100%">
-            <mat-label>To Date</mat-label>
-            <input matInput [matDatepicker]="toPicker" [(ngModel)]="pickerTo">
-            <mat-datepicker-toggle matSuffix [for]="toPicker"></mat-datepicker-toggle>
-            <mat-datepicker #toPicker></mat-datepicker>
-          </mat-form-field>
+          <label class="form-label">To Date</label>
+          <div class="datetime-picker-wrapper">
+            <input class="form-control"
+                   [owlDateTime]="toPicker"
+                   [owlDateTimeTrigger]="toPicker"
+                   [(ngModel)]="pickerTo"
+                   placeholder="Select end date">
+            <span class="picker-trigger-icon" [owlDateTimeTrigger]="toPicker">event</span>
+            <owl-date-time #toPicker pickerType="calendar" pickerMode="dialog"></owl-date-time>
+          </div>
         </div>
       </div>
     </div>

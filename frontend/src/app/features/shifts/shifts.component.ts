@@ -4,12 +4,7 @@
 import { Component, OnInit, OnDestroy, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { MatButtonModule } from '@angular/material/button';
-import { MatDatepickerModule } from '@angular/material/datepicker';
-import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatIconModule } from '@angular/material/icon';
-import { MatInputModule } from '@angular/material/input';
-import { MatNativeDateModule } from '@angular/material/core';
+import { OwlDateTimeModule, OwlNativeDateTimeModule } from '@danielmoncada/angular-datetime-picker';
 import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 import { ApiService }       from '../../core/services/api.service';
@@ -21,7 +16,7 @@ import { Shift, ShiftType } from '../../core/models/interfaces';
 @Component({
   selector: 'app-shifts',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, MatButtonModule, MatDatepickerModule, MatFormFieldModule, MatIconModule, MatInputModule, MatNativeDateModule],
+  imports: [CommonModule, FormsModule, DatePipe, OwlDateTimeModule, OwlNativeDateTimeModule],
   template: `
 <div class="shifts-page fade-in">
 
@@ -162,12 +157,16 @@ import { Shift, ShiftType } from '../../core/models/interfaces';
           </select>
         </div>
         <div class="form-group">
-          <mat-form-field appearance="fill" style="width:100%">
-            <mat-label>Date *</mat-label>
-            <input matInput [matDatepicker]="shiftDatePicker" [(ngModel)]="shiftForm.date">
-            <mat-datepicker-toggle matSuffix [for]="shiftDatePicker"></mat-datepicker-toggle>
-            <mat-datepicker #shiftDatePicker></mat-datepicker>
-          </mat-form-field>
+          <label class="form-label">Date *</label>
+          <div class="datetime-picker-wrapper">
+            <input class="form-control"
+                   [owlDateTime]="shiftDatePicker"
+                   [owlDateTimeTrigger]="shiftDatePicker"
+                   [(ngModel)]="shiftForm.date"
+                   placeholder="Select shift date">
+            <span class="picker-trigger-icon" [owlDateTimeTrigger]="shiftDatePicker">event</span>
+            <owl-date-time #shiftDatePicker pickerType="calendar" pickerMode="dialog"></owl-date-time>
+          </div>
         </div>
       </div>
       <div class="form-group">
