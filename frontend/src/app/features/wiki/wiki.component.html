@@ -5,7 +5,7 @@
 <div class="wiki-page fade-in" style="display:grid;grid-template-columns:260px 1fr;gap:24px;align-items:start">
 
   <!-- ── Left: Category Tree ─────────────────────────────────────────────── -->
-  <div class="card" style="position:sticky;top:calc(var(--header-height) + 24px)">
+  <div class="card" style="align-self:start">
     <div class="card-header" style="margin-bottom:16px">
       <h3>Categories</h3>
       <button class="btn btn-ghost btn-icon-only btn-sm" (click)="clearCategory()" title="All articles">
@@ -19,7 +19,7 @@
               style="padding:9px 12px;border-radius:var(--radius-md)"
               [style.background]="selectedCategory===cat.id ? 'var(--blue-100)' : 'var(--surface)'"
               [style.color]="selectedCategory===cat.id ? 'var(--primary)' : 'var(--blue-900)'"
-              [style.font-weight]="selectedCategory===cat.id ? '700' : '500'"
+              [style.border-left]="selectedCategory===cat.id ? '3px solid var(--primary)' : '3px solid transparent'"
               (click)="filterByCategory(cat.id)">
         <span style="font-family:'Material Icons Round';font-style:normal;font-size:18px">{{cat.icon || 'folder'}}</span>
         <span class="nav-label">{{cat.name}}</span>
