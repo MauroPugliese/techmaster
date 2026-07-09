@@ -11,13 +11,14 @@ import { Chart, registerables } from 'chart.js';
 import { ApiService } from '../../core/services/services';
 import { DateFilterService } from '../../core/services/services';
 import { DashboardKPIs, Operation, MaintenanceRecord, Shift, InventoryItem } from '../../core/models/interfaces';
+import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
 
 Chart.register(...registerables);
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, RouterModule, DatePipe, TitleCasePipe],
+  imports: [CommonModule, RouterModule, DatePipe, TitleCasePipe, ExportMenuComponent],
   templateUrl: './dashboard.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })

@@ -8,7 +8,7 @@
 //  2. Added GET /:id to retrieve a single record (was missing)
 // =============================================================================
 const router = require('express').Router();
-const { Op }  = require('sequelize');
+const { Op, col, where: sqlWhere }  = require('sequelize');
 const { MaintenanceRecord, Asset, AssetCategory, User } = require('../models');
 const { parseDateFilter } = require('../middleware/error.middleware');
 
@@ -37,7 +37,7 @@ router.post('/assets', async (req, res, next) => {
 router.get('/', parseDateFilter, async (req, res, next) => {
   try {
     const { from, to } = req.dateRange;
-    const { status, priority, asset_id, page = 1, limit = 20 } = req.query;
+    const { status, priority, asset_id, search, page = 1, limit = 20 } = req.query;
     const where = {};
     if (from || to) {
       where.scheduled_date = {};
@@ -47,9 +47,20 @@ router.get('/', parseDateFilter, async (req, res, next) => {
     if (status)   where.status   = status;
     if (priority) where.priority = priority;
     if (asset_id) where.asset_id = asset_id;
+    if (search?.trim()) {
+      const searchTerm = `%${search.trim()}%`;
+      where[Op.or] = [
+        { title: { [Op.like]: searchTerm } },
+        { description: { [Op.like]: searchTerm } },
+        sqlWhere(col('asset.name'), { [Op.like]: searchTerm }),
+        sqlWhere(col('asset.serial_number'), { [Op.like]: searchTerm })
+      ];
+    }
 
     const { count, rows } = await MaintenanceRecord.findAndCountAll({
       where,
+      distinct: true,
+      subQuery: false,
       include: [
         { model: Asset,  as: 'asset',      include: [{ model: AssetCategory, as: 'category' }] },
         { model: User,   as: 'technician', attributes: ['id','first_name','last_name'] }

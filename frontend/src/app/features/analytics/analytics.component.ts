@@ -12,13 +12,14 @@ import jsPDF from 'jspdf';
 
 import { ApiService } from '../../core/services/services';
 import { DateFilterService } from '../../core/services/services';
+import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
 
 Chart.register(...registerables, zoomPlugin);
 
 @Component({
   selector: 'app-analytics',
   standalone: true,
-  imports: [CommonModule, DecimalPipe, TitleCasePipe],
+  imports: [CommonModule, DecimalPipe, TitleCasePipe, ExportMenuComponent],
   templateUrl: './analytics.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })

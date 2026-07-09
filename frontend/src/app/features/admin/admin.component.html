@@ -31,8 +31,13 @@
          OVERVIEW
          ============================================================== -->
     <ng-container *ngIf="activeTab==='overview'">
-      <h2 style="margin-bottom:4px">System Overview</h2>
-      <p class="text-muted text-sm" style="margin-bottom:24px">Platform health and record counts</p>
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 style="margin-bottom:4px">System Overview</h2>
+          <p class="text-muted text-sm" style="margin-bottom:24px">Platform health and record counts</p>
+        </div>
+        <app-export-menu endpoint="audit" filename="Audit_Logs" label="Audit Logs"></app-export-menu>
+      </div>
 
       <ng-container *ngIf="systemInfo; else loadingTpl">
 
@@ -89,9 +94,12 @@
           <h2 style="margin-bottom:4px">User Management</h2>
           <p class="text-muted text-sm">Create, edit, deactivate and reset passwords</p>
         </div>
-        <button class="btn btn-primary" (click)="openUserModal()">
-          <span class="btn-icon">person_add</span> New User
-        </button>
+        <div class="flex gap-2">
+          <app-export-menu endpoint="users" filename="Users" label="Export"></app-export-menu>
+          <button class="btn btn-primary" (click)="openUserModal()">
+            <span class="btn-icon">person_add</span> New User
+          </button>
+        </div>
       </div>
 
       <div class="search-bar" style="width:300px;margin-bottom:20px">

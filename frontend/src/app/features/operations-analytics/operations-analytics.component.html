@@ -11,6 +11,7 @@
       <p class="text-muted text-sm">Comprehensive insights into operation performance and trends</p>
     </div>
     <div class="flex gap-3">
+      <app-export-menu endpoint="operations" filename="Operations" label="Export"></app-export-menu>
       <button class="btn btn-secondary" (click)="exportReport()">
         <span class="btn-icon">download</span> Export Report
       </button>

@@ -28,7 +28,7 @@
   </div>
 
   <!-- ── Toolbar ─────────────────────────────────────────────────────────── -->
-  <div class="flex items-center justify-between mb-5">
+  <div class="flex items-center justify-between mb-6">
     <div class="flex gap-2">
       <div class="search-bar" style="width:260px">
         <span class="search-icon">search</span>
@@ -41,15 +41,7 @@
       </button>
     </div>
     <div class="flex gap-2">
-      <button class="btn btn-secondary btn-sm" (click)="exportWarehouse('xlsx')">
-        <span class="btn-icon">table_view</span> Excel
-      </button>
-      <button class="btn btn-secondary btn-sm" (click)="exportWarehouse('pdf')">
-        <span class="btn-icon">picture_as_pdf</span> PDF
-      </button>
-      <button class="btn btn-secondary btn-sm" (click)="exportWarehouse('docx')">
-        <span class="btn-icon">description</span> Word
-      </button>
+      <app-export-menu endpoint="warehouse" filename="Warehouse_Inventory"></app-export-menu>
       <button class="btn btn-primary" (click)="openItemModal()">
         <span class="btn-icon">add</span> Add Item
       </button>

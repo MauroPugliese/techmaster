@@ -9,6 +9,7 @@ import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/services';
 import { ToastService }   from '../../core/services/toast.service';
 import { ConfirmService } from '../../core/services/confirm.service';
+import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
 
 type Tab = 'overview' | 'users' | 'operation-types' | 'shift-types' |
            'asset-categories' | 'item-categories' | 'wiki-categories' | 'warehouse-locations';
@@ -16,7 +17,7 @@ type Tab = 'overview' | 'users' | 'operation-types' | 'shift-types' |
 @Component({
   selector: 'app-admin',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, TitleCasePipe, SlicePipe],
+  imports: [CommonModule, FormsModule, DatePipe, TitleCasePipe, SlicePipe, ExportMenuComponent],
   templateUrl: './admin.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })

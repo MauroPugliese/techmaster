@@ -12,11 +12,12 @@ import { ToastService }     from '../../core/services/toast.service';
 import { ConfirmService }   from '../../core/services/confirm.service';
 import { MaintenanceRecord, Asset } from '../../core/models/interfaces';
 import { OwlDateTimeModule, OwlNativeDateTimeModule } from '@danielmoncada/angular-datetime-picker';
+import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
 
 @Component({
   selector: 'app-maintenance',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, TitleCasePipe, OwlDateTimeModule, OwlNativeDateTimeModule],
+  imports: [CommonModule, FormsModule, DatePipe, TitleCasePipe, OwlDateTimeModule, OwlNativeDateTimeModule, ExportMenuComponent],
   templateUrl: './maintenance.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -26,6 +27,7 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
   assets:  Asset[]             = [];
   loading  = true;
   saving   = false;
+  searchQuery = '';
   statusFilter   = '';
   priorityFilter = '';
   showModal = false;
@@ -61,7 +63,12 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
 
   load(): void {
     this.loading = true;
-    this.api.get<any>('/maintenance', { status: this.statusFilter, priority: this.priorityFilter, limit: 100 }).subscribe({
+    this.api.get<any>('/maintenance', {
+      search: this.searchQuery,
+      status: this.statusFilter,
+      priority: this.priorityFilter,
+      limit: 100
+    }).subscribe({
       next: r => { this.records = r?.data?.items || []; this.loading = false; this.cdr.markForCheck(); },
       error: () => { this.loading = false; this.cdr.markForCheck(); }
     });

@@ -16,9 +16,9 @@
     <div style="display:flex;flex-direction:column;gap:2px">
       <button *ngFor="let cat of categories"
               class="wiki-category-item"
-              style="background:var(--surface);color:var(--blue-900);padding:9px 12px;border-radius:var(--radius-md)"
-              [style.background]="selectedCategory===cat.id ? 'var(--blue-100)' : ''"
-              [style.color]="selectedCategory===cat.id ? 'var(--primary)' : ''"
+              style="padding:9px 12px;border-radius:var(--radius-md)"
+              [style.background]="selectedCategory===cat.id ? 'var(--blue-100)' : 'var(--surface)'"
+              [style.color]="selectedCategory===cat.id ? 'var(--primary)' : 'var(--blue-900)'"
               [style.font-weight]="selectedCategory===cat.id ? '700' : '500'"
               (click)="filterByCategory(cat.id)">
         <span style="font-family:'Material Icons Round';font-style:normal;font-size:18px">{{cat.icon || 'folder'}}</span>
@@ -48,6 +48,8 @@
           <option value="REVIEW">In Review</option>
           <option value="ARCHIVED">Archived</option>
         </select>
+        <app-export-menu endpoint="wiki" filename="Wiki_Articles" label="Export"
+                         [params]="{ status: statusFilter }"></app-export-menu>
         <button class="btn btn-secondary btn-sm" type="button" (click)="exportArticlesCsv()">
           <span class="btn-icon">file_download</span> Export CSV
         </button>

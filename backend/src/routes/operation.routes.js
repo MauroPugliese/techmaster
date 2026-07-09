@@ -17,7 +17,7 @@ router.get('/types', async (req, res, next) => {
 router.get('/', parseDateFilter, async (req, res, next) => {
   try {
     const { from, to } = req.dateRange;
-    const { status, priority, page = 1, limit = 20 } = req.query;
+    const { status, priority, search, page = 1, limit = 20 } = req.query;
     const where = {};
     if (from || to) {
       where.start_date = {};
@@ -26,6 +26,14 @@ router.get('/', parseDateFilter, async (req, res, next) => {
     }
     if (status)   where.status   = status;
     if (priority) where.priority = priority;
+    if (search?.trim()) {
+      const searchTerm = `%${search.trim()}%`;
+      where[Op.or] = [
+        { title: { [Op.like]: searchTerm } },
+        { description: { [Op.like]: searchTerm } },
+        { location: { [Op.like]: searchTerm } }
+      ];
+    }
 
     const { count, rows } = await Operation.findAndCountAll({
       where,

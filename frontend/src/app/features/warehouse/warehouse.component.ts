@@ -11,11 +11,12 @@ import { DateFilterService } from '../../core/services/date-filter.service';
 import { ToastService }     from '../../core/services/toast.service';
 import { ConfirmService }   from '../../core/services/confirm.service';
 import { InventoryItem, MovementType } from '../../core/models/interfaces';
+import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
 
 @Component({
   selector: 'app-warehouse',
   standalone: true,
-  imports: [CommonModule, FormsModule, DecimalPipe],
+  imports: [CommonModule, FormsModule, DecimalPipe, ExportMenuComponent],
   templateUrl: './warehouse.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })

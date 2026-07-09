@@ -27,6 +27,8 @@
         <option value="DONE">Done</option>
         <option value="OVERDUE">Overdue</option>
       </select>
+      <app-export-menu endpoint="tasks" filename="Tasks"
+                       [params]="{ status: statusFilter }"></app-export-menu>
       <button class="btn btn-primary" (click)="openModal()">
         <span class="btn-icon">add</span> New Task
       </button>

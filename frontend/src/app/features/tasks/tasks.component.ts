@@ -13,13 +13,14 @@ import { ApiService } from '../../core/services/services';
 import { DateFilterService } from '../../core/services/services';
 import { Task, IntervalType, TaskStatus, Priority } from '../../core/models/interfaces';
 import { OwlDateTimeModule, OwlNativeDateTimeModule } from '@danielmoncada/angular-datetime-picker';
+import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
 
 interface Column { status: TaskStatus; label: string; color: string; }
 
 @Component({
   selector: 'app-tasks',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, OwlDateTimeModule, OwlNativeDateTimeModule],
+  imports: [CommonModule, FormsModule, DatePipe, OwlDateTimeModule, OwlNativeDateTimeModule, ExportMenuComponent],
   templateUrl: './tasks.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })

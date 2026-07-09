@@ -13,6 +13,10 @@
   <!-- ── Toolbar ─────────────────────────────────────────────────────────── -->
   <div class="flex items-center justify-between mb-6">
     <div class="flex gap-2">
+      <div class="search-bar" style="width:260px">
+        <span class="search-icon">search</span>
+        <input placeholder="Search maintenance..." [(ngModel)]="searchQuery" (input)="load()">
+      </div>
       <select class="form-control" style="width:160px" [(ngModel)]="statusFilter" (change)="load()">
         <option value="">All Statuses</option>
         <option value="SCHEDULED">Scheduled</option>
@@ -29,9 +33,13 @@
         <option value="CRITICAL">Critical</option>
       </select>
     </div>
-    <button class="btn btn-primary" (click)="openModal()">
-      <span class="btn-icon">add</span> Log Maintenance
-    </button>
+    <div class="flex gap-2">
+      <app-export-menu endpoint="maintenance" filename="Maintenance_Records"
+                       [params]="{ status: statusFilter, priority: priorityFilter }"></app-export-menu>
+      <button class="btn btn-primary" (click)="openModal()">
+        <span class="btn-icon">add</span> Log Maintenance
+      </button>
+    </div>
   </div>
 
   <!-- ── Stats Strip ─────────────────────────────────────────────────────── -->
