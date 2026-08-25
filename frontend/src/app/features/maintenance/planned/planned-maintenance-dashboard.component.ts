@@ -418,6 +418,40 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
       this.toast.error('Planned maintenance export failed.');
     }
   }
+
+  async exportDailyWord(template: 'checklist' | 'report'): Promise<void> {
+    try {
+      const token = localStorage.getItem('access_token');
+      const format: 'docx' = 'docx';
+      const url = this.svc.getDailyTemplateExportUrl(this.selectedDate, template, format);
+      const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      if (!res.ok) {
+        let backendMessage = '';
+        try {
+          const payload = await res.json();
+          backendMessage = payload?.message ? `: ${payload.message}` : '';
+        } catch {
+          backendMessage = '';
+        }
+        throw new Error(`Failed to export ${template} (DOCX)${backendMessage}`);
+      }
+
+      const blob = await res.blob();
+      const href = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = href;
+      link.download = `planned_maintenance_${template}_${this.selectedDate}.docx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(href);
+
+      this.toast.success(`${template === 'checklist' ? 'Checklist' : 'Report'} DOCX exported for ${this.selectedDate}.`);
+    } catch (err: any) {
+      this.toast.error(err?.message || 'Daily export failed.');
+    }
+  }
+
   private emptyForm(): any {
     return {
       system: '',

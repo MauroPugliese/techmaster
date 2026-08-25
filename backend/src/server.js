@@ -8,11 +8,19 @@ const { sequelize } = require('./config/database');
 const logger  = require('./config/logger');
 const { initSocket } = require('./config/socket');
 const { PlannedMaintenanceTask, PlannedMaintenanceTaskInstance } = require('./models');
+const { detectLibreOfficeBinary } = require('./exports/core/planned-daily-template.service');
 
 const PORT = process.env.PORT || 3000;
 
 async function bootstrap() {
   try {
+    const libreOffice = detectLibreOfficeBinary();
+    if (libreOffice.available) {
+      logger.info(`Template PDF conversion enabled (binary: ${libreOffice.binary})`);
+    } else {
+      logger.warn('Template PDF conversion disabled: LibreOffice/soffice not found. DOCX exports still work.');
+    }
+
     await sequelize.authenticate();
     logger.info('✅ Database connection established.');
 

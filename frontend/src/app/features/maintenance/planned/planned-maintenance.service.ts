@@ -98,4 +98,12 @@ export class PlannedMaintenanceService {
   getExportUrl(format: 'xlsx' | 'pdf' | 'docx', from: string, to: string): string {
     return `${this.api.baseUrl}/export/planned-maintenance-report?format=${format}&from=${from}&to=${to}`;
   }
+
+  getDailyTemplateExportUrl(
+    date: string,
+    template: 'checklist' | 'report',
+    format: 'pdf' | 'docx'
+  ): string {
+    return `${this.api.baseUrl}/export/planned-maintenance-daily/${date}/${template}?format=${format}`;
+  }
 }

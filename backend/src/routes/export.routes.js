@@ -14,6 +14,7 @@
 const router = require('express').Router();
 const { authenticate } = require('../middleware/auth.middleware');
 const { render } = require('../exports/core/export.service');
+const { streamDailyTemplateExport } = require('../exports/core/planned-daily-template.service');
 const { fullName } = require('../exports/core/helpers');
 const { MODULES, wiki } = require('../exports/modules');
 
@@ -68,6 +69,15 @@ router.get('/planned-maintenance-report', authenticate, async (req, res, next) =
     const mod = MODULES['planned-maintenance'];
     if (!ensureRole(mod, req, res)) return undefined;
     return await composeAndRender(mod, await mod.build(req), req, res);
+  } catch (err) { return next(err); }
+});
+
+// ── Planned maintenance daily templates (checklist/report) ─────────────────
+router.get('/planned-maintenance-daily/:date/:template', authenticate, async (req, res, next) => {
+  try {
+    const mod = MODULES['planned-maintenance'];
+    if (!ensureRole(mod, req, res)) return undefined;
+    return await streamDailyTemplateExport({ req, res });
   } catch (err) { return next(err); }
 });
 

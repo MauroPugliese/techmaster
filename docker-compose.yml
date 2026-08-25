@@ -150,6 +150,8 @@ services:
     # Uncomment for live-reload development with nodemon:
     # volumes:
     #   - ./backend/src:/app/src:ro
+    volumes:
+      - ./docs:/app/docs:ro
 
     # ── Backend healthcheck ───────────────────────────────────────────────
     healthcheck:
