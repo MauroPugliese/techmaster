@@ -70,6 +70,14 @@ export class OperationsAnalyticsComponent implements OnInit, AfterViewInit, OnDe
     }
   }
 
+  selectPeriod(value: string): void {
+    if (this.selectedPeriod === value && value !== 'custom') {
+      return;
+    }
+    this.selectedPeriod = value;
+    this.onPeriodChange();
+  }
+
   onCustomRangeApply(): void {
     if (this.customFromDate && this.customToDate) {
       this.loadData();

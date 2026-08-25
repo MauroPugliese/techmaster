@@ -161,6 +161,7 @@ export interface CalendarIndicators {
 // ── Inventory ─────────────────────────────────────────────────────────────────
 export interface InventoryItem {
   id: number;
+  category_id: number;
   sku: string;
   name: string;
   description?: string;
@@ -173,6 +174,7 @@ export interface InventoryItem {
   supplier?: string;
   is_active: boolean;
   is_low_stock?: boolean;
+  category?: { id: number; name: string };
 }
 
 export type MovementType = 'IN' | 'OUT' | 'TRANSFER' | 'ADJUSTMENT' | 'RETURN';

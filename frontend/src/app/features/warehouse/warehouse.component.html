@@ -34,6 +34,10 @@
         <span class="search-icon">search</span>
         <input placeholder="Search items..." [(ngModel)]="search" (input)="loadItems()">
       </div>
+      <select class="form-control" style="width:220px" [(ngModel)]="categoryFilter" (change)="loadItems()">
+        <option [ngValue]="''">All Categories</option>
+        <option *ngFor="let c of categories" [ngValue]="c.id">{{c.name}}</option>
+      </select>
       <button class="btn btn-secondary btn-sm"
               [class.btn-primary]="lowStockOnly"
               (click)="toggleLowStock()">
@@ -41,7 +45,8 @@
       </button>
     </div>
     <div class="flex gap-2">
-      <app-export-menu endpoint="warehouse" filename="Warehouse_Inventory"></app-export-menu>
+      <app-export-menu endpoint="warehouse" filename="Warehouse_Inventory"
+                       [params]="{ category_id: categoryFilter }"></app-export-menu>
       <button class="btn btn-primary" (click)="openItemModal()">
         <span class="btn-icon">add</span> Add Item
       </button>
@@ -55,6 +60,7 @@
         <tr>
           <th>SKU</th>
           <th>Item Name</th>
+          <th>Category</th>
           <th>Quantity</th>
           <th>Status</th>
           <th>Reorder Point</th>
@@ -70,6 +76,7 @@
             <div class="font-bold">{{item.name}}</div>
             <div class="text-sm text-muted">{{item.unit}}</div>
           </td>
+          <td class="text-sm">{{item.category?.name || '—'}}</td>
           <td>
             <div style="display:flex;align-items:center;gap:10px">
               <span [style.color]="getStockColor(item)" style="font-weight:700;font-size:1rem">

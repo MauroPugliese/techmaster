@@ -20,7 +20,7 @@ router.get('/categories', async (req, res, next) => {
 
 router.get('/', async (req, res, next) => {
   try {
-    const { low_stock, page = 1, limit = 20, search } = req.query;
+    const { low_stock, page = 1, limit = 20, search, category_id } = req.query;
     const where = { is_active: true };
 
     // FIXED: Op.col() doesn't work in a plain where object.
@@ -29,12 +29,17 @@ router.get('/', async (req, res, next) => {
       where[Op.and] = literal('quantity <= reorder_point');
     }
     if (search) where.name = { [Op.like]: `%${search}%` };
+    if (category_id) where.category_id = +category_id;
 
     const { count, rows } = await InventoryItem.findAndCountAll({
       where,
+      include: [{ model: ItemCategory, as: 'category', attributes: ['id', 'name'] }],
       limit: +limit,
       offset: (+page - 1) * +limit,
-      order: [['name', 'ASC']]
+      order: [
+        [{ model: ItemCategory, as: 'category' }, 'name', 'ASC'],
+        ['name', 'ASC']
+      ]
     });
     res.json({ success: true, data: { items: rows, total: count } });
   } catch (err) { next(err); }
