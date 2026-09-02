@@ -4,6 +4,7 @@
 import { Component, OnInit, OnDestroy, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule, DatePipe, TitleCasePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 import { ApiService }       from '../../core/services/services';
@@ -17,7 +18,7 @@ import { ExportMenuComponent } from '../../shared/components/export-menu/export-
 @Component({
   selector: 'app-maintenance',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, TitleCasePipe, OwlDateTimeModule, OwlNativeDateTimeModule, ExportMenuComponent],
+  imports: [CommonModule, FormsModule, DatePipe, TitleCasePipe, RouterLink, OwlDateTimeModule, OwlNativeDateTimeModule, ExportMenuComponent],
   templateUrl: './maintenance.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })

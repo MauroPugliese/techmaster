@@ -34,6 +34,9 @@
       </select>
     </div>
     <div class="flex gap-2">
+      <button class="btn btn-secondary" routerLink="/maintenance/planned">
+        <span class="btn-icon">calendar_month</span> Planned Maintenance
+      </button>
       <app-export-menu endpoint="maintenance" filename="Maintenance_Records"
                        [params]="{ status: statusFilter, priority: priorityFilter }"></app-export-menu>
       <button class="btn btn-primary" (click)="openModal()">
