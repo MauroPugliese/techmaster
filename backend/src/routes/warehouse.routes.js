@@ -28,7 +28,14 @@ router.get('/', async (req, res, next) => {
     if (low_stock === 'true') {
       where[Op.and] = literal('quantity <= reorder_point');
     }
-    if (search) where.name = { [Op.like]: `%${search}%` };
+    if (search) {
+      const q = `%${search}%`;
+      where[Op.or] = [
+        { name: { [Op.like]: q } },
+        { sku: { [Op.like]: q } },
+        { part_number: { [Op.like]: q } }
+      ];
+    }
     if (category_id) where.category_id = +category_id;
 
     const { count, rows } = await InventoryItem.findAndCountAll({

@@ -156,6 +156,7 @@ const InventoryItem = sequelize.define('InventoryItem', {
   category_id:   { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
   location_id:   { type: DataTypes.INTEGER.UNSIGNED },
   sku:           { type: DataTypes.STRING(80), allowNull: false, unique: true },
+  part_number:   { type: DataTypes.STRING(120) },
   name:          { type: DataTypes.STRING(200), allowNull: false },
   description:   { type: DataTypes.TEXT },
   unit:          { type: DataTypes.STRING(30), defaultValue: 'pcs' },

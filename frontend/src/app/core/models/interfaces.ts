@@ -163,6 +163,7 @@ export interface InventoryItem {
   id: number;
   category_id: number;
   sku: string;
+  part_number?: string;
   name: string;
   description?: string;
   unit: string;

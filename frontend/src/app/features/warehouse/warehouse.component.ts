@@ -10,7 +10,7 @@ import { ApiService }       from '../../core/services/api.service';
 import { DateFilterService } from '../../core/services/date-filter.service';
 import { ToastService }     from '../../core/services/toast.service';
 import { ConfirmService }   from '../../core/services/confirm.service';
-import { InventoryItem, MovementType } from '../../core/models/interfaces';
+import { InventoryItem, MovementType, StockMovement } from '../../core/models/interfaces';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
 
 @Component({
@@ -40,6 +40,11 @@ export class WarehouseComponent implements OnInit, OnDestroy {
   movementForm: { type: MovementType; quantity: number; reference: string; reason: string } = {
     type: 'IN', quantity: 1, reference: '', reason: ''
   };
+
+  showHistoryModal = false;
+  historyLoading = false;
+  historyItem: InventoryItem | null = null;
+  itemHistory: StockMovement[] = [];
 
   movementTypes = [
     { value: 'IN'         as MovementType, label: 'Stock In',  color: '#10B981' },
@@ -106,7 +111,7 @@ export class WarehouseComponent implements OnInit, OnDestroy {
   toggleLowStock(): void { this.lowStockOnly = !this.lowStockOnly; this.loadItems(); }
 
   private emptyItemForm() {
-    return { category_id: null, sku:'', name:'', description:'', unit:'pcs',
+    return { category_id: null, sku:'', part_number:'', name:'', description:'', unit:'pcs',
              quantity:0, min_stock:0, max_stock:null, reorder_point:0, unit_cost:null, supplier:'' };
   }
 
@@ -115,7 +120,10 @@ export class WarehouseComponent implements OnInit, OnDestroy {
       this.editingItem = item;
       this.itemForm = {
         category_id:   (item as any).category_id ?? null,
-        sku: item.sku, name: item.name, description: item.description ?? '',
+        sku: item.sku,
+        part_number: item.part_number ?? '',
+        name: item.name,
+        description: item.description ?? '',
         unit: item.unit, quantity: item.quantity, min_stock: item.min_stock,
         max_stock: item.max_stock ?? null, reorder_point: item.reorder_point,
         unit_cost: item.unit_cost ?? null, supplier: item.supplier ?? '',
@@ -204,6 +212,52 @@ export class WarehouseComponent implements OnInit, OnDestroy {
         this.cdr.markForCheck();
       }
     });
+  }
+
+  openHistoryModal(item: InventoryItem): void {
+    this.historyItem = item;
+    this.itemHistory = [];
+    this.showHistoryModal = true;
+    this.historyLoading = true;
+    this.cdr.markForCheck();
+
+    this.api.get<any>(`/warehouse/${item.id}/movements`).subscribe({
+      next: (r) => {
+        this.itemHistory = r?.data || [];
+        this.historyLoading = false;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.historyLoading = false;
+        this.toast.error('Failed to load item history.');
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  closeHistoryModal(e: MouseEvent): void {
+    if ((e.target as HTMLElement).classList.contains('modal-overlay')) this.showHistoryModal = false;
+  }
+
+  movementTypeLabel(type: MovementType): string {
+    return this.movementTypes.find(t => t.value === type)?.label || type;
+  }
+
+  movementTypeColor(type: MovementType): string {
+    return this.movementTypes.find(t => t.value === type)?.color || '#6B7280';
+  }
+
+  movementDelta(m: StockMovement): string {
+    const delta = m.quantity_after - m.quantity_before;
+    const sign = delta > 0 ? '+' : '';
+    return `${sign}${delta}`;
+  }
+
+  movementUserName(m: StockMovement): string {
+    const first = m.user?.first_name || '';
+    const last = m.user?.last_name || '';
+    const fullName = `${first} ${last}`.trim();
+    return fullName || 'System';
   }
 
   getStockColor(i: InventoryItem): string {

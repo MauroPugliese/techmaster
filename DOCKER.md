@@ -255,6 +255,33 @@ docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 
 ---
 
+## 🗂️ Visual Database UI (Adminer)
+
+An optional Adminer service is included in [docker-compose.yml](docker-compose.yml) under the `tools` profile.
+
+Start Adminer:
+
+```bash
+docker compose --profile tools up -d adminer
+```
+
+Open in browser:
+
+- URL: `http://localhost:8081`
+- System: `MySQL`
+- Server: `db`
+- Username: value of `MYSQL_USER` from `.env`
+- Password: value of `MYSQL_PASSWORD` from `.env`
+- Database: value of `MYSQL_DATABASE` from `.env`
+
+Stop Adminer:
+
+```bash
+docker compose --profile tools stop adminer
+```
+
+---
+
 ## 🔄 Database Init Explained
 
 MySQL's entrypoint runs all files in `/docker-entrypoint-initdb.d/` **only when the data directory is empty** (i.e. first container start with a fresh volume).

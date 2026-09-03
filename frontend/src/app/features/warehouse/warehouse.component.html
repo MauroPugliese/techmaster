@@ -59,6 +59,7 @@
       <thead>
         <tr>
           <th>SKU</th>
+          <th>Part Number</th>
           <th>Item Name</th>
           <th>Category</th>
           <th>Quantity</th>
@@ -72,6 +73,7 @@
       <tbody>
         <tr *ngFor="let item of items">
           <td><code style="font-size:0.8rem">{{item.sku}}</code></td>
+          <td><code style="font-size:0.8rem">{{item.part_number || '—'}}</code></td>
           <td>
             <div class="font-bold">{{item.name}}</div>
             <div class="text-sm text-muted">{{item.unit}}</div>
@@ -107,6 +109,10 @@
                       (click)="openMovementModal(item)" title="Stock movement">
                 <span class="btn-icon" style="font-size:17px;color:#1565C0">swap_horiz</span>
               </button>
+                <button class="btn btn-ghost btn-icon-only btn-sm"
+                    (click)="openHistoryModal(item)" title="Item history">
+                  <span class="btn-icon" style="font-size:17px;color:#6B7280">history</span>
+                </button>
               <!-- Edit -->
               <button class="btn btn-ghost btn-icon-only btn-sm"
                       (click)="editItem(item)" title="Edit">
@@ -159,13 +165,18 @@
         </div>
       </div>
 
-      <!-- SKU + Name -->
+      <!-- SKU + Part Number + Name -->
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">SKU *</label>
           <input class="form-control" [(ngModel)]="itemForm.sku"
                  placeholder="e.g. BOLT-M8-50"
                  [disabled]="!!editingItem">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Part Number</label>
+          <input class="form-control" [(ngModel)]="itemForm.part_number"
+                 placeholder="e.g. PN-445-REV2">
         </div>
         <div class="form-group" style="flex:2">
           <label class="form-label">Item Name *</label>
@@ -250,6 +261,75 @@
       </button>
     </div>
 
+  </div>
+</div>
+
+<!-- =====================================================================
+     ITEM HISTORY MODAL
+     ===================================================================== -->
+<div class="modal-overlay" *ngIf="showHistoryModal" (click)="closeHistoryModal($event)">
+  <div class="modal" style="max-width:820px" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h3>Item History — {{historyItem?.name}}</h3>
+      <button class="btn btn-ghost btn-icon-only" (click)="showHistoryModal=false">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:14px;font-size:0.85rem">
+        <div><strong>SKU:</strong> {{historyItem?.sku}}</div>
+        <div><strong>Part Number:</strong> {{historyItem?.part_number || '—'}}</div>
+        <div><strong>Current Stock:</strong> {{historyItem?.quantity}} {{historyItem?.unit}}</div>
+      </div>
+
+      <div *ngIf="historyLoading" class="text-muted" style="padding:10px 0">Loading history...</div>
+
+      <div class="table-container" *ngIf="!historyLoading" style="max-height:420px;overflow:auto">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Type</th>
+              <th>Qty</th>
+              <th>Before</th>
+              <th>After</th>
+              <th>Delta</th>
+              <th>Reference</th>
+              <th>Reason</th>
+              <th>User</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let m of itemHistory">
+              <td class="text-sm">{{m.movement_date | date:'short'}}</td>
+              <td>
+                <span class="badge" [style.background]="movementTypeColor(m.type) + '1A'" [style.color]="movementTypeColor(m.type)">
+                  {{movementTypeLabel(m.type)}}
+                </span>
+              </td>
+              <td class="font-bold">{{m.quantity}}</td>
+              <td class="text-sm">{{m.quantity_before}}</td>
+              <td class="text-sm">{{m.quantity_after}}</td>
+              <td class="font-bold" [style.color]="(m.quantity_after - m.quantity_before) < 0 ? '#EF4444' : '#10B981'">
+                {{movementDelta(m)}}
+              </td>
+              <td class="text-sm">{{m.reference || '—'}}</td>
+              <td class="text-sm text-muted" style="max-width:220px">{{m.reason || '—'}}</td>
+              <td class="text-sm">{{movementUserName(m)}}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="empty-state" *ngIf="itemHistory.length === 0">
+          <span class="empty-icon">history</span>
+          <h3>No history available</h3>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" (click)="showHistoryModal=false">Close</button>
+    </div>
   </div>
 </div>
 
