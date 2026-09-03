@@ -22,6 +22,7 @@ import { ExportMenuComponent } from '../../shared/components/export-menu/export-
 export class WikiComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();
   private search$  = new Subject<string>();
+  Math = Math;
 
   articles:       WikiArticle[] = [];
   pinnedArticles: WikiArticle[] = [];
@@ -29,6 +30,9 @@ export class WikiComponent implements OnInit, OnDestroy {
   loading         = true;
   saving          = false;
   total           = 0;
+  page            = 1;
+  pageSize        = 20;
+  readonly pageSizeOptions = [10, 20, 50, 100];
 
   searchQuery       = '';
   statusFilter      = 'PUBLISHED';
@@ -50,7 +54,10 @@ export class WikiComponent implements OnInit, OnDestroy {
     });
 
     this.search$.pipe(debounceTime(300), distinctUntilChanged(), takeUntil(this.destroy$))
-      .subscribe(() => this.loadArticles());
+      .subscribe(() => {
+        this.page = 1;
+        this.loadArticles();
+      });
 
     this.loadArticles();
   }
@@ -61,7 +68,8 @@ export class WikiComponent implements OnInit, OnDestroy {
       status:      this.statusFilter,
       category_id: this.selectedCategory || '',
       search:      this.searchQuery,
-      limit: 50
+      page: this.page,
+      limit: this.pageSize
     }).subscribe({
       next: res => {
         this.articles       = res.data.items;
@@ -75,8 +83,31 @@ export class WikiComponent implements OnInit, OnDestroy {
   }
 
   onSearch(): void { this.search$.next(this.searchQuery); }
-  filterByCategory(id: number): void { this.selectedCategory = id; this.loadArticles(); }
-  clearCategory(): void { this.selectedCategory = null; this.loadArticles(); }
+  filterByCategory(id: number): void {
+    this.selectedCategory = id;
+    this.page = 1;
+    this.loadArticles();
+  }
+  clearCategory(): void {
+    this.selectedCategory = null;
+    this.page = 1;
+    this.loadArticles();
+  }
+
+  get totalPages(): number {
+    return Math.max(1, Math.ceil(this.total / this.pageSize));
+  }
+
+  changePage(page: number): void {
+    if (page < 1 || page > this.totalPages) return;
+    this.page = page;
+    this.loadArticles();
+  }
+
+  onPageSizeChange(): void {
+    this.page = 1;
+    this.loadArticles();
+  }
 
   viewArticle(a: WikiArticle): void {
     this.api.get<any>(`/wiki/articles/${a.slug}`).subscribe(res => {

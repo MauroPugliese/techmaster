@@ -24,6 +24,7 @@ Chart.register(...registerables);
 })
 export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   private destroy$ = new Subject<void>();
+  Math = Math;
 
   loading = true;
   kpis: DashboardKPIs | null = null;
@@ -31,6 +32,9 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   recentMaintenance: MaintenanceRecord[] = [];
   todayShifts:     Shift[]              = [];
   lowStockItems:   InventoryItem[]      = [];
+  lowStockPage = 1;
+  lowStockPageSize = 10;
+  readonly lowStockPageSizeOptions = [10, 20, 50, 100];
   today            = new Date();
   dateFilterLabel  = 'All time';
 
@@ -99,10 +103,29 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private loadLowStock(): void {
-    this.api.get<any>('/warehouse', { low_stock: true, limit: 5 }).subscribe(res => {
+    this.api.get<any>('/warehouse', { low_stock: true, limit: 100 }).subscribe(res => {
       this.lowStockItems = res.data.items;
+      this.lowStockPage = 1;
       this.cdr.markForCheck();
     });
+  }
+
+  get pagedLowStockItems(): InventoryItem[] {
+    const start = (this.lowStockPage - 1) * this.lowStockPageSize;
+    return this.lowStockItems.slice(start, start + this.lowStockPageSize);
+  }
+
+  get lowStockTotalPages(): number {
+    return Math.max(1, Math.ceil(this.lowStockItems.length / this.lowStockPageSize));
+  }
+
+  changeLowStockPage(page: number): void {
+    if (page < 1 || page > this.lowStockTotalPages) return;
+    this.lowStockPage = page;
+  }
+
+  onLowStockPageSizeChange(): void {
+    this.lowStockPage = 1;
   }
 
   private initCharts(): void {

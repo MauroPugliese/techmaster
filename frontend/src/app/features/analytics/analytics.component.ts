@@ -25,12 +25,16 @@ Chart.register(...registerables, zoomPlugin);
 })
 export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
   private destroy$ = new Subject<void>();
+  Math = Math;
   private charts: Record<string, Chart | null> = {
     opsByType: null, maintOverview: null, stock: null,
     taskComp: null, shiftCoverage: null, statusDonut: null
   };
 
   maintSummary: any[] = [];
+  summaryPage = 1;
+  summaryPageSize = 10;
+  readonly summaryPageSizeOptions = [10, 20, 50, 100];
   dateLabel = 'All time';
 
   constructor(
@@ -338,6 +342,25 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
         completion_rate: total > 0 ? (done / total) * 100 : 0
       };
     });
+    this.summaryPage = 1;
+  }
+
+  get pagedMaintSummary(): any[] {
+    const start = (this.summaryPage - 1) * this.summaryPageSize;
+    return this.maintSummary.slice(start, start + this.summaryPageSize);
+  }
+
+  get summaryTotalPages(): number {
+    return Math.max(1, Math.ceil(this.maintSummary.length / this.summaryPageSize));
+  }
+
+  changeSummaryPage(page: number): void {
+    if (page < 1 || page > this.summaryTotalPages) return;
+    this.summaryPage = page;
+  }
+
+  onSummaryPageSizeChange(): void {
+    this.summaryPage = 1;
   }
 
   private getCtx(id: string): CanvasRenderingContext2D | null {

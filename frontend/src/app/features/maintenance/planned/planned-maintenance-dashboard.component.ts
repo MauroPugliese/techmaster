@@ -25,9 +25,14 @@ import { ExportMenuComponent } from '../../../shared/components/export-menu/expo
 export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
 
   private destroy$ = new Subject<void>();
+  Math = Math;
 
   // Table
   tasks: PlannedMaintenanceTask[] = [];
+  total = 0;
+  page = 1;
+  pageSize = 20;
+  readonly pageSizeOptions = [10, 20, 50, 100];
   searchTerm = '';
   loading = false;
 
@@ -74,11 +79,12 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
 
   loadTasks(): void {
     this.loading = true;
-    this.svc.getAll({ search: this.searchTerm })
+    this.svc.getAll({ search: this.searchTerm, page: this.page, limit: this.pageSize })
       .pipe(takeUntil(this.destroy$))
       .subscribe({
-        next: tasks => {
-          this.tasks = tasks;
+        next: result => {
+          this.tasks = result.items;
+          this.total = result.total;
           this.loading = false;
           this.cdr.markForCheck();
         },
@@ -91,6 +97,22 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
   }
 
   onSearch(): void {
+    this.page = 1;
+    this.loadTasks();
+  }
+
+  get totalPages(): number {
+    return Math.max(1, Math.ceil(this.total / this.pageSize));
+  }
+
+  changePage(page: number): void {
+    if (page < 1 || page > this.totalPages) return;
+    this.page = page;
+    this.loadTasks();
+  }
+
+  onPageSizeChange(): void {
+    this.page = 1;
     this.loadTasks();
   }
 

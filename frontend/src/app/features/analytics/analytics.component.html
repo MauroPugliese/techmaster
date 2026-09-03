@@ -115,7 +115,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr *ngFor="let row of maintSummary">
+          <tr *ngFor="let row of pagedMaintSummary">
             <td><span class="badge badge-in-progress">{{row.type | titlecase}}</span></td>
             <td>{{row.count}}</td>
             <td>{{row.avg_downtime | number:'1.1-1'}}h</td>
@@ -134,6 +134,24 @@
           </tr>
         </tbody>
       </table>
+       <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-top:1px solid var(--border)"
+         *ngIf="maintSummary.length > 0">
+        <div class="table-page-size-control">
+          <span class="text-sm text-muted">Showing {{(summaryPage-1)*summaryPageSize+1}}–{{Math.min(summaryPage*summaryPageSize,maintSummary.length)}} of {{maintSummary.length}}</span>
+          <select class="form-control table-page-size-select" [(ngModel)]="summaryPageSize" (change)="onSummaryPageSizeChange()">
+            <option *ngFor="let size of summaryPageSizeOptions" [ngValue]="size">{{size}}</option>
+          </select>
+        </div>
+        <div class="flex gap-2">
+          <button class="btn btn-secondary btn-sm" [disabled]="summaryPage <= 1" (click)="changeSummaryPage(summaryPage-1)">
+            <span class="btn-icon">chevron_left</span>
+          </button>
+          <span style="padding:5px 12px;font-size:0.85rem;font-weight:600">{{summaryPage}} / {{summaryTotalPages}}</span>
+          <button class="btn btn-secondary btn-sm" [disabled]="summaryPage >= summaryTotalPages" (click)="changeSummaryPage(summaryPage+1)">
+            <span class="btn-icon">chevron_right</span>
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 

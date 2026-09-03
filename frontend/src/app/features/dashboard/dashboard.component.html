@@ -235,7 +235,7 @@
           <th>Item</th><th>SKU</th><th>Current Stock</th><th>Reorder Point</th><th>Status</th>
         </tr></thead>
         <tbody>
-          <tr *ngFor="let item of lowStockItems">
+          <tr *ngFor="let item of pagedLowStockItems">
             <td class="font-bold">{{item.name}}</td>
             <td><code>{{item.sku}}</code></td>
             <td>
@@ -254,6 +254,24 @@
           </tr>
         </tbody>
       </table>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-top:1px solid var(--border)"
+         *ngIf="lowStockItems.length > 0">
+        <div class="table-page-size-control">
+          <span class="text-sm text-muted">Showing {{(lowStockPage-1)*lowStockPageSize+1}}–{{Math.min(lowStockPage*lowStockPageSize,lowStockItems.length)}} of {{lowStockItems.length}}</span>
+          <select class="form-control table-page-size-select" [(ngModel)]="lowStockPageSize" (change)="onLowStockPageSizeChange()">
+            <option *ngFor="let size of lowStockPageSizeOptions" [ngValue]="size">{{size}}</option>
+          </select>
+        </div>
+        <div class="flex gap-2">
+          <button class="btn btn-secondary btn-sm" [disabled]="lowStockPage <= 1" (click)="changeLowStockPage(lowStockPage-1)">
+            <span class="btn-icon">chevron_left</span>
+          </button>
+          <span style="padding:5px 12px;font-size:0.85rem;font-weight:600">{{lowStockPage}} / {{lowStockTotalPages}}</span>
+          <button class="btn btn-secondary btn-sm" [disabled]="lowStockPage >= lowStockTotalPages" (click)="changeLowStockPage(lowStockPage+1)">
+            <span class="btn-icon">chevron_right</span>
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 

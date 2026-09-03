@@ -158,8 +158,13 @@
     </div>
 
     <!-- Pagination -->
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-top:1px solid var(--border)" *ngIf="total > pageSize">
-      <span class="text-sm text-muted">Showing {{(page-1)*pageSize+1}}–{{Math.min(page*pageSize,total)}} of {{total}}</span>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-top:1px solid var(--border)" *ngIf="total > 0">
+      <div class="table-page-size-control">
+        <span class="text-sm text-muted">Showing {{(page-1)*pageSize+1}}–{{Math.min(page*pageSize,total)}} of {{total}}</span>
+        <select class="form-control table-page-size-select" [(ngModel)]="pageSize" (change)="onPageSizeChange()">
+          <option *ngFor="let size of pageSizeOptions" [ngValue]="size">{{size}}</option>
+        </select>
+      </div>
       <div class="flex gap-2">
         <button class="btn btn-secondary btn-sm" [disabled]="page <= 1" (click)="changePage(page-1)">
           <span class="btn-icon">chevron_left</span>

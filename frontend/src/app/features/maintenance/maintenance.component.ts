@@ -24,10 +24,15 @@ import { ExportMenuComponent } from '../../shared/components/export-menu/export-
 })
 export class MaintenanceComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();
+  Math = Math;
   records: MaintenanceRecord[] = [];
   assets:  Asset[]             = [];
   loading  = true;
   saving   = false;
+  total    = 0;
+  page     = 1;
+  pageSize = 20;
+  readonly pageSizeOptions = [10, 20, 50, 100];
   searchQuery = '';
   statusFilter   = '';
   priorityFilter = '';
@@ -68,11 +73,37 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
       search: this.searchQuery,
       status: this.statusFilter,
       priority: this.priorityFilter,
-      limit: 100
+      page: this.page,
+      limit: this.pageSize
     }).subscribe({
-      next: r => { this.records = r?.data?.items || []; this.loading = false; this.cdr.markForCheck(); },
+      next: r => {
+        this.records = r?.data?.items || [];
+        this.total = r?.data?.total || this.records.length;
+        this.loading = false;
+        this.cdr.markForCheck();
+      },
       error: () => { this.loading = false; this.cdr.markForCheck(); }
     });
+  }
+
+  applyFilters(): void {
+    this.page = 1;
+    this.load();
+  }
+
+  get totalPages(): number {
+    return Math.max(1, Math.ceil(this.total / this.pageSize));
+  }
+
+  changePage(page: number): void {
+    if (page < 1 || page > this.totalPages) return;
+    this.page = page;
+    this.load();
+  }
+
+  onPageSizeChange(): void {
+    this.page = 1;
+    this.load();
   }
 
   private emptyForm() {

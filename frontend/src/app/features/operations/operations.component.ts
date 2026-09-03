@@ -32,6 +32,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
   total    = 0;
   page     = 1;
   pageSize = 20;
+  readonly pageSizeOptions = [10, 20, 50, 100];
   viewMode: 'table' | 'cards' = 'table';
 
   searchQuery    = '';
@@ -82,6 +83,11 @@ export class OperationsComponent implements OnInit, OnDestroy {
   changePage(p: number): void {
     if (p < 1 || p > this.totalPages) return;
     this.page = p; this.loadOperations();
+  }
+
+  onPageSizeChange(): void {
+    this.page = 1;
+    this.loadOperations();
   }
 
   openModal(op?: Operation): void {

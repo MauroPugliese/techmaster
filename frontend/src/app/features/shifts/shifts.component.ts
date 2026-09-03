@@ -112,8 +112,13 @@ import { ExportMenuComponent } from '../../shared/components/export-menu/export-
         </tr>
       </tbody>
     </table>
-    <div class="flex items-center justify-between mt-4" *ngIf="pageCount() > 1">
-      <div class="text-sm text-muted">Page {{employeePage}} of {{pageCount()}}</div>
+    <div class="flex items-center justify-between mt-4" *ngIf="employeeTotal > 0">
+      <div class="flex items-center gap-3">
+        <div class="text-sm text-muted">Page {{employeePage}} of {{pageCount()}}</div>
+        <select class="form-control" style="min-width:96px;height:32px;padding:4px 12px;margin-left:8px" [(ngModel)]="employeeLimit" (change)="onEmployeeLimitChange()">
+          <option *ngFor="let size of employeeLimitOptions" [ngValue]="size">{{size}}</option>
+        </select>
+      </div>
       <div class="flex gap-2">
         <button class="btn btn-ghost btn-sm" type="button" (click)="prevPage()" [disabled]="employeePage === 1">Previous</button>
         <button class="btn btn-ghost btn-sm" type="button" (click)="nextPage()" [disabled]="employeePage === pageCount()">Next</button>
@@ -206,6 +211,7 @@ export class ShiftsComponent implements OnInit, OnDestroy {
   weekOffset     = 0;
   employeePage   = 1;
   employeeLimit  = 20;
+  readonly employeeLimitOptions = [10, 20, 50, 100];
   employeeTotal  = 0;
 
   showModal      = false;
@@ -286,6 +292,11 @@ export class ShiftsComponent implements OnInit, OnDestroy {
 
   pageCount(): number {
     return Math.max(1, Math.ceil(this.employeeTotal / this.employeeLimit));
+  }
+
+  onEmployeeLimitChange(): void {
+    this.employeePage = 1;
+    this.loadEmployees();
   }
 
   isToday(day: Date): boolean {

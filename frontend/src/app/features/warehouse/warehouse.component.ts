@@ -22,11 +22,16 @@ import { ExportMenuComponent } from '../../shared/components/export-menu/export-
 })
 export class WarehouseComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();
+  Math = Math;
 
   items:      InventoryItem[] = [];
   categories: any[]           = [];
   loading  = true;
   saving   = false;
+  total    = 0;
+  page     = 1;
+  pageSize = 20;
+  readonly pageSizeOptions = [10, 20, 50, 100];
   search   = '';
   lowStockOnly = false;
   categoryFilter: number | '' = '';
@@ -45,6 +50,9 @@ export class WarehouseComponent implements OnInit, OnDestroy {
   historyLoading = false;
   historyItem: InventoryItem | null = null;
   itemHistory: StockMovement[] = [];
+  historyPage = 1;
+  historyPageSize = 10;
+  readonly historyPageSizeOptions = [10, 20, 50, 100];
 
   movementTypes = [
     { value: 'IN'         as MovementType, label: 'Stock In',  color: '#10B981' },
@@ -101,14 +109,40 @@ export class WarehouseComponent implements OnInit, OnDestroy {
       search: this.search,
       low_stock: this.lowStockOnly ? 'true' : '',
       category_id: this.categoryFilter || '',
-      limit: 100
+      page: this.page,
+      limit: this.pageSize
     }).subscribe({
-      next: r => { this.items = r?.data?.items || r?.data || []; this.loading = false; this.cdr.markForCheck(); },
+      next: r => {
+        this.items = r?.data?.items || r?.data || [];
+        this.total = r?.data?.total || this.items.length;
+        this.loading = false;
+        this.cdr.markForCheck();
+      },
       error: () => { this.loading = false; this.cdr.markForCheck(); }
     });
   }
 
-  toggleLowStock(): void { this.lowStockOnly = !this.lowStockOnly; this.loadItems(); }
+  applyFilters(): void {
+    this.page = 1;
+    this.loadItems();
+  }
+
+  toggleLowStock(): void { this.lowStockOnly = !this.lowStockOnly; this.applyFilters(); }
+
+  get totalPages(): number {
+    return Math.max(1, Math.ceil(this.total / this.pageSize));
+  }
+
+  changePage(page: number): void {
+    if (page < 1 || page > this.totalPages) return;
+    this.page = page;
+    this.loadItems();
+  }
+
+  onPageSizeChange(): void {
+    this.page = 1;
+    this.loadItems();
+  }
 
   private emptyItemForm() {
     return { category_id: null, sku:'', part_number:'', name:'', description:'', unit:'pcs',
@@ -217,6 +251,7 @@ export class WarehouseComponent implements OnInit, OnDestroy {
   openHistoryModal(item: InventoryItem): void {
     this.historyItem = item;
     this.itemHistory = [];
+    this.historyPage = 1;
     this.showHistoryModal = true;
     this.historyLoading = true;
     this.cdr.markForCheck();
@@ -245,6 +280,24 @@ export class WarehouseComponent implements OnInit, OnDestroy {
 
   movementTypeColor(type: MovementType): string {
     return this.movementTypes.find(t => t.value === type)?.color || '#6B7280';
+  }
+
+  get pagedItemHistory(): StockMovement[] {
+    const start = (this.historyPage - 1) * this.historyPageSize;
+    return this.itemHistory.slice(start, start + this.historyPageSize);
+  }
+
+  get historyTotalPages(): number {
+    return Math.max(1, Math.ceil(this.itemHistory.length / this.historyPageSize));
+  }
+
+  changeHistoryPage(page: number): void {
+    if (page < 1 || page > this.historyTotalPages) return;
+    this.historyPage = page;
+  }
+
+  onHistoryPageSizeChange(): void {
+    this.historyPage = 1;
   }
 
   movementDelta(m: StockMovement): string {

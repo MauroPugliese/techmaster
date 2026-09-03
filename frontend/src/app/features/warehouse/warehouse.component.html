@@ -32,9 +32,9 @@
     <div class="flex gap-2">
       <div class="search-bar" style="width:260px">
         <span class="search-icon">search</span>
-        <input placeholder="Search items..." [(ngModel)]="search" (input)="loadItems()">
+        <input placeholder="Search items..." [(ngModel)]="search" (input)="applyFilters()">
       </div>
-      <select class="form-control" style="width:220px" [(ngModel)]="categoryFilter" (change)="loadItems()">
+      <select class="form-control" style="width:220px" [(ngModel)]="categoryFilter" (change)="applyFilters()">
         <option [ngValue]="''">All Categories</option>
         <option *ngFor="let c of categories" [ngValue]="c.id">{{c.name}}</option>
       </select>
@@ -133,6 +133,24 @@
       <span class="empty-icon">inventory_2</span>
       <h3>No inventory items</h3>
       <button class="btn btn-primary" (click)="openItemModal()">Add First Item</button>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-top:1px solid var(--border)"
+         *ngIf="total > 0">
+      <div class="table-page-size-control">
+        <span class="text-sm text-muted">Showing {{(page-1)*pageSize+1}}–{{Math.min(page*pageSize,total)}} of {{total}}</span>
+        <select class="form-control table-page-size-select" [(ngModel)]="pageSize" (change)="onPageSizeChange()">
+          <option *ngFor="let size of pageSizeOptions" [ngValue]="size">{{size}}</option>
+        </select>
+      </div>
+      <div class="flex gap-2">
+        <button class="btn btn-secondary btn-sm" [disabled]="page <= 1" (click)="changePage(page-1)">
+          <span class="btn-icon">chevron_left</span>
+        </button>
+        <span style="padding:5px 12px;font-size:0.85rem;font-weight:600">{{page}} / {{totalPages}}</span>
+        <button class="btn btn-secondary btn-sm" [disabled]="page >= totalPages" (click)="changePage(page+1)">
+          <span class="btn-icon">chevron_right</span>
+        </button>
+      </div>
     </div>
   </div>
 </div>
@@ -301,7 +319,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr *ngFor="let m of itemHistory">
+            <tr *ngFor="let m of pagedItemHistory">
               <td class="text-sm">{{m.movement_date | date:'short'}}</td>
               <td>
                 <span class="badge" [style.background]="movementTypeColor(m.type) + '1A'" [style.color]="movementTypeColor(m.type)">
@@ -323,6 +341,23 @@
         <div class="empty-state" *ngIf="itemHistory.length === 0">
           <span class="empty-icon">history</span>
           <h3>No history available</h3>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0"
+             *ngIf="itemHistory.length > 0">
+          <div class="table-page-size-control">
+            <span class="text-sm text-muted">Page {{historyPage}} of {{historyTotalPages}}</span>
+            <select class="form-control table-page-size-select" [(ngModel)]="historyPageSize" (change)="onHistoryPageSizeChange()">
+              <option *ngFor="let size of historyPageSizeOptions" [ngValue]="size">{{size}}</option>
+            </select>
+          </div>
+          <div class="flex gap-2">
+            <button class="btn btn-secondary btn-sm" [disabled]="historyPage <= 1" (click)="changeHistoryPage(historyPage-1)">
+              <span class="btn-icon">chevron_left</span>
+            </button>
+            <button class="btn btn-secondary btn-sm" [disabled]="historyPage >= historyTotalPages" (click)="changeHistoryPage(historyPage+1)">
+              <span class="btn-icon">chevron_right</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

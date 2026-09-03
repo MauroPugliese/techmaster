@@ -23,6 +23,8 @@ type Tab = 'overview' | 'users' | 'operation-types' | 'shift-types' |
 })
 export class AdminComponent implements OnInit {
 
+  Math = Math;
+
   activeTab: Tab = 'overview';
 
   // ── Overview ────────────────────────────────────────────────────────────────
@@ -33,6 +35,10 @@ export class AdminComponent implements OnInit {
   roles:      any[] = [];
   userSearch  = '';
   userLoading = false;
+  userPage = 1;
+  userPageSize = 20;
+  readonly userPageSizeOptions = [10, 20, 50, 100];
+  userTotal = 0;
   showUserModal  = false;
   showResetModal = false;
   editingUser: any = null;
@@ -43,6 +49,9 @@ export class AdminComponent implements OnInit {
   // ── Generic config list ──────────────────────────────────────────────────────
   listData:    any[] = [];
   listLoading  = false;
+  listPage = 1;
+  listPageSize = 20;
+  readonly listPageSizeOptions = [10, 20, 50, 100];
   showModal    = false;
   editingItem: any = null;
   itemForm:    any = {};
@@ -116,14 +125,39 @@ export class AdminComponent implements OnInit {
   // ── Users ───────────────────────────────────────────────────────────────────
   loadUsers(): void {
     this.userLoading = true;
-    this.api.get<any>('/admin/users', { search: this.userSearch, limit: 100 }).subscribe({
+    this.api.get<any>('/admin/users', {
+      search: this.userSearch,
+      page: this.userPage,
+      limit: this.userPageSize
+    }).subscribe({
       next: r => {
         this.users = r.data?.items || r.data || [];
+        this.userTotal = r.data?.total || this.users.length;
         this.userLoading = false;
         this.cdr.markForCheck();
       },
       error: () => { this.userLoading = false; this.cdr.markForCheck(); }
     });
+  }
+
+  onUsersSearch(): void {
+    this.userPage = 1;
+    this.loadUsers();
+  }
+
+  get userTotalPages(): number {
+    return Math.max(1, Math.ceil(this.userTotal / this.userPageSize));
+  }
+
+  changeUserPage(page: number): void {
+    if (page < 1 || page > this.userTotalPages) return;
+    this.userPage = page;
+    this.loadUsers();
+  }
+
+  onUserPageSizeChange(): void {
+    this.userPage = 1;
+    this.loadUsers();
   }
 
   private emptyUser() {
@@ -223,10 +257,29 @@ export class AdminComponent implements OnInit {
 
   loadList(tab: Tab): void {
     this.listLoading = true;
+    this.listPage = 1;
     this.api.get<any>(this.apiPath(tab)).subscribe({
       next: r => { this.listData = r.data || []; this.listLoading = false; this.cdr.markForCheck(); },
       error: () => { this.listLoading = false; this.cdr.markForCheck(); }
     });
+  }
+
+  get paginatedListData(): any[] {
+    const start = (this.listPage - 1) * this.listPageSize;
+    return this.listData.slice(start, start + this.listPageSize);
+  }
+
+  get listTotalPages(): number {
+    return Math.max(1, Math.ceil(this.listData.length / this.listPageSize));
+  }
+
+  changeListPage(page: number): void {
+    if (page < 1 || page > this.listTotalPages) return;
+    this.listPage = page;
+  }
+
+  onListPageSizeChange(): void {
+    this.listPage = 1;
   }
 
   openItemModal(item?: any): void {
