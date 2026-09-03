@@ -8,15 +8,7 @@
              [(ngModel)]="searchTerm" (input)="onSearch()">
     </div>
     <div class="flex gap-2">
-      <button class="btn btn-secondary btn-sm" (click)="exportPlanned('xlsx')">
-        <span class="btn-icon">table_view</span> Excel
-      </button>
-      <button class="btn btn-secondary btn-sm" (click)="exportPlanned('pdf')">
-        <span class="btn-icon">picture_as_pdf</span> PDF
-      </button>
-      <button class="btn btn-secondary btn-sm" (click)="exportPlanned('docx')">
-        <span class="btn-icon">description</span> Word
-      </button>
+      <app-export-menu endpoint="planned-maintenance" filename="Planned_Maintenance"></app-export-menu>
       <button class="btn btn-primary" (click)="openModal()">
         <span class="btn-icon">add</span> New Task
       </button>
@@ -133,6 +125,16 @@
         <div>
           <h3>Tasks for {{ selectedDateLabel }}</h3>
           <p>Recurring tasks on this date</p>
+        </div>
+        <div class="flex gap-2">
+          <button class="btn btn-primary btn-sm" (click)="exportDailyWord('checklist')">
+            <span class="btn-icon" style="font-size:16px">description</span>
+            Checklist DOCX
+          </button>
+          <button class="btn btn-ghost btn-sm" (click)="exportDailyWord('report')">
+            <span class="btn-icon" style="font-size:16px">description</span>
+            Report DOCX
+          </button>
         </div>
       </div>
 

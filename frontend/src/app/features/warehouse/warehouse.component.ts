@@ -11,11 +11,12 @@ import { DateFilterService } from '../../core/services/date-filter.service';
 import { ToastService }     from '../../core/services/toast.service';
 import { ConfirmService }   from '../../core/services/confirm.service';
 import { InventoryItem, MovementType } from '../../core/models/interfaces';
+import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
 
 @Component({
   selector: 'app-warehouse',
   standalone: true,
-  imports: [CommonModule, FormsModule, DecimalPipe],
+  imports: [CommonModule, FormsModule, DecimalPipe, ExportMenuComponent],
   templateUrl: './warehouse.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -28,6 +29,7 @@ export class WarehouseComponent implements OnInit, OnDestroy {
   saving   = false;
   search   = '';
   lowStockOnly = false;
+  categoryFilter: number | '' = '';
 
   showItemModal  = false;
   editingItem:   InventoryItem | null = null;
@@ -90,7 +92,12 @@ export class WarehouseComponent implements OnInit, OnDestroy {
 
   loadItems(): void {
     this.loading = true;
-    this.api.get<any>('/warehouse', { search: this.search, low_stock: this.lowStockOnly ? 'true' : '', limit: 100 }).subscribe({
+    this.api.get<any>('/warehouse', {
+      search: this.search,
+      low_stock: this.lowStockOnly ? 'true' : '',
+      category_id: this.categoryFilter || '',
+      limit: 100
+    }).subscribe({
       next: r => { this.items = r?.data?.items || r?.data || []; this.loading = false; this.cdr.markForCheck(); },
       error: () => { this.loading = false; this.cdr.markForCheck(); }
     });

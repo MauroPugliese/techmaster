@@ -12,38 +12,34 @@ import { DateFilterService } from '../../core/services/date-filter.service';
 import { ToastService }     from '../../core/services/toast.service';
 import { ConfirmService }   from '../../core/services/confirm.service';
 import { Shift, ShiftType } from '../../core/models/interfaces';
+import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
 
 @Component({
   selector: 'app-shifts',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, OwlDateTimeModule, OwlNativeDateTimeModule],
+  imports: [CommonModule, FormsModule, DatePipe, OwlDateTimeModule, OwlNativeDateTimeModule, ExportMenuComponent],
   template: `
 <div class="shifts-page fade-in">
 
   <!-- Header -->
   <div class="flex items-center justify-between mb-6">
-    <div class="flex items-center gap-3">
+    <div class="flex items-center gap-2">
       <button class="btn btn-secondary btn-sm" (click)="prevWeek()">
         <span class="btn-icon">chevron_left</span>
       </button>
-      <h3 style="font-size:1rem;font-weight:700">
-        Week of {{weekStart | date:'MMM d'}} – {{weekEnd | date:'MMM d, y'}}
-      </h3>
       <button class="btn btn-secondary btn-sm" (click)="nextWeek()">
         <span class="btn-icon">chevron_right</span>
       </button>
+      <div style="width:1px;height:24px;background:var(--border);margin:0 8px"></div>
+      <h3 style="font-size:1rem;font-weight:700">
+        Week of {{weekStart | date:'MMM d'}} – {{weekEnd | date:'MMM d, y'}}
+      </h3>
+      <div style="width:1px;height:24px;background:var(--border);margin:0 8px"></div>
       <button class="btn btn-ghost btn-sm" (click)="goToday()">Today</button>
     </div>
     <div class="flex gap-2">
-      <button class="btn btn-secondary btn-sm" (click)="exportShift('xlsx')">
-        <span class="btn-icon">table_view</span> Excel
-      </button>
-      <button class="btn btn-secondary btn-sm" (click)="exportShift('pdf')">
-        <span class="btn-icon">picture_as_pdf</span> PDF
-      </button>
-      <button class="btn btn-secondary btn-sm" (click)="exportShift('docx')">
-        <span class="btn-icon">description</span> Word
-      </button>
+      <app-export-menu endpoint="shifts" filename="Shifts"
+                       [params]="{ from: (weekStart | date:'yyyy-MM-dd'), to: (weekEnd | date:'yyyy-MM-dd') }"></app-export-menu>
       <button class="btn btn-primary" (click)="openModal()">
         <span class="btn-icon">add</span> Schedule Shift
       </button>
@@ -51,7 +47,7 @@ import { Shift, ShiftType } from '../../core/models/interfaces';
   </div>
 
   <!-- Legend -->
-  <div class="flex gap-3 mb-5" style="flex-wrap:wrap">
+  <div class="flex gap-3 mb-6" style="flex-wrap:wrap">
     <div *ngFor="let st of shiftTypes"
          class="flex items-center gap-2"
          style="background:var(--surface);border:1px solid var(--border);
@@ -65,7 +61,7 @@ import { Shift, ShiftType } from '../../core/models/interfaces';
   </div>
 
   <!-- Calendar -->
-  <div class="table-container">
+  <div class="table-container" style="margin-top:8px">
     <table class="data-table">
       <thead>
         <tr>

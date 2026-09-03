@@ -4,7 +4,16 @@
 
 <div class="dashboard-page fade-in">
 
-  <!-- ── KPI Row ─────────────────────────────────────────────────────────── -->
+  <!-- ── Header ──────────────────────────────────────────────────────────── -->
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h2 style="margin-bottom:4px">Dashboard</h2>
+      <p class="text-muted text-sm">Operational health snapshot</p>
+    </div>
+    <app-export-menu endpoint="dashboard" filename="Dashboard_Summary" label="Export Summary"></app-export-menu>
+  </div>
+
+  <!-- ── KPI Row ────────────────────────────────────────────── -->
   <div class="kpi-grid">
 
     <div class="kpi-card" style="--kpi-color: #1565C0">

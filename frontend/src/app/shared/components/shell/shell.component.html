@@ -54,12 +54,12 @@
 
       <div class="nav-section-label">Intelligence</div>
 
-      <a class="nav-item" routerLink="/analytics" routerLinkActive="active">
+      <a class="nav-item" routerLink="/analytics" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}">
         <span class="nav-icon">insights</span>
         <span class="nav-label">Analytics & Reports</span>
       </a>
 
-      <a class="nav-item" routerLink="/analytics/operations" routerLinkActive="active" [routerLinkActiveOptions]="{exact: false}">
+      <a class="nav-item" routerLink="/analytics/operations" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}">
         <span class="nav-icon">analytics</span>
         <span class="nav-label">Operations Analytics</span>
       </a>

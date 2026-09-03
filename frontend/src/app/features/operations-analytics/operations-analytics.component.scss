@@ -11,11 +11,108 @@
 .controls-section {
   background: white;
   border-radius: 12px;
-  padding: 20px;
+  padding: 16px 20px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   border: 1px solid #E1EAF5;
 }
 
+.controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+/* Inline segmented period selector */
+.period-selector {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  background: #F3F6FB;
+  border: 1px solid #E1EAF5;
+  border-radius: 999px;
+  flex-wrap: wrap;
+}
+
+.period-selector-icon {
+  font-family: 'Material Icons Round';
+  font-size: 18px;
+  color: #6B7280;
+  padding: 0 8px 0 10px;
+  line-height: 1;
+}
+
+.period-chip {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: #374151;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 7px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  font-family: inherit;
+}
+
+.period-chip:hover {
+  background: rgba(21, 101, 192, 0.08);
+  color: #1565C0;
+}
+
+.period-chip:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(21, 101, 192, 0.25);
+}
+
+.period-chip.active {
+  background: linear-gradient(135deg, #1565C0, #0288D1);
+  color: white;
+  box-shadow: 0 2px 6px rgba(21, 101, 192, 0.3);
+}
+
+.period-chip.active:hover {
+  color: white;
+}
+
+/* Custom date range (shown only when Custom is active) */
+.custom-range {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #F9FBFD;
+  border: 1px dashed #C7D6E8;
+  border-radius: 10px;
+  flex-wrap: wrap;
+}
+
+.custom-range .datetime-picker-wrapper {
+  min-width: 160px;
+}
+
+.custom-range .form-control {
+  height: 34px;
+  padding: 4px 32px 4px 10px;
+  font-size: 13px;
+}
+
+.range-separator {
+  color: #6B7280;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.btn-sm {
+  padding: 6px 14px;
+  font-size: 13px;
+  border-radius: 8px;
+}
+
+/* Legacy helpers still used elsewhere in the page (kept for safety) */
 .control-group {
   display: flex;
   flex-direction: column;
@@ -223,5 +320,24 @@
 
   .metric-value {
     font-size: 24px;
+  }
+
+  .period-selector {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .period-chip {
+    flex: 1 1 auto;
+    text-align: center;
+  }
+
+  .custom-range {
+    width: 100%;
+  }
+
+  .custom-range .datetime-picker-wrapper {
+    flex: 1 1 140px;
+    min-width: 140px;
   }
 }

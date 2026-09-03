@@ -10,11 +10,12 @@ import { ApiService } from '../../core/services/services';
 import { WikiArticle, WikiCategory } from '../../core/models/interfaces';
 import { ToastService }   from '../../core/services/toast.service';
 import { ConfirmService } from '../../core/services/confirm.service';
+import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
 
 @Component({
   selector: 'app-wiki',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe],
+  imports: [CommonModule, FormsModule, DatePipe, ExportMenuComponent],
   templateUrl: './wiki.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })

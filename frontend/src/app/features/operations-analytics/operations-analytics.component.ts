@@ -11,13 +11,14 @@ import { Chart, registerables } from 'chart.js';
 
 import { ApiService } from '../../core/services/services';
 import { DateFilterService } from '../../core/services/services';
+import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
 
 Chart.register(...registerables);
 
 @Component({
   selector: 'app-operations-analytics',
   standalone: true,
-  imports: [CommonModule, FormsModule, OwlDateTimeModule, OwlNativeDateTimeModule],
+  imports: [CommonModule, FormsModule, OwlDateTimeModule, OwlNativeDateTimeModule, ExportMenuComponent],
   templateUrl: './operations-analytics.component.html',
   styleUrls: ['./operations-analytics.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -67,6 +68,14 @@ export class OperationsAnalyticsComponent implements OnInit, AfterViewInit, OnDe
     if (this.selectedPeriod !== 'custom') {
       this.loadData();
     }
+  }
+
+  selectPeriod(value: string): void {
+    if (this.selectedPeriod === value && value !== 'custom') {
+      return;
+    }
+    this.selectedPeriod = value;
+    this.onPeriodChange();
   }
 
   onCustomRangeApply(): void {

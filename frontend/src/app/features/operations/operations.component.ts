@@ -12,11 +12,12 @@ import { ToastService }     from '../../core/services/toast.service';
 import { ConfirmService }   from '../../core/services/confirm.service';
 import { Operation, OperationType } from '../../core/models/interfaces';
 import { OwlDateTimeModule, OwlNativeDateTimeModule } from '@danielmoncada/angular-datetime-picker';
+import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
 
 @Component({
   selector: 'app-operations',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, TitleCasePipe, OwlDateTimeModule, OwlNativeDateTimeModule],
+  imports: [CommonModule, FormsModule, DatePipe, TitleCasePipe, OwlDateTimeModule, OwlNativeDateTimeModule, ExportMenuComponent],
   templateUrl: './operations.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })

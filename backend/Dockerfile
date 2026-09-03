@@ -30,15 +30,21 @@ COPY package.json package-lock.json* ./
 
 # --omit=dev: skip devDependencies (nodemon, etc.) to keep the final image lean
 # --ignore-scripts: skip postinstall hooks for security (native modules are OK)
-RUN npm install --omit=dev
+RUN rm -f package-lock.json \
+    && npm install --omit=dev
 
 # =============================================================================
 # Stage: production — the final, minimal runtime image
 # =============================================================================
 FROM node:20-alpine AS production
 
+# Optional PDF tooling: keep backend build stable even when LibreOffice
+# is unavailable for the base image/repository.
+ARG INSTALL_LIBREOFFICE=false
+
 # Re-install dumb-init in the final stage (base was an intermediate)
-RUN apk add --no-cache dumb-init
+RUN apk add --no-cache dumb-init \
+    && if [ "$INSTALL_LIBREOFFICE" = "true" ]; then apk add --no-cache libreoffice; fi
 
 WORKDIR /app
 

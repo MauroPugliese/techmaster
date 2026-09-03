@@ -11,6 +11,7 @@
       <p class="text-muted text-sm">Comprehensive insights into operation performance and trends</p>
     </div>
     <div class="flex gap-3">
+      <app-export-menu endpoint="operations" filename="Operations" label="Export"></app-export-menu>
       <button class="btn btn-secondary" (click)="exportReport()">
         <span class="btn-icon">download</span> Export Report
       </button>
@@ -19,51 +20,49 @@
 
   <!-- ── Controls ─────────────────────────────────────────────────────────── -->
   <div class="controls-section mb-6">
-    <div class="flex items-center gap-4">
-      <div class="control-group">
-        <label class="control-label">Time Period</label>
-        <select
-          class="form-select"
-          [(ngModel)]="selectedPeriod"
-          (change)="onPeriodChange()">
-          <option *ngFor="let option of periodOptions" [value]="option.value">
-            {{ option.label }}
-          </option>
-        </select>
+    <div class="controls-row">
+      <div class="period-selector" role="tablist" aria-label="Time Period">
+        <span class="period-selector-icon" aria-hidden="true">calendar_month</span>
+        <button
+          *ngFor="let option of periodOptions"
+          type="button"
+          role="tab"
+          class="period-chip"
+          [class.active]="selectedPeriod === option.value"
+          [attr.aria-selected]="selectedPeriod === option.value"
+          (click)="selectPeriod(option.value)">
+          {{ option.label }}
+        </button>
       </div>
 
-      <div class="control-group" *ngIf="showCustomRange">
-        <label class="control-label">From Date</label>
+      <div class="custom-range" *ngIf="showCustomRange">
         <div class="datetime-picker-wrapper">
           <input class="form-control"
                  [owlDateTime]="fromPicker"
                  [owlDateTimeTrigger]="fromPicker"
                  [(ngModel)]="customFromDate"
-                 placeholder="Select start date">
+                 placeholder="From date">
           <span class="picker-trigger-icon" [owlDateTimeTrigger]="fromPicker">event</span>
           <owl-date-time #fromPicker pickerType="calendar" pickerMode="dialog"></owl-date-time>
         </div>
-      </div>
 
-      <div class="control-group" *ngIf="showCustomRange">
-        <label class="control-label">To Date</label>
+        <span class="range-separator">→</span>
+
         <div class="datetime-picker-wrapper">
           <input class="form-control"
                  [owlDateTime]="toPicker"
                  [owlDateTimeTrigger]="toPicker"
                  [(ngModel)]="customToDate"
-                 placeholder="Select end date">
+                 placeholder="To date">
           <span class="picker-trigger-icon" [owlDateTimeTrigger]="toPicker">event</span>
           <owl-date-time #toPicker pickerType="calendar" pickerMode="dialog"></owl-date-time>
         </div>
-      </div>
 
-      <div class="control-group" *ngIf="showCustomRange">
         <button
-          class="btn btn-primary"
+          class="btn btn-primary btn-sm"
           (click)="onCustomRangeApply()"
           [disabled]="!customFromDate || !customToDate">
-          Apply Range
+          Apply
         </button>
       </div>
     </div>
