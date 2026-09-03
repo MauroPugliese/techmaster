@@ -3,9 +3,7 @@
    ========================================================================== */
 
 .operations-analytics-page {
-  padding: 24px;
-  max-width: 1400px;
-  margin: 0 auto;
+  width: 100%;
 }
 
 .controls-section {
@@ -298,10 +296,6 @@
 }
 
 @media (max-width: 640px) {
-  .operations-analytics-page {
-    padding: 16px;
-  }
-
   .metrics-grid {
     grid-template-columns: 1fr;
   }

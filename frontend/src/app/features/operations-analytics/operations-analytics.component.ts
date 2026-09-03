@@ -3,10 +3,8 @@
 // =============================================================================
 import { Component, OnInit, AfterViewInit, OnDestroy, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
-import { OwlDateTimeModule, OwlNativeDateTimeModule } from '@danielmoncada/angular-datetime-picker';
-import { Subject, combineLatest } from 'rxjs';
-import { takeUntil, debounceTime } from 'rxjs/operators';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { Chart, registerables } from 'chart.js';
 
 import { ApiService } from '../../core/services/services';
@@ -18,7 +16,7 @@ Chart.register(...registerables);
 @Component({
   selector: 'app-operations-analytics',
   standalone: true,
-  imports: [CommonModule, FormsModule, OwlDateTimeModule, OwlNativeDateTimeModule, ExportMenuComponent],
+  imports: [CommonModule, ExportMenuComponent],
   templateUrl: './operations-analytics.component.html',
   styleUrls: ['./operations-analytics.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -32,22 +30,10 @@ export class OperationsAnalyticsComponent implements OnInit, AfterViewInit, OnDe
   };
 
   loading = true;
-  selectedPeriod: string = 'monthly';
-  customFromDate: Date | null = null;
-  customToDate: Date | null = null;
-  showCustomRange = false;
+  dateLabel = 'All time';
 
   metrics: any = {};
   insights: any = {};
-
-  periodOptions = [
-    { value: 'daily', label: 'Today' },
-    { value: 'weekly', label: 'This Week' },
-    { value: 'monthly', label: 'This Month' },
-    { value: 'yearly', label: 'This Year' },
-    { value: 'all', label: 'All Time' },
-    { value: 'custom', label: 'Custom Range' }
-  ];
 
   constructor(
     private api: ApiService,
@@ -56,45 +42,21 @@ export class OperationsAnalyticsComponent implements OnInit, AfterViewInit, OnDe
   ) {}
 
   ngOnInit(): void {
-    this.loadData();
+    this.dateFilter.range$.pipe(takeUntil(this.destroy$)).subscribe(range => {
+      this.dateLabel = this.dateFilter.getLabel();
+      this.loadData(range);
+    });
   }
 
   ngAfterViewInit(): void {
     setTimeout(() => this.initCharts(), 100);
   }
 
-  onPeriodChange(): void {
-    this.showCustomRange = this.selectedPeriod === 'custom';
-    if (this.selectedPeriod !== 'custom') {
-      this.loadData();
-    }
-  }
-
-  selectPeriod(value: string): void {
-    if (this.selectedPeriod === value && value !== 'custom') {
-      return;
-    }
-    this.selectedPeriod = value;
-    this.onPeriodChange();
-  }
-
-  onCustomRangeApply(): void {
-    if (this.customFromDate && this.customToDate) {
-      this.loadData();
-    }
-  }
-
-  private loadData(): void {
+  private loadData(range = this.dateFilter.currentRange): void {
     this.loading = true;
     this.cdr.markForCheck();
 
-    const params: any = { period: this.selectedPeriod };
-    if (this.selectedPeriod === 'custom' && this.customFromDate && this.customToDate) {
-      params.from = this.customFromDate.toISOString().slice(0, 10);
-      params.to = this.customToDate.toISOString().slice(0, 10);
-    }
-
-    this.api.get<any>('/analytics/operations-metrics', params).subscribe({
+    this.api.get<any>('/analytics/operations-metrics', {}, range).subscribe({
       next: (response) => {
         this.metrics = response.data.metrics;
         this.insights = response.data.insights;
@@ -262,7 +224,8 @@ export class OperationsAnalyticsComponent implements OnInit, AfterViewInit, OnDe
   exportReport(): void {
     const report = {
       generated: new Date().toISOString(),
-      period: this.selectedPeriod,
+      dateRange: this.dateFilter.currentRange,
+      label: this.dateLabel,
       metrics: this.metrics,
       insights: this.insights
     };
@@ -270,7 +233,7 @@ export class OperationsAnalyticsComponent implements OnInit, AfterViewInit, OnDe
     const url = URL.createObjectURL(blob);
     const a = Object.assign(document.createElement('a'), {
       href: url,
-      download: `operations-analytics-${this.selectedPeriod}-${Date.now()}.json`
+      download: `operations-analytics-${Date.now()}.json`
     });
     a.click();
     URL.revokeObjectURL(url);
