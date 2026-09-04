@@ -92,12 +92,16 @@
         </div>
         <table class="data-table">
           <thead><tr>
-            <th>Title</th><th>Category</th><th>Status</th><th>Author</th>
-            <th>Views</th><th>Last Updated</th><th>Actions</th>
+            <th *ngIf="showTableField('title')">{{fieldLabel('table','title','Title')}}</th>
+            <th *ngIf="showTableField('category')">{{fieldLabel('table','category','Category')}}</th>
+            <th *ngIf="showTableField('status')">{{fieldLabel('table','status','Status')}}</th>
+            <th *ngIf="showTableField('author')">{{fieldLabel('table','author','Author')}}</th>
+            <th *ngIf="showTableField('views')">{{fieldLabel('table','views','Views')}}</th>
+            <th *ngIf="showTableField('updated_at')">{{fieldLabel('table','updated_at','Last Updated')}}</th><th>Actions</th>
           </tr></thead>
           <tbody>
             <tr *ngFor="let a of articles" style="cursor:pointer" (click)="viewArticle(a)">
-              <td>
+              <td *ngIf="showTableField('title')">
                 <div class="flex items-center gap-2">
                   <span *ngIf="a.is_pinned"
                         style="font-family:'Material Icons Round';font-style:normal;font-size:14px;color:#F59E0B">push_pin</span>
@@ -107,16 +111,16 @@
                   </div>
                 </div>
               </td>
-              <td class="text-sm">{{a.category?.name || '—'}}</td>
-              <td><span class="badge" [ngClass]="getArticleStatusBadge(a.status)">{{a.status}}</span></td>
-              <td class="text-sm">{{a.author?.first_name}} {{a.author?.last_name}}</td>
-              <td>
+              <td class="text-sm" *ngIf="showTableField('category')">{{a.category?.name || '—'}}</td>
+              <td *ngIf="showTableField('status')"><span class="badge" [ngClass]="getArticleStatusBadge(a.status)">{{a.status}}</span></td>
+              <td class="text-sm" *ngIf="showTableField('author')">{{a.author?.first_name}} {{a.author?.last_name}}</td>
+              <td *ngIf="showTableField('views')">
                 <div class="flex items-center gap-1 text-sm">
                   <span style="font-family:'Material Icons Round';font-style:normal;font-size:14px;color:#9CA3AF">visibility</span>
                   {{a.view_count}}
                 </div>
               </td>
-              <td class="text-sm text-muted">{{a.updated_at | date:'MMM d, y'}}</td>
+              <td class="text-sm text-muted" *ngIf="showTableField('updated_at')">{{a.updated_at | date:'MMM d, y'}}</td>
               <td (click)="$event.stopPropagation()">
                 <div class="flex gap-1">
                   <button class="btn btn-ghost btn-icon-only btn-sm" (click)="editArticle(a)">
@@ -225,7 +229,7 @@
     <div class="modal-header">
       <h3>{{editingArticle ? 'Edit Article' : 'New Article'}}</h3>
       <div class="flex gap-2">
-        <select class="form-control" style="width:140px" [(ngModel)]="articleForm.status">
+        <select class="form-control" style="width:140px" [(ngModel)]="articleForm.status" *ngIf="showFormField('status')">
           <option value="DRAFT">Draft</option>
           <option value="REVIEW">Send for Review</option>
           <option value="PUBLISHED">Publish</option>
@@ -236,30 +240,30 @@
       </div>
     </div>
     <div class="modal-body">
-      <div class="form-group">
-        <label class="form-label">Title *</label>
+      <div class="form-group" *ngIf="showFormField('title')">
+        <label class="form-label">{{fieldLabel('form','title','Title')}} *</label>
         <input class="form-control" [(ngModel)]="articleForm.title" placeholder="Article title" style="font-size:1.1rem;font-weight:600">
       </div>
       <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Category</label>
+        <div class="form-group" *ngIf="showFormField('category_id')">
+          <label class="form-label">{{fieldLabel('form','category_id','Category')}}</label>
           <select class="form-control" [(ngModel)]="articleForm.category_id">
             <option [ngValue]="null">— Uncategorized —</option>
             <option *ngFor="let c of categories" [value]="c.id">{{c.name}}</option>
           </select>
         </div>
-        <div class="form-group">
-          <label class="form-label">Tags (comma separated)</label>
+        <div class="form-group" *ngIf="showFormField('tags')">
+          <label class="form-label">{{fieldLabel('form','tags','Tags (comma separated)')}}</label>
           <input class="form-control" [(ngModel)]="articleTagsInput" placeholder="e.g. sop, network, security">
         </div>
       </div>
-      <div class="form-group">
-        <label class="form-label">Excerpt</label>
+      <div class="form-group" *ngIf="showFormField('excerpt')">
+        <label class="form-label">{{fieldLabel('form','excerpt','Excerpt')}}</label>
         <input class="form-control" [(ngModel)]="articleForm.excerpt" placeholder="Brief summary shown in article list">
       </div>
-      <div class="form-group">
+      <div class="form-group" *ngIf="showFormField('content')">
         <div class="flex items-center justify-between" style="margin-bottom:8px">
-          <label class="form-label">Content (Markdown supported) *</label>
+          <label class="form-label">{{fieldLabel('form','content','Content (Markdown supported)')}} *</label>
           <div class="flex gap-2">
             <button class="btn btn-secondary btn-sm" type="button" (click)="insertMarkdownTemplate()">
               <span class="btn-icon">description</span> Insert Template

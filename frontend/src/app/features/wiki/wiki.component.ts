@@ -9,6 +9,7 @@ import { takeUntil, debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { ApiService } from '../../core/services/services';
+import { UiCustomizationService, UiSectionPreferences } from '../../core/services/services';
 import { WikiArticle, WikiCategory } from '../../core/models/interfaces';
 import { ToastService }   from '../../core/services/toast.service';
 import { ConfirmService } from '../../core/services/confirm.service';
@@ -47,6 +48,7 @@ export class WikiComponent implements OnInit, OnDestroy {
   articleTagsInput = '';
   showMarkdownLegend = true;
   showPreviewDialog = false;
+  uiPrefs: UiSectionPreferences | null = null;
   readonly markdownLegend = [
     { syntax: '# Heading', description: 'Large section title' },
     { syntax: '## Subheading', description: 'Secondary section title' },
@@ -62,10 +64,21 @@ export class WikiComponent implements OnInit, OnDestroy {
     { syntax: '![alt text](https://image-url)', description: 'Image' }
   ];
 
-  constructor(private api: ApiService, private cdr: ChangeDetectorRef, private toast: ToastService, private confirm: ConfirmService,) {}
+  constructor(
+    private api: ApiService,
+    private uiCustomization: UiCustomizationService,
+    private cdr: ChangeDetectorRef,
+    private toast: ToastService,
+    private confirm: ConfirmService,
+  ) {}
 
   ngOnInit(): void {
     marked.setOptions({ gfm: true, breaks: true });
+
+    this.uiCustomization.load('wiki').subscribe(p => {
+      this.uiPrefs = p;
+      this.cdr.markForCheck();
+    });
 
     this.api.get<any>('/wiki/categories').subscribe(res => {
       this.categories = res.data;
@@ -154,7 +167,8 @@ export class WikiComponent implements OnInit, OnDestroy {
   }
 
   saveArticle(): void {
-    if (!this.articleForm.title || !this.articleForm.content) return;
+    if (this.showFormField('title') && !this.articleForm.title) return;
+    if (this.showFormField('content') && !this.articleForm.content) return;
     this.saving = true;
     this.articleForm.tags = this.articleTagsInput
       ? this.articleTagsInput.split(',').map(t => t.trim()).filter(Boolean) : [];
@@ -300,6 +314,18 @@ export class WikiComponent implements OnInit, OnDestroy {
 
   private emptyArticle(): Partial<WikiArticle> {
     return { title: '', content: '', excerpt: '', status: 'DRAFT', category_id: undefined, tags: [] };
+  }
+
+  showTableField(fieldKey: string): boolean {
+    return this.uiCustomization.isVisible(this.uiPrefs, 'table', fieldKey, true);
+  }
+
+  showFormField(fieldKey: string): boolean {
+    return this.uiCustomization.isVisible(this.uiPrefs, 'form', fieldKey, true);
+  }
+
+  fieldLabel(scope: 'table' | 'form', fieldKey: string, fallback: string): string {
+    return this.uiCustomization.getLabel(this.uiPrefs, scope, fieldKey, fallback);
   }
 
   ngOnDestroy(): void { this.destroy$.next(); this.destroy$.complete(); }

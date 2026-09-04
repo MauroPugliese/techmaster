@@ -70,26 +70,32 @@
     <table class="data-table">
       <thead>
         <tr>
-          <th>Title</th><th>Asset</th><th>Type</th><th>Status</th>
-          <th>Priority</th><th>Scheduled</th><th>Technician</th><th>Cost</th><th>Actions</th>
+          <th *ngIf="showTableField('title')">{{fieldLabel('table','title','Title')}}</th>
+          <th *ngIf="showTableField('asset')">{{fieldLabel('table','asset','Asset')}}</th>
+          <th *ngIf="showTableField('type')">{{fieldLabel('table','type','Type')}}</th>
+          <th *ngIf="showTableField('status')">{{fieldLabel('table','status','Status')}}</th>
+          <th *ngIf="showTableField('priority')">{{fieldLabel('table','priority','Priority')}}</th>
+          <th *ngIf="showTableField('scheduled_date')">{{fieldLabel('table','scheduled_date','Scheduled')}}</th>
+          <th *ngIf="showTableField('technician')">{{fieldLabel('table','technician','Technician')}}</th>
+          <th *ngIf="showTableField('cost')">{{fieldLabel('table','cost','Cost')}}</th><th>Actions</th>
         </tr>
       </thead>
       <tbody>
         <tr *ngFor="let r of records">
-          <td>
+          <td *ngIf="showTableField('title')">
             <div class="font-bold">{{r.title}}</div>
             <div class="text-sm text-muted truncate" style="max-width:180px">{{r.description}}</div>
           </td>
-          <td>
+          <td *ngIf="showTableField('asset')">
             <div class="font-bold text-sm">{{r.asset?.name || '—'}}</div>
             <div class="text-sm text-muted">{{r.asset?.serial_number || ''}}</div>
           </td>
-          <td><span class="badge badge-in-progress">{{r.type | titlecase}}</span></td>
-          <td><span class="badge" [ngClass]="getStatusBadge(r.status)">{{r.status | titlecase}}</span></td>
-          <td><span class="badge" [ngClass]="getPriorityBadge(r.priority)">{{r.priority | titlecase}}</span></td>
-          <td class="text-sm">{{r.scheduled_date | date:'MMM d, y'}}</td>
-          <td class="text-sm">{{r.technician?.first_name}} {{r.technician?.last_name}}</td>
-          <td class="text-sm">{{r.cost ? ('$' + r.cost) : '—'}}</td>
+          <td *ngIf="showTableField('type')"><span class="badge badge-in-progress">{{r.type | titlecase}}</span></td>
+          <td *ngIf="showTableField('status')"><span class="badge" [ngClass]="getStatusBadge(r.status)">{{r.status | titlecase}}</span></td>
+          <td *ngIf="showTableField('priority')"><span class="badge" [ngClass]="getPriorityBadge(r.priority)">{{r.priority | titlecase}}</span></td>
+          <td class="text-sm" *ngIf="showTableField('scheduled_date')">{{r.scheduled_date | date:'MMM d, y'}}</td>
+          <td class="text-sm" *ngIf="showTableField('technician')">{{r.technician?.first_name}} {{r.technician?.last_name}}</td>
+          <td class="text-sm" *ngIf="showTableField('cost')">{{r.cost ? ('$' + r.cost) : '—'}}</td>
           <td>
             <div class="flex gap-1">
               <!-- Edit -->
@@ -153,15 +159,15 @@
     <div class="modal-body">
       <div class="form-row">
 
-        <div class="form-group" style="grid-column:1/-1">
-          <label class="form-label">Title *</label>
+        <div class="form-group" style="grid-column:1/-1" *ngIf="showFormField('title')">
+          <label class="form-label">{{fieldLabel('form','title','Title')}} *</label>
           <input class="form-control" [(ngModel)]="form.title"
                  placeholder="e.g. Monthly server inspection">
         </div>
 
         <!-- Asset — [ngValue] preserves numeric type -->
-        <div class="form-group">
-          <label class="form-label">Asset *</label>
+        <div class="form-group" *ngIf="showFormField('asset_id')">
+          <label class="form-label">{{fieldLabel('form','asset_id','Asset')}} *</label>
           <select class="form-control" [(ngModel)]="form.asset_id">
             <option [ngValue]="undefined">— Select asset —</option>
             <option *ngFor="let a of assets" [ngValue]="a.id">
@@ -174,8 +180,8 @@
           </div>
         </div>
 
-        <div class="form-group">
-          <label class="form-label">Type *</label>
+        <div class="form-group" *ngIf="showFormField('type')">
+          <label class="form-label">{{fieldLabel('form','type','Type')}} *</label>
           <select class="form-control" [(ngModel)]="form.type">
             <option value="PREVENTIVE">Preventive</option>
             <option value="CORRECTIVE">Corrective</option>
@@ -185,8 +191,8 @@
           </select>
         </div>
 
-        <div class="form-group">
-          <label class="form-label">Priority</label>
+        <div class="form-group" *ngIf="showFormField('priority')">
+          <label class="form-label">{{fieldLabel('form','priority','Priority')}}</label>
           <select class="form-control" [(ngModel)]="form.priority">
             <option value="LOW">Low</option>
             <option value="MEDIUM">Medium</option>
@@ -195,8 +201,8 @@
           </select>
         </div>
 
-        <div class="form-group">
-          <label class="form-label">Status</label>
+        <div class="form-group" *ngIf="showFormField('status')">
+          <label class="form-label">{{fieldLabel('form','status','Status')}}</label>
           <select class="form-control" [(ngModel)]="form.status">
             <option value="SCHEDULED">Scheduled</option>
             <option value="IN_PROGRESS">In Progress</option>
@@ -206,8 +212,8 @@
           </select>
         </div>
 
-        <div class="form-group">
-          <label class="form-label">Scheduled Date *</label>
+        <div class="form-group" *ngIf="showFormField('scheduled_date')">
+          <label class="form-label">{{fieldLabel('form','scheduled_date','Scheduled Date')}} *</label>
           <div class="datetime-picker-wrapper">
             <input class="form-control"
                    [owlDateTime]="dtScheduled"
@@ -219,27 +225,27 @@
           </div>
         </div>
 
-        <div class="form-group">
-          <label class="form-label">Est. Downtime (hrs)</label>
+        <div class="form-group" *ngIf="showFormField('downtime_hours')">
+          <label class="form-label">{{fieldLabel('form','downtime_hours','Est. Downtime (hrs)')}}</label>
           <input type="number" class="form-control" [(ngModel)]="form.downtime_hours"
                  min="0" step="0.5">
         </div>
 
-        <div class="form-group">
-          <label class="form-label">Cost ($)</label>
+        <div class="form-group" *ngIf="showFormField('cost')">
+          <label class="form-label">{{fieldLabel('form','cost','Cost ($)')}}</label>
           <input type="number" class="form-control" [(ngModel)]="form.cost"
                  min="0" step="0.01">
         </div>
 
-        <div class="form-group" style="grid-column:1/-1">
-          <label class="form-label">Description *</label>
+        <div class="form-group" style="grid-column:1/-1" *ngIf="showFormField('description')">
+          <label class="form-label">{{fieldLabel('form','description','Description')}} *</label>
           <textarea class="form-control" [(ngModel)]="form.description"
                     style="min-height:80px"
                     placeholder="Describe what needs to be done…"></textarea>
         </div>
 
-        <div class="form-group" style="grid-column:1/-1">
-          <label class="form-label">Findings / Notes</label>
+        <div class="form-group" style="grid-column:1/-1" *ngIf="showFormField('findings')">
+          <label class="form-label">{{fieldLabel('form','findings','Findings / Notes')}}</label>
           <textarea class="form-control" [(ngModel)]="form.findings"
                     style="min-height:72px"
                     placeholder="Post-maintenance findings (optional)…"></textarea>

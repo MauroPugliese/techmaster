@@ -67,6 +67,17 @@ export class AdminComponent implements OnInit {
   editingColumn: any = null;
   columnForm: any = this.emptyColumnForm();
 
+  uiSectionCatalog: Record<string, { table: string[]; form: string[] }> = {};
+  uiSections: string[] = [];
+  selectedUiSection = 'operations';
+  selectedUiScope: 'table' | 'form' = 'table';
+  selectedUiRole = 'ALL';
+  uiFieldsEditor: any[] = [];
+  uiPreviewSearch = '';
+  uiPreviewSourceFilter: 'all' | 'role' | 'global' | 'default' = 'all';
+  uiPreviewVisibilityFilter: 'visible' | 'hidden' | 'all' = 'visible';
+  customizationMode: 'db' | 'ui' = 'db';
+
   readonly tabs: { id: Tab; label: string; icon: string }[] = [
     { id: 'overview',            label: 'Overview',           icon: 'dashboard'          },
     { id: 'users',               label: 'Users',              icon: 'group'              },
@@ -101,7 +112,10 @@ export class AdminComponent implements OnInit {
     this.showUserModal = false;
     if (tab === 'overview')   this.loadOverview();
     else if (tab === 'users') this.loadUsers();
-    else if (tab === 'customization') this.loadCustomizationTables();
+    else if (tab === 'customization') {
+      this.loadCustomizationTables();
+      this.loadUiSectionsCatalog();
+    }
     else                      this.loadList(tab);
     this.cdr.markForCheck();
   }
@@ -557,5 +571,157 @@ export class AdminComponent implements OnInit {
         this.cdr.markForCheck();
       }
     });
+  }
+
+  loadUiSectionsCatalog(): void {
+    this.api.get<any>('/admin/ui-sections/catalog').subscribe({
+      next: r => {
+        this.uiSectionCatalog = r.data || {};
+        this.uiSections = Object.keys(this.uiSectionCatalog);
+        if (!this.uiSections.includes(this.selectedUiSection) && this.uiSections.length) {
+          this.selectedUiSection = this.uiSections[0];
+        }
+        this.loadUiSectionPreferences();
+        this.cdr.markForCheck();
+      },
+      error: (e: any) => {
+        this.toast.error(e?.error?.message || 'Failed to load UI section catalog.');
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  onUiSectionChange(): void {
+    this.loadUiSectionPreferences();
+  }
+
+  onUiScopeChange(): void {
+    this.loadUiSectionPreferences();
+  }
+
+  onUiRoleChange(): void {
+    this.loadUiSectionPreferences();
+  }
+
+  clearUiPreviewFilters(): void {
+    this.uiPreviewSearch = '';
+    this.uiPreviewSourceFilter = 'all';
+    this.uiPreviewVisibilityFilter = 'visible';
+    this.cdr.markForCheck();
+  }
+
+  loadUiSectionPreferences(): void {
+    if (!this.selectedUiSection) return;
+    this.customizationLoading = true;
+    this.api.get<any>('/admin/ui-sections/' + this.selectedUiSection + '/preferences', {
+      role: this.selectedUiRole
+    }).subscribe({
+      next: r => {
+        const data = r.data || {};
+        const saved = ((this.selectedUiScope === 'table' ? data.table : data.form) || []) as any[];
+
+        this.uiFieldsEditor = saved.map((s: any, idx: number) => ({
+          field_key: s.field_key,
+          label: s?.label || '',
+          is_visible: !(s?.is_visible === false || s?.is_visible === 0 || s?.is_visible === '0'),
+          display_order: s?.display_order || idx + 1,
+          source: s?.source || 'default'
+        }));
+
+        this.uiFieldsEditor.sort((a, b) => Number(a.display_order) - Number(b.display_order));
+        this.customizationLoading = false;
+        this.cdr.markForCheck();
+      },
+      error: (e: any) => {
+        this.customizationLoading = false;
+        this.toast.error(e?.error?.message || 'Failed to load section preferences.');
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  moveUiField(field: any, direction: number): void {
+    const idx = this.uiFieldsEditor.findIndex(f => f.field_key === field.field_key);
+    const nextIdx = idx + direction;
+    if (idx < 0 || nextIdx < 0 || nextIdx >= this.uiFieldsEditor.length) return;
+    const clone = [...this.uiFieldsEditor];
+    const current = clone[idx];
+    clone[idx] = clone[nextIdx];
+    clone[nextIdx] = current;
+    this.uiFieldsEditor = clone.map((f, i) => ({ ...f, display_order: i + 1 }));
+    this.cdr.markForCheck();
+  }
+
+  saveUiSectionPreferences(): void {
+    if (!this.selectedUiSection) return;
+    this.schemaActionLoading = true;
+    const payload = {
+      scope: this.selectedUiScope,
+      role_name: this.selectedUiRole,
+      fields: this.uiFieldsEditor.map((f, i) => ({
+        field_key: f.field_key,
+        label: f.label || null,
+        is_visible: f.is_visible !== false,
+        display_order: i + 1
+      }))
+    };
+
+    this.api.put<any>('/admin/ui-sections/' + this.selectedUiSection + '/preferences', payload).subscribe({
+      next: () => {
+        this.schemaActionLoading = false;
+        this.toast.success('Section preferences saved.');
+        this.loadUiSectionPreferences();
+      },
+      error: (e: any) => {
+        this.schemaActionLoading = false;
+        this.toast.error(e?.error?.message || 'Failed to save section preferences.');
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  async resetUiSectionPreferences(): Promise<void> {
+    if (!this.selectedUiSection) return;
+    const msg = this.selectedUiRole === 'ALL'
+      ? 'Reset this scope to default for all roles?'
+      : 'Reset this scope for role "' + this.selectedUiRole + '" only?';
+    const ok = await this.confirm.confirm(msg, 'Reset to Default');
+    if (!ok) return;
+
+    this.schemaActionLoading = true;
+    this.api.delete<any>('/admin/ui-sections/' + this.selectedUiSection + '/preferences', {
+      scope: this.selectedUiScope,
+      role: this.selectedUiRole
+    }).subscribe({
+      next: () => {
+        this.schemaActionLoading = false;
+        this.toast.success('Preferences reset to default.');
+        this.loadUiSectionPreferences();
+      },
+      error: (e: any) => {
+        this.schemaActionLoading = false;
+        this.toast.error(e?.error?.message || 'Failed to reset preferences.');
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  get uiPreviewVisibleFields(): any[] {
+    const q = this.uiPreviewSearch.trim().toLowerCase();
+
+    return this.uiFieldsEditor
+      .filter(f => {
+        if (this.uiPreviewVisibilityFilter === 'visible' && f.is_visible === false) return false;
+        if (this.uiPreviewVisibilityFilter === 'hidden' && f.is_visible !== false) return false;
+        return true;
+      })
+      .filter(f => this.uiPreviewSourceFilter === 'all' ? true : (f.source || 'default') === this.uiPreviewSourceFilter)
+      .filter(f => {
+        if (!q) return true;
+        const fieldKey = String(f.field_key || '').toLowerCase();
+        const label = String(f.label || '').toLowerCase();
+        return fieldKey.includes(q) || label.includes(q);
+      })
+      .sort((a, b) => Number(a.display_order) - Number(b.display_order));
   }
 }

@@ -45,7 +45,13 @@ export class ApiService {
     return this.http.patch<T>(`${this.baseUrl}${path}`, body);
   }
 
-  delete<T>(path: string): Observable<T> {
-    return this.http.delete<T>(`${this.baseUrl}${path}`);
+  delete<T>(path: string, extra: Record<string, any> = {}): Observable<T> {
+    let params = new HttpParams();
+    Object.entries(extra).forEach(([k, v]) => {
+      if (v !== null && v !== undefined && v !== '') {
+        params = params.set(k, String(v));
+      }
+    });
+    return this.http.delete<T>(`${this.baseUrl}${path}`, { params });
   }
 }

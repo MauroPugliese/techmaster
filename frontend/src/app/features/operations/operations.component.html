@@ -68,36 +68,36 @@
     <table class="data-table" *ngIf="viewMode==='table'">
       <thead>
         <tr>
-          <th>#</th>
-          <th>Title</th>
-          <th>Type</th>
-          <th>Status</th>
-          <th>Priority</th>
-          <th>Location</th>
-          <th>Start Date</th>
-          <th>Creator</th>
+          <th *ngIf="showTableField('id')">{{fieldLabel('table','id','#')}}</th>
+          <th *ngIf="showTableField('title')">{{fieldLabel('table','title','Title')}}</th>
+          <th *ngIf="showTableField('type')">{{fieldLabel('table','type','Type')}}</th>
+          <th *ngIf="showTableField('status')">{{fieldLabel('table','status','Status')}}</th>
+          <th *ngIf="showTableField('priority')">{{fieldLabel('table','priority','Priority')}}</th>
+          <th *ngIf="showTableField('location')">{{fieldLabel('table','location','Location')}}</th>
+          <th *ngIf="showTableField('start_date')">{{fieldLabel('table','start_date','Start Date')}}</th>
+          <th *ngIf="showTableField('creator')">{{fieldLabel('table','creator','Creator')}}</th>
           <th>Actions</th>
         </tr>
       </thead>
       <tbody>
         <tr *ngFor="let op of operations; let i = index">
-          <td class="text-muted text-sm">{{op.id}}</td>
-          <td>
+          <td class="text-muted text-sm" *ngIf="showTableField('id')">{{op.id}}</td>
+          <td *ngIf="showTableField('title')">
             <div class="font-bold">{{op.title}}</div>
             <div class="text-sm text-muted truncate" style="max-width:220px">{{op.description}}</div>
           </td>
-          <td>
+          <td *ngIf="showTableField('type')">
             <span style="display:inline-flex;align-items:center;gap:5px">
               <span style="width:8px;height:8px;border-radius:50%;flex-shrink:0"
                     [style.background]="op.type?.color"></span>
               {{op.type?.name}}
             </span>
           </td>
-          <td><span class="badge" [ngClass]="getStatusBadge(op.status)">{{op.status | titlecase}}</span></td>
-          <td><span class="badge" [ngClass]="getPriorityBadge(op.priority)">{{op.priority | titlecase}}</span></td>
-          <td class="text-sm">{{op.location || '—'}}</td>
-          <td class="text-sm">{{op.start_date | date:'MMM d, y'}}</td>
-          <td>
+          <td *ngIf="showTableField('status')"><span class="badge" [ngClass]="getStatusBadge(op.status)">{{op.status | titlecase}}</span></td>
+          <td *ngIf="showTableField('priority')"><span class="badge" [ngClass]="getPriorityBadge(op.priority)">{{op.priority | titlecase}}</span></td>
+          <td class="text-sm" *ngIf="showTableField('location')">{{op.location || '—'}}</td>
+          <td class="text-sm" *ngIf="showTableField('start_date')">{{op.start_date | date:'MMM d, y'}}</td>
+          <td *ngIf="showTableField('creator')">
             <div style="display:flex;align-items:center;gap:6px">
               <div style="width:24px;height:24px;border-radius:50%;background:var(--blue-200);
                           display:flex;align-items:center;justify-content:center;font-size:0.65rem;font-weight:700;color:var(--primary)">
@@ -191,18 +191,18 @@
 
     <div class="modal-body">
       <div class="form-row">
-        <div class="form-group" style="grid-column:1/-1">
-          <label class="form-label">Title *</label>
+        <div class="form-group" style="grid-column:1/-1" *ngIf="showFormField('title')">
+          <label class="form-label">{{fieldLabel('form','title','Title')}} *</label>
           <input class="form-control" [(ngModel)]="form.title" placeholder="Operation title">
         </div>
-        <div class="form-group">
-          <label class="form-label">Type *</label>
+        <div class="form-group" *ngIf="showFormField('type_id')">
+          <label class="form-label">{{fieldLabel('form','type_id','Type')}} *</label>
           <select class="form-control" [(ngModel)]="form.type_id">
             <option *ngFor="let t of opTypes" [value]="t.id">{{t.name}}</option>
           </select>
         </div>
-        <div class="form-group">
-          <label class="form-label">Priority</label>
+        <div class="form-group" *ngIf="showFormField('priority')">
+          <label class="form-label">{{fieldLabel('form','priority','Priority')}}</label>
           <select class="form-control" [(ngModel)]="form.priority">
             <option value="LOW">Low</option>
             <option value="MEDIUM">Medium</option>
@@ -210,8 +210,8 @@
             <option value="CRITICAL">Critical</option>
           </select>
         </div>
-        <div class="form-group">
-          <label class="form-label">Status</label>
+        <div class="form-group" *ngIf="showFormField('status')">
+          <label class="form-label">{{fieldLabel('form','status','Status')}}</label>
           <select class="form-control" [(ngModel)]="form.status">
             <option value="PLANNED">Planned</option>
             <option value="IN_PROGRESS">In Progress</option>
@@ -220,12 +220,12 @@
             <option value="ON_HOLD">On Hold</option>
           </select>
         </div>
-        <div class="form-group">
-          <label class="form-label">Location</label>
+        <div class="form-group" *ngIf="showFormField('location')">
+          <label class="form-label">{{fieldLabel('form','location','Location')}}</label>
           <input class="form-control" [(ngModel)]="form.location" placeholder="e.g. Server Room A">
         </div>
-        <div class="form-group">
-          <label class="form-label">Start Date *</label>
+        <div class="form-group" *ngIf="showFormField('start_date')">
+          <label class="form-label">{{fieldLabel('form','start_date','Start Date')}} *</label>
           <div class="datetime-picker-wrapper">
             <input class="form-control"
                    [owlDateTime]="dtStart"
@@ -236,8 +236,8 @@
             <owl-date-time #dtStart pickerMode="dialog"></owl-date-time>
           </div>
         </div>
-        <div class="form-group">
-          <label class="form-label">End Date</label>
+        <div class="form-group" *ngIf="showFormField('end_date')">
+          <label class="form-label">{{fieldLabel('form','end_date','End Date')}}</label>
           <div class="datetime-picker-wrapper">
             <input class="form-control"
                    [owlDateTime]="dtEnd"
@@ -248,12 +248,12 @@
             <owl-date-time #dtEnd pickerMode="dialog"></owl-date-time>
           </div>
         </div>
-        <div class="form-group" style="grid-column:1/-1">
-          <label class="form-label">Description</label>
+        <div class="form-group" style="grid-column:1/-1" *ngIf="showFormField('description')">
+          <label class="form-label">{{fieldLabel('form','description','Description')}}</label>
           <textarea class="form-control" [(ngModel)]="form.description" placeholder="Describe this operation..."></textarea>
         </div>
-        <div class="form-group" style="grid-column:1/-1">
-          <label class="form-label">Notes</label>
+        <div class="form-group" style="grid-column:1/-1" *ngIf="showFormField('notes')">
+          <label class="form-label">{{fieldLabel('form','notes','Notes')}}</label>
           <textarea class="form-control" [(ngModel)]="form.notes" style="min-height:80px" placeholder="Additional notes..."></textarea>
         </div>
       </div>

@@ -9,6 +9,7 @@ import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 import { ApiService }       from '../../core/services/api.service';
 import { DateFilterService } from '../../core/services/date-filter.service';
+import { UiCustomizationService, UiSectionPreferences } from '../../core/services/ui-customization.service';
 import { ToastService }     from '../../core/services/toast.service';
 import { ConfirmService }   from '../../core/services/confirm.service';
 import { Shift, ShiftType } from '../../core/models/interfaces';
@@ -65,8 +66,8 @@ import { ExportMenuComponent } from '../../shared/components/export-menu/export-
     <table class="data-table">
       <thead>
         <tr>
-          <th style="width:160px">Employee</th>
-          <th *ngFor="let day of weekDays" style="text-align:center;min-width:110px">
+          <th style="width:160px" *ngIf="showTableField('employee')">{{fieldLabel('table','employee','Employee')}}</th>
+          <th *ngFor="let day of weekDays" style="text-align:center;min-width:110px" [style.display]="showTableField(dayFieldKey(day)) ? '' : 'none'">
             <div [style.color]="isToday(day) ? 'var(--primary)' : ''"
                  [style.font-weight]="isToday(day) ? '800' : '600'">
               {{day | date:'EEE'}}
@@ -77,7 +78,7 @@ import { ExportMenuComponent } from '../../shared/components/export-menu/export-
       </thead>
       <tbody>
         <tr *ngFor="let emp of employees">
-          <td>
+          <td *ngIf="showTableField('employee')">
             <div class="flex items-center gap-2">
               <div style="width:30px;height:30px;border-radius:50%;background:var(--blue-200);
                           display:flex;align-items:center;justify-content:center;
@@ -90,7 +91,7 @@ import { ExportMenuComponent } from '../../shared/components/export-menu/export-
               </div>
             </div>
           </td>
-          <td *ngFor="let day of weekDays" style="text-align:center;padding:8px 6px">
+          <td *ngFor="let day of weekDays" style="text-align:center;padding:8px 6px" [style.display]="showTableField(dayFieldKey(day)) ? '' : 'none'">
             <ng-container *ngIf="getShift(emp.id, day) as shift; else emptyCell">
               <div style="border-radius:6px;padding:4px 8px;font-size:0.72rem;font-weight:700;cursor:pointer"
                    [style.background]="getShiftTypeColor(shift.shift_type_id) + '22'"
@@ -140,8 +141,8 @@ import { ExportMenuComponent } from '../../shared/components/export-menu/export-
       </button>
     </div>
     <div class="modal-body">
-      <div class="form-group">
-        <label class="form-label">Employee *</label>
+      <div class="form-group" *ngIf="showFormField('user_id')">
+        <label class="form-label">{{fieldLabel('form','user_id','Employee')}} *</label>
         <select class="form-control" [(ngModel)]="shiftForm.user_id">
           <option [ngValue]="null">— Select employee —</option>
           <option *ngFor="let e of employees" [ngValue]="e.id">
@@ -150,15 +151,15 @@ import { ExportMenuComponent } from '../../shared/components/export-menu/export-
         </select>
       </div>
       <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Shift Type *</label>
+        <div class="form-group" *ngIf="showFormField('shift_type_id')">
+          <label class="form-label">{{fieldLabel('form','shift_type_id','Shift Type')}} *</label>
           <select class="form-control" [(ngModel)]="shiftForm.shift_type_id">
             <option [ngValue]="null">— Select type —</option>
             <option *ngFor="let st of shiftTypes" [ngValue]="st.id">{{st.name}} ({{st.code}})</option>
           </select>
         </div>
-        <div class="form-group">
-          <label class="form-label">Date *</label>
+        <div class="form-group" *ngIf="showFormField('date')">
+          <label class="form-label">{{fieldLabel('form','date','Date')}} *</label>
           <div class="datetime-picker-wrapper">
             <input class="form-control"
                    [owlDateTime]="shiftDatePicker"
@@ -170,8 +171,8 @@ import { ExportMenuComponent } from '../../shared/components/export-menu/export-
           </div>
         </div>
       </div>
-      <div class="form-group">
-        <label class="form-label">Status</label>
+      <div class="form-group" *ngIf="showFormField('status')">
+        <label class="form-label">{{fieldLabel('form','status','Status')}}</label>
         <select class="form-control" [(ngModel)]="shiftForm.status">
           <option value="SCHEDULED">Scheduled</option>
           <option value="CONFIRMED">Confirmed</option>
@@ -181,8 +182,8 @@ import { ExportMenuComponent } from '../../shared/components/export-menu/export-
           <option value="SWAPPED">Swapped</option>
         </select>
       </div>
-      <div class="form-group">
-        <label class="form-label">Notes</label>
+      <div class="form-group" *ngIf="showFormField('notes')">
+        <label class="form-label">{{fieldLabel('form','notes','Notes')}}</label>
         <textarea class="form-control" [(ngModel)]="shiftForm.notes" style="min-height:72px"></textarea>
       </div>
     </div>
@@ -213,6 +214,7 @@ export class ShiftsComponent implements OnInit, OnDestroy {
   employeeLimit  = 20;
   readonly employeeLimitOptions = [10, 20, 50, 100];
   employeeTotal  = 0;
+  uiPrefs: UiSectionPreferences | null = null;
 
   showModal      = false;
   editingShift: Shift | null = null;
@@ -232,12 +234,17 @@ export class ShiftsComponent implements OnInit, OnDestroy {
   constructor(
     private api:     ApiService,
     private dateFilter: DateFilterService,
+    private uiCustomization: UiCustomizationService,
     private toast:   ToastService,
     private confirm: ConfirmService,
     private cdr:     ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
+    this.uiCustomization.load('shifts').subscribe(p => {
+      this.uiPrefs = p;
+      this.cdr.markForCheck();
+    });
     this.api.get<any>('/shifts/types').subscribe(r => { this.shiftTypes = r?.data || []; this.cdr.markForCheck(); });
     this.loadEmployees();
   }
@@ -331,9 +338,9 @@ export class ShiftsComponent implements OnInit, OnDestroy {
   }
 
   saveShift(): void {
-    if (!this.shiftForm.user_id)       { this.toast.warning('Please select an employee.'); return; }
-    if (!this.shiftForm.shift_type_id) { this.toast.warning('Please select a shift type.'); return; }
-    if (!this.shiftForm.date)          { this.toast.warning('Please select a date.'); return; }
+    if (this.showFormField('user_id') && !this.shiftForm.user_id)       { this.toast.warning('Please select an employee.'); return; }
+    if (this.showFormField('shift_type_id') && !this.shiftForm.shift_type_id) { this.toast.warning('Please select a shift type.'); return; }
+    if (this.showFormField('date') && !this.shiftForm.date)          { this.toast.warning('Please select a date.'); return; }
 
     const selectedDate = this.shiftForm.date instanceof Date
       ? this.shiftForm.date.toISOString().slice(0, 10)
@@ -393,6 +400,23 @@ export class ShiftsComponent implements OnInit, OnDestroy {
       next: () => { this.showModal = false; this.loadShifts(); this.toast.success('Shift deleted.'); },
       error: (e: any) => this.toast.error(e?.error?.message || 'Failed to delete.')
     });
+  }
+
+  showTableField(fieldKey: string): boolean {
+    return this.uiCustomization.isVisible(this.uiPrefs, 'table', fieldKey, true);
+  }
+
+  showFormField(fieldKey: string): boolean {
+    return this.uiCustomization.isVisible(this.uiPrefs, 'form', fieldKey, true);
+  }
+
+  fieldLabel(scope: 'table' | 'form', fieldKey: string, fallback: string): string {
+    return this.uiCustomization.getLabel(this.uiPrefs, scope, fieldKey, fallback);
+  }
+
+  dayFieldKey(day: Date): string {
+    const dayMap = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    return dayMap[day.getDay()] || 'sunday';
   }
 }
 

@@ -232,18 +232,22 @@
     <div class="table-container" style="border:none;box-shadow:none">
       <table class="data-table">
         <thead><tr>
-          <th>Item</th><th>SKU</th><th>Current Stock</th><th>Reorder Point</th><th>Status</th>
+          <th *ngIf="showTableField('item')">{{fieldLabel('table','item','Item')}}</th>
+          <th *ngIf="showTableField('sku')">{{fieldLabel('table','sku','SKU')}}</th>
+          <th *ngIf="showTableField('current_stock')">{{fieldLabel('table','current_stock','Current Stock')}}</th>
+          <th *ngIf="showTableField('reorder_point')">{{fieldLabel('table','reorder_point','Reorder Point')}}</th>
+          <th *ngIf="showTableField('status')">{{fieldLabel('table','status','Status')}}</th>
         </tr></thead>
         <tbody>
           <tr *ngFor="let item of pagedLowStockItems">
-            <td class="font-bold">{{item.name}}</td>
-            <td><code>{{item.sku}}</code></td>
-            <td>
+            <td class="font-bold" *ngIf="showTableField('item')">{{item.name}}</td>
+            <td *ngIf="showTableField('sku')"><code>{{item.sku}}</code></td>
+            <td *ngIf="showTableField('current_stock')">
               <span style="color:#EF4444;font-weight:700">{{item.quantity}}</span>
               <span class="text-muted"> {{item.unit}}</span>
             </td>
-            <td>{{item.reorder_point}} {{item.unit}}</td>
-            <td>
+            <td *ngIf="showTableField('reorder_point')">{{item.reorder_point}} {{item.unit}}</td>
+            <td *ngIf="showTableField('status')">
               <div class="progress-bar" style="width:100px">
                 <div class="progress-fill"
                      [style.width.%]="item.reorder_point ? (item.quantity/item.reorder_point)*100 : 0"

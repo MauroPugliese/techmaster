@@ -204,11 +204,28 @@
       <div class="flex items-center justify-between mb-5">
         <div>
           <h2 style="margin-bottom:4px">Table Customization</h2>
-          <p class="text-muted text-sm">Add, rename, delete columns and configure visible columns per table</p>
+          <p class="text-muted text-sm">Manage DB schema and UI table/form visibility from one place</p>
         </div>
       </div>
 
-      <div class="card" style="padding:16px;margin-bottom:14px">
+      <div class="card" style="padding:12px;margin-bottom:14px">
+        <div class="flex gap-2">
+          <button class="btn" (click)="customizationMode='db'"
+                  [style.background]="customizationMode==='db' ? 'var(--blue-100)' : 'transparent'"
+                  [style.color]="customizationMode==='db' ? 'var(--primary)' : 'var(--blue-900)'"
+                  style="border:1px solid var(--border)">
+            <span class="btn-icon">storage</span> DB Table Customization
+          </button>
+          <button class="btn" (click)="customizationMode='ui'"
+                  [style.background]="customizationMode==='ui' ? 'var(--blue-100)' : 'transparent'"
+                  [style.color]="customizationMode==='ui' ? 'var(--primary)' : 'var(--blue-900)'"
+                  style="border:1px solid var(--border)">
+            <span class="btn-icon">view_list</span> UI Table and Form Customization
+          </button>
+        </div>
+      </div>
+
+      <div class="card" style="padding:16px;margin-bottom:14px" *ngIf="customizationMode==='db'">
         <div class="form-row" style="align-items:flex-end">
           <div class="form-group" style="max-width:380px">
             <label class="form-label">Table</label>
@@ -231,7 +248,7 @@
         </div>
       </div>
 
-      <ng-container *ngIf="!customizationLoading; else loadingTpl">
+      <ng-container *ngIf="customizationMode==='db' && !customizationLoading">
         <div class="table-container">
           <table class="data-table">
             <thead>
@@ -299,6 +316,168 @@
           </div>
         </div>
       </ng-container>
+      <ng-container *ngIf="customizationMode==='db' && customizationLoading">
+        <ng-container *ngTemplateOutlet="loadingTpl"></ng-container>
+      </ng-container>
+
+      <div class="card" style="padding:16px;margin-top:18px" *ngIf="customizationMode==='ui'">
+        <div class="flex items-center justify-between" style="margin-bottom:12px">
+          <div>
+            <h3 style="margin-bottom:2px">Section UI Visibility</h3>
+            <p class="text-muted text-sm">Choose which table columns and CRUD form fields are visible per section</p>
+          </div>
+          <div class="flex gap-2">
+            <button class="btn btn-secondary" [disabled]="schemaActionLoading || !selectedUiSection" (click)="resetUiSectionPreferences()">
+              <span class="btn-icon">restart_alt</span> Reset to Default
+            </button>
+            <button class="btn btn-primary" [disabled]="schemaActionLoading || !selectedUiSection" (click)="saveUiSectionPreferences()">
+              <span class="btn-icon">save</span> Save Section Settings
+            </button>
+          </div>
+        </div>
+
+        <div class="form-row" style="align-items:flex-end;margin-bottom:14px">
+          <div class="form-group" style="max-width:300px">
+            <label class="form-label">Section</label>
+            <select class="form-control" [(ngModel)]="selectedUiSection" (change)="onUiSectionChange()">
+              <option *ngFor="let section of uiSections" [ngValue]="section">{{section}}</option>
+            </select>
+          </div>
+          <div class="form-group" style="max-width:200px">
+            <label class="form-label">Scope</label>
+            <select class="form-control" [(ngModel)]="selectedUiScope" (change)="onUiScopeChange()">
+              <option value="table">Table Columns</option>
+              <option value="form">Form Fields</option>
+            </select>
+          </div>
+          <div class="form-group" style="max-width:220px">
+            <label class="form-label">Role</label>
+            <select class="form-control" [(ngModel)]="selectedUiRole" (change)="onUiRoleChange()">
+              <option value="ALL">All Roles (Global)</option>
+              <option *ngFor="let r of roles" [ngValue]="r.name">{{r.name | titlecase}}</option>
+            </select>
+          </div>
+        </div>
+
+        <ng-container *ngIf="!customizationLoading; else loadingTpl">
+        <div class="table-container" *ngIf="uiFieldsEditor.length; else noSectionFieldsTpl">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Field Key</th>
+                <th>Visible</th>
+                <th>Label Override</th>
+                <th>Source</th>
+                <th>Order</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let f of uiFieldsEditor; let i = index">
+                <td><code>{{f.field_key}}</code></td>
+                <td><input type="checkbox" [(ngModel)]="f.is_visible"></td>
+                <td><input class="form-control" [(ngModel)]="f.label" placeholder="Custom label"></td>
+                <td>
+                  <span class="badge"
+                        [style.background]="f.source==='role' ? '#DBEAFE' : (f.source==='global' ? '#DCFCE7' : '#F3F4F6')"
+                        [style.color]="f.source==='role' ? '#1D4ED8' : (f.source==='global' ? '#166534' : '#4B5563')">
+                    {{f.source || 'default'}}
+                  </span>
+                </td>
+                <td>
+                  <div class="flex gap-1">
+                    <button class="btn btn-ghost btn-icon-only btn-sm" [disabled]="i===0" (click)="moveUiField(f, -1)">
+                      <span class="btn-icon" style="font-size:16px">arrow_upward</span>
+                    </button>
+                    <button class="btn btn-ghost btn-icon-only btn-sm" [disabled]="i===uiFieldsEditor.length-1" (click)="moveUiField(f, 1)">
+                      <span class="btn-icon" style="font-size:16px">arrow_downward</span>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        </ng-container>
+
+        <ng-template #noSectionFieldsTpl>
+          <div class="empty-state">
+            <span class="empty-icon">view_list</span>
+            <h3>No fields found for this section</h3>
+          </div>
+        </ng-template>
+
+        <div class="card" style="padding:10px 12px;margin-top:14px;border:1px solid var(--border)">
+          <div class="flex items-center justify-between" style="gap:8px;flex-wrap:wrap">
+            <div class="text-sm" style="font-weight:700">Effective Source Legend</div>
+            <div class="flex items-center gap-2" style="flex-wrap:wrap">
+              <span class="badge" style="background:#DBEAFE;color:#1D4ED8">role</span>
+              <span class="badge" style="background:#DCFCE7;color:#166534">global</span>
+              <span class="badge" style="background:#F3F4F6;color:#4B5563">default</span>
+            </div>
+          </div>
+          <p class="text-muted text-sm" style="margin:8px 0 0 0">
+            Priority is role override first, then global override, then section defaults.
+          </p>
+        </div>
+
+        <div class="card" style="padding:10px 12px;margin-top:10px;border:1px solid var(--border)">
+          <div class="form-row" style="align-items:flex-end;gap:8px;flex-wrap:wrap">
+            <div class="form-group" style="max-width:220px;margin-bottom:0">
+              <label class="form-label">Search</label>
+              <input class="form-control" [(ngModel)]="uiPreviewSearch" placeholder="Field or label">
+            </div>
+            <div class="form-group" style="max-width:170px;margin-bottom:0">
+              <label class="form-label">Visibility</label>
+              <select class="form-control" [(ngModel)]="uiPreviewVisibilityFilter">
+                <option value="visible">Visible</option>
+                <option value="hidden">Hidden</option>
+                <option value="all">All</option>
+              </select>
+            </div>
+            <div class="form-group" style="max-width:170px;margin-bottom:0">
+              <label class="form-label">Source</label>
+              <select class="form-control" [(ngModel)]="uiPreviewSourceFilter">
+                <option value="all">All</option>
+                <option value="role">Role</option>
+                <option value="global">Global</option>
+                <option value="default">Default</option>
+              </select>
+            </div>
+            <button class="btn btn-secondary" style="height:40px" (click)="clearUiPreviewFilters()">
+              <span class="btn-icon">filter_alt_off</span> Clear
+            </button>
+          </div>
+        </div>
+
+        <div class="table-container" style="margin-top:10px" *ngIf="uiPreviewVisibleFields.length; else noPreviewRowsTpl">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th colspan="3">Preview - Visible Fields Order</th>
+              </tr>
+              <tr>
+                <th>#</th>
+                <th>Field Key</th>
+                <th>Label Used</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let p of uiPreviewVisibleFields; let i = index">
+                <td>{{i + 1}}</td>
+                <td><code>{{p.field_key}}</code></td>
+                <td>{{p.label || p.field_key}}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <ng-template #noPreviewRowsTpl>
+          <div class="empty-state" style="margin-top:10px">
+            <span class="empty-icon">filter_list</span>
+            <h3>No preview rows match the current filters</h3>
+          </div>
+        </ng-template>
+      </div>
     </ng-container>
 
     <!-- ==============================================================

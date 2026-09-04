@@ -8,6 +8,7 @@ import { Subject } from 'rxjs';
 import { takeUntil, debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { ApiService }       from '../../core/services/services';
 import { DateFilterService } from '../../core/services/services';
+import { UiCustomizationService, UiSectionPreferences } from '../../core/services/services';
 import { ToastService }     from '../../core/services/toast.service';
 import { ConfirmService }   from '../../core/services/confirm.service';
 import { Operation, OperationType } from '../../core/models/interfaces';
@@ -42,17 +43,23 @@ export class OperationsComponent implements OnInit, OnDestroy {
   showModal  = false;
   editingOp: Operation | null = null;
   form:      any = this.emptyForm();
+  uiPrefs: UiSectionPreferences | null = null;
   Math = Math;
 
   constructor(
     private api:     ApiService,
     private dateFilter: DateFilterService,
+    private uiCustomization: UiCustomizationService,
     private toast:   ToastService,
     private confirm: ConfirmService,
     private cdr:     ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
+    this.uiCustomization.load('operations').subscribe(p => {
+      this.uiPrefs = p;
+      this.cdr.markForCheck();
+    });
     this.api.get<any>('/operations/types').subscribe(res => {
       this.opTypes = res?.data || []; this.cdr.markForCheck();
     });
@@ -105,7 +112,9 @@ export class OperationsComponent implements OnInit, OnDestroy {
   }
 
   saveOperation(): void {
-    if (!this.form.title || !this.form.type_id || !this.form.start_date) return;
+    if (this.showFormField('title') && !this.form.title) return;
+    if (this.showFormField('type_id') && !this.form.type_id) return;
+    if (this.showFormField('start_date') && !this.form.start_date) return;
     this.saving = true;
     const isEdit = !!this.editingOp;
     const req$   = isEdit
@@ -152,5 +161,17 @@ export class OperationsComponent implements OnInit, OnDestroy {
   }
   private emptyForm(): any {
     return { title:'', description:'', status:'PLANNED', priority:'MEDIUM', location:'', start_date:null, end_date:null, notes:'' };
+  }
+
+  showTableField(fieldKey: string): boolean {
+    return this.uiCustomization.isVisible(this.uiPrefs, 'table', fieldKey, true);
+  }
+
+  showFormField(fieldKey: string): boolean {
+    return this.uiCustomization.isVisible(this.uiPrefs, 'form', fieldKey, true);
+  }
+
+  fieldLabel(scope: 'table' | 'form', fieldKey: string, fallback: string): string {
+    return this.uiCustomization.getLabel(this.uiPrefs, scope, fieldKey, fallback);
   }
 }

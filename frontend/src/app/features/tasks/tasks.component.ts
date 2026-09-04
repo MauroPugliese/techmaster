@@ -20,6 +20,7 @@ import { ConfirmService } from '../../core/services/confirm.service';
 
 import { ApiService } from '../../core/services/services';
 import { DateFilterService } from '../../core/services/services';
+import { UiCustomizationService, UiSectionPreferences } from '../../core/services/services';
 import { Task, IntervalType, TaskStatus, Priority } from '../../core/models/interfaces';
 import { OwlDateTimeModule, OwlNativeDateTimeModule } from '@danielmoncada/angular-datetime-picker';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
@@ -65,6 +66,7 @@ export class TasksComponent implements OnInit, OnDestroy {
   editingTask: Task | null = null;
   form:        any = this.emptyForm();
   tagsInput   = '';
+  uiPrefs: UiSectionPreferences | null = null;
 
   intervals = [
     { value: '' as const,         label: 'All',     icon: 'apps' },
@@ -110,6 +112,7 @@ export class TasksComponent implements OnInit, OnDestroy {
   constructor(
     private api: ApiService,
     private dateFilter: DateFilterService,
+    private uiCustomization: UiCustomizationService,
     private cdr: ChangeDetectorRef,
     private toast:   ToastService,
     private confirm: ConfirmService,
@@ -118,6 +121,11 @@ export class TasksComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
+    this.uiCustomization.load('tasks').subscribe(p => {
+      this.uiPrefs = p;
+      this.cdr.markForCheck();
+    });
+
     this.dateFilter.range$.pipe(
       takeUntil(this.destroy$),
       switchMap(() => {
@@ -356,7 +364,7 @@ export class TasksComponent implements OnInit, OnDestroy {
   }
 
   saveTask(): void {
-    if (!this.form.title) return;
+    if (this.showFormField('title') && !this.form.title) return;
     this.saving = true;
     this.form.tags = this.tagsInput ? this.tagsInput.split(',').map(t => t.trim()).filter(Boolean) : [];
     const isEdit = !!this.editingTask;
@@ -466,6 +474,14 @@ export class TasksComponent implements OnInit, OnDestroy {
       priority: 'MEDIUM', due_date: null, estimated_hours: undefined,
       parent_id: undefined, tags: []
     };
+  }
+
+  showFormField(fieldKey: string): boolean {
+    return this.uiCustomization.isVisible(this.uiPrefs, 'form', fieldKey, true);
+  }
+
+  fieldLabel(scope: 'table' | 'form', fieldKey: string, fallback: string): string {
+    return this.uiCustomization.getLabel(this.uiPrefs, scope, fieldKey, fallback);
   }
 
   ngOnDestroy(): void { this.destroy$.next(); this.destroy$.complete(); }

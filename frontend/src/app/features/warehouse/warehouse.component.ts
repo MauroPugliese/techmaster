@@ -8,6 +8,7 @@ import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 import { ApiService }       from '../../core/services/api.service';
 import { DateFilterService } from '../../core/services/date-filter.service';
+import { UiCustomizationService, UiSectionPreferences } from '../../core/services/ui-customization.service';
 import { ToastService }     from '../../core/services/toast.service';
 import { ConfirmService }   from '../../core/services/confirm.service';
 import { InventoryItem, MovementType, StockMovement } from '../../core/models/interfaces';
@@ -50,6 +51,7 @@ export class WarehouseComponent implements OnInit, OnDestroy {
   historyLoading = false;
   historyItem: InventoryItem | null = null;
   itemHistory: StockMovement[] = [];
+  uiPrefs: UiSectionPreferences | null = null;
   historyPage = 1;
   historyPageSize = 10;
   readonly historyPageSizeOptions = [10, 20, 50, 100];
@@ -89,12 +91,17 @@ export class WarehouseComponent implements OnInit, OnDestroy {
   constructor(
     private api:     ApiService,
     private dateFilter: DateFilterService,
+    private uiCustomization: UiCustomizationService,
     private toast:   ToastService,
     private confirm: ConfirmService,
     private cdr:     ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
+    this.uiCustomization.load('warehouse').subscribe(p => {
+      this.uiPrefs = p;
+      this.cdr.markForCheck();
+    });
     this.api.get<any>('/warehouse/categories').subscribe({
       next: r => { this.categories = r?.data || []; this.cdr.markForCheck(); }
     });
@@ -175,9 +182,9 @@ export class WarehouseComponent implements OnInit, OnDestroy {
   }
 
   saveItem(): void {
-    if (!this.itemForm.name?.trim())  { this.toast.warning('Item name is required.'); return; }
-    if (!this.itemForm.sku?.trim())   { this.toast.warning('SKU is required.'); return; }
-    if (!this.editingItem && !this.itemForm.category_id) { this.toast.warning('Please select a category.'); return; }
+    if (this.showFormField('name') && !this.itemForm.name?.trim())  { this.toast.warning('Item name is required.'); return; }
+    if (this.showFormField('sku') && !this.itemForm.sku?.trim())   { this.toast.warning('SKU is required.'); return; }
+    if (!this.editingItem && this.showFormField('category_id') && !this.itemForm.category_id) { this.toast.warning('Please select a category.'); return; }
 
     this.saving = true;
     const isEdit = !!this.editingItem;
@@ -327,6 +334,18 @@ export class WarehouseComponent implements OnInit, OnDestroy {
     if (i.quantity === 0) return '#FEE2E2';
     if (i.quantity <= i.reorder_point) return '#FEF3C7';
     return '#DCFCE7';
+  }
+
+  showTableField(fieldKey: string): boolean {
+    return this.uiCustomization.isVisible(this.uiPrefs, 'table', fieldKey, true);
+  }
+
+  showFormField(fieldKey: string): boolean {
+    return this.uiCustomization.isVisible(this.uiPrefs, 'form', fieldKey, true);
+  }
+
+  fieldLabel(scope: 'table' | 'form', fieldKey: string, fallback: string): string {
+    return this.uiCustomization.getLabel(this.uiPrefs, scope, fieldKey, fallback);
   }
 }
 

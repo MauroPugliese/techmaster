@@ -107,20 +107,20 @@
       <table class="data-table">
         <thead>
           <tr>
-            <th>Type</th>
-            <th>Count</th>
-            <th>Avg Downtime (hrs)</th>
-            <th>Total Cost</th>
-            <th>Completion Rate</th>
+            <th *ngIf="showTableField('type')">{{fieldLabel('table','type','Type')}}</th>
+            <th *ngIf="showTableField('count')">{{fieldLabel('table','count','Count')}}</th>
+            <th *ngIf="showTableField('avg_downtime')">{{fieldLabel('table','avg_downtime','Avg Downtime (hrs)')}}</th>
+            <th *ngIf="showTableField('total_cost')">{{fieldLabel('table','total_cost','Total Cost')}}</th>
+            <th *ngIf="showTableField('completion_rate')">{{fieldLabel('table','completion_rate','Completion Rate')}}</th>
           </tr>
         </thead>
         <tbody>
           <tr *ngFor="let row of pagedMaintSummary">
-            <td><span class="badge badge-in-progress">{{row.type | titlecase}}</span></td>
-            <td>{{row.count}}</td>
-            <td>{{row.avg_downtime | number:'1.1-1'}}h</td>
-            <td>${{row.total_cost | number:'1.2-2'}}</td>
-            <td>
+            <td *ngIf="showTableField('type')"><span class="badge badge-in-progress">{{row.type | titlecase}}</span></td>
+            <td *ngIf="showTableField('count')">{{row.count}}</td>
+            <td *ngIf="showTableField('avg_downtime')">{{row.avg_downtime | number:'1.1-1'}}h</td>
+            <td *ngIf="showTableField('total_cost')">${{row.total_cost | number:'1.2-2'}}</td>
+            <td *ngIf="showTableField('completion_rate')">
               <div class="flex items-center gap-2">
                 <div class="progress-bar" style="flex:1">
                   <div class="progress-fill" [style.width.%]="row.completion_rate" [style.background]="row.completion_rate > 80 ? '#15803D' : row.completion_rate > 50 ? '#D97706' : '#DC2626'"></div>

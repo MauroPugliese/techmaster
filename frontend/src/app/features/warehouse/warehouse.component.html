@@ -58,28 +58,28 @@
     <table class="data-table">
       <thead>
         <tr>
-          <th>SKU</th>
-          <th>Part Number</th>
-          <th>Item Name</th>
-          <th>Category</th>
-          <th>Quantity</th>
-          <th>Status</th>
-          <th>Reorder Point</th>
-          <th>Unit Cost</th>
-          <th>Supplier</th>
+          <th *ngIf="showTableField('sku')">{{fieldLabel('table','sku','SKU')}}</th>
+          <th *ngIf="showTableField('part_number')">{{fieldLabel('table','part_number','Part Number')}}</th>
+          <th *ngIf="showTableField('name')">{{fieldLabel('table','name','Item Name')}}</th>
+          <th *ngIf="showTableField('category')">{{fieldLabel('table','category','Category')}}</th>
+          <th *ngIf="showTableField('quantity')">{{fieldLabel('table','quantity','Quantity')}}</th>
+          <th *ngIf="showTableField('stock_status')">{{fieldLabel('table','stock_status','Status')}}</th>
+          <th *ngIf="showTableField('reorder_point')">{{fieldLabel('table','reorder_point','Reorder Point')}}</th>
+          <th *ngIf="showTableField('unit_cost')">{{fieldLabel('table','unit_cost','Unit Cost')}}</th>
+          <th *ngIf="showTableField('supplier')">{{fieldLabel('table','supplier','Supplier')}}</th>
           <th>Actions</th>
         </tr>
       </thead>
       <tbody>
         <tr *ngFor="let item of items">
-          <td><code style="font-size:0.8rem">{{item.sku}}</code></td>
-          <td><code style="font-size:0.8rem">{{item.part_number || '—'}}</code></td>
-          <td>
+          <td *ngIf="showTableField('sku')"><code style="font-size:0.8rem">{{item.sku}}</code></td>
+          <td *ngIf="showTableField('part_number')"><code style="font-size:0.8rem">{{item.part_number || '—'}}</code></td>
+          <td *ngIf="showTableField('name')">
             <div class="font-bold">{{item.name}}</div>
             <div class="text-sm text-muted">{{item.unit}}</div>
           </td>
-          <td class="text-sm">{{item.category?.name || '—'}}</td>
-          <td>
+          <td class="text-sm" *ngIf="showTableField('category')">{{item.category?.name || '—'}}</td>
+          <td *ngIf="showTableField('quantity')">
             <div style="display:flex;align-items:center;gap:10px">
               <span [style.color]="getStockColor(item)" style="font-weight:700;font-size:1rem">
                 {{item.quantity}}
@@ -92,16 +92,16 @@
               </div>
             </div>
           </td>
-          <td>
+          <td *ngIf="showTableField('stock_status')">
             <span class="badge"
                   [style.background]="getStockBadgeBg(item)"
                   [style.color]="getStockColor(item)">
               {{getStockStatus(item)}}
             </span>
           </td>
-          <td class="text-sm">{{item.reorder_point}} {{item.unit}}</td>
-          <td class="text-sm">${{item.unit_cost | number:'1.2-2'}}</td>
-          <td class="text-sm truncate" style="max-width:120px">{{item.supplier || '—'}}</td>
+          <td class="text-sm" *ngIf="showTableField('reorder_point')">{{item.reorder_point}} {{item.unit}}</td>
+          <td class="text-sm" *ngIf="showTableField('unit_cost')">${{item.unit_cost | number:'1.2-2'}}</td>
+          <td class="text-sm truncate" style="max-width:120px" *ngIf="showTableField('supplier')">{{item.supplier || '—'}}</td>
           <td>
             <div class="flex gap-1">
               <!-- Stock movement -->
@@ -171,8 +171,8 @@
     <div class="modal-body">
 
       <!-- Category — [ngValue] preserves numeric ID -->
-      <div class="form-group">
-        <label class="form-label">Category *</label>
+      <div class="form-group" *ngIf="showFormField('category_id')">
+        <label class="form-label">{{fieldLabel('form','category_id','Category')}} *</label>
         <select class="form-control" [(ngModel)]="itemForm.category_id">
           <option [ngValue]="null">— Select category —</option>
           <option *ngFor="let c of categories" [ngValue]="c.id">{{c.name}}</option>
@@ -185,19 +185,19 @@
 
       <!-- SKU + Part Number + Name -->
       <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">SKU *</label>
+        <div class="form-group" *ngIf="showFormField('sku')">
+          <label class="form-label">{{fieldLabel('form','sku','SKU')}} *</label>
           <input class="form-control" [(ngModel)]="itemForm.sku"
                  placeholder="e.g. BOLT-M8-50"
                  [disabled]="!!editingItem">
         </div>
-        <div class="form-group">
-          <label class="form-label">Part Number</label>
+        <div class="form-group" *ngIf="showFormField('part_number')">
+          <label class="form-label">{{fieldLabel('form','part_number','Part Number')}}</label>
           <input class="form-control" [(ngModel)]="itemForm.part_number"
                  placeholder="e.g. PN-445-REV2">
         </div>
-        <div class="form-group" style="flex:2">
-          <label class="form-label">Item Name *</label>
+        <div class="form-group" style="flex:2" *ngIf="showFormField('name')">
+          <label class="form-label">{{fieldLabel('form','name','Item Name')}} *</label>
           <input class="form-control" [(ngModel)]="itemForm.name"
                  placeholder="e.g. Hex Bolt M8×50">
         </div>
@@ -205,13 +205,13 @@
 
       <!-- Unit + Initial Quantity -->
       <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Unit</label>
+        <div class="form-group" *ngIf="showFormField('unit')">
+          <label class="form-label">{{fieldLabel('form','unit','Unit')}}</label>
           <input class="form-control" [(ngModel)]="itemForm.unit" placeholder="pcs">
         </div>
-        <div class="form-group">
+        <div class="form-group" *ngIf="showFormField('quantity')">
           <label class="form-label">
-            Initial Qty
+            {{fieldLabel('form','quantity','Initial Qty')}}
             <span *ngIf="editingItem"
                   style="font-weight:400;color:#9CA3AF;font-size:0.72rem">
               (use Stock Movement to change)
@@ -224,16 +224,16 @@
 
       <!-- Min / Reorder / Max -->
       <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Min Stock</label>
+        <div class="form-group" *ngIf="showFormField('min_stock')">
+          <label class="form-label">{{fieldLabel('form','min_stock','Min Stock')}}</label>
           <input type="number" class="form-control" [(ngModel)]="itemForm.min_stock" min="0">
         </div>
-        <div class="form-group">
-          <label class="form-label">Reorder Point</label>
+        <div class="form-group" *ngIf="showFormField('reorder_point')">
+          <label class="form-label">{{fieldLabel('form','reorder_point','Reorder Point')}}</label>
           <input type="number" class="form-control" [(ngModel)]="itemForm.reorder_point" min="0">
         </div>
-        <div class="form-group">
-          <label class="form-label">Max Stock</label>
+        <div class="form-group" *ngIf="showFormField('max_stock')">
+          <label class="form-label">{{fieldLabel('form','max_stock','Max Stock')}}</label>
           <input type="number" class="form-control" [(ngModel)]="itemForm.max_stock"
                  min="0" placeholder="optional">
         </div>
@@ -241,21 +241,21 @@
 
       <!-- Unit Cost + Supplier -->
       <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Unit Cost ($)</label>
+        <div class="form-group" *ngIf="showFormField('unit_cost')">
+          <label class="form-label">{{fieldLabel('form','unit_cost','Unit Cost ($)')}}</label>
           <input type="number" class="form-control" [(ngModel)]="itemForm.unit_cost"
                  min="0" step="0.01" placeholder="0.00">
         </div>
-        <div class="form-group" style="flex:2">
-          <label class="form-label">Supplier</label>
+        <div class="form-group" style="flex:2" *ngIf="showFormField('supplier')">
+          <label class="form-label">{{fieldLabel('form','supplier','Supplier')}}</label>
           <input class="form-control" [(ngModel)]="itemForm.supplier"
                  placeholder="e.g. Acme Corp">
         </div>
       </div>
 
       <!-- Description -->
-      <div class="form-group">
-        <label class="form-label">Description</label>
+      <div class="form-group" *ngIf="showFormField('description')">
+        <label class="form-label">{{fieldLabel('form','description','Description')}}</label>
         <textarea class="form-control" [(ngModel)]="itemForm.description"
                   style="min-height:72px" placeholder="Optional notes…"></textarea>
       </div>

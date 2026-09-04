@@ -11,6 +11,7 @@ import { PlannedMaintenanceTask, CalendarIndicators } from '../../../core/models
 import { PlannedMaintenanceService } from './planned-maintenance.service';
 import { ToastService } from '../../../core/services/services';
 import { ConfirmService } from '../../../core/services/services';
+import { UiCustomizationService, UiSectionPreferences } from '../../../core/services/services';
 import { OwlDateTimeModule, OwlNativeDateTimeModule } from '@danielmoncada/angular-datetime-picker';
 import { ExportMenuComponent } from '../../../shared/components/export-menu/export-menu.component';
 
@@ -55,15 +56,21 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
   editId: number | null = null;
   occurrenceMeta: { masterId: number; occurrenceDate: string } | null = null;
   form: any = this.emptyForm();
+  uiPrefs: UiSectionPreferences | null = null;
 
   constructor(
     private svc: PlannedMaintenanceService,
+    private uiCustomization: UiCustomizationService,
     private toast: ToastService,
     private confirm: ConfirmService,
     private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
+    this.uiCustomization.load('planned_maintenance').subscribe(p => {
+      this.uiPrefs = p;
+      this.cdr.markForCheck();
+    });
     this.loadTasks();
     this.buildCalendar();
     this.loadIndicators();
@@ -176,7 +183,12 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
   }
 
   save(): void {
-    if (!this.form.system || !this.form.subsystem || !this.form.task || !this.form.operationDateStart) {
+    if (
+      (this.showFormField('system') && !this.form.system) ||
+      (this.showFormField('subsystem') && !this.form.subsystem) ||
+      (this.showFormField('task') && !this.form.task) ||
+      (this.showFormField('operationDateStart') && !this.form.operationDateStart)
+    ) {
       this.toast.error('Please fill required fields');
       return;
     }
@@ -417,6 +429,18 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
   private toIsoString(value: string): string {
     const date = new Date(value);
     return isNaN(date.getTime()) ? value : date.toISOString();
+  }
+
+  showTableField(fieldKey: string): boolean {
+    return this.uiCustomization.isVisible(this.uiPrefs, 'table', fieldKey, true);
+  }
+
+  showFormField(fieldKey: string): boolean {
+    return this.uiCustomization.isVisible(this.uiPrefs, 'form', fieldKey, true);
+  }
+
+  fieldLabel(scope: 'table' | 'form', fieldKey: string, fallback: string): string {
+    return this.uiCustomization.getLabel(this.uiPrefs, scope, fieldKey, fallback);
   }
 
   

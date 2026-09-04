@@ -12,6 +12,7 @@ import jsPDF from 'jspdf';
 
 import { ApiService } from '../../core/services/services';
 import { DateFilterService } from '../../core/services/services';
+import { UiCustomizationService, UiSectionPreferences } from '../../core/services/services';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
 
 Chart.register(...registerables, zoomPlugin);
@@ -36,14 +37,21 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
   summaryPageSize = 10;
   readonly summaryPageSizeOptions = [10, 20, 50, 100];
   dateLabel = 'All time';
+  uiPrefs: UiSectionPreferences | null = null;
 
   constructor(
     private api: ApiService,
     private dateFilter: DateFilterService,
+    private uiCustomization: UiCustomizationService,
     private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
+    this.uiCustomization.load('analytics').subscribe(p => {
+      this.uiPrefs = p;
+      this.cdr.markForCheck();
+    });
+
     this.dateFilter.range$.pipe(
       takeUntil(this.destroy$),
       switchMap(range => {
@@ -406,6 +414,14 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     pdf.save(`smart-analytics-${new Date().toISOString().slice(0, 10)}.pdf`);
+  }
+
+  showTableField(fieldKey: string): boolean {
+    return this.uiCustomization.isVisible(this.uiPrefs, 'table', fieldKey, true);
+  }
+
+  fieldLabel(scope: 'table' | 'form', fieldKey: string, fallback: string): string {
+    return this.uiCustomization.getLabel(this.uiPrefs, scope, fieldKey, fallback);
   }
 
   ngOnDestroy(): void {

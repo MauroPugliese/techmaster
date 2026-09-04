@@ -20,34 +20,34 @@
     <table class="data-table">
       <thead>
         <tr>
-          <th>System</th>
-          <th>Subsystem</th>
-          <th>Task</th>
-          <th>Start Date</th>
-          <th>Repeat</th>
-          <th>Every</th>
-          <th>Repeat Until</th>
-          <th>Status</th>
+          <th *ngIf="showTableField('system')">{{fieldLabel('table','system','System')}}</th>
+          <th *ngIf="showTableField('subsystem')">{{fieldLabel('table','subsystem','Subsystem')}}</th>
+          <th *ngIf="showTableField('task')">{{fieldLabel('table','task','Task')}}</th>
+          <th *ngIf="showTableField('start_date')">{{fieldLabel('table','start_date','Start Date')}}</th>
+          <th *ngIf="showTableField('repeat_type')">{{fieldLabel('table','repeat_type','Repeat')}}</th>
+          <th *ngIf="showTableField('every_n')">{{fieldLabel('table','every_n','Every')}}</th>
+          <th *ngIf="showTableField('repeat_until')">{{fieldLabel('table','repeat_until','Repeat Until')}}</th>
+          <th *ngIf="showTableField('status')">{{fieldLabel('table','status','Status')}}</th>
           <th>Actions</th>
         </tr>
       </thead>
       <tbody>
         <tr *ngFor="let t of tasks">
-          <td class="font-bold text-sm">{{ t.system }}</td>
-          <td class="text-sm">{{ t.subsystem }}</td>
-          <td>
+          <td class="font-bold text-sm" *ngIf="showTableField('system')">{{ t.system }}</td>
+          <td class="text-sm" *ngIf="showTableField('subsystem')">{{ t.subsystem }}</td>
+          <td *ngIf="showTableField('task')">
             <div class="font-bold text-sm">{{ t.task }}</div>
             <div class="text-sm text-muted truncate" style="max-width:220px">{{ t.reference }}</div>
           </td>
-          <td class="text-sm">{{ formatDate(t.operation_date_start || t.operationDateStart) }}</td>
-          <td>
+          <td class="text-sm" *ngIf="showTableField('start_date')">{{ formatDate(t.operation_date_start || t.operationDateStart) }}</td>
+          <td *ngIf="showTableField('repeat_type')">
             <span class="badge" [ngClass]="getRepeatBadgeClass(t.repeat_task_type || t.repeatTaskType)">
               {{ t.repeat_task_type || t.repeatTaskType }}
             </span>
           </td>
-          <td class="text-sm text-center">{{ t.repeat_task_number || t.repeatTaskNumber }}</td>
-          <td class="text-sm">{{ formatDate(t.recurrence_end_date || t.recurrenceEndDate) }}</td>
-          <td>
+          <td class="text-sm text-center" *ngIf="showTableField('every_n')">{{ t.repeat_task_number || t.repeatTaskNumber }}</td>
+          <td class="text-sm" *ngIf="showTableField('repeat_until')">{{ formatDate(t.recurrence_end_date || t.recurrenceEndDate) }}</td>
+          <td *ngIf="showTableField('status')">
             <span class="badge" [ngClass]="getStatusBadgeClass(t.status)">
               {{ t.status }}
             </span>
@@ -204,24 +204,24 @@
     <div class="modal-body">
       <div class="form-row">
 
-        <div class="form-group">
-          <label class="form-label">System *</label>
+        <div class="form-group" *ngIf="showFormField('system')">
+          <label class="form-label">{{fieldLabel('form','system','System')}} *</label>
           <input class="form-control" [(ngModel)]="form.system" placeholder="e.g. Server Room">
         </div>
 
-        <div class="form-group">
-          <label class="form-label">Subsystem *</label>
+        <div class="form-group" *ngIf="showFormField('subsystem')">
+          <label class="form-label">{{fieldLabel('form','subsystem','Subsystem')}} *</label>
           <input class="form-control" [(ngModel)]="form.subsystem" placeholder="e.g. DEHUMIDIFIER">
         </div>
 
-        <div class="form-group" style="grid-column:1/-1">
-          <label class="form-label">Task Description *</label>
+        <div class="form-group" style="grid-column:1/-1" *ngIf="showFormField('task')">
+          <label class="form-label">{{fieldLabel('form','task','Task Description')}} *</label>
           <textarea class="form-control" [(ngModel)]="form.task" style="min-height:60px"
                     placeholder="What needs to be done..."></textarea>
         </div>
 
-        <div class="form-group">
-          <label class="form-label">Start Date *</label>
+        <div class="form-group" *ngIf="showFormField('operationDateStart')">
+          <label class="form-label">{{fieldLabel('form','operationDateStart','Start Date')}} *</label>
           <div class="datetime-picker-wrapper">
             <input class="form-control"
                    [owlDateTime]="dtStart"
@@ -233,8 +233,8 @@
           </div>
         </div>
 
-        <div class="form-group">
-          <label class="form-label">End Date</label>
+        <div class="form-group" *ngIf="showFormField('operationDateEnd')">
+          <label class="form-label">{{fieldLabel('form','operationDateEnd','End Date')}}</label>
           <div class="datetime-picker-wrapper">
             <input class="form-control"
                    [owlDateTime]="dtEnd"
@@ -246,8 +246,8 @@
           </div>
         </div>
 
-        <div *ngIf="editingScope === 'series'" class="form-group">
-          <label class="form-label">Repeat Type *</label>
+        <div *ngIf="editingScope === 'series' && showFormField('repeatTaskType')" class="form-group">
+          <label class="form-label">{{fieldLabel('form','repeatTaskType','Repeat Type')}} *</label>
           <select class="form-control" [(ngModel)]="form.repeatTaskType">
             <option value="DAY">Every N Days</option>
             <option value="WEEK">Every N Weeks</option>
@@ -255,16 +255,16 @@
           </select>
         </div>
 
-        <div *ngIf="editingScope === 'series'" class="form-group">
-          <label class="form-label">Every N *</label>
+        <div *ngIf="editingScope === 'series' && showFormField('repeatTaskNumber')" class="form-group">
+          <label class="form-label">{{fieldLabel('form','repeatTaskNumber','Every N')}} *</label>
           <input type="number" class="form-control" [(ngModel)]="form.repeatTaskNumber" min="1" max="365">
           <span class="text-sm text-muted" style="margin-top:4px;display:block">
             e.g. 1 = every week, 2 = every 2 weeks
           </span>
         </div>
 
-        <div *ngIf="editingScope === 'series'" class="form-group">
-          <label class="form-label">Repeat Until</label>
+        <div *ngIf="editingScope === 'series' && showFormField('recurrenceEndDate')" class="form-group">
+          <label class="form-label">{{fieldLabel('form','recurrenceEndDate','Repeat Until')}}</label>
           <div class="datetime-picker-wrapper">
             <input class="form-control"
                    [owlDateTime]="dtRecurrence"
@@ -285,25 +285,25 @@
           </div>
         </div>
 
-        <div class="form-group">
-          <label class="form-label">Reference</label>
+        <div class="form-group" *ngIf="showFormField('reference')">
+          <label class="form-label">{{fieldLabel('form','reference','Reference')}}</label>
           <input class="form-control" [(ngModel)]="form.reference" placeholder="Document ref (optional)">
         </div>
 
-        <div class="form-group">
-          <label class="form-label">Report Template</label>
+        <div class="form-group" *ngIf="showFormField('reportTemplate')">
+          <label class="form-label">{{fieldLabel('form','reportTemplate','Report Template')}}</label>
           <input class="form-control" [(ngModel)]="form.reportTemplate" placeholder="Template path (optional)">
         </div>
 
-        <div class="form-group">
-          <label class="form-label">Status</label>
+        <div class="form-group" *ngIf="showFormField('status')">
+          <label class="form-label">{{fieldLabel('form','status','Status')}}</label>
           <select class="form-control" [(ngModel)]="form.status">
             <option value="TODO">TODO</option>
             <option value="DONE">DONE</option>
           </select>
         </div>
 
-        <div class="form-group" style="display:flex;align-items:center;gap:8px;padding-top:24px">
+        <div class="form-group" style="display:flex;align-items:center;gap:8px;padding-top:24px" *ngIf="showFormField('optional')">
           <input type="checkbox" id="optional" [(ngModel)]="form.optional">
           <label for="optional" class="form-label" style="margin:0">Optional task</label>
         </div>

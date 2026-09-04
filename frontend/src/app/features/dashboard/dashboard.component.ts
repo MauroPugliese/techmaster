@@ -10,6 +10,7 @@ import { Chart, registerables } from 'chart.js';
 
 import { ApiService } from '../../core/services/services';
 import { DateFilterService } from '../../core/services/services';
+import { UiCustomizationService, UiSectionPreferences } from '../../core/services/services';
 import { DashboardKPIs, Operation, MaintenanceRecord, Shift, InventoryItem } from '../../core/models/interfaces';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
 
@@ -37,6 +38,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   readonly lowStockPageSizeOptions = [10, 20, 50, 100];
   today            = new Date();
   dateFilterLabel  = 'All time';
+  uiPrefs: UiSectionPreferences | null = null;
 
   private opsTrendChart: Chart | null = null;
   private taskDistChart: Chart | null = null;
@@ -44,10 +46,16 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   constructor(
     private api: ApiService,
     private dateFilter: DateFilterService,
+    private uiCustomization: UiCustomizationService,
     private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
+    this.uiCustomization.load('dashboard').subscribe(p => {
+      this.uiPrefs = p;
+      this.cdr.markForCheck();
+    });
+
     // Re-fetch data whenever the global date filter changes or periodically.
     interval(30000)
       .pipe(takeUntil(this.destroy$))
@@ -290,6 +298,14 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
       'ABSENT': 'badge-cancelled'
     };
     return map[status] || 'badge-planned';
+  }
+
+  showTableField(fieldKey: string): boolean {
+    return this.uiCustomization.isVisible(this.uiPrefs, 'table', fieldKey, true);
+  }
+
+  fieldLabel(scope: 'table' | 'form', fieldKey: string, fallback: string): string {
+    return this.uiCustomization.getLabel(this.uiPrefs, scope, fieldKey, fallback);
   }
 
   ngOnDestroy(): void {

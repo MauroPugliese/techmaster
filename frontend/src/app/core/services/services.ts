@@ -6,3 +6,5 @@ export { OperationsService }  from './operations.service';
 export { ToastService }   from './toast.service';
 export { ConfirmService } from './confirm.service';
 export { SocketService }  from './socket.service';
+export { UiCustomizationService } from './ui-customization.service';
+export type { UiSectionPreferences, UiFieldPreference } from './ui-customization.service';
