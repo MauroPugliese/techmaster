@@ -1,0 +1,12 @@
+CREATE TABLE IF NOT EXISTS ui_table_column_preferences (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  table_name VARCHAR(100) NOT NULL,
+  column_name VARCHAR(100) NOT NULL,
+  label VARCHAR(150) NULL,
+  is_visible BOOLEAN NOT NULL DEFAULT TRUE,
+  display_order INT NOT NULL DEFAULT 0,
+  width VARCHAR(20) NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_table_column_pref (table_name, column_name)
+) ENGINE=InnoDB;

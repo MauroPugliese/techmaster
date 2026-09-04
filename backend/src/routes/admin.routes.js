@@ -10,6 +10,127 @@ const {
   AssetCategory, WikiCategory,
 } = require('../models');
 
+const CUSTOMIZABLE_TABLES = new Set([
+  'operations',
+  'maintenance_records',
+  'planned_maintenance_tasks',
+  'planned_maintenance_task_instances',
+  'assets',
+  'inventory_items',
+  'stock_movements',
+  'tasks',
+  'shifts',
+  'wiki_articles',
+  'warehouse_locations',
+  'item_categories'
+]);
+
+const SYSTEM_COLUMN_DENYLIST = new Set(['id', 'created_at', 'updated_at', 'deleted_at']);
+const SAFE_IDENTIFIER = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
+function validateIdentifier(name, kind) {
+  if (!name || typeof name !== 'string' || !SAFE_IDENTIFIER.test(name)) {
+    const err = new Error('Invalid ' + kind + ' name');
+    err.status = 400;
+    throw err;
+  }
+  return name;
+}
+
+function assertCustomizableTable(tableName) {
+  validateIdentifier(tableName, 'table');
+  if (!CUSTOMIZABLE_TABLES.has(tableName)) {
+    const err = new Error('This table is not customizable from Admin Settings');
+    err.status = 403;
+    throw err;
+  }
+}
+
+function buildColumnTypeSql(type, length) {
+  const t = String(type || '').trim().toUpperCase();
+  const len = length === undefined || length === null || length === '' ? null : Number(length);
+  const lengthTypes = new Set(['VARCHAR', 'CHAR', 'DECIMAL']);
+  const plainTypes = new Set(['TEXT', 'LONGTEXT', 'INT', 'BIGINT', 'FLOAT', 'DOUBLE', 'DATE', 'DATETIME', 'TIMESTAMP', 'BOOLEAN', 'JSON']);
+
+  if (lengthTypes.has(t)) {
+    if (!Number.isFinite(len) || len <= 0) {
+      const err = new Error('Length is required and must be greater than zero for type ' + t);
+      err.status = 400;
+      throw err;
+    }
+    if (t === 'DECIMAL') {
+      return 'DECIMAL(' + len + ',2)';
+    }
+    return t + '(' + len + ')';
+  }
+
+  if (!plainTypes.has(t)) {
+    const err = new Error('Unsupported column type');
+    err.status = 400;
+    throw err;
+  }
+
+  return t;
+}
+
+function buildDefaultSql(defaultValue) {
+  if (defaultValue === undefined || defaultValue === null || defaultValue === '') {
+    return 'DEFAULT NULL';
+  }
+
+  const raw = String(defaultValue).trim();
+  const upper = raw.toUpperCase();
+
+  if (upper === 'CURRENT_TIMESTAMP') {
+    return 'DEFAULT CURRENT_TIMESTAMP';
+  }
+
+  const escaped = raw.replace(/'/g, "''");
+  return "DEFAULT '" + escaped + "'";
+}
+
+async function ensureCustomizationPrefsTable() {
+  await sequelize.query(`
+    CREATE TABLE IF NOT EXISTS ui_table_column_preferences (
+      id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      table_name VARCHAR(100) NOT NULL,
+      column_name VARCHAR(100) NOT NULL,
+      label VARCHAR(150) NULL,
+      is_visible BOOLEAN NOT NULL DEFAULT TRUE,
+      display_order INT NOT NULL DEFAULT 0,
+      width VARCHAR(20) NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_table_column_pref (table_name, column_name)
+    ) ENGINE=InnoDB;
+  `);
+}
+
+async function getColumnMetadata(tableName) {
+  const [columns] = await sequelize.query(
+    `SELECT
+      c.COLUMN_NAME as column_name,
+      c.COLUMN_TYPE as column_type,
+      c.DATA_TYPE as data_type,
+      c.IS_NULLABLE as is_nullable,
+      c.COLUMN_DEFAULT as column_default,
+      c.COLUMN_KEY as column_key,
+      c.EXTRA as extra,
+      c.ORDINAL_POSITION as ordinal_position,
+      CASE WHEN c.COLUMN_NAME IN ('id','created_at','updated_at','deleted_at') THEN 1 ELSE 0 END as is_system,
+      CASE
+        WHEN c.COLUMN_KEY = 'PRI' OR c.EXTRA LIKE '%auto_increment%' OR c.COLUMN_NAME IN ('id','created_at','updated_at','deleted_at') THEN 1
+        ELSE 0
+      END as is_protected
+    FROM INFORMATION_SCHEMA.COLUMNS c
+    WHERE c.TABLE_SCHEMA = DATABASE() AND c.TABLE_NAME = ?
+    ORDER BY c.ORDINAL_POSITION ASC`,
+    { replacements: [tableName] }
+  );
+
+  return columns;
+}
+
 // =============================================================================
 // SYSTEM OVERVIEW
 // =============================================================================
@@ -431,6 +552,231 @@ router.delete('/warehouse-locations/:id', async (req, res, next) => {
       { replacements: [req.params.id] }
     );
     res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
+// =============================================================================
+// TABLE CUSTOMIZATION
+// =============================================================================
+router.get('/schema/tables', async (req, res, next) => {
+  try {
+    const [rows] = await sequelize.query(
+      `SELECT TABLE_NAME as table_name
+       FROM INFORMATION_SCHEMA.TABLES
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE'
+       ORDER BY TABLE_NAME ASC`
+    );
+
+    const data = rows
+      .filter(r => CUSTOMIZABLE_TABLES.has(r.table_name))
+      .map(r => ({ table_name: r.table_name }));
+
+    res.json({ success: true, data });
+  } catch (err) { next(err); }
+});
+
+router.get('/schema/tables/:table/columns', async (req, res, next) => {
+  try {
+    const tableName = req.params.table;
+    assertCustomizableTable(tableName);
+
+    await ensureCustomizationPrefsTable();
+    const columns = await getColumnMetadata(tableName);
+
+    const [prefs] = await sequelize.query(
+      `SELECT column_name, label, is_visible, display_order, width
+       FROM ui_table_column_preferences
+       WHERE table_name = ?`,
+      { replacements: [tableName] }
+    );
+
+    const prefMap = new Map(prefs.map(p => [p.column_name, p]));
+
+    const data = columns.map(col => {
+      const pref = prefMap.get(col.column_name);
+      return Object.assign({}, col, {
+        label: pref ? pref.label : null,
+        is_visible: pref ? !!pref.is_visible : true,
+        display_order: pref ? Number(pref.display_order) : Number(col.ordinal_position),
+        width: pref ? pref.width : null,
+      });
+    });
+
+    res.json({ success: true, data });
+  } catch (err) { next(err); }
+});
+
+router.post('/schema/tables/:table/columns', async (req, res, next) => {
+  try {
+    const tableName = req.params.table;
+    assertCustomizableTable(tableName);
+
+    const name = validateIdentifier(req.body.name, 'column');
+    const after = req.body.after ? validateIdentifier(req.body.after, 'after column') : null;
+    const nullable = req.body.nullable !== false;
+    const columnTypeSql = buildColumnTypeSql(req.body.type, req.body.length);
+    const nullSql = nullable ? 'NULL' : 'NOT NULL';
+    const defaultSql = buildDefaultSql(req.body.defaultValue);
+    const afterSql = after ? ' AFTER `' + after + '`' : '';
+
+    await sequelize.query(
+      `ALTER TABLE \`${tableName}\` ADD COLUMN \`${name}\` ${columnTypeSql} ${nullSql} ${defaultSql}${afterSql}`
+    );
+
+    await ensureCustomizationPrefsTable();
+    await sequelize.query(
+      `INSERT INTO ui_table_column_preferences (table_name, column_name, label, is_visible, display_order)
+       VALUES (?, ?, ?, 1, 999)
+       ON DUPLICATE KEY UPDATE label = VALUES(label), is_visible = VALUES(is_visible)`,
+      { replacements: [tableName, name, req.body.label || null] }
+    );
+
+    const columns = await getColumnMetadata(tableName);
+    res.status(201).json({ success: true, data: columns.find(c => c.column_name === name) || null });
+  } catch (err) { next(err); }
+});
+
+router.patch('/schema/tables/:table/columns/:column', async (req, res, next) => {
+  try {
+    const tableName = req.params.table;
+    assertCustomizableTable(tableName);
+
+    const currentColumn = validateIdentifier(req.params.column, 'column');
+    const newName = req.body.newName ? validateIdentifier(req.body.newName, 'new column') : currentColumn;
+
+    if (SYSTEM_COLUMN_DENYLIST.has(currentColumn)) {
+      return res.status(400).json({ success: false, message: 'System columns cannot be modified' });
+    }
+
+    const [existingRows] = await sequelize.query(
+      `SELECT COLUMN_NAME, COLUMN_KEY, EXTRA
+       FROM INFORMATION_SCHEMA.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+      { replacements: [tableName, currentColumn] }
+    );
+
+    if (!existingRows.length) {
+      return res.status(404).json({ success: false, message: 'Column not found' });
+    }
+
+    const existing = existingRows[0];
+    if (existing.COLUMN_KEY === 'PRI' || String(existing.EXTRA || '').includes('auto_increment')) {
+      return res.status(400).json({ success: false, message: 'Primary key columns cannot be modified' });
+    }
+
+    const columnTypeSql = buildColumnTypeSql(req.body.type, req.body.length);
+    const nullable = req.body.nullable !== false;
+    const nullSql = nullable ? 'NULL' : 'NOT NULL';
+    const defaultSql = buildDefaultSql(req.body.defaultValue);
+
+    await sequelize.query(
+      `ALTER TABLE \`${tableName}\` CHANGE COLUMN \`${currentColumn}\` \`${newName}\` ${columnTypeSql} ${nullSql} ${defaultSql}`
+    );
+
+    await ensureCustomizationPrefsTable();
+    if (newName !== currentColumn) {
+      await sequelize.query(
+        `UPDATE ui_table_column_preferences
+         SET column_name = ?
+         WHERE table_name = ? AND column_name = ?`,
+        { replacements: [newName, tableName, currentColumn] }
+      );
+    }
+
+    if (req.body.label !== undefined) {
+      await sequelize.query(
+        `INSERT INTO ui_table_column_preferences (table_name, column_name, label, is_visible, display_order)
+         VALUES (?, ?, ?, 1, 999)
+         ON DUPLICATE KEY UPDATE label = VALUES(label)`,
+        { replacements: [tableName, newName, req.body.label || null] }
+      );
+    }
+
+    const columns = await getColumnMetadata(tableName);
+    res.json({ success: true, data: columns.find(c => c.column_name === newName) || null });
+  } catch (err) { next(err); }
+});
+
+router.delete('/schema/tables/:table/columns/:column', async (req, res, next) => {
+  try {
+    const tableName = req.params.table;
+    assertCustomizableTable(tableName);
+    const column = validateIdentifier(req.params.column, 'column');
+
+    if (SYSTEM_COLUMN_DENYLIST.has(column)) {
+      return res.status(400).json({ success: false, message: 'System columns cannot be deleted' });
+    }
+
+    const [existingRows] = await sequelize.query(
+      `SELECT COLUMN_NAME, COLUMN_KEY, EXTRA
+       FROM INFORMATION_SCHEMA.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+      { replacements: [tableName, column] }
+    );
+
+    if (!existingRows.length) {
+      return res.status(404).json({ success: false, message: 'Column not found' });
+    }
+
+    const existing = existingRows[0];
+    if (existing.COLUMN_KEY === 'PRI' || String(existing.EXTRA || '').includes('auto_increment')) {
+      return res.status(400).json({ success: false, message: 'Primary key columns cannot be deleted' });
+    }
+
+    await sequelize.query(`ALTER TABLE \`${tableName}\` DROP COLUMN \`${column}\``);
+
+    await ensureCustomizationPrefsTable();
+    await sequelize.query(
+      `DELETE FROM ui_table_column_preferences WHERE table_name = ? AND column_name = ?`,
+      { replacements: [tableName, column] }
+    );
+
+    res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
+router.put('/schema/tables/:table/preferences', async (req, res, next) => {
+  try {
+    const tableName = req.params.table;
+    assertCustomizableTable(tableName);
+
+    const columns = Array.isArray(req.body.columns) ? req.body.columns : [];
+    await ensureCustomizationPrefsTable();
+
+    for (const c of columns) {
+      const colName = validateIdentifier(c.column_name, 'column');
+      const order = Number.isFinite(Number(c.display_order)) ? Number(c.display_order) : 0;
+      await sequelize.query(
+        `INSERT INTO ui_table_column_preferences
+          (table_name, column_name, label, is_visible, display_order, width)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+          label = VALUES(label),
+          is_visible = VALUES(is_visible),
+          display_order = VALUES(display_order),
+          width = VALUES(width)`,
+        {
+          replacements: [
+            tableName,
+            colName,
+            c.label || null,
+            c.is_visible === false ? 0 : 1,
+            order,
+            c.width || null,
+          ]
+        }
+      );
+    }
+
+    const [prefs] = await sequelize.query(
+      `SELECT column_name, label, is_visible, display_order, width
+       FROM ui_table_column_preferences
+       WHERE table_name = ?
+       ORDER BY display_order ASC, column_name ASC`,
+      { replacements: [tableName] }
+    );
+
+    res.json({ success: true, data: prefs });
   } catch (err) { next(err); }
 });
 

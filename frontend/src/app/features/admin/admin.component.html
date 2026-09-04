@@ -198,9 +198,113 @@
     </ng-container>
 
     <!-- ==============================================================
+         CUSTOMIZATION
+         ============================================================== -->
+    <ng-container *ngIf="activeTab==='customization'">
+      <div class="flex items-center justify-between mb-5">
+        <div>
+          <h2 style="margin-bottom:4px">Table Customization</h2>
+          <p class="text-muted text-sm">Add, rename, delete columns and configure visible columns per table</p>
+        </div>
+      </div>
+
+      <div class="card" style="padding:16px;margin-bottom:14px">
+        <div class="form-row" style="align-items:flex-end">
+          <div class="form-group" style="max-width:380px">
+            <label class="form-label">Table</label>
+            <select class="form-control" [(ngModel)]="selectedCustomizationTable" (change)="onCustomizationTableChange()">
+              <option value="">- Select table -</option>
+              <option *ngFor="let t of customizationTables" [ngValue]="t.table_name">{{t.table_name}}</option>
+            </select>
+          </div>
+          <div class="flex gap-2">
+            <button class="btn btn-secondary" [disabled]="!selectedCustomizationTable" (click)="loadTableColumns(selectedCustomizationTable)">
+              <span class="btn-icon">refresh</span> Refresh
+            </button>
+            <button class="btn btn-primary" [disabled]="!selectedCustomizationTable" (click)="openColumnModal()">
+              <span class="btn-icon">add</span> Add Column
+            </button>
+            <button class="btn btn-primary" [disabled]="!selectedCustomizationTable || schemaActionLoading" (click)="saveColumnPreferences()">
+              <span class="btn-icon">save</span> Save Visibility
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <ng-container *ngIf="!customizationLoading; else loadingTpl">
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Column</th>
+                <th>Type</th>
+                <th>Nullable</th>
+                <th>Default</th>
+                <th>Visible</th>
+                <th>Label</th>
+                <th>Order</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let c of customizationColumns; let i = index">
+                <td>
+                  <div class="font-bold text-sm">{{c.column_name}}</div>
+                  <div class="text-muted" style="font-size:0.72rem" *ngIf="c.is_protected">Protected</div>
+                </td>
+                <td><code style="font-size:0.78rem">{{c.column_type}}</code></td>
+                <td>
+                  <span class="badge" [style.background]="c.is_nullable==='YES' ? '#DBEAFE' : '#FEE2E2'"
+                        [style.color]="c.is_nullable==='YES' ? '#1D4ED8' : '#B91C1C'">
+                    {{c.is_nullable==='YES' ? 'Yes' : 'No'}}
+                  </span>
+                </td>
+                <td class="text-sm text-muted">{{c.column_default || 'NULL'}}</td>
+                <td>
+                  <input type="checkbox" [(ngModel)]="c.is_visible" [disabled]="c.is_system">
+                </td>
+                <td>
+                  <input class="form-control" [(ngModel)]="c.label" placeholder="Display label" style="min-width:160px">
+                </td>
+                <td>
+                  <div class="flex gap-1">
+                    <button class="btn btn-ghost btn-icon-only btn-sm" [disabled]="i===0" (click)="moveColumn(c, -1)">
+                      <span class="btn-icon" style="font-size:16px">arrow_upward</span>
+                    </button>
+                    <button class="btn btn-ghost btn-icon-only btn-sm" [disabled]="i===customizationColumns.length-1" (click)="moveColumn(c, 1)">
+                      <span class="btn-icon" style="font-size:16px">arrow_downward</span>
+                    </button>
+                  </div>
+                </td>
+                <td>
+                  <div class="flex gap-1">
+                    <button class="btn btn-ghost btn-icon-only btn-sm" [disabled]="c.is_protected" (click)="openColumnModal(c)">
+                      <span class="btn-icon" style="font-size:16px">edit</span>
+                    </button>
+                    <button class="btn btn-ghost btn-icon-only btn-sm" [disabled]="c.is_protected" (click)="deleteColumn(c)">
+                      <span class="btn-icon" style="font-size:16px;color:#EF4444">delete</span>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="empty-state" *ngIf="!customizationColumns.length && selectedCustomizationTable">
+            <span class="empty-icon">table_view</span>
+            <h3>No columns found</h3>
+          </div>
+          <div class="empty-state" *ngIf="!selectedCustomizationTable">
+            <span class="empty-icon">tune</span>
+            <h3>Select a table to customize</h3>
+          </div>
+        </div>
+      </ng-container>
+    </ng-container>
+
+    <!-- ==============================================================
          GENERIC CONFIG TABS
          ============================================================== -->
-    <ng-container *ngIf="activeTab!=='overview' && activeTab!=='users'">
+    <ng-container *ngIf="activeTab!=='overview' && activeTab!=='users' && activeTab!=='customization'">
       <div class="flex items-center justify-between mb-5">
         <div>
           <!-- FIX: activeTabLabel getter used instead of broken pipe chain -->
@@ -353,6 +457,74 @@
     </ng-container>
 
   </div><!-- /main -->
+</div>
+
+<!-- ================================================================
+     COLUMN CUSTOMIZATION MODAL
+     ================================================================ -->
+<div class="modal-overlay" *ngIf="showColumnModal" (click)="showColumnModal=false">
+  <div class="modal" style="max-width:520px" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h3>{{editingColumn ? 'Edit Column' : 'Add Column'}} - {{selectedCustomizationTable}}</h3>
+      <button class="btn btn-ghost btn-icon-only" (click)="showColumnModal=false">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Column Name *</label>
+        <input class="form-control" [(ngModel)]="columnForm.name" [disabled]="editingColumn?.is_protected">
+      </div>
+      <div class="form-row">
+        <div class="form-group" style="flex:2">
+          <label class="form-label">Type *</label>
+          <select class="form-control" [(ngModel)]="columnForm.type" [disabled]="editingColumn?.is_protected">
+            <option value="VARCHAR">VARCHAR</option>
+            <option value="CHAR">CHAR</option>
+            <option value="TEXT">TEXT</option>
+            <option value="LONGTEXT">LONGTEXT</option>
+            <option value="INT">INT</option>
+            <option value="BIGINT">BIGINT</option>
+            <option value="DECIMAL">DECIMAL</option>
+            <option value="FLOAT">FLOAT</option>
+            <option value="DOUBLE">DOUBLE</option>
+            <option value="DATE">DATE</option>
+            <option value="DATETIME">DATETIME</option>
+            <option value="TIMESTAMP">TIMESTAMP</option>
+            <option value="BOOLEAN">BOOLEAN</option>
+            <option value="JSON">JSON</option>
+          </select>
+        </div>
+        <div class="form-group" *ngIf="needsLength(columnForm.type)">
+          <label class="form-label">Length</label>
+          <input type="number" class="form-control" [(ngModel)]="columnForm.length" min="1"
+                 [disabled]="editingColumn?.is_protected">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group" style="display:flex;align-items:center;gap:10px;padding-top:28px">
+          <input type="checkbox" id="colNullable" [(ngModel)]="columnForm.nullable" [disabled]="editingColumn?.is_protected"
+                 style="width:16px;height:16px">
+          <label for="colNullable" style="font-weight:600;cursor:pointer">Nullable</label>
+        </div>
+        <div class="form-group" style="flex:2">
+          <label class="form-label">Default Value</label>
+          <input class="form-control" [(ngModel)]="columnForm.defaultValue" [disabled]="editingColumn?.is_protected"
+                 placeholder="Leave blank for NULL">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Display Label</label>
+        <input class="form-control" [(ngModel)]="columnForm.label" placeholder="Label shown in app tables">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" (click)="showColumnModal=false">Cancel</button>
+      <button class="btn btn-primary" (click)="saveColumn()" [disabled]="schemaActionLoading || editingColumn?.is_protected">
+        {{schemaActionLoading ? 'Saving...' : (editingColumn ? 'Save Changes' : 'Add Column')}}
+      </button>
+    </div>
+  </div>
 </div>
 
 <!-- Loading template -->

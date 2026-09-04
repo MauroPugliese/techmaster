@@ -12,7 +12,8 @@ import { ConfirmService } from '../../core/services/confirm.service';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
 
 type Tab = 'overview' | 'users' | 'operation-types' | 'shift-types' |
-           'asset-categories' | 'item-categories' | 'wiki-categories' | 'warehouse-locations';
+           'asset-categories' | 'item-categories' | 'wiki-categories' | 'warehouse-locations' |
+           'customization';
 
 @Component({
   selector: 'app-admin',
@@ -56,6 +57,16 @@ export class AdminComponent implements OnInit {
   editingItem: any = null;
   itemForm:    any = {};
 
+  // ── Schema customization ───────────────────────────────────────────────────
+  customizationTables: any[] = [];
+  selectedCustomizationTable = '';
+  customizationColumns: any[] = [];
+  customizationLoading = false;
+  schemaActionLoading = false;
+  showColumnModal = false;
+  editingColumn: any = null;
+  columnForm: any = this.emptyColumnForm();
+
   readonly tabs: { id: Tab; label: string; icon: string }[] = [
     { id: 'overview',            label: 'Overview',           icon: 'dashboard'          },
     { id: 'users',               label: 'Users',              icon: 'group'              },
@@ -65,6 +76,7 @@ export class AdminComponent implements OnInit {
     { id: 'item-categories',     label: 'Item Categories',    icon: 'inventory_2'        },
     { id: 'wiki-categories',     label: 'Wiki Categories',    icon: 'menu_book'          },
     { id: 'warehouse-locations', label: 'Locations',          icon: 'warehouse'          },
+    { id: 'customization',       label: 'Customization',      icon: 'tune'               },
   ];
 
   // Getter used in template to avoid complex pipe chains
@@ -89,6 +101,7 @@ export class AdminComponent implements OnInit {
     this.showUserModal = false;
     if (tab === 'overview')   this.loadOverview();
     else if (tab === 'users') this.loadUsers();
+    else if (tab === 'customization') this.loadCustomizationTables();
     else                      this.loadList(tab);
     this.cdr.markForCheck();
   }
@@ -329,6 +342,220 @@ export class AdminComponent implements OnInit {
     this.api.delete<any>(this.apiPath(this.activeTab) + '/' + item.id).subscribe({
       next: () => { this.loadList(this.activeTab); this.toast.success('Item deleted.'); },
       error: (e: any) => this.toast.error(e?.error?.message || 'Cannot delete this item.')
+    });
+  }
+
+  // ── Schema customization ───────────────────────────────────────────────────
+  private emptyColumnForm() {
+    return {
+      name: '',
+      type: 'VARCHAR',
+      length: 100,
+      nullable: true,
+      defaultValue: '',
+      label: ''
+    };
+  }
+
+  loadCustomizationTables(): void {
+    this.customizationLoading = true;
+    this.api.get<any>('/admin/schema/tables').subscribe({
+      next: r => {
+        this.customizationTables = r.data || [];
+        if (!this.selectedCustomizationTable && this.customizationTables.length) {
+          this.selectedCustomizationTable = this.customizationTables[0].table_name;
+        }
+        this.customizationLoading = false;
+        if (this.selectedCustomizationTable) {
+          this.loadTableColumns(this.selectedCustomizationTable);
+        }
+        this.cdr.markForCheck();
+      },
+      error: (e: any) => {
+        this.customizationLoading = false;
+        this.toast.error(e?.error?.message || 'Failed to load customizable tables.');
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  loadTableColumns(tableName: string): void {
+    if (!tableName) return;
+    this.customizationLoading = true;
+    this.api.get<any>('/admin/schema/tables/' + tableName + '/columns').subscribe({
+      next: r => {
+        const cols = r.data || [];
+        this.customizationColumns = cols.sort((a: any, b: any) =>
+          Number(a.display_order || a.ordinal_position) - Number(b.display_order || b.ordinal_position)
+        );
+        this.customizationLoading = false;
+        this.cdr.markForCheck();
+      },
+      error: (e: any) => {
+        this.customizationLoading = false;
+        this.toast.error(e?.error?.message || 'Failed to load table columns.');
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  onCustomizationTableChange(): void {
+    if (!this.selectedCustomizationTable) return;
+    this.loadTableColumns(this.selectedCustomizationTable);
+  }
+
+  openColumnModal(column?: any): void {
+    this.editingColumn = column ?? null;
+    this.columnForm = column ? {
+      name: column.column_name,
+      type: this.normalizeColumnType(column.data_type || column.column_type),
+      length: this.extractColumnLength(column.column_type),
+      nullable: column.is_nullable === 'YES',
+      defaultValue: column.column_default ?? '',
+      label: column.label || ''
+    } : this.emptyColumnForm();
+    this.showColumnModal = true;
+    this.cdr.markForCheck();
+  }
+
+  private normalizeColumnType(type: string): string {
+    const t = String(type || '').toUpperCase();
+    if (t.includes('INT')) return 'INT';
+    if (t.includes('VARCHAR')) return 'VARCHAR';
+    if (t.includes('CHAR')) return 'CHAR';
+    if (t.includes('TEXT')) return 'TEXT';
+    if (t.includes('LONGTEXT')) return 'LONGTEXT';
+    if (t.includes('DECIMAL')) return 'DECIMAL';
+    if (t.includes('BIGINT')) return 'BIGINT';
+    if (t.includes('FLOAT')) return 'FLOAT';
+    if (t.includes('DOUBLE')) return 'DOUBLE';
+    if (t.includes('DATETIME')) return 'DATETIME';
+    if (t.includes('TIMESTAMP')) return 'TIMESTAMP';
+    if (t.includes('DATE')) return 'DATE';
+    if (t.includes('JSON')) return 'JSON';
+    if (t.includes('BOOLEAN') || t.includes('TINYINT(1)')) return 'BOOLEAN';
+    return 'VARCHAR';
+  }
+
+  private extractColumnLength(columnType: string): number {
+    const m = String(columnType || '').match(/\((\d+)/);
+    return m ? Number(m[1]) : 100;
+  }
+
+  needsLength(type: string): boolean {
+    const t = String(type || '').toUpperCase();
+    return t === 'VARCHAR' || t === 'CHAR' || t === 'DECIMAL';
+  }
+
+  saveColumn(): void {
+    if (!this.selectedCustomizationTable) {
+      this.toast.warning('Select a table first.');
+      return;
+    }
+    if (!this.columnForm.name?.trim()) {
+      this.toast.warning('Column name is required.');
+      return;
+    }
+
+    this.schemaActionLoading = true;
+
+    const payload = {
+      name: this.columnForm.name,
+      newName: this.columnForm.name,
+      type: this.columnForm.type,
+      length: this.needsLength(this.columnForm.type) ? this.columnForm.length : null,
+      nullable: this.columnForm.nullable,
+      defaultValue: this.columnForm.defaultValue,
+      label: this.columnForm.label,
+    };
+
+    const req$ = this.editingColumn
+      ? this.api.patch<any>(
+          '/admin/schema/tables/' + this.selectedCustomizationTable + '/columns/' + this.editingColumn.column_name,
+          payload
+        )
+      : this.api.post<any>('/admin/schema/tables/' + this.selectedCustomizationTable + '/columns', payload);
+
+    req$.subscribe({
+      next: () => {
+        this.schemaActionLoading = false;
+        this.showColumnModal = false;
+        this.toast.success(this.editingColumn ? 'Column updated.' : 'Column added.');
+        this.loadTableColumns(this.selectedCustomizationTable);
+        this.cdr.markForCheck();
+      },
+      error: (e: any) => {
+        this.schemaActionLoading = false;
+        this.toast.error(e?.error?.message || 'Failed to save column.');
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  async deleteColumn(column: any): Promise<void> {
+    if (column.is_protected) {
+      this.toast.warning('Protected columns cannot be deleted.');
+      return;
+    }
+    const ok = await this.confirm.confirm(
+      'Delete column "' + column.column_name + '" from table "' + this.selectedCustomizationTable + '"? This cannot be undone.',
+      'Delete Column'
+    );
+    if (!ok) return;
+
+    this.schemaActionLoading = true;
+    this.api.delete<any>('/admin/schema/tables/' + this.selectedCustomizationTable + '/columns/' + column.column_name).subscribe({
+      next: () => {
+        this.schemaActionLoading = false;
+        this.toast.success('Column deleted.');
+        this.loadTableColumns(this.selectedCustomizationTable);
+      },
+      error: (e: any) => {
+        this.schemaActionLoading = false;
+        this.toast.error(e?.error?.message || 'Failed to delete column.');
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  moveColumn(column: any, direction: number): void {
+    const idx = this.customizationColumns.findIndex(c => c.column_name === column.column_name);
+    const nextIdx = idx + direction;
+    if (idx < 0 || nextIdx < 0 || nextIdx >= this.customizationColumns.length) return;
+    const clone = [...this.customizationColumns];
+    const current = clone[idx];
+    clone[idx] = clone[nextIdx];
+    clone[nextIdx] = current;
+    this.customizationColumns = clone.map((c, i) => ({ ...c, display_order: i + 1 }));
+    this.cdr.markForCheck();
+  }
+
+  saveColumnPreferences(): void {
+    if (!this.selectedCustomizationTable) return;
+    this.schemaActionLoading = true;
+
+    const payload = {
+      columns: this.customizationColumns.map((c, i) => ({
+        column_name: c.column_name,
+        label: c.label || null,
+        is_visible: c.is_visible !== false,
+        display_order: i + 1,
+        width: c.width || null,
+      }))
+    };
+
+    this.api.put<any>('/admin/schema/tables/' + this.selectedCustomizationTable + '/preferences', payload).subscribe({
+      next: () => {
+        this.schemaActionLoading = false;
+        this.toast.success('Column preferences saved.');
+        this.loadTableColumns(this.selectedCustomizationTable);
+        this.cdr.markForCheck();
+      },
+      error: (e: any) => {
+        this.schemaActionLoading = false;
+        this.toast.error(e?.error?.message || 'Failed to save preferences.');
+        this.cdr.markForCheck();
+      }
     });
   }
 }
