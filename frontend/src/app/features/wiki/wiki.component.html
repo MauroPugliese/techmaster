@@ -257,20 +257,32 @@
         <label class="form-label">Excerpt</label>
         <input class="form-control" [(ngModel)]="articleForm.excerpt" placeholder="Brief summary shown in article list">
       </div>
-      <div class="form-group" style="display:grid;grid-template-columns:1fr 120px;gap:12px;align-items:start">
-        <div>
+      <div class="form-group">
+        <div class="flex items-center justify-between" style="margin-bottom:8px">
           <label class="form-label">Content (Markdown supported) *</label>
-          <textarea class="form-control" [(ngModel)]="articleForm.content"
-                    style="min-height:300px;font-family:var(--font-mono);font-size:0.875rem"
-                    placeholder="# Heading&#10;&#10;Write your article content here..."></textarea>
+          <div class="flex gap-2">
+            <button class="btn btn-secondary btn-sm" type="button" (click)="insertMarkdownTemplate()">
+              <span class="btn-icon">description</span> Insert Template
+            </button>
+            <button class="btn btn-secondary btn-sm" type="button" (click)="showMarkdownLegend = !showMarkdownLegend">
+              <span class="btn-icon">menu_book</span>
+              {{ showMarkdownLegend ? 'Hide Legend' : 'Markdown Legend' }}
+            </button>
+            <button class="btn btn-secondary btn-sm" type="button" (click)="openPreviewDialog()">
+              <span class="btn-icon">open_in_new</span> Show Preview
+            </button>
+          </div>
         </div>
-        <div style="display:flex;flex-direction:column;gap:12px;margin-top:24px">
-          <button class="btn btn-secondary btn-sm" type="button" (click)="togglePreview()">
-            <span class="btn-icon">preview</span>
-            {{ showPreview ? 'Hide Preview' : 'Show Preview' }}
-          </button>
-          <div *ngIf="showPreview" class="card" style="background:var(--gray-50);padding:12px;min-height:300px;overflow:auto">
-            <div [innerHTML]="renderContent(articleForm.content || '')"></div>
+        <textarea class="form-control" [(ngModel)]="articleForm.content"
+                  style="min-height:320px;font-family:var(--font-mono);font-size:0.875rem"
+                  placeholder="# Heading&#10;&#10;Write your article content here..."></textarea>
+        <div *ngIf="showMarkdownLegend" class="card" style="margin-top:12px;background:var(--gray-50);padding:14px">
+          <div style="font-weight:700;font-size:0.9rem;color:var(--blue-900);margin-bottom:8px">Markdown Legend</div>
+          <div style="display:grid;grid-template-columns:220px 1fr;gap:8px 14px;align-items:center">
+            <ng-container *ngFor="let item of markdownLegend">
+              <code style="font-size:0.8rem;background:#e5e7eb;padding:3px 7px;border-radius:6px">{{item.syntax}}</code>
+              <span class="text-sm text-muted">{{item.description}}</span>
+            </ng-container>
           </div>
         </div>
       </div>
@@ -281,6 +293,27 @@
         <div class="spinner" *ngIf="saving" style="width:16px;height:16px;border-width:2px;border-top-color:#fff"></div>
         {{saving ? 'Saving…' : (editingArticle ? 'Update' : 'Publish')}}
       </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Markdown Preview Dialog ─────────────────────────────────────────────── -->
+<div class="modal-overlay" *ngIf="showPreviewDialog" (click)="closePreviewDialog($event)">
+  <div class="modal" style="max-width:1200px;max-height:92vh;width:min(96vw,1200px)">
+    <div class="modal-header">
+      <h3>Markdown Preview</h3>
+      <button class="btn btn-ghost btn-icon-only" (click)="closePreviewDialog()">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+    <div class="modal-body" style="overflow:auto;background:#f8fafc;padding:20px">
+      <div class="card wiki-content" style="max-width:100%;line-height:1.8;color:var(--blue-900);padding:24px 28px;min-height:420px">
+        <h2 style="margin-top:0;margin-bottom:14px">{{ articleForm.title || 'Untitled Article' }}</h2>
+        <div [innerHTML]="renderContent(articleForm.content || '')"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" (click)="closePreviewDialog()">Close</button>
     </div>
   </div>
 </div>

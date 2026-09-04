@@ -6,6 +6,8 @@ import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject } from 'rxjs';
 import { takeUntil, debounceTime, distinctUntilChanged } from 'rxjs/operators';
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 import { ApiService } from '../../core/services/services';
 import { WikiArticle, WikiCategory } from '../../core/models/interfaces';
 import { ToastService }   from '../../core/services/toast.service';
@@ -43,11 +45,28 @@ export class WikiComponent implements OnInit, OnDestroy {
   editingArticle:  WikiArticle | null = null;
   articleForm:     Partial<WikiArticle> = this.emptyArticle();
   articleTagsInput = '';
-  showPreview      = false;
+  showMarkdownLegend = true;
+  showPreviewDialog = false;
+  readonly markdownLegend = [
+    { syntax: '# Heading', description: 'Large section title' },
+    { syntax: '## Subheading', description: 'Secondary section title' },
+    { syntax: '**bold**', description: 'Bold text' },
+    { syntax: '*italic*', description: 'Italic text' },
+    { syntax: '- item', description: 'Bullet list item' },
+    { syntax: '1. item', description: 'Numbered list item' },
+    { syntax: '[label](https://example.com)', description: 'Link' },
+    { syntax: '`code`', description: 'Inline code' },
+    { syntax: '```\ncode block\n```', description: 'Code block' },
+    { syntax: '> quote', description: 'Blockquote' },
+    { syntax: '---', description: 'Horizontal divider' },
+    { syntax: '![alt text](https://image-url)', description: 'Image' }
+  ];
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef, private toast: ToastService, private confirm: ConfirmService,) {}
 
   ngOnInit(): void {
+    marked.setOptions({ gfm: true, breaks: true });
+
     this.api.get<any>('/wiki/categories').subscribe(res => {
       this.categories = res.data;
       this.cdr.markForCheck();
@@ -204,26 +223,54 @@ export class WikiComponent implements OnInit, OnDestroy {
   }
 
   renderContent(md: string): string {
-    if (!md) return '';
-
-    const safe = md
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-
-    return safe
-      .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-      .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-      .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.+?)\*/g, '<em>$1</em>')
-      .replace(/`(.+?)`/g, '<code>$1</code>')
-      .replace(/^- (.+)$/gm, '<li>$1</li>')
-      .replace(/\n\n/g, '</p><p>')
-      .replace(/^(?!<[h|l|p|u])(.+)$/gm, '<p>$1</p>');
+    if (!md?.trim()) return '';
+    const html = marked.parse(md, { async: false }) as string;
+    return DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
   }
 
-  
+  openPreviewDialog(): void {
+    const source = String(this.articleForm.content || '').trim();
+    if (!source) {
+      this.toast.info('Write some content first, then open preview.');
+      return;
+    }
+    this.showPreviewDialog = true;
+  }
+
+  closePreviewDialog(event?: MouseEvent): void {
+    if (!event) {
+      this.showPreviewDialog = false;
+      return;
+    }
+    if ((event.target as HTMLElement).classList.contains('modal-overlay')) {
+      this.showPreviewDialog = false;
+    }
+  }
+
+  insertMarkdownTemplate(): void {
+    if (String(this.articleForm.content || '').trim()) return;
+    this.articleForm.content = [
+      '# Overview',
+      '',
+      'Write a short summary of this article.',
+      '',
+      '## Steps',
+      '',
+      '1. First step',
+      '2. Second step',
+      '3. Final step',
+      '',
+      '## Notes',
+      '',
+      '- Important detail',
+      '- Risk or warning',
+      '',
+      '## References',
+      '',
+      '- [Official Documentation](https://example.com)'
+    ].join('\n');
+  }
+
   async exportCurrentArticle(format: 'xlsx' | 'pdf' | 'docx'): Promise<void> {
     if (!this.viewingArticle?.id) {
       this.toast.info('Open an article first to export it.');
@@ -246,10 +293,6 @@ export class WikiComponent implements OnInit, OnDestroy {
       this.toast.error('Wiki export failed.');
     }
   }
-  togglePreview(): void {
-    this.showPreview = !this.showPreview;
-  }
-
   getArticleStatusBadge(s: string): string {
     const m: Record<string,string> = { 'PUBLISHED':'badge-completed','DRAFT':'badge-planned','REVIEW':'badge-in-progress','ARCHIVED':'badge-cancelled' };
     return m[s] || 'badge-planned';
