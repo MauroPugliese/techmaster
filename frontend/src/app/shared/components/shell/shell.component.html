@@ -20,66 +20,66 @@
     <!-- Navigation -->
     <nav class="sidebar-nav">
 
-      <div class="nav-section-label">Overview</div>
+      <div class="nav-section-label" *ngIf="showNavSection('dashboard')">Overview</div>
 
-      <a class="nav-item" routerLink="/dashboard" routerLinkActive="active">
+      <a class="nav-item" routerLink="/dashboard" routerLinkActive="active" *ngIf="showNavSection('dashboard')">
         <span class="nav-icon">dashboard</span>
         <span class="nav-label">Dashboard</span>
       </a>
 
-      <div class="nav-section-label">Operations</div>
+      <div class="nav-section-label" *ngIf="showAnyNavSection(['operations','maintenance','warehouse','shifts'])">Operations</div>
 
-      <a class="nav-item" routerLink="/operations" routerLinkActive="active">
+      <a class="nav-item" routerLink="/operations" routerLinkActive="active" *ngIf="showNavSection('operations')">
         <span class="nav-icon">rocket_launch</span>
         <span class="nav-label">Operations & Sorties</span>
         <span class="nav-badge" *ngIf="activeOpsCount > 0">{{activeOpsCount}}</span>
       </a>
 
-      <a class="nav-item" routerLink="/maintenance" routerLinkActive="active">
+      <a class="nav-item" routerLink="/maintenance" routerLinkActive="active" *ngIf="showNavSection('maintenance')">
         <span class="nav-icon">build_circle</span>
         <span class="nav-label">Maintenance</span>
         <span class="nav-badge" *ngIf="pendingMaintCount > 0">{{pendingMaintCount}}</span>
       </a>
 
-      <a class="nav-item" routerLink="/warehouse" routerLinkActive="active">
+      <a class="nav-item" routerLink="/warehouse" routerLinkActive="active" *ngIf="showNavSection('warehouse')">
         <span class="nav-icon">inventory_2</span>
         <span class="nav-label">Warehouse</span>
         <span class="nav-badge" *ngIf="lowStockCount > 0">{{lowStockCount}}</span>
       </a>
 
-      <a class="nav-item" routerLink="/shifts" routerLinkActive="active">
+      <a class="nav-item" routerLink="/shifts" routerLinkActive="active" *ngIf="showNavSection('shifts')">
         <span class="nav-icon">schedule</span>
         <span class="nav-label">Shifts</span>
       </a>
 
-      <div class="nav-section-label">Intelligence</div>
+      <div class="nav-section-label" *ngIf="showAnyNavSection(['analytics','operations_analytics','tasks'])">Intelligence</div>
 
-      <a class="nav-item" routerLink="/analytics" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}">
+      <a class="nav-item" routerLink="/analytics" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}" *ngIf="showNavSection('analytics')">
         <span class="nav-icon">insights</span>
         <span class="nav-label">Analytics & Reports</span>
       </a>
 
-      <a class="nav-item" routerLink="/analytics/operations" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}">
+      <a class="nav-item" routerLink="/analytics/operations" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}" *ngIf="showNavSection('operations_analytics')">
         <span class="nav-icon">analytics</span>
         <span class="nav-label">Operations Analytics</span>
       </a>
 
-      <a class="nav-item" routerLink="/tasks" routerLinkActive="active">
+      <a class="nav-item" routerLink="/tasks" routerLinkActive="active" *ngIf="showNavSection('tasks')">
         <span class="nav-icon">task_alt</span>
         <span class="nav-label">Task Manager</span>
         <span class="nav-badge" *ngIf="openTasksCount > 0">{{openTasksCount}}</span>
       </a>
 
-      <div class="nav-section-label">Knowledge</div>
+      <div class="nav-section-label" *ngIf="showNavSection('wiki')">Knowledge</div>
 
-      <a class="nav-item" routerLink="/wiki" routerLinkActive="active">
+      <a class="nav-item" routerLink="/wiki" routerLinkActive="active" *ngIf="showNavSection('wiki')">
         <span class="nav-icon">menu_book</span>
         <span class="nav-label">Wiki & Docs</span>
       </a>
 
-      <div class="nav-section-label">Administration</div>
+      <div class="nav-section-label" *ngIf="showNavSection('admin')">Administration</div>
 
-      <a class="nav-item" routerLink="/admin" routerLinkActive="active">
+      <a class="nav-item" routerLink="/admin" routerLinkActive="active" *ngIf="showNavSection('admin')">
         <span class="nav-icon">admin_panel_settings</span>
         <span class="nav-label">Admin Settings</span>
       </a>

@@ -38,6 +38,8 @@
 
 ## ⚡ One-Command Quickstart
 
+For Synology NAS deployment, use the dedicated guide: [docs/synology-ds224-install.md](docs/synology-ds224-install.md).
+
 ```bash
 # 1. Clone / enter the project
 cd smart

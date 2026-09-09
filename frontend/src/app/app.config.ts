@@ -22,8 +22,8 @@ const appRoutes: Routes = [
     canActivate: [authGuard],
     children: [
       { path: 'admin', loadComponent: () => import('./features/admin/admin.component').then(m => m.AdminComponent) },
-      { path: 'dashboard',   loadComponent: () => import('./features/dashboard/dashboard.component').then(m => m.DashboardComponent) },
-      { path: 'operations',  loadComponent: () => import('./features/operations/operations.component').then(m => m.OperationsComponent) },
+      { path: 'dashboard', loadComponent: () => import('./features/dashboard/dashboard.component').then(m => m.DashboardComponent) },
+      { path: 'operations', loadComponent: () => import('./features/operations/operations.component').then(m => m.OperationsComponent) },
       {
         path: 'maintenance',
         children: [
@@ -31,12 +31,12 @@ const appRoutes: Routes = [
           { path: 'planned', loadComponent: () => import('./features/maintenance/planned/planned-maintenance-dashboard.component').then(m => m.PlannedMaintenanceDashboardComponent) }
         ]
       },
-      { path: 'warehouse',   loadComponent: () => import('./features/warehouse/warehouse.component').then(m => m.WarehouseComponent) },
-      { path: 'shifts',      loadComponent: () => import('./features/shifts/shifts.component').then(m => m.ShiftsComponent) },
-      { path: 'analytics',   loadComponent: () => import('./features/analytics/analytics.component').then(m => m.AnalyticsComponent) },
+      { path: 'warehouse', loadComponent: () => import('./features/warehouse/warehouse.component').then(m => m.WarehouseComponent) },
+      { path: 'shifts', loadComponent: () => import('./features/shifts/shifts.component').then(m => m.ShiftsComponent) },
       { path: 'analytics/operations', loadComponent: () => import('./features/operations-analytics/operations-analytics.component').then(m => m.OperationsAnalyticsComponent) },
-      { path: 'tasks',       loadComponent: () => import('./features/tasks/tasks.component').then(m => m.TasksComponent) },
-      { path: 'wiki',        loadComponent: () => import('./features/wiki/wiki.component').then(m => m.WikiComponent) },
+      { path: 'analytics', loadComponent: () => import('./features/analytics/analytics.component').then(m => m.AnalyticsComponent) },
+      { path: 'tasks', loadComponent: () => import('./features/tasks/tasks.component').then(m => m.TasksComponent) },
+      { path: 'wiki', loadComponent: () => import('./features/wiki/wiki.component').then(m => m.WikiComponent) },
     ]
   },
   { path: '**', redirectTo: '/dashboard' }

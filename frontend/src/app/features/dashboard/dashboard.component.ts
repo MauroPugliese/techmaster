@@ -4,8 +4,8 @@
 import { Component, OnInit, OnDestroy, AfterViewInit, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule, DatePipe, TitleCasePipe } from '@angular/common';
 import { RouterModule } from '@angular/router';
-import { Subject, combineLatest, interval } from 'rxjs';
-import { takeUntil, debounceTime } from 'rxjs/operators';
+import { Subject, combineLatest, interval, of } from 'rxjs';
+import { takeUntil, debounceTime, catchError, timeout } from 'rxjs/operators';
 import { Chart, registerables } from 'chart.js';
 
 import { ApiService } from '../../core/services/services';
@@ -77,18 +77,24 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     this.cdr.markForCheck();
 
     combineLatest([
-      this.api.get<any>('/dashboard/kpis', {}, this.dateFilter.currentRange),
-      this.api.get<any>('/dashboard/recent-activity')
+      this.api.get<any>('/dashboard/kpis', {}, this.dateFilter.currentRange).pipe(
+        timeout(10000),
+        catchError(() => of({ data: { kpis: this.emptyKpis(), opsTrend: [], taskTrend: [], maintenanceTrend: [] } }))
+      ),
+      this.api.get<any>('/dashboard/recent-activity').pipe(
+        timeout(10000),
+        catchError(() => of({ data: { operations: [], maintenance: [], tasks: [] } }))
+      )
     ]).subscribe({
       next: ([kpisRes, activityRes]) => {
-        this.kpis = kpisRes.data.kpis;
-        this.recentOps = activityRes.data.operations;
-        this.recentMaintenance = activityRes.data.maintenance;
+        this.kpis = kpisRes?.data?.kpis || this.emptyKpis();
+        this.recentOps = activityRes?.data?.operations || [];
+        this.recentMaintenance = activityRes?.data?.maintenance || [];
 
         this.updateCharts(
-          kpisRes.data.opsTrend,
-          kpisRes.data.taskTrend,
-          kpisRes.data.maintenanceTrend
+          kpisRes?.data?.opsTrend || [],
+          kpisRes?.data?.taskTrend || [],
+          kpisRes?.data?.maintenanceTrend || []
         );
         this.loading = false;
         this.cdr.markForCheck();
@@ -99,23 +105,56 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngAfterViewInit(): void {
     this.initCharts();
+    if (this.kpis) {
+      this.refreshDashboard();
+    }
   }
 
   private loadTodayShifts(): void {
     const today = new Date();
     const todayStr = today.toISOString().slice(0,10);
-    this.api.get<any>('/shifts', { from: todayStr, to: todayStr }).subscribe(res => {
-      this.todayShifts = res.data?.items?.slice(0, 6) || [];
-      this.cdr.markForCheck();
+    this.api.get<any>('/shifts', { from: todayStr, to: todayStr }).pipe(
+      timeout(10000),
+      catchError(() => of({ data: { items: [] } }))
+    ).subscribe({
+      next: res => {
+        this.todayShifts = res.data?.items?.slice(0, 6) || [];
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.todayShifts = [];
+        this.cdr.markForCheck();
+      }
     });
   }
 
   private loadLowStock(): void {
-    this.api.get<any>('/warehouse', { low_stock: true, limit: 100 }).subscribe(res => {
-      this.lowStockItems = res.data.items;
-      this.lowStockPage = 1;
-      this.cdr.markForCheck();
+    this.api.get<any>('/warehouse', { low_stock: true, limit: 100 }).pipe(
+      timeout(10000),
+      catchError(() => of({ data: { items: [] } }))
+    ).subscribe({
+      next: res => {
+        this.lowStockItems = res.data?.items || [];
+        this.lowStockPage = 1;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.lowStockItems = [];
+        this.lowStockPage = 1;
+        this.cdr.markForCheck();
+      }
     });
+  }
+
+  private emptyKpis(): DashboardKPIs {
+    return {
+      totalOps: 0,
+      activeOps: 0,
+      pendingMaint: 0,
+      lowStockCount: 0,
+      openTasks: 0,
+      activeUsers: 0
+    };
   }
 
   get pagedLowStockItems(): InventoryItem[] {

@@ -92,10 +92,18 @@ export class LoginComponent {
     this.loading = true;
     this.error   = '';
     this.auth.login({ email: this.email, password: this.password }).subscribe({
-      next: () => this.router.navigate(['/dashboard']),
+      next: () => {
+        this.loading = false;
+        this.router.navigate(['/dashboard']).catch(() => {
+          this.error = 'Login succeeded but navigation failed. Reload the page.';
+        });
+      },
       error: (err) => {
         this.loading = false;
-        this.error   = err?.error?.message || 'Invalid email or password';
+        const validationMessage = Array.isArray(err?.error?.errors) && err.error.errors.length
+          ? String(err.error.errors[0].message || '')
+          : '';
+        this.error = validationMessage || err?.error?.message || 'Invalid email or password';
       }
     });
   }
@@ -186,12 +194,30 @@ export class RegisterComponent {
     if (!first_name || !last_name || !username || !email || !password) {
       this.error = 'Please fill in all required fields'; return;
     }
-    if (password.length < 8) { this.error = 'Password must be at least 8 characters'; return; }
+    if (password.length < 8) {
+      this.error = 'Password must be at least 8 characters';
+      return;
+    }
+    if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(password)) {
+      this.error = 'Password must include uppercase, lowercase, and a number';
+      return;
+    }
 
     this.loading = true; this.error = '';
     this.auth.register(this.form).subscribe({
-      next: () => this.router.navigate(['/dashboard']),
-      error: (err) => { this.loading = false; this.error = err?.error?.message || 'Registration failed'; }
+      next: () => {
+        this.loading = false;
+        this.router.navigate(['/dashboard']).catch(() => {
+          this.error = 'Account created but navigation failed. Reload the page.';
+        });
+      },
+      error: (err) => {
+        this.loading = false;
+        const validationMessage = Array.isArray(err?.error?.errors) && err.error.errors.length
+          ? String(err.error.errors[0].message || '')
+          : '';
+        this.error = validationMessage || err?.error?.message || 'Registration failed';
+      }
     });
   }
 }
