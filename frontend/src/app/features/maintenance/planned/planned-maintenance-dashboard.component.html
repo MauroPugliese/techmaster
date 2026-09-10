@@ -83,9 +83,9 @@
          *ngIf="total > 0">
       <div class="table-page-size-control">
         <span class="text-sm text-muted">Showing {{(page-1)*pageSize+1}}–{{Math.min(page*pageSize,total)}} of {{total}}</span>
-        <select class="form-control table-page-size-select" [(ngModel)]="pageSize" (change)="onPageSizeChange()">
-          <option *ngFor="let size of pageSizeOptions" [ngValue]="size">{{size}}</option>
-        </select>
+        <app-dropdown class="form-control table-page-size-select" [(ngModel)]="pageSize" (change)="onPageSizeChange()" ariaLabel="Rows per page">
+          <app-dropdown-option *ngFor="let size of pageSizeOptions" [ngValue]="size">{{size}}</app-dropdown-option>
+        </app-dropdown>
       </div>
       <div class="flex gap-2">
         <button class="btn btn-secondary btn-sm" [disabled]="page <= 1" (click)="changePage(page-1)">
@@ -248,11 +248,11 @@
 
         <div *ngIf="editingScope === 'series' && showFormField('repeatTaskType')" class="form-group">
           <label class="form-label">{{fieldLabel('form','repeatTaskType','Repeat Type')}} *</label>
-          <select class="form-control" [(ngModel)]="form.repeatTaskType">
-            <option value="DAY">Every N Days</option>
-            <option value="WEEK">Every N Weeks</option>
-            <option value="MONTH">Every N Months</option>
-          </select>
+          <app-dropdown class="form-control" [(ngModel)]="form.repeatTaskType">
+            <app-dropdown-option value="DAY">Every N Days</app-dropdown-option>
+            <app-dropdown-option value="WEEK">Every N Weeks</app-dropdown-option>
+            <app-dropdown-option value="MONTH">Every N Months</app-dropdown-option>
+          </app-dropdown>
         </div>
 
         <div *ngIf="editingScope === 'series' && showFormField('repeatTaskNumber')" class="form-group">
@@ -297,10 +297,10 @@
 
         <div class="form-group" *ngIf="showFormField('status')">
           <label class="form-label">{{fieldLabel('form','status','Status')}}</label>
-          <select class="form-control" [(ngModel)]="form.status">
-            <option value="TODO">TODO</option>
-            <option value="DONE">DONE</option>
-          </select>
+          <app-dropdown class="form-control" [(ngModel)]="form.status">
+            <app-dropdown-option value="TODO">TODO</app-dropdown-option>
+            <app-dropdown-option value="DONE">DONE</app-dropdown-option>
+          </app-dropdown>
         </div>
 
         <div class="form-group" style="display:flex;align-items:center;gap:8px;padding-top:24px" *ngIf="showFormField('optional')">

@@ -180,9 +180,9 @@
             <span class="text-sm text-muted">
               Showing {{(userPage-1)*userPageSize+1}}–{{Math.min(userPage*userPageSize,userTotal)}} of {{userTotal}}
             </span>
-            <select class="form-control table-page-size-select" [(ngModel)]="userPageSize" (change)="onUserPageSizeChange()">
-              <option *ngFor="let size of userPageSizeOptions" [ngValue]="size">{{size}}</option>
-            </select>
+            <app-dropdown class="form-control table-page-size-select" [(ngModel)]="userPageSize" (change)="onUserPageSizeChange()" ariaLabel="Users per page">
+              <app-dropdown-option *ngFor="let size of userPageSizeOptions" [ngValue]="size">{{size}}</app-dropdown-option>
+            </app-dropdown>
           </div>
           <div class="flex gap-2">
             <button class="btn btn-secondary btn-sm" [disabled]="userPage <= 1" (click)="changeUserPage(userPage-1)">
@@ -235,10 +235,10 @@
         <div class="form-row" style="align-items:flex-end">
           <div class="form-group" style="max-width:380px">
             <label class="form-label">Table</label>
-            <select class="form-control" [(ngModel)]="selectedCustomizationTable" (change)="onCustomizationTableChange()">
-              <option value="">- Select table -</option>
-              <option *ngFor="let t of customizationTables" [ngValue]="t.table_name">{{t.table_name}}</option>
-            </select>
+            <app-dropdown class="form-control" [(ngModel)]="selectedCustomizationTable" (change)="onCustomizationTableChange()" placeholder="- Select table -">
+              <app-dropdown-option value="">- Select table -</app-dropdown-option>
+              <app-dropdown-option *ngFor="let t of customizationTables" [ngValue]="t.table_name">{{t.table_name}}</app-dropdown-option>
+            </app-dropdown>
           </div>
           <div class="flex gap-2">
             <button class="btn btn-secondary" [disabled]="!selectedCustomizationTable" (click)="loadTableColumns(selectedCustomizationTable)">
@@ -345,23 +345,23 @@
         <div class="form-row" style="align-items:flex-end;margin-bottom:14px">
           <div class="form-group" style="max-width:300px">
             <label class="form-label">Section</label>
-            <select class="form-control" [(ngModel)]="selectedUiSection" (change)="onUiSectionChange()">
-              <option *ngFor="let section of uiSections" [ngValue]="section">{{section}}</option>
-            </select>
+            <app-dropdown class="form-control" [(ngModel)]="selectedUiSection" (change)="onUiSectionChange()">
+              <app-dropdown-option *ngFor="let section of uiSections" [ngValue]="section">{{section}}</app-dropdown-option>
+            </app-dropdown>
           </div>
           <div class="form-group" style="max-width:200px">
             <label class="form-label">Scope</label>
-            <select class="form-control" [(ngModel)]="selectedUiScope" (change)="onUiScopeChange()">
-              <option value="table">Table Columns</option>
-              <option value="form">Form Fields</option>
-            </select>
+            <app-dropdown class="form-control" [(ngModel)]="selectedUiScope" (change)="onUiScopeChange()">
+              <app-dropdown-option value="table">Table Columns</app-dropdown-option>
+              <app-dropdown-option value="form">Form Fields</app-dropdown-option>
+            </app-dropdown>
           </div>
           <div class="form-group" style="max-width:220px">
             <label class="form-label">Role</label>
-            <select class="form-control" [(ngModel)]="selectedUiRole" (change)="onUiRoleChange()">
-              <option value="ALL">All Roles (Global)</option>
-              <option *ngFor="let r of roles" [ngValue]="r.name">{{r.name | titlecase}}</option>
-            </select>
+            <app-dropdown class="form-control" [(ngModel)]="selectedUiRole" (change)="onUiRoleChange()">
+              <app-dropdown-option value="ALL">All Roles (Global)</app-dropdown-option>
+              <app-dropdown-option *ngFor="let r of roles" [ngValue]="r.name">{{r.name | titlecase}}</app-dropdown-option>
+            </app-dropdown>
           </div>
         </div>
 
@@ -434,20 +434,20 @@
             </div>
             <div class="form-group" style="max-width:170px;margin-bottom:0">
               <label class="form-label">Visibility</label>
-              <select class="form-control" [(ngModel)]="uiPreviewVisibilityFilter">
-                <option value="visible">Visible</option>
-                <option value="hidden">Hidden</option>
-                <option value="all">All</option>
-              </select>
+              <app-dropdown class="form-control" [(ngModel)]="uiPreviewVisibilityFilter">
+                <app-dropdown-option value="visible">Visible</app-dropdown-option>
+                <app-dropdown-option value="hidden">Hidden</app-dropdown-option>
+                <app-dropdown-option value="all">All</app-dropdown-option>
+              </app-dropdown>
             </div>
             <div class="form-group" style="max-width:170px;margin-bottom:0">
               <label class="form-label">Source</label>
-              <select class="form-control" [(ngModel)]="uiPreviewSourceFilter">
-                <option value="all">All</option>
-                <option value="role">Role</option>
-                <option value="global">Global</option>
-                <option value="default">Default</option>
-              </select>
+              <app-dropdown class="form-control" [(ngModel)]="uiPreviewSourceFilter">
+                <app-dropdown-option value="all">All</app-dropdown-option>
+                <app-dropdown-option value="role">Role</app-dropdown-option>
+                <app-dropdown-option value="global">Global</app-dropdown-option>
+                <app-dropdown-option value="default">Default</app-dropdown-option>
+              </app-dropdown>
             </div>
             <button class="btn btn-secondary" style="height:40px" (click)="clearUiPreviewFilters()">
               <span class="btn-icon">filter_alt_off</span> Clear
@@ -623,9 +623,9 @@
               <span class="text-sm text-muted">
                 Showing {{(listPage-1)*listPageSize+1}}–{{Math.min(listPage*listPageSize,listData.length)}} of {{listData.length}}
               </span>
-              <select class="form-control table-page-size-select" [(ngModel)]="listPageSize" (change)="onListPageSizeChange()">
-                <option *ngFor="let size of listPageSizeOptions" [ngValue]="size">{{size}}</option>
-              </select>
+              <app-dropdown class="form-control table-page-size-select" [(ngModel)]="listPageSize" (change)="onListPageSizeChange()" ariaLabel="List rows per page">
+                <app-dropdown-option *ngFor="let size of listPageSizeOptions" [ngValue]="size">{{size}}</app-dropdown-option>
+              </app-dropdown>
             </div>
             <div class="flex gap-2">
               <button class="btn btn-secondary btn-sm" [disabled]="listPage <= 1" (click)="changeListPage(listPage-1)">
@@ -663,22 +663,22 @@
       <div class="form-row">
         <div class="form-group" style="flex:2">
           <label class="form-label">Type *</label>
-          <select class="form-control" [(ngModel)]="columnForm.type" [disabled]="editingColumn?.is_protected">
-            <option value="VARCHAR">VARCHAR</option>
-            <option value="CHAR">CHAR</option>
-            <option value="TEXT">TEXT</option>
-            <option value="LONGTEXT">LONGTEXT</option>
-            <option value="INT">INT</option>
-            <option value="BIGINT">BIGINT</option>
-            <option value="DECIMAL">DECIMAL</option>
-            <option value="FLOAT">FLOAT</option>
-            <option value="DOUBLE">DOUBLE</option>
-            <option value="DATE">DATE</option>
-            <option value="DATETIME">DATETIME</option>
-            <option value="TIMESTAMP">TIMESTAMP</option>
-            <option value="BOOLEAN">BOOLEAN</option>
-            <option value="JSON">JSON</option>
-          </select>
+          <app-dropdown class="form-control" [(ngModel)]="columnForm.type" [disabled]="editingColumn?.is_protected">
+            <app-dropdown-option value="VARCHAR">VARCHAR</app-dropdown-option>
+            <app-dropdown-option value="CHAR">CHAR</app-dropdown-option>
+            <app-dropdown-option value="TEXT">TEXT</app-dropdown-option>
+            <app-dropdown-option value="LONGTEXT">LONGTEXT</app-dropdown-option>
+            <app-dropdown-option value="INT">INT</app-dropdown-option>
+            <app-dropdown-option value="BIGINT">BIGINT</app-dropdown-option>
+            <app-dropdown-option value="DECIMAL">DECIMAL</app-dropdown-option>
+            <app-dropdown-option value="FLOAT">FLOAT</app-dropdown-option>
+            <app-dropdown-option value="DOUBLE">DOUBLE</app-dropdown-option>
+            <app-dropdown-option value="DATE">DATE</app-dropdown-option>
+            <app-dropdown-option value="DATETIME">DATETIME</app-dropdown-option>
+            <app-dropdown-option value="TIMESTAMP">TIMESTAMP</app-dropdown-option>
+            <app-dropdown-option value="BOOLEAN">BOOLEAN</app-dropdown-option>
+            <app-dropdown-option value="JSON">JSON</app-dropdown-option>
+          </app-dropdown>
         </div>
         <div class="form-group" *ngIf="needsLength(columnForm.type)">
           <label class="form-label">Length</label>
@@ -710,26 +710,26 @@
         <div class="form-row" style="align-items:flex-end;margin-bottom:14px">
           <div class="form-group" style="max-width:220px">
             <label class="form-label">Target</label>
-            <select class="form-control" [(ngModel)]="accessTarget" (change)="onAccessTargetChange()">
-              <option value="global">All Users</option>
-              <option value="role">Specific Role</option>
-              <option value="user">Specific User</option>
-            </select>
+            <app-dropdown class="form-control" [(ngModel)]="accessTarget" (change)="onAccessTargetChange()">
+              <app-dropdown-option value="global">All Users</app-dropdown-option>
+              <app-dropdown-option value="role">Specific Role</app-dropdown-option>
+              <app-dropdown-option value="user">Specific User</app-dropdown-option>
+            </app-dropdown>
           </div>
           <div class="form-group" style="max-width:220px" *ngIf="accessTarget==='role'">
             <label class="form-label">Role</label>
-            <select class="form-control" [(ngModel)]="selectedAccessRole" (change)="onAccessRoleChange()">
-              <option *ngFor="let r of roles" [ngValue]="r.name">{{r.name | titlecase}}</option>
-            </select>
+            <app-dropdown class="form-control" [(ngModel)]="selectedAccessRole" (change)="onAccessRoleChange()">
+              <app-dropdown-option *ngFor="let r of roles" [ngValue]="r.name">{{r.name | titlecase}}</app-dropdown-option>
+            </app-dropdown>
           </div>
           <div class="form-group" style="min-width:320px" *ngIf="accessTarget==='user'">
             <label class="form-label">User</label>
-            <select class="form-control" [(ngModel)]="selectedAccessUserId" (change)="onAccessUserChange()">
-              <option [ngValue]="null">- Select user -</option>
-              <option *ngFor="let u of accessUsers" [ngValue]="u.id">
+            <app-dropdown class="form-control" [(ngModel)]="selectedAccessUserId" (change)="onAccessUserChange()" placeholder="- Select user -">
+              <app-dropdown-option [ngValue]="null">- Select user -</app-dropdown-option>
+              <app-dropdown-option *ngFor="let u of accessUsers" [ngValue]="u.id">
                 {{u.first_name}} {{u.last_name}} ({{u.username}} · {{u.role?.name | titlecase}})
-              </option>
-            </select>
+              </app-dropdown-option>
+            </app-dropdown>
           </div>
           <div class="flex gap-2">
             <button class="btn btn-secondary" (click)="loadSectionAccessPreferences()" [disabled]="accessUsersLoading">
@@ -862,10 +862,10 @@
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Role *</label>
-          <select class="form-control" [(ngModel)]="userForm.role_id">
-            <option [ngValue]="null">— Select role —</option>
-            <option *ngFor="let r of roles" [ngValue]="r.id">{{r.name | titlecase}}</option>
-          </select>
+          <app-dropdown class="form-control" [(ngModel)]="userForm.role_id" placeholder="— Select role —">
+            <app-dropdown-option [ngValue]="null">— Select role —</app-dropdown-option>
+            <app-dropdown-option *ngFor="let r of roles" [ngValue]="r.id">{{r.name | titlecase}}</app-dropdown-option>
+          </app-dropdown>
         </div>
         <div class="form-group">
           <label class="form-label">Password {{editingUser ? '(blank = keep current)' : '*'}}</label>
@@ -1021,12 +1021,12 @@
         </div>
         <div class="form-group">
           <label class="form-label">Type</label>
-          <select class="form-control" [(ngModel)]="itemForm.type">
-            <option value="HARDWARE">Hardware</option>
-            <option value="SOFTWARE">Software</option>
-            <option value="NETWORK">Network</option>
-            <option value="OTHER">Other</option>
-          </select>
+          <app-dropdown class="form-control" [(ngModel)]="itemForm.type">
+            <app-dropdown-option value="HARDWARE">Hardware</app-dropdown-option>
+            <app-dropdown-option value="SOFTWARE">Software</app-dropdown-option>
+            <app-dropdown-option value="NETWORK">Network</app-dropdown-option>
+            <app-dropdown-option value="OTHER">Other</app-dropdown-option>
+          </app-dropdown>
         </div>
         <div class="form-group">
           <label class="form-label">Description</label>

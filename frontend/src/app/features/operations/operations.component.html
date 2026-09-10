@@ -15,23 +15,23 @@
       </div>
 
       <!-- Status Filter -->
-      <select class="form-control" style="width:160px" [(ngModel)]="statusFilter" (change)="loadOperations()">
-        <option value="">All Statuses</option>
-        <option value="PLANNED">Planned</option>
-        <option value="IN_PROGRESS">In Progress</option>
-        <option value="COMPLETED">Completed</option>
-        <option value="CANCELLED">Cancelled</option>
-        <option value="ON_HOLD">On Hold</option>
-      </select>
+      <app-dropdown class="form-control select-w-160" [(ngModel)]="statusFilter" (change)="loadOperations()" placeholder="All Statuses">
+        <app-dropdown-option value="">All Statuses</app-dropdown-option>
+        <app-dropdown-option value="PLANNED">Planned</app-dropdown-option>
+        <app-dropdown-option value="IN_PROGRESS">In Progress</app-dropdown-option>
+        <app-dropdown-option value="COMPLETED">Completed</app-dropdown-option>
+        <app-dropdown-option value="CANCELLED">Cancelled</app-dropdown-option>
+        <app-dropdown-option value="ON_HOLD">On Hold</app-dropdown-option>
+      </app-dropdown>
 
       <!-- Priority Filter -->
-      <select class="form-control" style="width:140px" [(ngModel)]="priorityFilter" (change)="loadOperations()">
-        <option value="">All Priorities</option>
-        <option value="LOW">Low</option>
-        <option value="MEDIUM">Medium</option>
-        <option value="HIGH">High</option>
-        <option value="CRITICAL">Critical</option>
-      </select>
+      <app-dropdown class="form-control select-w-140" [(ngModel)]="priorityFilter" (change)="loadOperations()" placeholder="All Priorities">
+        <app-dropdown-option value="">All Priorities</app-dropdown-option>
+        <app-dropdown-option value="LOW">Low</app-dropdown-option>
+        <app-dropdown-option value="MEDIUM">Medium</app-dropdown-option>
+        <app-dropdown-option value="HIGH">High</app-dropdown-option>
+        <app-dropdown-option value="CRITICAL">Critical</app-dropdown-option>
+      </app-dropdown>
 
     </div>
 
@@ -161,9 +161,9 @@
     <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-top:1px solid var(--border)" *ngIf="total > 0">
       <div class="table-page-size-control">
         <span class="text-sm text-muted">Showing {{(page-1)*pageSize+1}}–{{Math.min(page*pageSize,total)}} of {{total}}</span>
-        <select class="form-control table-page-size-select" [(ngModel)]="pageSize" (change)="onPageSizeChange()">
-          <option *ngFor="let size of pageSizeOptions" [ngValue]="size">{{size}}</option>
-        </select>
+        <app-dropdown class="form-control table-page-size-select" [(ngModel)]="pageSize" (change)="onPageSizeChange()" ariaLabel="Rows per page">
+          <app-dropdown-option *ngFor="let size of pageSizeOptions" [ngValue]="size">{{size}}</app-dropdown-option>
+        </app-dropdown>
       </div>
       <div class="flex gap-2">
         <button class="btn btn-secondary btn-sm" [disabled]="page <= 1" (click)="changePage(page-1)">
@@ -197,28 +197,28 @@
         </div>
         <div class="form-group" *ngIf="showFormField('type_id')">
           <label class="form-label">{{fieldLabel('form','type_id','Type')}} *</label>
-          <select class="form-control" [(ngModel)]="form.type_id">
-            <option *ngFor="let t of opTypes" [value]="t.id">{{t.name}}</option>
-          </select>
+          <app-dropdown class="form-control" [(ngModel)]="form.type_id" placeholder="Select type">
+            <app-dropdown-option *ngFor="let t of opTypes" [value]="t.id">{{t.name}}</app-dropdown-option>
+          </app-dropdown>
         </div>
         <div class="form-group" *ngIf="showFormField('priority')">
           <label class="form-label">{{fieldLabel('form','priority','Priority')}}</label>
-          <select class="form-control" [(ngModel)]="form.priority">
-            <option value="LOW">Low</option>
-            <option value="MEDIUM">Medium</option>
-            <option value="HIGH">High</option>
-            <option value="CRITICAL">Critical</option>
-          </select>
+          <app-dropdown class="form-control" [(ngModel)]="form.priority">
+            <app-dropdown-option value="LOW">Low</app-dropdown-option>
+            <app-dropdown-option value="MEDIUM">Medium</app-dropdown-option>
+            <app-dropdown-option value="HIGH">High</app-dropdown-option>
+            <app-dropdown-option value="CRITICAL">Critical</app-dropdown-option>
+          </app-dropdown>
         </div>
         <div class="form-group" *ngIf="showFormField('status')">
           <label class="form-label">{{fieldLabel('form','status','Status')}}</label>
-          <select class="form-control" [(ngModel)]="form.status">
-            <option value="PLANNED">Planned</option>
-            <option value="IN_PROGRESS">In Progress</option>
-            <option value="COMPLETED">Completed</option>
-            <option value="CANCELLED">Cancelled</option>
-            <option value="ON_HOLD">On Hold</option>
-          </select>
+          <app-dropdown class="form-control" [(ngModel)]="form.status">
+            <app-dropdown-option value="PLANNED">Planned</app-dropdown-option>
+            <app-dropdown-option value="IN_PROGRESS">In Progress</app-dropdown-option>
+            <app-dropdown-option value="COMPLETED">Completed</app-dropdown-option>
+            <app-dropdown-option value="CANCELLED">Cancelled</app-dropdown-option>
+            <app-dropdown-option value="ON_HOLD">On Hold</app-dropdown-option>
+          </app-dropdown>
         </div>
         <div class="form-group" *ngIf="showFormField('location')">
           <label class="form-label">{{fieldLabel('form','location','Location')}}</label>

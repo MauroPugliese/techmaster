@@ -34,10 +34,10 @@
         <span class="search-icon">search</span>
         <input placeholder="Search items..." [(ngModel)]="search" (input)="applyFilters()">
       </div>
-      <select class="form-control" style="width:220px" [(ngModel)]="categoryFilter" (change)="applyFilters()">
-        <option [ngValue]="''">All Categories</option>
-        <option *ngFor="let c of categories" [ngValue]="c.id">{{c.name}}</option>
-      </select>
+      <app-dropdown class="form-control select-w-220" [(ngModel)]="categoryFilter" (change)="applyFilters()" placeholder="All Categories">
+        <app-dropdown-option [ngValue]="''">All Categories</app-dropdown-option>
+        <app-dropdown-option *ngFor="let c of categories" [ngValue]="c.id">{{c.name}}</app-dropdown-option>
+      </app-dropdown>
       <button class="btn btn-secondary btn-sm"
               [class.btn-primary]="lowStockOnly"
               (click)="toggleLowStock()">
@@ -138,9 +138,9 @@
          *ngIf="total > 0">
       <div class="table-page-size-control">
         <span class="text-sm text-muted">Showing {{(page-1)*pageSize+1}}–{{Math.min(page*pageSize,total)}} of {{total}}</span>
-        <select class="form-control table-page-size-select" [(ngModel)]="pageSize" (change)="onPageSizeChange()">
-          <option *ngFor="let size of pageSizeOptions" [ngValue]="size">{{size}}</option>
-        </select>
+        <app-dropdown class="form-control table-page-size-select" [(ngModel)]="pageSize" (change)="onPageSizeChange()" ariaLabel="Rows per page">
+          <app-dropdown-option *ngFor="let size of pageSizeOptions" [ngValue]="size">{{size}}</app-dropdown-option>
+        </app-dropdown>
       </div>
       <div class="flex gap-2">
         <button class="btn btn-secondary btn-sm" [disabled]="page <= 1" (click)="changePage(page-1)">
@@ -173,10 +173,10 @@
       <!-- Category — [ngValue] preserves numeric ID -->
       <div class="form-group" *ngIf="showFormField('category_id')">
         <label class="form-label">{{fieldLabel('form','category_id','Category')}} *</label>
-        <select class="form-control" [(ngModel)]="itemForm.category_id">
-          <option [ngValue]="null">— Select category —</option>
-          <option *ngFor="let c of categories" [ngValue]="c.id">{{c.name}}</option>
-        </select>
+        <app-dropdown class="form-control" [(ngModel)]="itemForm.category_id" placeholder="— Select category —">
+          <app-dropdown-option [ngValue]="null">— Select category —</app-dropdown-option>
+          <app-dropdown-option *ngFor="let c of categories" [ngValue]="c.id">{{c.name}}</app-dropdown-option>
+        </app-dropdown>
         <div *ngIf="categories.length === 0"
              style="font-size:0.75rem;color:#F59E0B;margin-top:4px">
           ⚠ No categories found — check the database seed data.
@@ -346,9 +346,9 @@
              *ngIf="itemHistory.length > 0">
           <div class="table-page-size-control">
             <span class="text-sm text-muted">Page {{historyPage}} of {{historyTotalPages}}</span>
-            <select class="form-control table-page-size-select" [(ngModel)]="historyPageSize" (change)="onHistoryPageSizeChange()">
-              <option *ngFor="let size of historyPageSizeOptions" [ngValue]="size">{{size}}</option>
-            </select>
+            <app-dropdown class="form-control table-page-size-select" [(ngModel)]="historyPageSize" (change)="onHistoryPageSizeChange()" ariaLabel="History rows per page">
+              <app-dropdown-option *ngFor="let size of historyPageSizeOptions" [ngValue]="size">{{size}}</app-dropdown-option>
+            </app-dropdown>
           </div>
           <div class="flex gap-2">
             <button class="btn btn-secondary btn-sm" [disabled]="historyPage <= 1" (click)="changeHistoryPage(historyPage-1)">

@@ -15,11 +15,12 @@ import { ConfirmService }   from '../../core/services/confirm.service';
 import { MaintenanceRecord, Asset } from '../../core/models/interfaces';
 import { OwlDateTimeModule, OwlNativeDateTimeModule } from '@danielmoncada/angular-datetime-picker';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
+import { DropdownComponent, DropdownOptionComponent } from '../../shared/components/dropdown/dropdown.component';
 
 @Component({
   selector: 'app-maintenance',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, TitleCasePipe, RouterLink, OwlDateTimeModule, OwlNativeDateTimeModule, ExportMenuComponent],
+  imports: [CommonModule, FormsModule, DatePipe, TitleCasePipe, RouterLink, OwlDateTimeModule, OwlNativeDateTimeModule, ExportMenuComponent, DropdownComponent, DropdownOptionComponent],
   templateUrl: './maintenance.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })

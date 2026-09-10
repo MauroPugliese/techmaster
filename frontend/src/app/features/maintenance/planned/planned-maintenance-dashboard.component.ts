@@ -14,11 +14,12 @@ import { ConfirmService } from '../../../core/services/services';
 import { UiCustomizationService, UiSectionPreferences } from '../../../core/services/services';
 import { OwlDateTimeModule, OwlNativeDateTimeModule } from '@danielmoncada/angular-datetime-picker';
 import { ExportMenuComponent } from '../../../shared/components/export-menu/export-menu.component';
+import { DropdownComponent, DropdownOptionComponent } from '../../../shared/components/dropdown/dropdown.component';
 
 @Component({
   selector: 'app-planned-maintenance-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule, OwlDateTimeModule, OwlNativeDateTimeModule, ExportMenuComponent],
+  imports: [CommonModule, FormsModule, OwlDateTimeModule, OwlNativeDateTimeModule, ExportMenuComponent, DropdownComponent, DropdownOptionComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './planned-maintenance-dashboard.component.html',
   styleUrls: ['./planned-maintenance-dashboard.component.scss']

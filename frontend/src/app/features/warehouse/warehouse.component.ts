@@ -13,11 +13,12 @@ import { ToastService }     from '../../core/services/toast.service';
 import { ConfirmService }   from '../../core/services/confirm.service';
 import { InventoryItem, MovementType, StockMovement } from '../../core/models/interfaces';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
+import { DropdownComponent, DropdownOptionComponent } from '../../shared/components/dropdown/dropdown.component';
 
 @Component({
   selector: 'app-warehouse',
   standalone: true,
-  imports: [CommonModule, FormsModule, DecimalPipe, ExportMenuComponent],
+  imports: [CommonModule, FormsModule, DecimalPipe, ExportMenuComponent, DropdownComponent, DropdownOptionComponent],
   templateUrl: './warehouse.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })

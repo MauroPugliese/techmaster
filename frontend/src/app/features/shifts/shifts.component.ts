@@ -14,11 +14,12 @@ import { ToastService }     from '../../core/services/toast.service';
 import { ConfirmService }   from '../../core/services/confirm.service';
 import { Shift, ShiftType } from '../../core/models/interfaces';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
+import { DropdownComponent, DropdownOptionComponent } from '../../shared/components/dropdown/dropdown.component';
 
 @Component({
   selector: 'app-shifts',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, OwlDateTimeModule, OwlNativeDateTimeModule, ExportMenuComponent],
+  imports: [CommonModule, FormsModule, DatePipe, OwlDateTimeModule, OwlNativeDateTimeModule, ExportMenuComponent, DropdownComponent, DropdownOptionComponent],
   template: `
 <div class="shifts-page fade-in">
 
@@ -116,9 +117,9 @@ import { ExportMenuComponent } from '../../shared/components/export-menu/export-
     <div class="flex items-center justify-between mt-4" *ngIf="employeeTotal > 0">
       <div class="flex items-center gap-3">
         <div class="text-sm text-muted">Page {{employeePage}} of {{pageCount()}}</div>
-        <select class="form-control" style="min-width:96px;height:32px;padding:4px 12px;margin-left:8px" [(ngModel)]="employeeLimit" (change)="onEmployeeLimitChange()">
-          <option *ngFor="let size of employeeLimitOptions" [ngValue]="size">{{size}}</option>
-        </select>
+        <app-dropdown class="form-control select-compact ml-2" [(ngModel)]="employeeLimit" (change)="onEmployeeLimitChange()" ariaLabel="Employees per page">
+          <app-dropdown-option *ngFor="let size of employeeLimitOptions" [ngValue]="size">{{size}}</app-dropdown-option>
+        </app-dropdown>
       </div>
       <div class="flex gap-2">
         <button class="btn btn-ghost btn-sm" type="button" (click)="prevPage()" [disabled]="employeePage === 1">Previous</button>
@@ -143,20 +144,20 @@ import { ExportMenuComponent } from '../../shared/components/export-menu/export-
     <div class="modal-body">
       <div class="form-group" *ngIf="showFormField('user_id')">
         <label class="form-label">{{fieldLabel('form','user_id','Employee')}} *</label>
-        <select class="form-control" [(ngModel)]="shiftForm.user_id">
-          <option [ngValue]="null">— Select employee —</option>
-          <option *ngFor="let e of employees" [ngValue]="e.id">
+        <app-dropdown class="form-control" [(ngModel)]="shiftForm.user_id" placeholder="— Select employee —">
+          <app-dropdown-option [ngValue]="null">— Select employee —</app-dropdown-option>
+          <app-dropdown-option *ngFor="let e of employees" [ngValue]="e.id">
             {{e.first_name}} {{e.last_name}}
-          </option>
-        </select>
+          </app-dropdown-option>
+        </app-dropdown>
       </div>
       <div class="form-row">
         <div class="form-group" *ngIf="showFormField('shift_type_id')">
           <label class="form-label">{{fieldLabel('form','shift_type_id','Shift Type')}} *</label>
-          <select class="form-control" [(ngModel)]="shiftForm.shift_type_id">
-            <option [ngValue]="null">— Select type —</option>
-            <option *ngFor="let st of shiftTypes" [ngValue]="st.id">{{st.name}} ({{st.code}})</option>
-          </select>
+          <app-dropdown class="form-control" [(ngModel)]="shiftForm.shift_type_id" placeholder="— Select type —">
+            <app-dropdown-option [ngValue]="null">— Select type —</app-dropdown-option>
+            <app-dropdown-option *ngFor="let st of shiftTypes" [ngValue]="st.id">{{st.name}} ({{st.code}})</app-dropdown-option>
+          </app-dropdown>
         </div>
         <div class="form-group" *ngIf="showFormField('date')">
           <label class="form-label">{{fieldLabel('form','date','Date')}} *</label>
@@ -173,14 +174,14 @@ import { ExportMenuComponent } from '../../shared/components/export-menu/export-
       </div>
       <div class="form-group" *ngIf="showFormField('status')">
         <label class="form-label">{{fieldLabel('form','status','Status')}}</label>
-        <select class="form-control" [(ngModel)]="shiftForm.status">
-          <option value="SCHEDULED">Scheduled</option>
-          <option value="CONFIRMED">Confirmed</option>
-          <option value="IN_PROGRESS">In Progress</option>
-          <option value="COMPLETED">Completed</option>
-          <option value="ABSENT">Absent</option>
-          <option value="SWAPPED">Swapped</option>
-        </select>
+        <app-dropdown class="form-control" [(ngModel)]="shiftForm.status">
+          <app-dropdown-option value="SCHEDULED">Scheduled</app-dropdown-option>
+          <app-dropdown-option value="CONFIRMED">Confirmed</app-dropdown-option>
+          <app-dropdown-option value="IN_PROGRESS">In Progress</app-dropdown-option>
+          <app-dropdown-option value="COMPLETED">Completed</app-dropdown-option>
+          <app-dropdown-option value="ABSENT">Absent</app-dropdown-option>
+          <app-dropdown-option value="SWAPPED">Swapped</app-dropdown-option>
+        </app-dropdown>
       </div>
       <div class="form-group" *ngIf="showFormField('notes')">
         <label class="form-label">{{fieldLabel('form','notes','Notes')}}</label>

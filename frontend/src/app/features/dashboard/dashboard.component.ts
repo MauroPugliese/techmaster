@@ -3,6 +3,7 @@
 // =============================================================================
 import { Component, OnInit, OnDestroy, AfterViewInit, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule, DatePipe, TitleCasePipe } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { Subject, combineLatest, interval, of } from 'rxjs';
 import { takeUntil, debounceTime, catchError, timeout } from 'rxjs/operators';
@@ -13,13 +14,14 @@ import { DateFilterService } from '../../core/services/services';
 import { UiCustomizationService, UiSectionPreferences } from '../../core/services/services';
 import { DashboardKPIs, Operation, MaintenanceRecord, Shift, InventoryItem } from '../../core/models/interfaces';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
+import { DropdownComponent, DropdownOptionComponent } from '../../shared/components/dropdown/dropdown.component';
 
 Chart.register(...registerables);
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, RouterModule, DatePipe, TitleCasePipe, ExportMenuComponent],
+  imports: [CommonModule, FormsModule, RouterModule, DatePipe, TitleCasePipe, ExportMenuComponent, DropdownComponent, DropdownOptionComponent],
   templateUrl: './dashboard.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })

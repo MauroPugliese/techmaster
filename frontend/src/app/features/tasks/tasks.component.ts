@@ -24,6 +24,7 @@ import { UiCustomizationService, UiSectionPreferences } from '../../core/service
 import { Task, IntervalType, TaskStatus, Priority } from '../../core/models/interfaces';
 import { OwlDateTimeModule, OwlNativeDateTimeModule } from '@danielmoncada/angular-datetime-picker';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
+import { DropdownComponent, DropdownOptionComponent } from '../../shared/components/dropdown/dropdown.component';
 
 interface Column { status: TaskStatus; label: string; color: string; icon: string; }
 type   SortKey  = 'due' | 'priority' | 'created' | 'title';
@@ -39,7 +40,7 @@ const LS_SORT    = 'tasks.sort.v1';
   imports: [
     CommonModule, FormsModule, DatePipe,
     OwlDateTimeModule, OwlNativeDateTimeModule,
-    ExportMenuComponent, DragDropModule
+    ExportMenuComponent, DragDropModule, DropdownComponent, DropdownOptionComponent
   ],
   templateUrl: './tasks.component.html',
   styleUrls:   ['./tasks.component.scss'],

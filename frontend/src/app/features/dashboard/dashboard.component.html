@@ -262,9 +262,9 @@
          *ngIf="lowStockItems.length > 0">
         <div class="table-page-size-control">
           <span class="text-sm text-muted">Showing {{(lowStockPage-1)*lowStockPageSize+1}}–{{Math.min(lowStockPage*lowStockPageSize,lowStockItems.length)}} of {{lowStockItems.length}}</span>
-          <select class="form-control table-page-size-select" [(ngModel)]="lowStockPageSize" (change)="onLowStockPageSizeChange()">
-            <option *ngFor="let size of lowStockPageSizeOptions" [ngValue]="size">{{size}}</option>
-          </select>
+          <app-dropdown class="form-control table-page-size-select" [(ngModel)]="lowStockPageSize" (change)="onLowStockPageSizeChange()" ariaLabel="Low stock rows per page">
+            <app-dropdown-option *ngFor="let size of lowStockPageSizeOptions" [ngValue]="size">{{size}}</app-dropdown-option>
+          </app-dropdown>
         </div>
         <div class="flex gap-2">
           <button class="btn btn-secondary btn-sm" [disabled]="lowStockPage <= 1" (click)="changeLowStockPage(lowStockPage-1)">

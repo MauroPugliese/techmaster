@@ -10,6 +10,7 @@ import { ApiService, SectionAccessService } from '../../core/services/services';
 import { ToastService }   from '../../core/services/toast.service';
 import { ConfirmService } from '../../core/services/confirm.service';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
+import { DropdownComponent, DropdownOptionComponent } from '../../shared/components/dropdown/dropdown.component';
 
 type Tab = 'overview' | 'users' | 'operation-types' | 'shift-types' |
            'asset-categories' | 'item-categories' | 'wiki-categories' | 'warehouse-locations' |
@@ -18,7 +19,7 @@ type Tab = 'overview' | 'users' | 'operation-types' | 'shift-types' |
 @Component({
   selector: 'app-admin',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, TitleCasePipe, SlicePipe, ExportMenuComponent],
+  imports: [CommonModule, FormsModule, DatePipe, TitleCasePipe, SlicePipe, ExportMenuComponent, DropdownComponent, DropdownOptionComponent],
   templateUrl: './admin.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })

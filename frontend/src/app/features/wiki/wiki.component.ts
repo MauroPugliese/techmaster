@@ -14,11 +14,12 @@ import { WikiArticle, WikiCategory } from '../../core/models/interfaces';
 import { ToastService }   from '../../core/services/toast.service';
 import { ConfirmService } from '../../core/services/confirm.service';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
+import { DropdownComponent, DropdownOptionComponent } from '../../shared/components/dropdown/dropdown.component';
 
 @Component({
   selector: 'app-wiki',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, ExportMenuComponent],
+  imports: [CommonModule, FormsModule, DatePipe, ExportMenuComponent, DropdownComponent, DropdownOptionComponent],
   templateUrl: './wiki.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })

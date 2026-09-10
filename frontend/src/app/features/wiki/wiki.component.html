@@ -42,12 +42,12 @@
         <input placeholder="Search articles..." [(ngModel)]="searchQuery" (input)="onSearch()">
       </div>
       <div class="flex gap-2">
-        <select class="form-control" style="width:150px" [(ngModel)]="statusFilter" (change)="page=1; loadArticles()">
-          <option value="PUBLISHED">Published</option>
-          <option value="DRAFT">Drafts</option>
-          <option value="REVIEW">In Review</option>
-          <option value="ARCHIVED">Archived</option>
-        </select>
+        <app-dropdown class="form-control select-w-150" [(ngModel)]="statusFilter" (change)="page=1; loadArticles()">
+          <app-dropdown-option value="PUBLISHED">Published</app-dropdown-option>
+          <app-dropdown-option value="DRAFT">Drafts</app-dropdown-option>
+          <app-dropdown-option value="REVIEW">In Review</app-dropdown-option>
+          <app-dropdown-option value="ARCHIVED">Archived</app-dropdown-option>
+        </app-dropdown>
         <app-export-menu endpoint="wiki" filename="Wiki_Articles" label="Export"
                          [params]="{ status: statusFilter }"></app-export-menu>
         <button class="btn btn-secondary btn-sm" type="button" (click)="exportArticlesCsv()">
@@ -147,9 +147,9 @@
              *ngIf="total > 0">
           <div class="table-page-size-control">
             <span class="text-sm text-muted">Showing {{(page-1)*pageSize+1}}–{{Math.min(page*pageSize,total)}} of {{total}}</span>
-            <select class="form-control table-page-size-select" [(ngModel)]="pageSize" (change)="onPageSizeChange()">
-              <option *ngFor="let size of pageSizeOptions" [ngValue]="size">{{size}}</option>
-            </select>
+            <app-dropdown class="form-control table-page-size-select" [(ngModel)]="pageSize" (change)="onPageSizeChange()" ariaLabel="Rows per page">
+              <app-dropdown-option *ngFor="let size of pageSizeOptions" [ngValue]="size">{{size}}</app-dropdown-option>
+            </app-dropdown>
           </div>
           <div class="flex gap-2">
             <button class="btn btn-secondary btn-sm" [disabled]="page <= 1" (click)="changePage(page-1)">
@@ -229,11 +229,11 @@
     <div class="modal-header">
       <h3>{{editingArticle ? 'Edit Article' : 'New Article'}}</h3>
       <div class="flex gap-2">
-        <select class="form-control" style="width:140px" [(ngModel)]="articleForm.status" *ngIf="showFormField('status')">
-          <option value="DRAFT">Draft</option>
-          <option value="REVIEW">Send for Review</option>
-          <option value="PUBLISHED">Publish</option>
-        </select>
+        <app-dropdown class="form-control select-w-140" [(ngModel)]="articleForm.status" *ngIf="showFormField('status')">
+          <app-dropdown-option value="DRAFT">Draft</app-dropdown-option>
+          <app-dropdown-option value="REVIEW">Send for Review</app-dropdown-option>
+          <app-dropdown-option value="PUBLISHED">Publish</app-dropdown-option>
+        </app-dropdown>
         <button class="btn btn-ghost btn-icon-only" (click)="showEditor=false">
           <span class="btn-icon">close</span>
         </button>
@@ -247,10 +247,10 @@
       <div class="form-row">
         <div class="form-group" *ngIf="showFormField('category_id')">
           <label class="form-label">{{fieldLabel('form','category_id','Category')}}</label>
-          <select class="form-control" [(ngModel)]="articleForm.category_id">
-            <option [ngValue]="null">— Uncategorized —</option>
-            <option *ngFor="let c of categories" [value]="c.id">{{c.name}}</option>
-          </select>
+          <app-dropdown class="form-control" [(ngModel)]="articleForm.category_id" placeholder="— Uncategorized —">
+            <app-dropdown-option [ngValue]="null">— Uncategorized —</app-dropdown-option>
+            <app-dropdown-option *ngFor="let c of categories" [value]="c.id">{{c.name}}</app-dropdown-option>
+          </app-dropdown>
         </div>
         <div class="form-group" *ngIf="showFormField('tags')">
           <label class="form-label">{{fieldLabel('form','tags','Tags (comma separated)')}}</label>

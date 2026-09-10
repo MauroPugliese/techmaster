@@ -138,9 +138,9 @@
          *ngIf="maintSummary.length > 0">
         <div class="table-page-size-control">
           <span class="text-sm text-muted">Showing {{(summaryPage-1)*summaryPageSize+1}}–{{Math.min(summaryPage*summaryPageSize,maintSummary.length)}} of {{maintSummary.length}}</span>
-          <select class="form-control table-page-size-select" [(ngModel)]="summaryPageSize" (change)="onSummaryPageSizeChange()">
-            <option *ngFor="let size of summaryPageSizeOptions" [ngValue]="size">{{size}}</option>
-          </select>
+          <app-dropdown class="form-control table-page-size-select" [(ngModel)]="summaryPageSize" (change)="onSummaryPageSizeChange()" ariaLabel="Summary rows per page">
+            <app-dropdown-option *ngFor="let size of summaryPageSizeOptions" [ngValue]="size">{{size}}</app-dropdown-option>
+          </app-dropdown>
         </div>
         <div class="flex gap-2">
           <button class="btn btn-secondary btn-sm" [disabled]="summaryPage <= 1" (click)="changeSummaryPage(summaryPage-1)">

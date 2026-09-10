@@ -3,6 +3,7 @@
 // =============================================================================
 import { Component, OnInit, AfterViewInit, OnDestroy, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule, DecimalPipe, TitleCasePipe } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { Subject, forkJoin } from 'rxjs';
 import { takeUntil, switchMap } from 'rxjs/operators';
 import { Chart, registerables, ChartConfiguration } from 'chart.js';
@@ -14,13 +15,14 @@ import { ApiService } from '../../core/services/services';
 import { DateFilterService } from '../../core/services/services';
 import { UiCustomizationService, UiSectionPreferences } from '../../core/services/services';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
+import { DropdownComponent, DropdownOptionComponent } from '../../shared/components/dropdown/dropdown.component';
 
 Chart.register(...registerables, zoomPlugin);
 
 @Component({
   selector: 'app-analytics',
   standalone: true,
-  imports: [CommonModule, DecimalPipe, TitleCasePipe, ExportMenuComponent],
+  imports: [CommonModule, FormsModule, DecimalPipe, TitleCasePipe, ExportMenuComponent, DropdownComponent, DropdownOptionComponent],
   templateUrl: './analytics.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })
