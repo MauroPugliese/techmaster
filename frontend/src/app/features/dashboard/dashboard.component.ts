@@ -1,10 +1,7 @@
-// =============================================================================
-// dashboard.component.ts — Full Dashboard with Chart.js
-// =============================================================================
 import { Component, OnInit, OnDestroy, AfterViewInit, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule, DatePipe, TitleCasePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterModule } from '@angular/router';
+import { RouterModule, Router } from '@angular/router';
 import { Subject, combineLatest, interval, of } from 'rxjs';
 import { takeUntil, debounceTime, catchError, timeout } from 'rxjs/operators';
 import { Chart, registerables } from 'chart.js';
@@ -12,17 +9,34 @@ import { Chart, registerables } from 'chart.js';
 import { ApiService } from '../../core/services/services';
 import { DateFilterService } from '../../core/services/services';
 import { UiCustomizationService, UiSectionPreferences } from '../../core/services/services';
-import { DashboardKPIs, Operation, MaintenanceRecord, Shift, InventoryItem } from '../../core/models/interfaces';
+import {
+  DashboardKPIs, Operation, MaintenanceRecord, Shift, InventoryItem, Task, StockMovement, DashboardUrgentAlerts
+} from '../../core/models/interfaces';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
 import { DropdownComponent, DropdownOptionComponent } from '../../shared/components/dropdown/dropdown.component';
 
 Chart.register(...registerables);
+
+export interface ActivityFeedItem {
+  id: number;
+  title: string;
+  category: 'OPERATION' | 'MAINTENANCE' | 'TASK' | 'STOCK';
+  icon: string;
+  color: string;
+  timestamp: string | Date;
+  statusText: string;
+  badgeClass: string;
+  subtitle: string;
+  routerLink: string[];
+  queryParams?: Record<string, any>;
+}
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
   imports: [CommonModule, FormsModule, RouterModule, DatePipe, TitleCasePipe, ExportMenuComponent, DropdownComponent, DropdownOptionComponent],
   templateUrl: './dashboard.component.html',
+  styleUrls: ['./dashboard.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
@@ -30,17 +44,26 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   Math = Math;
 
   loading = true;
+  refreshing = false;
+  lastRefreshed = new Date();
   kpis: DashboardKPIs | null = null;
-  recentOps:       Operation[]          = [];
+  recentOps: Operation[] = [];
   recentMaintenance: MaintenanceRecord[] = [];
-  todayShifts:     Shift[]              = [];
-  lowStockItems:   InventoryItem[]      = [];
+  recentTasks: Task[] = [];
+  recentMovements: StockMovement[] = [];
+  urgentAlerts: DashboardUrgentAlerts | null = null;
+
+  todayShifts: Shift[] = [];
+  lowStockItems: InventoryItem[] = [];
   lowStockPage = 1;
   lowStockPageSize = 10;
   readonly lowStockPageSizeOptions = [10, 20, 50, 100];
-  today            = new Date();
-  dateFilterLabel  = 'All time';
+  today = new Date();
+  dateFilterLabel = 'All time';
   uiPrefs: UiSectionPreferences | null = null;
+
+  activeActivityTab: 'ALL' | 'OPS' | 'MAINT' | 'TASKS' | 'STOCK' = 'ALL';
+  fleetReadinessPct = 100;
 
   private opsTrendChart: Chart | null = null;
   private taskDistChart: Chart | null = null;
@@ -49,6 +72,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     private api: ApiService,
     private dateFilter: DateFilterService,
     private uiCustomization: UiCustomizationService,
+    private router: Router,
     private cdr: ChangeDetectorRef
   ) {}
 
@@ -73,10 +97,14 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     this.loadLowStock();
   }
 
-  private refreshDashboard(): void {
-    this.loading = true;
+  refreshDashboard(isManual = false): void {
+    if (isManual) {
+      this.refreshing = true;
+      this.cdr.markForCheck();
+    } else {
+      this.loading = true;
+    }
     this.dateFilterLabel = this.dateFilter.getLabel();
-    this.cdr.markForCheck();
 
     combineLatest([
       this.api.get<any>('/dashboard/kpis', {}, this.dateFilter.currentRange).pipe(
@@ -85,23 +113,41 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
       ),
       this.api.get<any>('/dashboard/recent-activity').pipe(
         timeout(10000),
-        catchError(() => of({ data: { operations: [], maintenance: [], tasks: [] } }))
+        catchError(() => of({ data: { operations: [], maintenance: [], tasks: [], movements: [] } }))
+      ),
+      this.api.get<any>('/dashboard/urgent-alerts').pipe(
+        timeout(10000),
+        catchError(() => of({ data: { overdueTasks: [], criticalMaintenance: [], outOfStock: [] } }))
       )
     ]).subscribe({
-      next: ([kpisRes, activityRes]) => {
+      next: ([kpisRes, activityRes, alertsRes]) => {
         this.kpis = kpisRes?.data?.kpis || this.emptyKpis();
         this.recentOps = activityRes?.data?.operations || [];
         this.recentMaintenance = activityRes?.data?.maintenance || [];
+        this.recentTasks = activityRes?.data?.tasks || [];
+        this.recentMovements = activityRes?.data?.movements || [];
+        this.urgentAlerts = alertsRes?.data || { overdueTasks: [], criticalMaintenance: [], outOfStock: [] };
+
+        const totalAssets = this.kpis.totalAssets ?? 0;
+        const activeAssets = this.kpis.activeAssets ?? 0;
+        this.fleetReadinessPct = totalAssets > 0 ? Math.round((activeAssets / totalAssets) * 100) : 100;
 
         this.updateCharts(
           kpisRes?.data?.opsTrend || [],
           kpisRes?.data?.taskTrend || [],
           kpisRes?.data?.maintenanceTrend || []
         );
+
+        this.lastRefreshed = new Date();
         this.loading = false;
+        this.refreshing = false;
         this.cdr.markForCheck();
       },
-      error: () => { this.loading = false; this.cdr.markForCheck(); }
+      error: () => {
+        this.loading = false;
+        this.refreshing = false;
+        this.cdr.markForCheck();
+      }
     });
   }
 
@@ -339,6 +385,133 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
       'ABSENT': 'badge-cancelled'
     };
     return map[status] || 'badge-planned';
+  }
+
+  // ── Urgent Alerts & Activity Getters ──────────────────────────────────────
+  get urgentAlertsTotal(): number {
+    if (!this.urgentAlerts) return 0;
+    return (
+      (this.urgentAlerts.overdueTasks?.length || 0) +
+      (this.urgentAlerts.criticalMaintenance?.length || 0) +
+      (this.urgentAlerts.outOfStock?.length || 0)
+    );
+  }
+
+  get hasUrgentAlerts(): boolean {
+    return this.urgentAlertsTotal > 0;
+  }
+
+  setActivityTab(tab: 'ALL' | 'OPS' | 'MAINT' | 'TASKS' | 'STOCK'): void {
+    this.activeActivityTab = tab;
+  }
+
+  getMovementTypeBadge(type: string): string {
+    switch (type) {
+      case 'IN':
+      case 'RETURN':
+        return 'badge-movement-in';
+      case 'OUT':
+      case 'TRANSFER':
+        return 'badge-movement-out';
+      default:
+        return 'badge-movement-adj';
+    }
+  }
+
+  getMovementTypeIcon(type: string): string {
+    switch (type) {
+      case 'IN':
+      case 'RETURN':
+        return 'south_west';
+      case 'OUT':
+      case 'TRANSFER':
+        return 'north_east';
+      default:
+        return 'sync_alt';
+    }
+  }
+
+  get combinedActivities(): ActivityFeedItem[] {
+    const items: ActivityFeedItem[] = [];
+
+    if (this.activeActivityTab === 'ALL' || this.activeActivityTab === 'OPS') {
+      for (const op of this.recentOps) {
+        items.push({
+          id: op.id,
+          title: op.title,
+          category: 'OPERATION',
+          icon: 'rocket_launch',
+          color: op.type?.color || '#1565C0',
+          timestamp: op.created_at,
+          statusText: op.status,
+          badgeClass: this.getStatusBadge(op.status),
+          subtitle: `${op.type?.name || 'Sortie'} · ${op.location || 'Base'}`,
+          routerLink: ['/operations'],
+          queryParams: { search: op.title }
+        });
+      }
+    }
+
+    if (this.activeActivityTab === 'ALL' || this.activeActivityTab === 'MAINT') {
+      for (const m of this.recentMaintenance) {
+        items.push({
+          id: m.id,
+          title: m.title,
+          category: 'MAINTENANCE',
+          icon: 'build_circle',
+          color: '#F59E0B',
+          timestamp: m.scheduled_date || m.created_at,
+          statusText: m.status,
+          badgeClass: this.getStatusBadge(m.status),
+          subtitle: `${m.asset?.name || 'Equipment'} · ${m.type || 'Service'}`,
+          routerLink: ['/maintenance'],
+          queryParams: { search: m.title }
+        });
+      }
+    }
+
+    if (this.activeActivityTab === 'ALL' || this.activeActivityTab === 'TASKS') {
+      for (const t of this.recentTasks) {
+        items.push({
+          id: t.id,
+          title: t.title,
+          category: 'TASK',
+          icon: 'task_alt',
+          color: '#8B5CF6',
+          timestamp: t.created_at,
+          statusText: t.status,
+          badgeClass: this.getStatusBadge(t.status),
+          subtitle: `${t.assignee ? (t.assignee.first_name + ' ' + (t.assignee.last_name || '')) : 'Unassigned'} · ${t.interval_type || 'Task'}`,
+          routerLink: ['/tasks'],
+          queryParams: { search: t.title }
+        });
+      }
+    }
+
+    if (this.activeActivityTab === 'ALL' || this.activeActivityTab === 'STOCK') {
+      for (const mv of this.recentMovements) {
+        items.push({
+          id: mv.id,
+          title: `${mv.item?.name || 'Stock item'} (${mv.type === 'IN' || mv.type === 'RETURN' ? '+' : '-'}${mv.quantity} ${mv.item?.unit || 'units'})`,
+          category: 'STOCK',
+          icon: this.getMovementTypeIcon(mv.type),
+          color: '#10B981',
+          timestamp: mv.movement_date,
+          statusText: mv.type,
+          badgeClass: this.getMovementTypeBadge(mv.type),
+          subtitle: `${mv.reason || 'Warehouse Move'} · by ${mv.user?.first_name || 'Staff'}`,
+          routerLink: ['/warehouse'],
+          queryParams: { search: mv.item?.sku || '' }
+        });
+      }
+    }
+
+    // Sort descending by timestamp
+    return items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, 10);
+  }
+
+  navigateTo(path: string, queryParams?: Record<string, any>): void {
+    this.router.navigate([path], { queryParams });
   }
 
   showTableField(fieldKey: string): boolean {
