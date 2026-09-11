@@ -48,8 +48,10 @@ export class OperationsAnalyticsComponent implements OnInit, AfterViewInit, OnDe
     });
   }
 
+  private cachedChartData: any = null;
+
   ngAfterViewInit(): void {
-    setTimeout(() => this.initCharts(), 100);
+    setTimeout(() => this.initCharts(), 80);
   }
 
   private loadData(range = this.dateFilter.currentRange): void {
@@ -58,9 +60,10 @@ export class OperationsAnalyticsComponent implements OnInit, AfterViewInit, OnDe
 
     this.api.get<any>('/analytics/operations-metrics', {}, range).subscribe({
       next: (response) => {
-        this.metrics = response.data.metrics;
-        this.insights = response.data.insights;
-        this.updateCharts(response.data.charts);
+        this.metrics = response.data.metrics || {};
+        this.insights = response.data.insights || {};
+        this.cachedChartData = response.data.charts || {};
+        this.updateCharts(this.cachedChartData);
         this.loading = false;
         this.cdr.markForCheck();
       },
@@ -76,9 +79,9 @@ export class OperationsAnalyticsComponent implements OnInit, AfterViewInit, OnDe
     const gridColor = '#E1EAF5';
 
     // 1) Operations Trend Chart
-    const trendCtx = this.getCtx('trendChart');
-    if (trendCtx) {
-      this.charts['trend'] = new Chart(trendCtx, {
+    const trendCanvas = this.getCanvas('trendChart');
+    if (trendCanvas) {
+      this.charts['trend'] = new Chart(trendCanvas, {
         type: 'line',
         data: { labels: [], datasets: [] },
         options: {
@@ -102,9 +105,9 @@ export class OperationsAnalyticsComponent implements OnInit, AfterViewInit, OnDe
     }
 
     // 2) Time Distribution Chart
-    const timeCtx = this.getCtx('timeDistributionChart');
-    if (timeCtx) {
-      this.charts['timeDistribution'] = new Chart(timeCtx, {
+    const timeCanvas = this.getCanvas('timeDistributionChart');
+    if (timeCanvas) {
+      this.charts['timeDistribution'] = new Chart(timeCanvas, {
         type: 'bar',
         data: { labels: [], datasets: [] },
         options: {
@@ -128,9 +131,9 @@ export class OperationsAnalyticsComponent implements OnInit, AfterViewInit, OnDe
     }
 
     // 3) Status Breakdown Chart
-    const statusCtx = this.getCtx('statusBreakdownChart');
-    if (statusCtx) {
-      this.charts['statusBreakdown'] = new Chart(statusCtx, {
+    const statusCanvas = this.getCanvas('statusBreakdownChart');
+    if (statusCanvas) {
+      this.charts['statusBreakdown'] = new Chart(statusCanvas, {
         type: 'doughnut',
         data: { labels: [], datasets: [] },
         options: {
@@ -142,6 +145,10 @@ export class OperationsAnalyticsComponent implements OnInit, AfterViewInit, OnDe
           }
         }
       });
+    }
+
+    if (this.cachedChartData) {
+      this.updateCharts(this.cachedChartData);
     }
   }
 
@@ -217,8 +224,12 @@ export class OperationsAnalyticsComponent implements OnInit, AfterViewInit, OnDe
     }
   }
 
-  private getCtx(id: string): CanvasRenderingContext2D | null {
-    return (document.getElementById(id) as HTMLCanvasElement)?.getContext('2d') ?? null;
+  private getCanvas(id: string): HTMLCanvasElement | null {
+    const canvas = document.getElementById(id) as HTMLCanvasElement | null;
+    if (canvas) {
+      Chart.getChart(canvas)?.destroy();
+    }
+    return canvas;
   }
 
   exportReport(): void {
