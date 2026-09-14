@@ -6,20 +6,25 @@ import {
 } from '@angular/core';
 import { CommonModule, DatePipe, TitleCasePipe, SlicePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ApiService, SectionAccessService } from '../../core/services/services';
+import { ApiService } from '../../core/services/services';
 import { ToastService }   from '../../core/services/toast.service';
 import { ConfirmService } from '../../core/services/confirm.service';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
 import { DropdownComponent, DropdownOptionComponent } from '../../shared/components/dropdown/dropdown.component';
+import { SectionAccessManagerComponent } from './section-access/section-access-manager.component';
 
-type Tab = 'overview' | 'users' | 'operation-types' | 'shift-types' |
+type Tab = 'overview' | 'users' | 'section-access' | 'operation-types' | 'shift-types' |
            'asset-categories' | 'item-categories' | 'wiki-categories' | 'warehouse-locations' |
            'customization';
 
 @Component({
   selector: 'app-admin',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, TitleCasePipe, SlicePipe, ExportMenuComponent, DropdownComponent, DropdownOptionComponent],
+  imports: [
+    CommonModule, FormsModule, DatePipe, TitleCasePipe, SlicePipe,
+    ExportMenuComponent, DropdownComponent, DropdownOptionComponent,
+    SectionAccessManagerComponent
+  ],
   templateUrl: './admin.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -58,38 +63,31 @@ export class AdminComponent implements OnInit {
   editingItem: any = null;
   itemForm:    any = {};
 
-  // ── Schema customization ───────────────────────────────────────────────────
+  // ── Customization ───────────────────────────────────────────────────────────
   customizationTables: any[] = [];
   selectedCustomizationTable = '';
   customizationColumns: any[] = [];
   customizationLoading = false;
-  schemaActionLoading = false;
-  showColumnModal = false;
-  editingColumn: any = null;
-  columnForm: any = this.emptyColumnForm();
+  schemaActionLoading  = false;
+  showColumnModal      = false;
+  editingColumn: any   = null;
+  columnForm: any      = this.emptyColumnForm();
 
   uiSectionCatalog: Record<string, { table: string[]; form: string[] }> = {};
   uiSections: string[] = [];
-  selectedUiSection = 'operations';
+  selectedUiSection = '';
   selectedUiScope: 'table' | 'form' = 'table';
   selectedUiRole = 'ALL';
   uiFieldsEditor: any[] = [];
   uiPreviewSearch = '';
   uiPreviewSourceFilter: 'all' | 'role' | 'global' | 'default' = 'all';
   uiPreviewVisibilityFilter: 'visible' | 'hidden' | 'all' = 'visible';
-  customizationMode: 'db' | 'ui' | 'access' = 'db';
-
-  navSectionCatalog: Record<string, { path: string; label: string; group: string; icon: string }> = {};
-  navSectionEditor: any[] = [];
-  accessTarget: 'global' | 'role' | 'user' = 'global';
-  selectedAccessRole = 'ALL';
-  selectedAccessUserId: number | null = null;
-  accessUsers: any[] = [];
-  accessUsersLoading = false;
+  customizationMode: 'db' | 'ui' = 'db';
 
   readonly tabs: { id: Tab; label: string; icon: string }[] = [
     { id: 'overview',            label: 'Overview',           icon: 'dashboard'          },
     { id: 'users',               label: 'Users',              icon: 'group'              },
+    { id: 'section-access',      label: 'Section Access',     icon: 'visibility'         },
     { id: 'operation-types',     label: 'Operation Types',    icon: 'rocket_launch'      },
     { id: 'shift-types',         label: 'Shift Types',        icon: 'schedule'           },
     { id: 'asset-categories',    label: 'Asset Categories',   icon: 'category'           },
@@ -108,8 +106,7 @@ export class AdminComponent implements OnInit {
     private api: ApiService,
     private cdr: ChangeDetectorRef,
     private toast: ToastService,
-    private confirm: ConfirmService,
-    private sectionAccess: SectionAccessService
+    private confirm: ConfirmService
   ) {}
 
   ngOnInit(): void {
@@ -127,31 +124,24 @@ export class AdminComponent implements OnInit {
     this.showUserModal = false;
     if (tab === 'overview')   this.loadOverview();
     else if (tab === 'users') this.loadUsers();
+    else if (tab === 'section-access') {
+      // SectionAccessManagerComponent manages its own lifecycle
+    }
     else if (tab === 'customization') {
       this.loadCustomizationTables();
       this.loadUiSectionsCatalog();
-      this.loadNavigationCatalog();
     }
     else                      this.loadList(tab);
     this.cdr.markForCheck();
   }
 
-  setCustomizationMode(mode: 'db' | 'ui' | 'access'): void {
+  setCustomizationMode(mode: 'db' | 'ui'): void {
     this.customizationMode = mode;
-
     if (mode === 'db') {
       this.loadCustomizationTables();
-    } else if (mode === 'ui') {
-      this.loadUiSectionsCatalog();
     } else {
-      this.loadNavigationCatalog();
-      if (!this.accessUsers.length) {
-        this.loadSectionAccessUsers();
-      } else {
-        this.loadSectionAccessPreferences();
-      }
+      this.loadUiSectionsCatalog();
     }
-
     this.cdr.markForCheck();
   }
 
@@ -759,174 +749,5 @@ export class AdminComponent implements OnInit {
       })
       .sort((a, b) => Number(a.display_order) - Number(b.display_order));
   }
-
-  loadNavigationCatalog(): void {
-    this.api.get<any>('/admin/ui-navigation/catalog').subscribe({
-      next: r => {
-        this.navSectionCatalog = r.data || {};
-        this.loadSectionAccessPreferences();
-        this.cdr.markForCheck();
-      },
-      error: (e: any) => {
-        this.toast.error(e?.error?.message || 'Failed to load section access catalog.');
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  loadSectionAccessUsers(): void {
-    this.accessUsersLoading = true;
-    this.api.get<any>('/admin/users', { page: 1, limit: 500 }).subscribe({
-      next: r => {
-        this.accessUsers = r.data?.items || [];
-        this.accessUsersLoading = false;
-        if (this.customizationMode === 'access') {
-          this.loadSectionAccessPreferences();
-        }
-        this.cdr.markForCheck();
-      },
-      error: (e: any) => {
-        this.accessUsersLoading = false;
-        this.toast.error(e?.error?.message || 'Failed to load users for section access.');
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  onAccessTargetChange(): void {
-    this.loadSectionAccessPreferences();
-  }
-
-  onAccessRoleChange(): void {
-    this.loadSectionAccessPreferences();
-  }
-
-  onAccessUserChange(): void {
-    this.loadSectionAccessPreferences();
-  }
-
-  loadSectionAccessPreferences(): void {
-    if (!Object.keys(this.navSectionCatalog).length) return;
-    if (this.accessTarget === 'user' && !this.selectedAccessUserId) {
-      this.navSectionEditor = [];
-      this.cdr.markForCheck();
-      return;
-    }
-
-    this.customizationLoading = true;
-    this.api.get<any>('/admin/ui-navigation/access', this.buildSectionAccessParams()).subscribe({
-      next: r => {
-        const data = r.data || [];
-        const sections = Array.isArray(data)
-          ? data
-          : (Array.isArray(data.sections) ? data.sections : []);
-        this.navSectionEditor = sections.map((section: any) => ({
-          section_key: section.section_key,
-          label: section.label,
-          path: section.path,
-          group: section.group,
-          icon: section.icon,
-          is_visible: !(section?.is_visible === false || section?.is_visible === 0 || section?.is_visible === '0'),
-          source: section?.source || 'default'
-        }));
-        this.customizationLoading = false;
-        this.cdr.markForCheck();
-      },
-      error: (e: any) => {
-        this.customizationLoading = false;
-        this.toast.error(e?.error?.message || 'Failed to load section access preferences.');
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  saveSectionAccessPreferences(): void {
-    if (this.accessTarget === 'user' && !this.selectedAccessUserId) {
-      this.toast.warning('Select a user first.');
-      return;
-    }
-
-    this.schemaActionLoading = true;
-    this.api.put<any>('/admin/ui-navigation/access', {
-      target: this.accessTarget,
-      role_name: this.selectedAccessRole,
-      user_id: this.selectedAccessUserId,
-      sections: this.navSectionEditor.map(section => ({
-        section_key: section.section_key,
-        is_visible: section.is_visible !== false
-      }))
-    }).subscribe({
-      next: () => {
-        this.schemaActionLoading = false;
-        this.toast.success('Section access saved.');
-        this.sectionAccess.refresh().subscribe();
-        this.loadSectionAccessPreferences();
-      },
-      error: (e: any) => {
-        this.schemaActionLoading = false;
-        this.toast.error(e?.error?.message || 'Failed to save section access.');
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  get sectionAccessSummary(): { label: string; value: number; color: string; text: string }[] {
-    const sections = this.navSectionEditor;
-    return [
-      { label: 'Visible', value: sections.filter(section => section.is_visible !== false).length, color: '#DCFCE7', text: '#166534' },
-      { label: 'Hidden', value: sections.filter(section => section.is_visible === false).length, color: '#FEE2E2', text: '#B91C1C' },
-      { label: 'User', value: sections.filter(section => section.source === 'user').length, color: '#FEF3C7', text: '#92400E' },
-      { label: 'Role', value: sections.filter(section => section.source === 'role').length, color: '#DBEAFE', text: '#1D4ED8' },
-      { label: 'Global', value: sections.filter(section => section.source === 'global').length, color: '#DCFCE7', text: '#166534' },
-      { label: 'Default', value: sections.filter(section => section.source === 'default').length, color: '#F3F4F6', text: '#4B5563' }
-    ];
-  }
-
-  get sectionAccessTargetLabel(): string {
-    if (this.accessTarget === 'global') return 'All users';
-    if (this.accessTarget === 'role') return 'Role: ' + this.selectedAccessRole;
-
-    const user = this.accessUsers.find(item => item.id === this.selectedAccessUserId);
-    if (!user) return 'Specific user';
-    return 'User: ' + user.first_name + ' ' + user.last_name + ' (' + user.username + ')';
-  }
-
-  async resetSectionAccessPreferences(): Promise<void> {
-    if (this.accessTarget === 'user' && !this.selectedAccessUserId) {
-      this.toast.warning('Select a user first.');
-      return;
-    }
-
-    const message = this.accessTarget === 'global'
-      ? 'Reset section access for all users?'
-      : this.accessTarget === 'role'
-        ? 'Reset section access for role "' + this.selectedAccessRole + '"?'
-        : 'Reset section access for the selected user?';
-
-    const ok = await this.confirm.confirm(message, 'Reset Section Access');
-    if (!ok) return;
-
-    this.schemaActionLoading = true;
-    this.api.delete<any>('/admin/ui-navigation/access', this.buildSectionAccessParams()).subscribe({
-      next: () => {
-        this.schemaActionLoading = false;
-        this.toast.success('Section access reset to defaults.');
-        this.sectionAccess.refresh().subscribe();
-        this.loadSectionAccessPreferences();
-      },
-      error: (e: any) => {
-        this.schemaActionLoading = false;
-        this.toast.error(e?.error?.message || 'Failed to reset section access.');
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  private buildSectionAccessParams(): Record<string, any> {
-    return {
-      target: this.accessTarget,
-      role: this.accessTarget === 'role' ? this.selectedAccessRole : null,
-      user_id: this.accessTarget === 'user' ? this.selectedAccessUserId : null
-    };
-  }
 }
+

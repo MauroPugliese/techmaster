@@ -1197,14 +1197,23 @@ router.delete('/ui-navigation/access', async (req, res, next) => {
     await ensureSectionAccessPrefsTable();
 
     const target = await resolveAccessTarget(req.query.target, req.query.role, req.query.user_id);
+    const sectionKey = req.query.section_key ? assertNavSection(req.query.section_key) : null;
 
-    await sequelize.query(
-      `DELETE FROM ui_section_access_preferences
-       WHERE subject_type = ? AND subject_key = ?`,
-      { replacements: [target.subject_type, target.subject_key] }
-    );
+    if (sectionKey) {
+      await sequelize.query(
+        `DELETE FROM ui_section_access_preferences
+         WHERE subject_type = ? AND subject_key = ? AND section_key = ?`,
+        { replacements: [target.subject_type, target.subject_key, sectionKey] }
+      );
+    } else {
+      await sequelize.query(
+        `DELETE FROM ui_section_access_preferences
+         WHERE subject_type = ? AND subject_key = ?`,
+        { replacements: [target.subject_type, target.subject_key] }
+      );
+    }
 
-    res.json({ success: true });
+    res.json({ success: true, section_key: sectionKey || null });
   } catch (err) { next(err); }
 });
 

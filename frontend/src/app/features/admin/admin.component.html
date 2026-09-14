@@ -198,6 +198,13 @@
     </ng-container>
 
     <!-- ==============================================================
+         SECTION ACCESS
+         ============================================================== -->
+    <ng-container *ngIf="activeTab==='section-access'">
+      <app-section-access-manager [roles]="roles"></app-section-access-manager>
+    </ng-container>
+
+    <!-- ==============================================================
          CUSTOMIZATION
          ============================================================== -->
     <ng-container *ngIf="activeTab==='customization'">
@@ -222,12 +229,6 @@
                   style="border:1px solid var(--border)">
             <span class="btn-icon">view_list</span> UI Table and Form Customization
           </button>
-            <button class="btn" (click)="setCustomizationMode('access')"
-                    [style.background]="customizationMode==='access' ? 'var(--blue-100)' : 'transparent'"
-                    [style.color]="customizationMode==='access' ? 'var(--primary)' : 'var(--blue-900)'"
-                    style="border:1px solid var(--border)">
-              <span class="btn-icon">visibility</span> Section Access
-            </button>
         </div>
       </div>
 
@@ -489,7 +490,7 @@
     <!-- ==============================================================
          GENERIC CONFIG TABS
          ============================================================== -->
-    <ng-container *ngIf="activeTab!=='overview' && activeTab!=='users' && activeTab!=='customization'">
+    <ng-container *ngIf="activeTab!=='overview' && activeTab!=='users' && activeTab!=='customization' && activeTab!=='section-access'">
       <div class="flex items-center justify-between mb-5">
         <div>
           <!-- FIX: activeTabLabel getter used instead of broken pipe chain -->
@@ -685,114 +686,6 @@
           <input type="number" class="form-control" [(ngModel)]="columnForm.length" min="1"
                  [disabled]="editingColumn?.is_protected">
         </div>
-      </div>
-
-      <div class="card" style="padding:16px;margin-top:18px" *ngIf="customizationMode==='access'">
-        <div class="flex items-center justify-between" style="margin-bottom:12px">
-          <div>
-            <h3 style="margin-bottom:2px">Section Access Visibility</h3>
-            <p class="text-muted text-sm">Show or hide sidebar sections globally, by role, or for one specific user</p>
-          </div>
-          <div class="flex gap-2">
-            <button class="btn btn-secondary"
-                    [disabled]="schemaActionLoading || (accessTarget==='user' && !selectedAccessUserId)"
-                    (click)="resetSectionAccessPreferences()">
-              <span class="btn-icon">restart_alt</span> Reset to Default
-            </button>
-            <button class="btn btn-primary"
-                    [disabled]="schemaActionLoading || !navSectionEditor.length || (accessTarget==='user' && !selectedAccessUserId)"
-                    (click)="saveSectionAccessPreferences()">
-              <span class="btn-icon">save</span> Save Section Access
-            </button>
-          </div>
-        </div>
-
-        <div class="form-row" style="align-items:flex-end;margin-bottom:14px">
-          <div class="form-group" style="max-width:220px">
-            <label class="form-label">Target</label>
-            <app-dropdown class="form-control" [(ngModel)]="accessTarget" (change)="onAccessTargetChange()">
-              <app-dropdown-option value="global">All Users</app-dropdown-option>
-              <app-dropdown-option value="role">Specific Role</app-dropdown-option>
-              <app-dropdown-option value="user">Specific User</app-dropdown-option>
-            </app-dropdown>
-          </div>
-          <div class="form-group" style="max-width:220px" *ngIf="accessTarget==='role'">
-            <label class="form-label">Role</label>
-            <app-dropdown class="form-control" [(ngModel)]="selectedAccessRole" (change)="onAccessRoleChange()">
-              <app-dropdown-option *ngFor="let r of roles" [ngValue]="r.name">{{r.name | titlecase}}</app-dropdown-option>
-            </app-dropdown>
-          </div>
-          <div class="form-group" style="min-width:320px" *ngIf="accessTarget==='user'">
-            <label class="form-label">User</label>
-            <app-dropdown class="form-control" [(ngModel)]="selectedAccessUserId" (change)="onAccessUserChange()" placeholder="- Select user -">
-              <app-dropdown-option [ngValue]="null">- Select user -</app-dropdown-option>
-              <app-dropdown-option *ngFor="let u of accessUsers" [ngValue]="u.id">
-                {{u.first_name}} {{u.last_name}} ({{u.username}} · {{u.role?.name | titlecase}})
-              </app-dropdown-option>
-            </app-dropdown>
-          </div>
-          <div class="flex gap-2">
-            <button class="btn btn-secondary" (click)="loadSectionAccessPreferences()" [disabled]="accessUsersLoading">
-              <span class="btn-icon">refresh</span> Refresh
-            </button>
-          </div>
-        </div>
-
-        <div class="card" style="padding:12px;margin-bottom:14px;border:1px solid var(--border)">
-          <div class="flex items-center justify-between" style="gap:10px;flex-wrap:wrap">
-            <div>
-              <div style="font-weight:700">Effective access for {{sectionAccessTargetLabel}}</div>
-              <div class="text-muted text-sm">Priority: user override, then role, then global, then default</div>
-            </div>
-            <div class="flex gap-2" style="flex-wrap:wrap">
-              <span class="badge"
-                    *ngFor="let item of sectionAccessSummary"
-                    [style.background]="item.color"
-                    [style.color]="item.text">
-                {{item.label}}: {{item.value}}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div class="table-container" *ngIf="navSectionEditor.length; else noSectionAccessTpl">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Section</th>
-                <th>Path</th>
-                <th>Group</th>
-                <th>Visible</th>
-                <th>Source</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr *ngFor="let section of navSectionEditor">
-                <td>
-                  <div class="font-bold text-sm">{{section.label}}</div>
-                  <div class="text-muted" style="font-size:0.72rem">{{section.section_key}}</div>
-                </td>
-                <td><code>{{section.path}}</code></td>
-                <td>{{section.group}}</td>
-                <td><input type="checkbox" [(ngModel)]="section.is_visible"></td>
-                <td>
-                  <span class="badge"
-                        [style.background]="section.source==='user' ? '#FDE68A' : (section.source==='role' ? '#DBEAFE' : (section.source==='global' ? '#DCFCE7' : '#F3F4F6'))"
-                        [style.color]="section.source==='user' ? '#92400E' : (section.source==='role' ? '#1D4ED8' : (section.source==='global' ? '#166534' : '#4B5563'))">
-                    {{section.source || 'default'}}
-                  </span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <ng-template #noSectionAccessTpl>
-          <div class="empty-state">
-            <span class="empty-icon">visibility_off</span>
-            <h3>{{accessTarget==='user' ? 'Select a user to manage section access' : 'No sections available'}}</h3>
-          </div>
-        </ng-template>
       </div>
       <div class="form-row">
         <div class="form-group" style="display:flex;align-items:center;gap:10px;padding-top:28px">
