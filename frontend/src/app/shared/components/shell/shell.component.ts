@@ -2,13 +2,13 @@
 // shell.component.ts — App Shell with Sidebar + Header
 // =============================================================================
 import { Component, OnInit, OnDestroy, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
-import { Router, RouterModule, NavigationEnd, ActivatedRoute } from '@angular/router';
+import { Router, RouterModule, NavigationEnd } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { OwlDateTimeModule, OwlNativeDateTimeModule } from '@danielmoncada/angular-datetime-picker';
 import { Subject } from 'rxjs';
 import { takeUntil, filter } from 'rxjs/operators';
-import { AuthService, ApiService, DateFilterService, SocketService } from '../../../core/services/services';
+import { AuthService, ApiService, DateFilterService, SocketService, SectionAccessService, NavSectionAccess } from '../../../core/services/services';
 import { User, Notification, ApiResponse } from '../../../core/models/interfaces';
 import { ToastComponent }   from '../toast/toast.component';
 import { ConfirmComponent } from '../confirm/confirm.component';
@@ -61,23 +61,31 @@ export class ShellComponent implements OnInit, OnDestroy {
   openTasksCount   = 0;
   notifications: Notification[] = [];
   unreadNotifications = 0;
+  navSections: NavSectionAccess[] = [];
 
   constructor(
     private auth: AuthService,
     private api: ApiService,
     private socketService: SocketService,
     private dateFilter: DateFilterService,
+    private sectionAccess: SectionAccessService,
     private router: Router,
     private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
+    this.sectionAccess.sections$.pipe(takeUntil(this.destroy$)).subscribe(sections => {
+      this.navSections = sections;
+      this.cdr.markForCheck();
+    });
+
     // Track current user
     this.auth.currentUser$.pipe(takeUntil(this.destroy$)).subscribe(user => {
       if (!user) return;
 
       this.currentUser = user;
       this.loadNotifications();
+      this.sectionAccess.load(true).subscribe();
 
       const token = this.auth.getAccessToken();
       if (token) {
@@ -113,15 +121,29 @@ export class ShellComponent implements OnInit, OnDestroy {
   }
 
   get fullName(): string {
-    return this.currentUser ? `${this.currentUser.first_name} ${this.currentUser.last_name}` : '';
+    const firstName = this.currentUser?.first_name || '';
+    const lastName = this.currentUser?.last_name || '';
+    return `${firstName} ${lastName}`.trim();
   }
 
   get initials(): string {
     if (!this.currentUser) return '?';
-    return `${this.currentUser.first_name[0]}${this.currentUser.last_name[0]}`.toUpperCase();
+    const first = this.currentUser.first_name?.[0] || this.currentUser.username?.[0] || '?';
+    const last = this.currentUser.last_name?.[0] || '';
+    return `${first}${last}`.toUpperCase();
   }
 
   toggleSidebar(): void { this.sidebarCollapsed = !this.sidebarCollapsed; }
+
+  showNavSection(sectionKey: string): boolean {
+    const section = this.navSections.find(item => item.section_key === sectionKey);
+    if (!section && sectionKey === 'dashboard') return true;
+    return this.sectionAccess.isVisible(section);
+  }
+
+  showAnyNavSection(sectionKeys: string[]): boolean {
+    return sectionKeys.some(sectionKey => this.showNavSection(sectionKey));
+  }
 
   setPreset(preset: 'today' | 'week' | 'month' | 'quarter' | 'year'): void {
     this.activePreset = preset;
@@ -212,6 +234,11 @@ export class ShellComponent implements OnInit, OnDestroy {
       next: (res) => {
         this.notifications = res.data || [];
         this.unreadNotifications = this.notifications.filter(n => !n.is_read).length;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.notifications = [];
+        this.unreadNotifications = 0;
         this.cdr.markForCheck();
       }
     });

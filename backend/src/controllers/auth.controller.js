@@ -35,27 +35,44 @@ const userFields = ['id','username','email','first_name','last_name','avatar_url
 exports.register = async (req, res, next) => {
   try {
     const { username, email, password, first_name, last_name, department, job_title, phone } = req.body;
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    const normalizedUsername = String(username || '').trim();
 
-    const existing = await User.findOne({ where: { [Op.or]: [{ email }, { username }] } });
+    const existing = await User.findOne({ where: { [Op.or]: [{ email: normalizedEmail }, { username: normalizedUsername }] } });
     if (existing) {
       return res.status(409).json({ success: false, message: 'Email or username already in use' });
     }
 
-    const techRole = await Role.findOne({ where: { name: 'tech' } });
+    let techRole = await Role.findOne({ where: { name: 'tech' } });
+    if (!techRole) {
+      techRole = await Role.create({
+        name: 'tech',
+        description: 'Default technical operator role',
+        permissions: []
+      });
+    }
+
     const hash = await bcrypt.hash(password, 12);
 
     const user = await User.create({
       role_id: techRole.id,
-      username, email, password_hash: hash,
+      username: normalizedUsername,
+      email: normalizedEmail,
+      password_hash: hash,
       first_name, last_name, department, job_title, phone
     });
 
     const tokens = await generateTokens(user.id);
+    const created = await User.findByPk(user.id, {
+      attributes: { exclude: ['password_hash'] },
+      include: [{ model: Role, as: 'role' }]
+    });
+
     res.status(201).json({
       success: true,
       message: 'Registration successful',
       data: {
-        user: { id: user.id, username: user.username, email: user.email, first_name, last_name },
+        user: created,
         access_token: tokens.access,
         refresh_token: tokens.refresh
       }
@@ -67,21 +84,22 @@ exports.register = async (req, res, next) => {
 exports.login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
+    const normalizedEmail = String(email || '').trim().toLowerCase();
 
     // Check brute-force protection
-    const bruteForceStatus = checkBruteForce(email);
+    const bruteForceStatus = checkBruteForce(normalizedEmail);
     if (bruteForceStatus && bruteForceStatus.locked) {
       return res.status(429).json({ success: false, message: bruteForceStatus.message });
     }
 
     const user = await User.findOne({
-      where: { email },
+      where: { email: normalizedEmail },
       include: [{ model: Role, as: 'role' }],
       attributes: [...userFields, 'password_hash', 'role_id']
     });
 
     if (!user || !(await bcrypt.compare(password, user.password_hash))) {
-      recordFailedAttempt(email);
+      recordFailedAttempt(normalizedEmail);
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
     if (!user.is_active) {
@@ -89,7 +107,7 @@ exports.login = async (req, res, next) => {
     }
 
     // Clear failed attempts on successful login
-    clearLoginAttempts(email);
+    clearLoginAttempts(normalizedEmail);
 
     await user.update({ last_login: new Date() });
     const tokens = await generateTokens(user.id);

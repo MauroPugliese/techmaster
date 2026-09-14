@@ -10,18 +10,27 @@ import { ApiService } from '../../core/services/services';
 import { ToastService }   from '../../core/services/toast.service';
 import { ConfirmService } from '../../core/services/confirm.service';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
+import { DropdownComponent, DropdownOptionComponent } from '../../shared/components/dropdown/dropdown.component';
+import { SectionAccessManagerComponent } from './section-access/section-access-manager.component';
 
-type Tab = 'overview' | 'users' | 'operation-types' | 'shift-types' |
-           'asset-categories' | 'item-categories' | 'wiki-categories' | 'warehouse-locations';
+type Tab = 'overview' | 'users' | 'section-access' | 'operation-types' | 'shift-types' |
+           'asset-categories' | 'item-categories' | 'wiki-categories' | 'warehouse-locations' |
+           'customization';
 
 @Component({
   selector: 'app-admin',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, TitleCasePipe, SlicePipe, ExportMenuComponent],
+  imports: [
+    CommonModule, FormsModule, DatePipe, TitleCasePipe, SlicePipe,
+    ExportMenuComponent, DropdownComponent, DropdownOptionComponent,
+    SectionAccessManagerComponent
+  ],
   templateUrl: './admin.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class AdminComponent implements OnInit {
+
+  Math = Math;
 
   activeTab: Tab = 'overview';
 
@@ -33,6 +42,10 @@ export class AdminComponent implements OnInit {
   roles:      any[] = [];
   userSearch  = '';
   userLoading = false;
+  userPage = 1;
+  userPageSize = 20;
+  readonly userPageSizeOptions = [10, 20, 50, 100];
+  userTotal = 0;
   showUserModal  = false;
   showResetModal = false;
   editingUser: any = null;
@@ -43,19 +56,45 @@ export class AdminComponent implements OnInit {
   // ── Generic config list ──────────────────────────────────────────────────────
   listData:    any[] = [];
   listLoading  = false;
+  listPage = 1;
+  listPageSize = 20;
+  readonly listPageSizeOptions = [10, 20, 50, 100];
   showModal    = false;
   editingItem: any = null;
   itemForm:    any = {};
 
+  // ── Customization ───────────────────────────────────────────────────────────
+  customizationTables: any[] = [];
+  selectedCustomizationTable = '';
+  customizationColumns: any[] = [];
+  customizationLoading = false;
+  schemaActionLoading  = false;
+  showColumnModal      = false;
+  editingColumn: any   = null;
+  columnForm: any      = this.emptyColumnForm();
+
+  uiSectionCatalog: Record<string, { table: string[]; form: string[] }> = {};
+  uiSections: string[] = [];
+  selectedUiSection = '';
+  selectedUiScope: 'table' | 'form' = 'table';
+  selectedUiRole = 'ALL';
+  uiFieldsEditor: any[] = [];
+  uiPreviewSearch = '';
+  uiPreviewSourceFilter: 'all' | 'role' | 'global' | 'default' = 'all';
+  uiPreviewVisibilityFilter: 'visible' | 'hidden' | 'all' = 'visible';
+  customizationMode: 'db' | 'ui' = 'db';
+
   readonly tabs: { id: Tab; label: string; icon: string }[] = [
     { id: 'overview',            label: 'Overview',           icon: 'dashboard'          },
     { id: 'users',               label: 'Users',              icon: 'group'              },
+    { id: 'section-access',      label: 'Section Access',     icon: 'visibility'         },
     { id: 'operation-types',     label: 'Operation Types',    icon: 'rocket_launch'      },
     { id: 'shift-types',         label: 'Shift Types',        icon: 'schedule'           },
     { id: 'asset-categories',    label: 'Asset Categories',   icon: 'category'           },
     { id: 'item-categories',     label: 'Item Categories',    icon: 'inventory_2'        },
     { id: 'wiki-categories',     label: 'Wiki Categories',    icon: 'menu_book'          },
     { id: 'warehouse-locations', label: 'Locations',          icon: 'warehouse'          },
+    { id: 'customization',       label: 'Customization',      icon: 'tune'               },
   ];
 
   // Getter used in template to avoid complex pipe chains
@@ -63,7 +102,12 @@ export class AdminComponent implements OnInit {
     return this.tabs.find(t => t.id === this.activeTab)?.label ?? '';
   }
 
-  constructor(private api: ApiService, private cdr: ChangeDetectorRef, private toast: ToastService, private confirm: ConfirmService) {}
+  constructor(
+    private api: ApiService,
+    private cdr: ChangeDetectorRef,
+    private toast: ToastService,
+    private confirm: ConfirmService
+  ) {}
 
   ngOnInit(): void {
     this.loadOverview();
@@ -80,7 +124,24 @@ export class AdminComponent implements OnInit {
     this.showUserModal = false;
     if (tab === 'overview')   this.loadOverview();
     else if (tab === 'users') this.loadUsers();
+    else if (tab === 'section-access') {
+      // SectionAccessManagerComponent manages its own lifecycle
+    }
+    else if (tab === 'customization') {
+      this.loadCustomizationTables();
+      this.loadUiSectionsCatalog();
+    }
     else                      this.loadList(tab);
+    this.cdr.markForCheck();
+  }
+
+  setCustomizationMode(mode: 'db' | 'ui'): void {
+    this.customizationMode = mode;
+    if (mode === 'db') {
+      this.loadCustomizationTables();
+    } else {
+      this.loadUiSectionsCatalog();
+    }
     this.cdr.markForCheck();
   }
 
@@ -116,14 +177,39 @@ export class AdminComponent implements OnInit {
   // ── Users ───────────────────────────────────────────────────────────────────
   loadUsers(): void {
     this.userLoading = true;
-    this.api.get<any>('/admin/users', { search: this.userSearch, limit: 100 }).subscribe({
+    this.api.get<any>('/admin/users', {
+      search: this.userSearch,
+      page: this.userPage,
+      limit: this.userPageSize
+    }).subscribe({
       next: r => {
         this.users = r.data?.items || r.data || [];
+        this.userTotal = r.data?.total || this.users.length;
         this.userLoading = false;
         this.cdr.markForCheck();
       },
       error: () => { this.userLoading = false; this.cdr.markForCheck(); }
     });
+  }
+
+  onUsersSearch(): void {
+    this.userPage = 1;
+    this.loadUsers();
+  }
+
+  get userTotalPages(): number {
+    return Math.max(1, Math.ceil(this.userTotal / this.userPageSize));
+  }
+
+  changeUserPage(page: number): void {
+    if (page < 1 || page > this.userTotalPages) return;
+    this.userPage = page;
+    this.loadUsers();
+  }
+
+  onUserPageSizeChange(): void {
+    this.userPage = 1;
+    this.loadUsers();
   }
 
   private emptyUser() {
@@ -223,10 +309,29 @@ export class AdminComponent implements OnInit {
 
   loadList(tab: Tab): void {
     this.listLoading = true;
+    this.listPage = 1;
     this.api.get<any>(this.apiPath(tab)).subscribe({
       next: r => { this.listData = r.data || []; this.listLoading = false; this.cdr.markForCheck(); },
       error: () => { this.listLoading = false; this.cdr.markForCheck(); }
     });
+  }
+
+  get paginatedListData(): any[] {
+    const start = (this.listPage - 1) * this.listPageSize;
+    return this.listData.slice(start, start + this.listPageSize);
+  }
+
+  get listTotalPages(): number {
+    return Math.max(1, Math.ceil(this.listData.length / this.listPageSize));
+  }
+
+  changeListPage(page: number): void {
+    if (page < 1 || page > this.listTotalPages) return;
+    this.listPage = page;
+  }
+
+  onListPageSizeChange(): void {
+    this.listPage = 1;
   }
 
   openItemModal(item?: any): void {
@@ -278,4 +383,371 @@ export class AdminComponent implements OnInit {
       error: (e: any) => this.toast.error(e?.error?.message || 'Cannot delete this item.')
     });
   }
+
+  // ── Schema customization ───────────────────────────────────────────────────
+  private emptyColumnForm() {
+    return {
+      name: '',
+      type: 'VARCHAR',
+      length: 100,
+      nullable: true,
+      defaultValue: '',
+      label: ''
+    };
+  }
+
+  loadCustomizationTables(): void {
+    this.customizationLoading = true;
+    this.api.get<any>('/admin/schema/tables').subscribe({
+      next: r => {
+        this.customizationTables = r.data || [];
+        if (!this.selectedCustomizationTable && this.customizationTables.length) {
+          this.selectedCustomizationTable = this.customizationTables[0].table_name;
+        }
+        this.customizationLoading = false;
+        if (this.selectedCustomizationTable) {
+          this.loadTableColumns(this.selectedCustomizationTable);
+        }
+        this.cdr.markForCheck();
+      },
+      error: (e: any) => {
+        this.customizationLoading = false;
+        this.toast.error(e?.error?.message || 'Failed to load customizable tables.');
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  loadTableColumns(tableName: string): void {
+    if (!tableName) return;
+    this.customizationLoading = true;
+    this.api.get<any>('/admin/schema/tables/' + tableName + '/columns').subscribe({
+      next: r => {
+        const cols = r.data || [];
+        this.customizationColumns = cols.sort((a: any, b: any) =>
+          Number(a.display_order || a.ordinal_position) - Number(b.display_order || b.ordinal_position)
+        );
+        this.customizationLoading = false;
+        this.cdr.markForCheck();
+      },
+      error: (e: any) => {
+        this.customizationLoading = false;
+        this.toast.error(e?.error?.message || 'Failed to load table columns.');
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  onCustomizationTableChange(): void {
+    if (!this.selectedCustomizationTable) return;
+    this.loadTableColumns(this.selectedCustomizationTable);
+  }
+
+  openColumnModal(column?: any): void {
+    this.editingColumn = column ?? null;
+    this.columnForm = column ? {
+      name: column.column_name,
+      type: this.normalizeColumnType(column.data_type || column.column_type),
+      length: this.extractColumnLength(column.column_type),
+      nullable: column.is_nullable === 'YES',
+      defaultValue: column.column_default ?? '',
+      label: column.label || ''
+    } : this.emptyColumnForm();
+    this.showColumnModal = true;
+    this.cdr.markForCheck();
+  }
+
+  private normalizeColumnType(type: string): string {
+    const t = String(type || '').toUpperCase();
+    if (t.includes('INT')) return 'INT';
+    if (t.includes('VARCHAR')) return 'VARCHAR';
+    if (t.includes('CHAR')) return 'CHAR';
+    if (t.includes('TEXT')) return 'TEXT';
+    if (t.includes('LONGTEXT')) return 'LONGTEXT';
+    if (t.includes('DECIMAL')) return 'DECIMAL';
+    if (t.includes('BIGINT')) return 'BIGINT';
+    if (t.includes('FLOAT')) return 'FLOAT';
+    if (t.includes('DOUBLE')) return 'DOUBLE';
+    if (t.includes('DATETIME')) return 'DATETIME';
+    if (t.includes('TIMESTAMP')) return 'TIMESTAMP';
+    if (t.includes('DATE')) return 'DATE';
+    if (t.includes('JSON')) return 'JSON';
+    if (t.includes('BOOLEAN') || t.includes('TINYINT(1)')) return 'BOOLEAN';
+    return 'VARCHAR';
+  }
+
+  private extractColumnLength(columnType: string): number {
+    const m = String(columnType || '').match(/\((\d+)/);
+    return m ? Number(m[1]) : 100;
+  }
+
+  needsLength(type: string): boolean {
+    const t = String(type || '').toUpperCase();
+    return t === 'VARCHAR' || t === 'CHAR' || t === 'DECIMAL';
+  }
+
+  saveColumn(): void {
+    if (!this.selectedCustomizationTable) {
+      this.toast.warning('Select a table first.');
+      return;
+    }
+    if (!this.columnForm.name?.trim()) {
+      this.toast.warning('Column name is required.');
+      return;
+    }
+
+    this.schemaActionLoading = true;
+
+    const payload = {
+      name: this.columnForm.name,
+      newName: this.columnForm.name,
+      type: this.columnForm.type,
+      length: this.needsLength(this.columnForm.type) ? this.columnForm.length : null,
+      nullable: this.columnForm.nullable,
+      defaultValue: this.columnForm.defaultValue,
+      label: this.columnForm.label,
+    };
+
+    const req$ = this.editingColumn
+      ? this.api.patch<any>(
+          '/admin/schema/tables/' + this.selectedCustomizationTable + '/columns/' + this.editingColumn.column_name,
+          payload
+        )
+      : this.api.post<any>('/admin/schema/tables/' + this.selectedCustomizationTable + '/columns', payload);
+
+    req$.subscribe({
+      next: () => {
+        this.schemaActionLoading = false;
+        this.showColumnModal = false;
+        this.toast.success(this.editingColumn ? 'Column updated.' : 'Column added.');
+        this.loadTableColumns(this.selectedCustomizationTable);
+        this.cdr.markForCheck();
+      },
+      error: (e: any) => {
+        this.schemaActionLoading = false;
+        this.toast.error(e?.error?.message || 'Failed to save column.');
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  async deleteColumn(column: any): Promise<void> {
+    if (column.is_protected) {
+      this.toast.warning('Protected columns cannot be deleted.');
+      return;
+    }
+    const ok = await this.confirm.confirm(
+      'Delete column "' + column.column_name + '" from table "' + this.selectedCustomizationTable + '"? This cannot be undone.',
+      'Delete Column'
+    );
+    if (!ok) return;
+
+    this.schemaActionLoading = true;
+    this.api.delete<any>('/admin/schema/tables/' + this.selectedCustomizationTable + '/columns/' + column.column_name).subscribe({
+      next: () => {
+        this.schemaActionLoading = false;
+        this.toast.success('Column deleted.');
+        this.loadTableColumns(this.selectedCustomizationTable);
+      },
+      error: (e: any) => {
+        this.schemaActionLoading = false;
+        this.toast.error(e?.error?.message || 'Failed to delete column.');
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  moveColumn(column: any, direction: number): void {
+    const idx = this.customizationColumns.findIndex(c => c.column_name === column.column_name);
+    const nextIdx = idx + direction;
+    if (idx < 0 || nextIdx < 0 || nextIdx >= this.customizationColumns.length) return;
+    const clone = [...this.customizationColumns];
+    const current = clone[idx];
+    clone[idx] = clone[nextIdx];
+    clone[nextIdx] = current;
+    this.customizationColumns = clone.map((c, i) => ({ ...c, display_order: i + 1 }));
+    this.cdr.markForCheck();
+  }
+
+  saveColumnPreferences(): void {
+    if (!this.selectedCustomizationTable) return;
+    this.schemaActionLoading = true;
+
+    const payload = {
+      columns: this.customizationColumns.map((c, i) => ({
+        column_name: c.column_name,
+        label: c.label || null,
+        is_visible: c.is_visible !== false,
+        display_order: i + 1,
+        width: c.width || null,
+      }))
+    };
+
+    this.api.put<any>('/admin/schema/tables/' + this.selectedCustomizationTable + '/preferences', payload).subscribe({
+      next: () => {
+        this.schemaActionLoading = false;
+        this.toast.success('Column preferences saved.');
+        this.loadTableColumns(this.selectedCustomizationTable);
+        this.cdr.markForCheck();
+      },
+      error: (e: any) => {
+        this.schemaActionLoading = false;
+        this.toast.error(e?.error?.message || 'Failed to save preferences.');
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  loadUiSectionsCatalog(): void {
+    this.api.get<any>('/admin/ui-sections/catalog').subscribe({
+      next: r => {
+        this.uiSectionCatalog = r.data || {};
+        this.uiSections = Object.keys(this.uiSectionCatalog);
+        if (!this.uiSections.includes(this.selectedUiSection) && this.uiSections.length) {
+          this.selectedUiSection = this.uiSections[0];
+        }
+        this.loadUiSectionPreferences();
+        this.cdr.markForCheck();
+      },
+      error: (e: any) => {
+        this.toast.error(e?.error?.message || 'Failed to load UI section catalog.');
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  onUiSectionChange(): void {
+    this.loadUiSectionPreferences();
+  }
+
+  onUiScopeChange(): void {
+    this.loadUiSectionPreferences();
+  }
+
+  onUiRoleChange(): void {
+    this.loadUiSectionPreferences();
+  }
+
+  clearUiPreviewFilters(): void {
+    this.uiPreviewSearch = '';
+    this.uiPreviewSourceFilter = 'all';
+    this.uiPreviewVisibilityFilter = 'visible';
+    this.cdr.markForCheck();
+  }
+
+  loadUiSectionPreferences(): void {
+    if (!this.selectedUiSection) return;
+    this.customizationLoading = true;
+    this.api.get<any>('/admin/ui-sections/' + this.selectedUiSection + '/preferences', {
+      role: this.selectedUiRole
+    }).subscribe({
+      next: r => {
+        const data = r.data || {};
+        const saved = ((this.selectedUiScope === 'table' ? data.table : data.form) || []) as any[];
+
+        this.uiFieldsEditor = saved.map((s: any, idx: number) => ({
+          field_key: s.field_key,
+          label: s?.label || '',
+          is_visible: !(s?.is_visible === false || s?.is_visible === 0 || s?.is_visible === '0'),
+          display_order: s?.display_order || idx + 1,
+          source: s?.source || 'default'
+        }));
+
+        this.uiFieldsEditor.sort((a, b) => Number(a.display_order) - Number(b.display_order));
+        this.customizationLoading = false;
+        this.cdr.markForCheck();
+      },
+      error: (e: any) => {
+        this.customizationLoading = false;
+        this.toast.error(e?.error?.message || 'Failed to load section preferences.');
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  moveUiField(field: any, direction: number): void {
+    const idx = this.uiFieldsEditor.findIndex(f => f.field_key === field.field_key);
+    const nextIdx = idx + direction;
+    if (idx < 0 || nextIdx < 0 || nextIdx >= this.uiFieldsEditor.length) return;
+    const clone = [...this.uiFieldsEditor];
+    const current = clone[idx];
+    clone[idx] = clone[nextIdx];
+    clone[nextIdx] = current;
+    this.uiFieldsEditor = clone.map((f, i) => ({ ...f, display_order: i + 1 }));
+    this.cdr.markForCheck();
+  }
+
+  saveUiSectionPreferences(): void {
+    if (!this.selectedUiSection) return;
+    this.schemaActionLoading = true;
+    const payload = {
+      scope: this.selectedUiScope,
+      role_name: this.selectedUiRole,
+      fields: this.uiFieldsEditor.map((f, i) => ({
+        field_key: f.field_key,
+        label: f.label || null,
+        is_visible: f.is_visible !== false,
+        display_order: i + 1
+      }))
+    };
+
+    this.api.put<any>('/admin/ui-sections/' + this.selectedUiSection + '/preferences', payload).subscribe({
+      next: () => {
+        this.schemaActionLoading = false;
+        this.toast.success('Section preferences saved.');
+        this.loadUiSectionPreferences();
+      },
+      error: (e: any) => {
+        this.schemaActionLoading = false;
+        this.toast.error(e?.error?.message || 'Failed to save section preferences.');
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  async resetUiSectionPreferences(): Promise<void> {
+    if (!this.selectedUiSection) return;
+    const msg = this.selectedUiRole === 'ALL'
+      ? 'Reset this scope to default for all roles?'
+      : 'Reset this scope for role "' + this.selectedUiRole + '" only?';
+    const ok = await this.confirm.confirm(msg, 'Reset to Default');
+    if (!ok) return;
+
+    this.schemaActionLoading = true;
+    this.api.delete<any>('/admin/ui-sections/' + this.selectedUiSection + '/preferences', {
+      scope: this.selectedUiScope,
+      role: this.selectedUiRole
+    }).subscribe({
+      next: () => {
+        this.schemaActionLoading = false;
+        this.toast.success('Preferences reset to default.');
+        this.loadUiSectionPreferences();
+      },
+      error: (e: any) => {
+        this.schemaActionLoading = false;
+        this.toast.error(e?.error?.message || 'Failed to reset preferences.');
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  get uiPreviewVisibleFields(): any[] {
+    const q = this.uiPreviewSearch.trim().toLowerCase();
+
+    return this.uiFieldsEditor
+      .filter(f => {
+        if (this.uiPreviewVisibilityFilter === 'visible' && f.is_visible === false) return false;
+        if (this.uiPreviewVisibilityFilter === 'hidden' && f.is_visible !== false) return false;
+        return true;
+      })
+      .filter(f => this.uiPreviewSourceFilter === 'all' ? true : (f.source || 'default') === this.uiPreviewSourceFilter)
+      .filter(f => {
+        if (!q) return true;
+        const fieldKey = String(f.field_key || '').toLowerCase();
+        const label = String(f.label || '').toLowerCase();
+        return fieldKey.includes(q) || label.includes(q);
+      })
+      .sort((a, b) => Number(a.display_order) - Number(b.display_order));
+  }
 }
+

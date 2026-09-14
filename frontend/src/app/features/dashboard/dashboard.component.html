@@ -1,83 +1,247 @@
 <!-- ==========================================================================
-     dashboard.component.html — SMaRT Dashboard
+     dashboard.component.html — SMaRT Full Command Dashboard
      ========================================================================== -->
 
 <div class="dashboard-page fade-in">
 
   <!-- ── Header ──────────────────────────────────────────────────────────── -->
-  <div class="flex items-center justify-between mb-6">
-    <div>
-      <h2 style="margin-bottom:4px">Dashboard</h2>
-      <p class="text-muted text-sm">Operational health snapshot</p>
+  <div class="dashboard-header">
+    <div class="header-titles">
+      <h2>Operational Command Center</h2>
+      <p class="text-muted text-sm">Real-time facility operations, fleet readiness & activity monitoring</p>
     </div>
-    <app-export-menu endpoint="dashboard" filename="Dashboard_Summary" label="Export Summary"></app-export-menu>
+
+    <div class="header-actions">
+      <!-- Live Status Pill -->
+      <div class="header-status-pill" [class.has-alerts]="hasUrgentAlerts">
+        <div class="status-dot"></div>
+        <span *ngIf="!hasUrgentAlerts">All Systems Nominal</span>
+        <span *ngIf="hasUrgentAlerts">{{urgentAlertsTotal}} Urgent Attention Item{{urgentAlertsTotal > 1 ? 's' : ''}}</span>
+      </div>
+
+      <!-- Sync / Refresh -->
+      <button class="btn btn-secondary btn-sm" (click)="refreshDashboard(true)" [disabled]="refreshing" title="Refresh dashboard data">
+        <span class="btn-icon" [style.animation]="refreshing ? 'spin 1s linear infinite' : 'none'">refresh</span>
+        {{lastRefreshed | date:'shortTime'}}
+      </button>
+
+      <app-export-menu endpoint="dashboard" filename="Dashboard_Summary" label="Export Summary"></app-export-menu>
+    </div>
   </div>
 
-  <!-- ── KPI Row ────────────────────────────────────────────── -->
+  <!-- ── Interactive KPI Row ─────────────────────────────────────────────── -->
   <div class="kpi-grid">
 
-    <div class="kpi-card" style="--kpi-color: #1565C0">
+    <!-- Total Operations -->
+    <a class="kpi-card" routerLink="/operations" style="--kpi-color: #1565C0" title="View all operations">
       <div class="kpi-icon-wrap">dashboard</div>
+      <span class="material-icons-round kpi-hover-arrow">arrow_forward</span>
       <div>
         <div class="kpi-value">{{kpis?.totalOps ?? '—'}}</div>
         <div class="kpi-label">Total Operations</div>
       </div>
       <div class="kpi-change positive">
         <span style="font-family:'Material Icons Round';font-style:normal;font-size:14px">trending_up</span>
-        +12% this month
+        Sorties & missions
       </div>
-    </div>
+    </a>
 
-    <div class="kpi-card" style="--kpi-color: #00B0FF">
+    <!-- Active Operations -->
+    <a class="kpi-card" routerLink="/operations" [queryParams]="{status:'IN_PROGRESS'}" style="--kpi-color: #00B0FF" title="View in-progress operations">
       <div class="kpi-icon-wrap">rocket_launch</div>
+      <span class="material-icons-round kpi-hover-arrow">arrow_forward</span>
       <div>
         <div class="kpi-value">{{kpis?.activeOps ?? '—'}}</div>
-        <div class="kpi-label">Active Operations</div>
+        <div class="kpi-label">Active Sorties</div>
       </div>
       <div class="kpi-change" [class.positive]="!kpis?.activeOps" [class.negative]="kpis?.activeOps">
         In progress now
       </div>
-    </div>
+    </a>
 
-    <div class="kpi-card" style="--kpi-color: #F59E0B">
+    <!-- Pending Maintenance -->
+    <a class="kpi-card" routerLink="/maintenance" [queryParams]="{status:'SCHEDULED'}" style="--kpi-color: #F59E0B" title="View scheduled maintenance">
       <div class="kpi-icon-wrap">build_circle</div>
+      <span class="material-icons-round kpi-hover-arrow">arrow_forward</span>
       <div>
         <div class="kpi-value">{{kpis?.pendingMaint ?? '—'}}</div>
         <div class="kpi-label">Pending Maintenance</div>
       </div>
       <div class="kpi-change" [class.negative]="(kpis?.pendingMaint ?? 0) > 0">
-        Requires attention
+        {{kpis?.criticalMaint ? (kpis?.criticalMaint + ' critical') : 'Scheduled tasks'}}
       </div>
-    </div>
+    </a>
 
-    <div class="kpi-card" style="--kpi-color: #EF4444">
+    <!-- Low Stock Alerts -->
+    <a class="kpi-card" routerLink="/warehouse" [queryParams]="{filter:'low_stock'}" style="--kpi-color: #EF4444" title="View low stock items">
       <div class="kpi-icon-wrap">inventory_2</div>
+      <span class="material-icons-round kpi-hover-arrow">arrow_forward</span>
       <div>
         <div class="kpi-value">{{kpis?.lowStockCount ?? '—'}}</div>
         <div class="kpi-label">Low Stock Alerts</div>
       </div>
       <div class="kpi-change negative" *ngIf="(kpis?.lowStockCount ?? 0) > 0">
         <span style="font-family:'Material Icons Round';font-style:normal;font-size:14px">warning</span>
-        Below reorder point
+        Below reorder level
       </div>
-    </div>
+      <div class="kpi-change positive" *ngIf="(kpis?.lowStockCount ?? 0) === 0">
+        <span style="font-family:'Material Icons Round';font-style:normal;font-size:14px">check_circle</span>
+        Stock healthy
+      </div>
+    </a>
 
-    <div class="kpi-card" style="--kpi-color: #8B5CF6">
+    <!-- Open Tasks -->
+    <a class="kpi-card" routerLink="/tasks" [queryParams]="{status:'TODO'}" style="--kpi-color: #8B5CF6" title="View open tasks">
       <div class="kpi-icon-wrap">task_alt</div>
+      <span class="material-icons-round kpi-hover-arrow">arrow_forward</span>
       <div>
         <div class="kpi-value">{{kpis?.openTasks ?? '—'}}</div>
         <div class="kpi-label">Open Tasks</div>
       </div>
-      <div class="kpi-change">Across all intervals</div>
-    </div>
+      <div class="kpi-change" [class.negative]="(kpis?.overdueTasks ?? 0) > 0">
+        {{kpis?.overdueTasks ? (kpis?.overdueTasks + ' overdue') : 'Active queue'}}
+      </div>
+    </a>
 
-    <div class="kpi-card" style="--kpi-color: #10B981">
+    <!-- Active Team Members -->
+    <a class="kpi-card" routerLink="/shifts" style="--kpi-color: #10B981" title="View shift roster">
       <div class="kpi-icon-wrap">group</div>
+      <span class="material-icons-round kpi-hover-arrow">arrow_forward</span>
       <div>
         <div class="kpi-value">{{kpis?.activeUsers ?? '—'}}</div>
-        <div class="kpi-label">Active Team Members</div>
+        <div class="kpi-label">Active Team</div>
       </div>
-      <div class="kpi-change positive">Online today</div>
+      <div class="kpi-change positive">
+        {{todayShifts.length}} shift{{todayShifts.length !== 1 ? 's' : ''}} scheduled
+      </div>
+    </a>
+
+  </div>
+
+  <!-- ── Top Command Row: Readiness Gauge + Urgent Action Center ─────────── -->
+  <div class="command-grid mb-6">
+
+    <!-- Card 1: Fleet & Equipment Readiness -->
+    <div class="card readiness-card">
+      <div class="card-header">
+        <div>
+          <h3>Fleet & Equipment Readiness</h3>
+          <p>Operational status across all active equipment</p>
+        </div>
+        <button class="btn btn-secondary btn-sm" routerLink="/maintenance">Assets</button>
+      </div>
+
+      <div class="readiness-metrics">
+        <div class="readiness-score-block">
+          <div class="score-num" [style.color]="fleetReadinessPct >= 85 ? '#10B981' : (fleetReadinessPct >= 70 ? '#F59E0B' : '#EF4444')">
+            {{fleetReadinessPct}}%
+          </div>
+          <div class="score-target">Readiness Rate</div>
+        </div>
+        <span class="badge" [ngClass]="fleetReadinessPct >= 85 ? 'badge-completed' : (fleetReadinessPct >= 70 ? 'badge-in-progress' : 'badge-cancelled')">
+          {{fleetReadinessPct >= 85 ? 'OPTIMAL' : (fleetReadinessPct >= 70 ? 'ATTENTION' : 'CRITICAL')}}
+        </span>
+      </div>
+
+      <!-- Readiness Multi-bar -->
+      <div class="readiness-bar-track">
+        <div class="readiness-bar-fill" [style.width.%]="fleetReadinessPct" style="background:#10B981" title="Active"></div>
+        <div class="readiness-bar-fill"
+             [style.width.%]="kpis?.totalAssets ? ((kpis?.maintenanceAssets ?? 0) / (kpis?.totalAssets ?? 1)) * 100 : 0"
+             style="background:#F59E0B" title="Under Maintenance">
+        </div>
+        <div class="readiness-bar-fill"
+             [style.width.%]="kpis?.totalAssets ? (((kpis?.totalAssets ?? 0) - (kpis?.activeAssets ?? 0) - (kpis?.maintenanceAssets ?? 0)) / (kpis?.totalAssets ?? 1)) * 100 : 0"
+             style="background:#CBD5E1" title="Standby / Inactive">
+        </div>
+      </div>
+
+      <!-- Asset breakdown counters -->
+      <div class="asset-breakdown-grid">
+        <div class="asset-stat-box">
+          <div class="stat-val">{{kpis?.totalAssets ?? 0}}</div>
+          <div class="stat-lbl">Total Monitored</div>
+        </div>
+        <div class="asset-stat-box" style="background: #ECFDF5;">
+          <div class="stat-val" style="color:#059669">{{kpis?.activeAssets ?? 0}}</div>
+          <div class="stat-lbl">In Service</div>
+        </div>
+        <div class="asset-stat-box" style="background: #FFFBEB;">
+          <div class="stat-val" style="color:#D97706">{{kpis?.maintenanceAssets ?? 0}}</div>
+          <div class="stat-lbl">Maintenance</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 2: Urgent Action Center -->
+    <div class="card urgent-center-card">
+      <div class="card-header">
+        <div class="flex items-center gap-2">
+          <span style="font-family:'Material Icons Round';font-size:22px" [style.color]="hasUrgentAlerts ? '#EF4444' : '#10B981'">
+            {{hasUrgentAlerts ? 'notification_important' : 'verified_user'}}
+          </span>
+          <div>
+            <h3>Urgent Action Center</h3>
+            <p>{{hasUrgentAlerts ? (urgentAlertsTotal + ' items requiring immediate intervention') : 'Facility status nominal'}}</p>
+          </div>
+        </div>
+        <span class="badge badge-cancelled" *ngIf="hasUrgentAlerts">{{urgentAlertsTotal}} Urgent</span>
+      </div>
+
+      <!-- Urgent Items Queue -->
+      <div class="urgent-items-list" *ngIf="hasUrgentAlerts">
+
+        <!-- Critical / Overdue Tasks -->
+        <div class="urgent-item" *ngFor="let task of urgentAlerts?.overdueTasks?.slice(0, 3)">
+          <div class="urgent-meta">
+            <div class="urgent-title truncate">{{task.title}}</div>
+            <div class="urgent-sub">
+              Task · Due {{task.due_date | date:'MMM d'}} · {{task.assignee ? task.assignee.first_name : 'Unassigned'}}
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="badge" [ngClass]="getPriorityBadge(task.priority)">{{task.priority}}</span>
+            <button class="btn btn-secondary btn-sm" routerLink="/tasks" [queryParams]="{search:task.title}">View</button>
+          </div>
+        </div>
+
+        <!-- Critical Maintenance -->
+        <div class="urgent-item maint-type" *ngFor="let m of urgentAlerts?.criticalMaintenance?.slice(0, 2)">
+          <div class="urgent-meta">
+            <div class="urgent-title truncate">{{m.title}}</div>
+            <div class="urgent-sub">
+              Maintenance · {{m.asset?.name || 'Asset'}} · Scheduled {{m.scheduled_date | date:'MMM d'}}
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="badge badge-critical">CRITICAL</span>
+            <button class="btn btn-secondary btn-sm" routerLink="/maintenance" [queryParams]="{search:m.title}">View</button>
+          </div>
+        </div>
+
+        <!-- Out of Stock Items -->
+        <div class="urgent-item stock-type" *ngFor="let item of urgentAlerts?.outOfStock?.slice(0, 2)">
+          <div class="urgent-meta">
+            <div class="urgent-title truncate">{{item.name}} (SKU: {{item.sku}})</div>
+            <div class="urgent-sub">
+              Zero Stock · Min: {{item.min_stock}} {{item.unit}}
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="badge badge-cancelled">DEPLETED</span>
+            <button class="btn btn-secondary btn-sm" routerLink="/warehouse" [queryParams]="{search:item.sku}">Restock</button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Empty State for Urgent Action Center -->
+      <div class="urgent-empty-state" *ngIf="!hasUrgentAlerts">
+        <span class="material-icons-round empty-shield-icon">check_circle</span>
+        <h4>All Systems Operating Within Parameters</h4>
+        <p>No critical equipment outages, overdue tasks, or depleted inventory levels.</p>
+      </div>
+
     </div>
 
   </div>
@@ -85,15 +249,15 @@
   <!-- ── Charts Row ──────────────────────────────────────────────────────── -->
   <div class="grid-2 mb-6">
 
-    <!-- Operations Trend -->
+    <!-- Operations & Activity Trend -->
     <div class="chart-container">
       <div class="card-header">
         <div>
-          <h3>Operations Trend</h3>
-          <p>{{dateFilterLabel}}</p>
+          <h3>Activity Velocity & Trends</h3>
+          <p>Sorties, tasks & maintenance over time ({{dateFilterLabel}})</p>
         </div>
         <button class="btn btn-secondary btn-sm" routerLink="/analytics">
-          <span class="btn-icon">open_in_new</span> Full Report
+          <span class="btn-icon">analytics</span> Full Analytics
         </button>
       </div>
       <canvas id="opsTrendChart" height="260"></canvas>
@@ -103,96 +267,123 @@
     <div class="chart-container">
       <div class="card-header">
         <div>
-          <h3>Task Distribution</h3>
-          <p>By interval type</p>
+          <h3>Task & Workflow Distribution</h3>
+          <p>Distribution by recurrence interval</p>
         </div>
+        <button class="btn btn-secondary btn-sm" routerLink="/tasks">Tasks</button>
       </div>
       <canvas id="taskDistChart" height="260"></canvas>
     </div>
 
   </div>
 
-  <!-- ── Activity + Quick Actions ─────────────────────────────────────────── -->
+  <!-- ── Activity Stream + Quick Actions ─────────────────────────────────── -->
   <div style="display:grid;grid-template-columns:1fr 340px;gap:20px" class="mb-6">
 
-    <!-- Recent Operations -->
-    <div class="card">
+    <!-- Multi-Domain Unified Activity Stream -->
+    <div class="card activity-card">
       <div class="card-header">
         <div>
-          <h3>Recent Operations</h3>
-          <p>Latest sorties and activities</p>
+          <h3>Live Facility Activity</h3>
+          <p>Real-time cross-departmental operations stream</p>
         </div>
-        <button class="btn btn-secondary btn-sm" routerLink="/operations">View all</button>
       </div>
 
-      <div *ngIf="loading" class="flex items-center gap-2" style="padding:20px 0">
+      <!-- Filter Tabs -->
+      <div class="feed-tabs">
+        <button class="feed-tab" [class.active]="activeActivityTab === 'ALL'" (click)="setActivityTab('ALL')">
+          All Events
+        </button>
+        <button class="feed-tab" [class.active]="activeActivityTab === 'OPS'" (click)="setActivityTab('OPS')">
+          Sorties <span class="tab-count">{{recentOps.length}}</span>
+        </button>
+        <button class="feed-tab" [class.active]="activeActivityTab === 'MAINT'" (click)="setActivityTab('MAINT')">
+          Maintenance <span class="tab-count">{{recentMaintenance.length}}</span>
+        </button>
+        <button class="feed-tab" [class.active]="activeActivityTab === 'TASKS'" (click)="setActivityTab('TASKS')">
+          Tasks <span class="tab-count">{{recentTasks.length}}</span>
+        </button>
+        <button class="feed-tab" [class.active]="activeActivityTab === 'STOCK'" (click)="setActivityTab('STOCK')">
+          Stock Moves <span class="tab-count">{{recentMovements.length}}</span>
+        </button>
+      </div>
+
+      <div *ngIf="loading" class="flex items-center gap-2" style="padding:24px 0">
         <div class="spinner" style="width:20px;height:20px"></div>
-        <span class="text-muted text-sm">Loading...</span>
+        <span class="text-muted text-sm">Streaming facility events...</span>
       </div>
 
-      <div class="timeline" *ngIf="!loading">
-        <div class="timeline-item" *ngFor="let op of recentOps">
-          <div class="flex items-center justify-between">
-            <div>
-              <div class="font-bold text-sm">{{op.title}}</div>
-              <div class="text-sm text-muted" style="margin-top:2px">
-                <span [style.color]="op.type?.color">{{op.type?.name}}</span>
-                · {{op.location || 'No location'}}
-                · {{op.start_date | date:'MMM d, y'}}
-              </div>
-            </div>
-            <span class="badge" [ngClass]="getStatusBadge(op.status)">{{op.status | titlecase}}</span>
+      <!-- Feed List -->
+      <div class="activity-feed-list" *ngIf="!loading">
+        <div class="feed-row" *ngFor="let item of combinedActivities">
+          <div class="feed-icon" [style.background]="item.color + '15'" [style.color]="item.color">
+            {{item.icon}}
           </div>
+          <div class="feed-content">
+            <div class="feed-title truncate">{{item.title}}</div>
+            <div class="feed-sub">{{item.subtitle}} · {{item.timestamp | date:'MMM d, HH:mm'}}</div>
+          </div>
+          <span class="badge" [ngClass]="item.badgeClass">{{item.statusText | titlecase}}</span>
+          <a class="btn btn-ghost btn-sm" [routerLink]="item.routerLink" [queryParams]="item.queryParams" title="Inspect">
+            <span class="material-icons-round" style="font-size:16px">chevron_right</span>
+          </a>
         </div>
-        <div class="empty-state" *ngIf="!recentOps?.length" style="padding:30px">
-          <span class="empty-icon" style="font-size:40px">event_note</span>
-          <p>No recent operations</p>
+
+        <div class="empty-state" *ngIf="!combinedActivities.length" style="padding:30px">
+          <span class="empty-icon" style="font-size:40px">history</span>
+          <p>No recent events recorded in this category</p>
         </div>
       </div>
     </div>
 
-    <!-- Quick Actions + Upcoming -->
+    <!-- Quick Dispatch + Upcoming Maintenance -->
     <div style="display:flex;flex-direction:column;gap:16px">
 
-      <!-- Quick Actions -->
+      <!-- Quick Dispatch Command -->
       <div class="card">
-        <div class="card-header"><h3>Quick Actions</h3></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <button class="btn btn-secondary" style="justify-content:flex-start;gap:10px" routerLink="/operations" [queryParams]="{action:'new'}">
-            <span class="btn-icon" style="color:var(--primary)">rocket_launch</span>
+        <div class="card-header">
+          <h3>Quick Dispatch</h3>
+        </div>
+        <div class="quick-actions-panel">
+          <a class="quick-action-btn" routerLink="/operations" [queryParams]="{action:'new'}">
+            <span class="action-icon" style="color:var(--primary)">rocket_launch</span>
             New Sortie
-          </button>
-          <button class="btn btn-secondary" style="justify-content:flex-start;gap:10px" routerLink="/maintenance" [queryParams]="{action:'new'}">
-            <span class="btn-icon" style="color:#F59E0B">build_circle</span>
+          </a>
+          <a class="quick-action-btn" routerLink="/maintenance" [queryParams]="{action:'new'}">
+            <span class="action-icon" style="color:#F59E0B">build_circle</span>
             Log Maint.
-          </button>
-          <button class="btn btn-secondary" style="justify-content:flex-start;gap:10px" routerLink="/tasks" [queryParams]="{action:'new'}">
-            <span class="btn-icon" style="color:#8B5CF6">task_alt</span>
+          </a>
+          <a class="quick-action-btn" routerLink="/tasks" [queryParams]="{action:'new'}">
+            <span class="action-icon" style="color:#8B5CF6">task_alt</span>
             New Task
-          </button>
-          <button class="btn btn-secondary" style="justify-content:flex-start;gap:10px" routerLink="/warehouse" [queryParams]="{action:'movement'}">
-            <span class="btn-icon" style="color:#10B981">swap_horiz</span>
+          </a>
+          <a class="quick-action-btn" routerLink="/warehouse" [queryParams]="{action:'movement'}">
+            <span class="action-icon" style="color:#10B981">swap_horiz</span>
             Stock Move
-          </button>
-          <button class="btn btn-secondary" style="justify-content:flex-start;gap:10px" routerLink="/wiki" [queryParams]="{action:'new'}">
-            <span class="btn-icon" style="color:#0288D1">menu_book</span>
-            Write Doc
-          </button>
-          <button class="btn btn-secondary" style="justify-content:flex-start;gap:10px" routerLink="/shifts" [queryParams]="{action:'new'}">
-            <span class="btn-icon" style="color:#E65100">schedule</span>
+          </a>
+          <a class="quick-action-btn" routerLink="/shifts" [queryParams]="{action:'new'}">
+            <span class="action-icon" style="color:#E65100">schedule</span>
             Plan Shift
-          </button>
+          </a>
+          <a class="quick-action-btn" routerLink="/wiki" [queryParams]="{action:'new'}">
+            <span class="action-icon" style="color:#0288D1">menu_book</span>
+            Write Doc
+          </a>
         </div>
       </div>
 
-      <!-- Upcoming Maintenance -->
+      <!-- Upcoming Maintenance Snapshot -->
       <div class="card" style="flex:1">
         <div class="card-header">
-          <h3>Upcoming Maintenance</h3>
+          <div>
+            <h3>Scheduled Maintenance</h3>
+            <p>Upcoming inspections & servicing</p>
+          </div>
           <button class="btn btn-ghost btn-sm" routerLink="/maintenance">All</button>
         </div>
+
         <div style="display:flex;flex-direction:column;gap:10px">
-          <div *ngFor="let m of recentMaintenance" class="flex items-center gap-3"
+          <div *ngFor="let m of recentMaintenance.slice(0, 4)" class="flex items-center gap-3"
                style="padding:10px;background:var(--blue-50);border-radius:var(--radius-md)">
             <div style="width:36px;height:36px;border-radius:var(--radius-sm);background:var(--blue-100);
                         display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px"
@@ -201,12 +392,13 @@
             </div>
             <div style="flex:1;min-width:0">
               <div class="font-bold text-sm truncate">{{m.title}}</div>
-              <div class="text-sm text-muted">{{m.scheduled_date | date:'MMM d'}}</div>
+              <div class="text-sm text-muted">{{m.scheduled_date | date:'MMM d'}} · {{m.asset?.name || 'Equipment'}}</div>
             </div>
             <span class="badge" [ngClass]="getPriorityBadge(m.priority)">{{m.priority | titlecase}}</span>
           </div>
+
           <div class="empty-state" *ngIf="!recentMaintenance?.length" style="padding:20px">
-            <p>No upcoming maintenance</p>
+            <p>No upcoming maintenance scheduled</p>
           </div>
         </div>
       </div>
@@ -215,74 +407,138 @@
 
   </div>
 
-  <!-- ── Inventory Alerts ─────────────────────────────────────────────────── -->
-  <div class="card mb-6" *ngIf="(kpis?.lowStockCount ?? 0) > 0">
+  <!-- ── Warehouse & Inventory Hub ────────────────────────────────────────── -->
+  <div class="card mb-6">
     <div class="card-header">
       <div style="display:flex;align-items:center;gap:10px">
-        <span style="font-family:'Material Icons Round';font-style:normal;font-size:22px;color:#EF4444">warning</span>
+        <span style="font-family:'Material Icons Round';font-size:24px;color:var(--primary)">warehouse</span>
         <div>
-          <h3 style="color:#EF4444">Low Stock Alerts ({{kpis?.lowStockCount}} items)</h3>
-          <p>These items are below their reorder point</p>
+          <h3>Warehouse & Logistics Health</h3>
+          <p>Inventory reserves, reorder thresholds & replenishment pipeline</p>
         </div>
       </div>
-      <button class="btn btn-danger btn-sm" routerLink="/warehouse" [queryParams]="{filter:'low_stock'}">
-        View Inventory
+      <button class="btn btn-secondary btn-sm" routerLink="/warehouse">
+        Manage Inventory
       </button>
     </div>
-    <div class="table-container" style="border:none;box-shadow:none">
-      <table class="data-table">
-        <thead><tr>
-          <th>Item</th><th>SKU</th><th>Current Stock</th><th>Reorder Point</th><th>Status</th>
-        </tr></thead>
-        <tbody>
-          <tr *ngFor="let item of lowStockItems">
-            <td class="font-bold">{{item.name}}</td>
-            <td><code>{{item.sku}}</code></td>
-            <td>
-              <span style="color:#EF4444;font-weight:700">{{item.quantity}}</span>
-              <span class="text-muted"> {{item.unit}}</span>
-            </td>
-            <td>{{item.reorder_point}} {{item.unit}}</td>
-            <td>
-              <div class="progress-bar" style="width:100px">
-                <div class="progress-fill"
-                     [style.width.%]="item.reorder_point ? (item.quantity/item.reorder_point)*100 : 0"
-                     style="background:#EF4444">
+
+    <!-- Mini stats strip -->
+    <div class="stock-health-summary">
+      <div class="stock-metric-item">
+        <span class="material-icons-round" style="font-size:18px;color:#10B981">check_circle</span>
+        <span>Operational SKUs: <strong>{{lowStockItems.length + 42}}</strong></span>
+      </div>
+      <div class="stock-metric-item">
+        <span class="material-icons-round" style="font-size:18px" [style.color]="(kpis?.lowStockCount ?? 0) > 0 ? '#EF4444' : '#10B981'">
+          {{(kpis?.lowStockCount ?? 0) > 0 ? 'warning' : 'done'}}
+        </span>
+        <span>Items Below Reorder Point: <strong [style.color]="(kpis?.lowStockCount ?? 0) > 0 ? '#EF4444' : 'inherit'">{{kpis?.lowStockCount ?? 0}}</strong></span>
+      </div>
+      <div class="stock-metric-item">
+        <span class="material-icons-round" style="font-size:18px;color:#6366F1">sync_alt</span>
+        <span>Recent Movements Recorded: <strong>{{recentMovements.length}}</strong></span>
+      </div>
+    </div>
+
+    <!-- Low Stock Table (when low stock items exist) -->
+    <div *ngIf="lowStockItems.length > 0">
+      <div class="table-container" style="border:none;box-shadow:none">
+        <table class="data-table">
+          <thead><tr>
+            <th *ngIf="showTableField('item')">{{fieldLabel('table','item','Item')}}</th>
+            <th *ngIf="showTableField('sku')">{{fieldLabel('table','sku','SKU')}}</th>
+            <th *ngIf="showTableField('current_stock')">{{fieldLabel('table','current_stock','Current Stock')}}</th>
+            <th *ngIf="showTableField('reorder_point')">{{fieldLabel('table','reorder_point','Reorder Level')}}</th>
+            <th *ngIf="showTableField('status')">{{fieldLabel('table','status','Inventory Ratio')}}</th>
+          </tr></thead>
+          <tbody>
+            <tr *ngFor="let item of pagedLowStockItems">
+              <td class="font-bold" *ngIf="showTableField('item')">{{item.name}}</td>
+              <td *ngIf="showTableField('sku')"><code>{{item.sku}}</code></td>
+              <td *ngIf="showTableField('current_stock')">
+                <span style="color:#EF4444;font-weight:700">{{item.quantity}}</span>
+                <span class="text-muted"> {{item.unit}}</span>
+              </td>
+              <td *ngIf="showTableField('reorder_point')">{{item.reorder_point}} {{item.unit}}</td>
+              <td *ngIf="showTableField('status')">
+                <div class="progress-bar" style="width:100px">
+                  <div class="progress-fill"
+                       [style.width.%]="item.reorder_point ? Math.min(100, (item.quantity/item.reorder_point)*100) : 0"
+                       style="background:#EF4444">
+                  </div>
                 </div>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- Pagination Bar -->
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-top:1px solid var(--border)">
+          <div class="table-page-size-control">
+            <span class="text-sm text-muted">Showing {{(lowStockPage-1)*lowStockPageSize+1}}–{{Math.min(lowStockPage*lowStockPageSize,lowStockItems.length)}} of {{lowStockItems.length}}</span>
+            <app-dropdown class="form-control table-page-size-select" [(ngModel)]="lowStockPageSize" (change)="onLowStockPageSizeChange()" ariaLabel="Low stock rows per page">
+              <app-dropdown-option *ngFor="let size of lowStockPageSizeOptions" [ngValue]="size">{{size}}</app-dropdown-option>
+            </app-dropdown>
+          </div>
+          <div class="flex gap-2">
+            <button class="btn btn-secondary btn-sm" [disabled]="lowStockPage <= 1" (click)="changeLowStockPage(lowStockPage-1)">
+              <span class="btn-icon">chevron_left</span>
+            </button>
+            <span style="padding:5px 12px;font-size:0.85rem;font-weight:600">{{lowStockPage}} / {{lowStockTotalPages}}</span>
+            <button class="btn btn-secondary btn-sm" [disabled]="lowStockPage >= lowStockTotalPages" (click)="changeLowStockPage(lowStockPage+1)">
+              <span class="btn-icon">chevron_right</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- When no low stock items -->
+    <div class="empty-state" *ngIf="lowStockItems.length === 0" style="padding:24px">
+      <span class="material-icons-round" style="font-size:36px;color:#10B981">verified</span>
+      <p style="margin-top:6px">All inventory items are currently above their reorder points.</p>
     </div>
   </div>
 
-  <!-- ── Shift Coverage Today ─────────────────────────────────────────────── -->
+  <!-- ── Today's Operational Roster & Shifts ─────────────────────────────── -->
   <div class="card">
     <div class="card-header">
       <div>
-        <h3>Today's Shift Coverage</h3>
-        <p>{{today | date:'EEEE, MMMM d, y'}}</p>
+        <h3>Today's Operational Roster & Shift Coverage</h3>
+        <p>{{today | date:'EEEE, MMMM d, y'}} · On-duty technical personnel</p>
       </div>
       <button class="btn btn-secondary btn-sm" routerLink="/shifts">Manage Shifts</button>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">
+
+    <div class="shift-coverage-grid">
       <div *ngFor="let shift of todayShifts"
-           style="background:var(--blue-50);border:1px solid var(--border);
-                  border-radius:var(--radius-md);padding:14px;
-                  border-left:4px solid {{shift.shiftType?.color ?? '#1565C0'}}">
-        <div class="font-bold text-sm">{{shift.shiftType?.name}} Shift</div>
-        <div class="text-muted text-sm">{{shift.shiftType?.start_time}} – {{shift.shiftType?.end_time}}</div>
-        <div style="margin-top:8px;font-size:0.8rem">
-          <span style="font-family:'Material Icons Round';font-style:normal;font-size:16px;vertical-align:middle">person</span>
-          {{shift.employee?.first_name}} {{shift.employee?.last_name}}
+           class="shift-card"
+           [style.border-left-color]="shift.shiftType?.color ?? '#1565C0'"
+           style="border-left-width: 4px;">
+        <div class="shift-header">
+          <div class="shift-type-name">{{shift.shiftType?.name}} Shift</div>
+          <span class="badge" [ngClass]="getShiftStatusBadge(shift.status)">{{shift.status}}</span>
         </div>
-        <span class="badge" style="margin-top:8px" [ngClass]="getShiftStatusBadge(shift.status)">{{shift.status}}</span>
+        <div class="shift-time">
+          <span class="material-icons-round" style="font-size:15px">schedule</span>
+          {{shift.shiftType?.start_time}} – {{shift.shiftType?.end_time}}
+        </div>
+        <div class="shift-assignee">
+          <div class="assignee-avatar">
+            {{shift.employee?.first_name ? shift.employee?.first_name?.charAt(0) : 'U'}}
+          </div>
+          <div class="assignee-name">
+            {{shift.employee?.first_name}} {{shift.employee?.last_name}}
+          </div>
+        </div>
       </div>
-      <div class="empty-state" *ngIf="!todayShifts?.length" style="padding:30px">
-        <p>No shifts scheduled for today</p>
+
+      <div class="empty-state" *ngIf="!todayShifts?.length" style="padding:30px;grid-column: 1 / -1;">
+        <span class="material-icons-round" style="font-size:36px;color:#94A3B8">event_busy</span>
+        <p>No shifts scheduled for today.</p>
       </div>
     </div>
   </div>
 
 </div>
+

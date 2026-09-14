@@ -4,6 +4,13 @@ import { map } from 'rxjs/operators';
 import { ApiService } from '../../../core/services/api.service';
 import { PlannedMaintenanceTask, CalendarIndicators } from '../../../core/models/interfaces';
 
+type PlannedTasksPage = {
+  items: PlannedMaintenanceTask[];
+  total: number;
+  page: number;
+  limit: number;
+};
+
 @Injectable({ providedIn: 'root' })
 export class PlannedMaintenanceService {
 
@@ -53,9 +60,17 @@ export class PlannedMaintenanceService {
     return payload;
   }
 
-  getAll(params: Record<string, any> = {}): Observable<PlannedMaintenanceTask[]> {
-    return this.api.get<any>(this.basePath, { ...params, limit: 200 }).pipe(
-      map(res => (res.data?.items || res.data || []).map((task: any) => this.normalizeTask(task)))
+  getAll(params: Record<string, any> = {}): Observable<PlannedTasksPage> {
+    return this.api.get<any>(this.basePath, params).pipe(
+      map(res => {
+        const items = (res.data?.items || res.data || []).map((task: any) => this.normalizeTask(task));
+        return {
+          items,
+          total: res.data?.total ?? items.length,
+          page: res.data?.page ?? Number(params['page'] || 1),
+          limit: res.data?.limit ?? Number(params['limit'] || items.length || 1)
+        };
+      })
     );
   }
 

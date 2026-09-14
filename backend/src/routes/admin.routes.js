@@ -10,6 +10,436 @@ const {
   AssetCategory, WikiCategory,
 } = require('../models');
 
+const CUSTOMIZABLE_TABLES = new Set([
+  'operations',
+  'maintenance_records',
+  'planned_maintenance_tasks',
+  'planned_maintenance_task_instances',
+  'assets',
+  'inventory_items',
+  'stock_movements',
+  'tasks',
+  'shifts',
+  'wiki_articles',
+  'warehouse_locations',
+  'item_categories'
+]);
+
+const SYSTEM_COLUMN_DENYLIST = new Set(['id', 'created_at', 'updated_at', 'deleted_at']);
+const SAFE_IDENTIFIER = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
+const UI_SECTION_CATALOG = {
+  operations: {
+    table: ['id', 'title', 'type', 'status', 'priority', 'location', 'start_date', 'creator'],
+    form: ['title', 'type_id', 'priority', 'status', 'location', 'start_date', 'end_date', 'description', 'notes']
+  },
+  maintenance: {
+    table: ['title', 'asset', 'type', 'status', 'priority', 'scheduled_date', 'technician', 'cost'],
+    form: ['title', 'asset_id', 'type', 'priority', 'status', 'scheduled_date', 'downtime_hours', 'cost', 'description', 'findings']
+  },
+  warehouse: {
+    table: ['sku', 'part_number', 'name', 'category', 'quantity', 'stock_status', 'reorder_point', 'unit_cost', 'supplier'],
+    form: ['category_id', 'sku', 'part_number', 'name', 'unit', 'quantity', 'min_stock', 'reorder_point', 'max_stock', 'unit_cost', 'supplier', 'description']
+  },
+  wiki: {
+    table: ['title', 'category', 'status', 'author', 'views', 'updated_at'],
+    form: ['status', 'title', 'category_id', 'tags', 'excerpt', 'content']
+  },
+  shifts: {
+    table: ['employee', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
+    form: ['user_id', 'shift_type_id', 'date', 'status', 'notes']
+  },
+  tasks: {
+    table: ['kanban'],
+    form: ['title', 'interval_type', 'priority', 'status', 'estimated_hours', 'due_date', 'parent_id', 'description', 'tags']
+  },
+  planned_maintenance: {
+    table: ['system', 'subsystem', 'task', 'start_date', 'repeat_type', 'every_n', 'repeat_until', 'status'],
+    form: ['system', 'subsystem', 'task', 'operationDateStart', 'operationDateEnd', 'repeatTaskType', 'repeatTaskNumber', 'recurrenceEndDate', 'reference', 'reportTemplate', 'status', 'optional']
+  },
+  dashboard: {
+    table: ['item', 'sku', 'current_stock', 'reorder_point', 'status'],
+    form: []
+  },
+  analytics: {
+    table: ['type', 'count', 'avg_downtime', 'total_cost', 'completion_rate'],
+    form: []
+  }
+};
+
+const NAV_SECTION_CATALOG = {
+  dashboard: {
+    path: '/dashboard',
+    label: 'Dashboard',
+    group: 'Overview',
+    icon: 'dashboard'
+  },
+  operations: {
+    path: '/operations',
+    label: 'Operations & Sorties',
+    group: 'Operations',
+    icon: 'rocket_launch'
+  },
+  maintenance: {
+    path: '/maintenance',
+    label: 'Maintenance',
+    group: 'Operations',
+    icon: 'build_circle'
+  },
+  warehouse: {
+    path: '/warehouse',
+    label: 'Warehouse',
+    group: 'Operations',
+    icon: 'inventory_2'
+  },
+  shifts: {
+    path: '/shifts',
+    label: 'Shifts',
+    group: 'Operations',
+    icon: 'schedule'
+  },
+  analytics: {
+    path: '/analytics',
+    label: 'Analytics & Reports',
+    group: 'Intelligence',
+    icon: 'insights'
+  },
+  operations_analytics: {
+    path: '/analytics/operations',
+    label: 'Operations Analytics',
+    group: 'Intelligence',
+    icon: 'analytics'
+  },
+  tasks: {
+    path: '/tasks',
+    label: 'Task Manager',
+    group: 'Intelligence',
+    icon: 'task_alt'
+  },
+  wiki: {
+    path: '/wiki',
+    label: 'Wiki & Docs',
+    group: 'Knowledge',
+    icon: 'menu_book'
+  },
+  admin: {
+    path: '/admin',
+    label: 'Admin Settings',
+    group: 'Administration',
+    icon: 'admin_panel_settings'
+  }
+};
+
+function validateIdentifier(name, kind) {
+  if (!name || typeof name !== 'string' || !SAFE_IDENTIFIER.test(name)) {
+    const err = new Error('Invalid ' + kind + ' name');
+    err.status = 400;
+    throw err;
+  }
+  return name;
+}
+
+function assertCustomizableTable(tableName) {
+  validateIdentifier(tableName, 'table');
+  if (!CUSTOMIZABLE_TABLES.has(tableName)) {
+    const err = new Error('This table is not customizable from Admin Settings');
+    err.status = 403;
+    throw err;
+  }
+}
+
+function buildColumnTypeSql(type, length) {
+  const t = String(type || '').trim().toUpperCase();
+  const len = length === undefined || length === null || length === '' ? null : Number(length);
+  const lengthTypes = new Set(['VARCHAR', 'CHAR', 'DECIMAL']);
+  const plainTypes = new Set(['TEXT', 'LONGTEXT', 'INT', 'BIGINT', 'FLOAT', 'DOUBLE', 'DATE', 'DATETIME', 'TIMESTAMP', 'BOOLEAN', 'JSON']);
+
+  if (lengthTypes.has(t)) {
+    if (!Number.isFinite(len) || len <= 0) {
+      const err = new Error('Length is required and must be greater than zero for type ' + t);
+      err.status = 400;
+      throw err;
+    }
+    if (t === 'DECIMAL') {
+      return 'DECIMAL(' + len + ',2)';
+    }
+    return t + '(' + len + ')';
+  }
+
+  if (!plainTypes.has(t)) {
+    const err = new Error('Unsupported column type');
+    err.status = 400;
+    throw err;
+  }
+
+  return t;
+}
+
+function buildDefaultSql(defaultValue) {
+  if (defaultValue === undefined || defaultValue === null || defaultValue === '') {
+    return 'DEFAULT NULL';
+  }
+
+  const raw = String(defaultValue).trim();
+  const upper = raw.toUpperCase();
+
+  if (upper === 'CURRENT_TIMESTAMP') {
+    return 'DEFAULT CURRENT_TIMESTAMP';
+  }
+
+  const escaped = raw.replace(/'/g, "''");
+  return "DEFAULT '" + escaped + "'";
+}
+
+async function ensureCustomizationPrefsTable() {
+  await sequelize.query(`
+    CREATE TABLE IF NOT EXISTS ui_table_column_preferences (
+      id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      table_name VARCHAR(100) NOT NULL,
+      column_name VARCHAR(100) NOT NULL,
+      label VARCHAR(150) NULL,
+      is_visible BOOLEAN NOT NULL DEFAULT TRUE,
+      display_order INT NOT NULL DEFAULT 0,
+      width VARCHAR(20) NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_table_column_pref (table_name, column_name)
+    ) ENGINE=InnoDB;
+  `);
+}
+
+async function ensureSectionPrefsTable() {
+  await sequelize.query(`
+    CREATE TABLE IF NOT EXISTS ui_section_field_preferences (
+      id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      section_key VARCHAR(60) NOT NULL,
+      scope ENUM('table', 'form') NOT NULL,
+      field_key VARCHAR(100) NOT NULL,
+      label VARCHAR(150) NULL,
+      is_visible BOOLEAN NOT NULL DEFAULT TRUE,
+      display_order INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_section_scope_field (section_key, scope, field_key)
+    ) ENGINE=InnoDB;
+  `);
+}
+
+async function ensureSectionRolePrefsTable() {
+  await sequelize.query(`
+    CREATE TABLE IF NOT EXISTS ui_section_field_role_preferences (
+      id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      section_key VARCHAR(60) NOT NULL,
+      scope ENUM('table', 'form') NOT NULL,
+      role_name VARCHAR(60) NOT NULL,
+      field_key VARCHAR(100) NOT NULL,
+      label VARCHAR(150) NULL,
+      is_visible BOOLEAN NOT NULL DEFAULT TRUE,
+      display_order INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_section_scope_role_field (section_key, scope, role_name, field_key)
+    ) ENGINE=InnoDB;
+  `);
+}
+
+async function ensureSectionAccessPrefsTable() {
+  await sequelize.query(`
+    CREATE TABLE IF NOT EXISTS ui_section_access_preferences (
+      id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      section_key VARCHAR(60) NOT NULL,
+      subject_type ENUM('global', 'role', 'user') NOT NULL DEFAULT 'global',
+      subject_key VARCHAR(120) NOT NULL,
+      is_visible BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_section_subject_pref (section_key, subject_type, subject_key)
+    ) ENGINE=InnoDB;
+  `);
+}
+
+function normalizeScope(scope) {
+  const s = String(scope || '').toLowerCase();
+  if (s !== 'table' && s !== 'form') {
+    const err = new Error('Scope must be "table" or "form"');
+    err.status = 400;
+    throw err;
+  }
+  return s;
+}
+
+function assertCatalogSection(sectionKey) {
+  const key = String(sectionKey || '').trim().toLowerCase();
+  if (!UI_SECTION_CATALOG[key]) {
+    const err = new Error('Unknown section key');
+    err.status = 404;
+    throw err;
+  }
+  return key;
+}
+
+function normalizeRoleName(roleName) {
+  if (roleName === undefined || roleName === null || String(roleName).trim() === '') {
+    return 'ALL';
+  }
+  const normalized = String(roleName).trim().toLowerCase();
+  if (normalized === 'all') return 'ALL';
+  validateIdentifier(normalized, 'role');
+  return normalized;
+}
+
+function normalizePositiveInt(value, kind) {
+  const normalized = Number(value);
+  if (!Number.isInteger(normalized) || normalized <= 0) {
+    const err = new Error('Invalid ' + kind);
+    err.status = 400;
+    throw err;
+  }
+  return normalized;
+}
+
+function assertNavSection(sectionKey) {
+  const key = String(sectionKey || '').trim().toLowerCase();
+  if (!NAV_SECTION_CATALOG[key]) {
+    const err = new Error('Unknown navigation section');
+    err.status = 404;
+    throw err;
+  }
+  return key;
+}
+
+function normalizeAccessTargetType(targetType) {
+  const normalized = String(targetType || 'global').trim().toLowerCase();
+  if (!['global', 'role', 'user'].includes(normalized)) {
+    const err = new Error('Target must be "global", "role", or "user"');
+    err.status = 400;
+    throw err;
+  }
+  return normalized;
+}
+
+async function resolveAccessTarget(targetType, roleName, userId) {
+  const normalizedTarget = normalizeAccessTargetType(targetType);
+
+  if (normalizedTarget === 'global') {
+    return {
+      target_type: 'global',
+      role_name: 'ALL',
+      user_id: null,
+      subject_type: 'global',
+      subject_key: 'ALL'
+    };
+  }
+
+  if (normalizedTarget === 'role') {
+    const normalizedRole = normalizeRoleName(roleName);
+    if (normalizedRole === 'ALL') {
+      return {
+        target_type: 'global',
+        role_name: 'ALL',
+        user_id: null,
+        subject_type: 'global',
+        subject_key: 'ALL'
+      };
+    }
+
+    return {
+      target_type: 'role',
+      role_name: normalizedRole,
+      user_id: null,
+      subject_type: 'role',
+      subject_key: normalizedRole
+    };
+  }
+
+  const normalizedUserId = normalizePositiveInt(userId, 'user id');
+  const user = await User.findByPk(normalizedUserId, {
+    attributes: ['id'],
+    include: [{ model: Role, as: 'role', attributes: ['name'] }]
+  });
+
+  if (!user) {
+    const err = new Error('User not found');
+    err.status = 404;
+    throw err;
+  }
+
+  return {
+    target_type: 'user',
+    role_name: String(user.role?.name || '').trim().toLowerCase() || 'ALL',
+    user_id: user.id,
+    subject_type: 'user',
+    subject_key: String(user.id)
+  };
+}
+
+function buildEffectiveScopeRows(defaultKeys, globalRows, roleRows) {
+  const globalMap = new Map(globalRows.map(r => [r.field_key, r]));
+  const roleMap = new Map(roleRows.map(r => [r.field_key, r]));
+  const allKeys = [...new Set([...(defaultKeys || []), ...globalMap.keys(), ...roleMap.keys()])];
+
+  return allKeys.map((fieldKey, idx) => {
+    const rolePref = roleMap.get(fieldKey);
+    const globalPref = globalMap.get(fieldKey);
+    const chosen = rolePref || globalPref || null;
+    return {
+      field_key: fieldKey,
+      label: chosen ? chosen.label : null,
+      is_visible: chosen ? chosen.is_visible : 1,
+      display_order: chosen ? Number(chosen.display_order) : idx + 1,
+      source: rolePref ? 'role' : (globalPref ? 'global' : 'default')
+    };
+  }).sort((a, b) => Number(a.display_order) - Number(b.display_order));
+}
+
+function buildEffectiveSectionAccessRows(globalRows, roleRows, userRows) {
+  const globalMap = new Map(globalRows.map(r => [r.section_key, r]));
+  const roleMap = new Map(roleRows.map(r => [r.section_key, r]));
+  const userMap = new Map(userRows.map(r => [r.section_key, r]));
+
+  return Object.entries(NAV_SECTION_CATALOG).map(([sectionKey, meta]) => {
+    const userPref = userMap.get(sectionKey);
+    const rolePref = roleMap.get(sectionKey);
+    const globalPref = globalMap.get(sectionKey);
+    const chosen = userPref || rolePref || globalPref || null;
+
+    return {
+      section_key: sectionKey,
+      path: meta.path,
+      label: meta.label,
+      group: meta.group,
+      icon: meta.icon,
+      is_visible: chosen ? chosen.is_visible : 1,
+      source: userPref ? 'user' : (rolePref ? 'role' : (globalPref ? 'global' : 'default'))
+    };
+  });
+}
+
+async function getColumnMetadata(tableName) {
+  const [columns] = await sequelize.query(
+    `SELECT
+      c.COLUMN_NAME as column_name,
+      c.COLUMN_TYPE as column_type,
+      c.DATA_TYPE as data_type,
+      c.IS_NULLABLE as is_nullable,
+      c.COLUMN_DEFAULT as column_default,
+      c.COLUMN_KEY as column_key,
+      c.EXTRA as extra,
+      c.ORDINAL_POSITION as ordinal_position,
+      CASE WHEN c.COLUMN_NAME IN ('id','created_at','updated_at','deleted_at') THEN 1 ELSE 0 END as is_system,
+      CASE
+        WHEN c.COLUMN_KEY = 'PRI' OR c.EXTRA LIKE '%auto_increment%' OR c.COLUMN_NAME IN ('id','created_at','updated_at','deleted_at') THEN 1
+        ELSE 0
+      END as is_protected
+    FROM INFORMATION_SCHEMA.COLUMNS c
+    WHERE c.TABLE_SCHEMA = DATABASE() AND c.TABLE_NAME = ?
+    ORDER BY c.ORDINAL_POSITION ASC`,
+    { replacements: [tableName] }
+  );
+
+  return columns;
+}
+
 // =============================================================================
 // SYSTEM OVERVIEW
 // =============================================================================
@@ -430,6 +860,517 @@ router.delete('/warehouse-locations/:id', async (req, res, next) => {
       'DELETE FROM warehouse_locations WHERE id = ?',
       { replacements: [req.params.id] }
     );
+    res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
+// =============================================================================
+// TABLE CUSTOMIZATION
+// =============================================================================
+router.get('/schema/tables', async (req, res, next) => {
+  try {
+    const [rows] = await sequelize.query(
+      `SELECT TABLE_NAME as table_name
+       FROM INFORMATION_SCHEMA.TABLES
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE'
+       ORDER BY TABLE_NAME ASC`
+    );
+
+    const data = rows
+      .filter(r => CUSTOMIZABLE_TABLES.has(r.table_name))
+      .map(r => ({ table_name: r.table_name }));
+
+    res.json({ success: true, data });
+  } catch (err) { next(err); }
+});
+
+router.get('/schema/tables/:table/columns', async (req, res, next) => {
+  try {
+    const tableName = req.params.table;
+    assertCustomizableTable(tableName);
+
+    await ensureCustomizationPrefsTable();
+    const columns = await getColumnMetadata(tableName);
+
+    const [prefs] = await sequelize.query(
+      `SELECT column_name, label, is_visible, display_order, width
+       FROM ui_table_column_preferences
+       WHERE table_name = ?`,
+      { replacements: [tableName] }
+    );
+
+    const prefMap = new Map(prefs.map(p => [p.column_name, p]));
+
+    const data = columns.map(col => {
+      const pref = prefMap.get(col.column_name);
+      return Object.assign({}, col, {
+        label: pref ? pref.label : null,
+        is_visible: pref ? !!pref.is_visible : true,
+        display_order: pref ? Number(pref.display_order) : Number(col.ordinal_position),
+        width: pref ? pref.width : null,
+      });
+    });
+
+    res.json({ success: true, data });
+  } catch (err) { next(err); }
+});
+
+router.post('/schema/tables/:table/columns', async (req, res, next) => {
+  try {
+    const tableName = req.params.table;
+    assertCustomizableTable(tableName);
+
+    const name = validateIdentifier(req.body.name, 'column');
+    const after = req.body.after ? validateIdentifier(req.body.after, 'after column') : null;
+    const nullable = req.body.nullable !== false;
+    const columnTypeSql = buildColumnTypeSql(req.body.type, req.body.length);
+    const nullSql = nullable ? 'NULL' : 'NOT NULL';
+    const defaultSql = buildDefaultSql(req.body.defaultValue);
+    const afterSql = after ? ' AFTER `' + after + '`' : '';
+
+    await sequelize.query(
+      `ALTER TABLE \`${tableName}\` ADD COLUMN \`${name}\` ${columnTypeSql} ${nullSql} ${defaultSql}${afterSql}`
+    );
+
+    await ensureCustomizationPrefsTable();
+    await sequelize.query(
+      `INSERT INTO ui_table_column_preferences (table_name, column_name, label, is_visible, display_order)
+       VALUES (?, ?, ?, 1, 999)
+       ON DUPLICATE KEY UPDATE label = VALUES(label), is_visible = VALUES(is_visible)`,
+      { replacements: [tableName, name, req.body.label || null] }
+    );
+
+    const columns = await getColumnMetadata(tableName);
+    res.status(201).json({ success: true, data: columns.find(c => c.column_name === name) || null });
+  } catch (err) { next(err); }
+});
+
+router.patch('/schema/tables/:table/columns/:column', async (req, res, next) => {
+  try {
+    const tableName = req.params.table;
+    assertCustomizableTable(tableName);
+
+    const currentColumn = validateIdentifier(req.params.column, 'column');
+    const newName = req.body.newName ? validateIdentifier(req.body.newName, 'new column') : currentColumn;
+
+    if (SYSTEM_COLUMN_DENYLIST.has(currentColumn)) {
+      return res.status(400).json({ success: false, message: 'System columns cannot be modified' });
+    }
+
+    const [existingRows] = await sequelize.query(
+      `SELECT COLUMN_NAME, COLUMN_KEY, EXTRA
+       FROM INFORMATION_SCHEMA.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+      { replacements: [tableName, currentColumn] }
+    );
+
+    if (!existingRows.length) {
+      return res.status(404).json({ success: false, message: 'Column not found' });
+    }
+
+    const existing = existingRows[0];
+    if (existing.COLUMN_KEY === 'PRI' || String(existing.EXTRA || '').includes('auto_increment')) {
+      return res.status(400).json({ success: false, message: 'Primary key columns cannot be modified' });
+    }
+
+    const columnTypeSql = buildColumnTypeSql(req.body.type, req.body.length);
+    const nullable = req.body.nullable !== false;
+    const nullSql = nullable ? 'NULL' : 'NOT NULL';
+    const defaultSql = buildDefaultSql(req.body.defaultValue);
+
+    await sequelize.query(
+      `ALTER TABLE \`${tableName}\` CHANGE COLUMN \`${currentColumn}\` \`${newName}\` ${columnTypeSql} ${nullSql} ${defaultSql}`
+    );
+
+    await ensureCustomizationPrefsTable();
+    if (newName !== currentColumn) {
+      await sequelize.query(
+        `UPDATE ui_table_column_preferences
+         SET column_name = ?
+         WHERE table_name = ? AND column_name = ?`,
+        { replacements: [newName, tableName, currentColumn] }
+      );
+    }
+
+    if (req.body.label !== undefined) {
+      await sequelize.query(
+        `INSERT INTO ui_table_column_preferences (table_name, column_name, label, is_visible, display_order)
+         VALUES (?, ?, ?, 1, 999)
+         ON DUPLICATE KEY UPDATE label = VALUES(label)`,
+        { replacements: [tableName, newName, req.body.label || null] }
+      );
+    }
+
+    const columns = await getColumnMetadata(tableName);
+    res.json({ success: true, data: columns.find(c => c.column_name === newName) || null });
+  } catch (err) { next(err); }
+});
+
+router.delete('/schema/tables/:table/columns/:column', async (req, res, next) => {
+  try {
+    const tableName = req.params.table;
+    assertCustomizableTable(tableName);
+    const column = validateIdentifier(req.params.column, 'column');
+
+    if (SYSTEM_COLUMN_DENYLIST.has(column)) {
+      return res.status(400).json({ success: false, message: 'System columns cannot be deleted' });
+    }
+
+    const [existingRows] = await sequelize.query(
+      `SELECT COLUMN_NAME, COLUMN_KEY, EXTRA
+       FROM INFORMATION_SCHEMA.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+      { replacements: [tableName, column] }
+    );
+
+    if (!existingRows.length) {
+      return res.status(404).json({ success: false, message: 'Column not found' });
+    }
+
+    const existing = existingRows[0];
+    if (existing.COLUMN_KEY === 'PRI' || String(existing.EXTRA || '').includes('auto_increment')) {
+      return res.status(400).json({ success: false, message: 'Primary key columns cannot be deleted' });
+    }
+
+    await sequelize.query(`ALTER TABLE \`${tableName}\` DROP COLUMN \`${column}\``);
+
+    await ensureCustomizationPrefsTable();
+    await sequelize.query(
+      `DELETE FROM ui_table_column_preferences WHERE table_name = ? AND column_name = ?`,
+      { replacements: [tableName, column] }
+    );
+
+    res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
+router.put('/schema/tables/:table/preferences', async (req, res, next) => {
+  try {
+    const tableName = req.params.table;
+    assertCustomizableTable(tableName);
+
+    const columns = Array.isArray(req.body.columns) ? req.body.columns : [];
+    await ensureCustomizationPrefsTable();
+
+    for (const c of columns) {
+      const colName = validateIdentifier(c.column_name, 'column');
+      const order = Number.isFinite(Number(c.display_order)) ? Number(c.display_order) : 0;
+      await sequelize.query(
+        `INSERT INTO ui_table_column_preferences
+          (table_name, column_name, label, is_visible, display_order, width)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+          label = VALUES(label),
+          is_visible = VALUES(is_visible),
+          display_order = VALUES(display_order),
+          width = VALUES(width)`,
+        {
+          replacements: [
+            tableName,
+            colName,
+            c.label || null,
+            c.is_visible === false ? 0 : 1,
+            order,
+            c.width || null,
+          ]
+        }
+      );
+    }
+
+    const [prefs] = await sequelize.query(
+      `SELECT column_name, label, is_visible, display_order, width
+       FROM ui_table_column_preferences
+       WHERE table_name = ?
+       ORDER BY display_order ASC, column_name ASC`,
+      { replacements: [tableName] }
+    );
+
+    res.json({ success: true, data: prefs });
+  } catch (err) { next(err); }
+});
+
+router.get('/ui-sections/catalog', async (req, res, next) => {
+  try {
+    res.json({ success: true, data: UI_SECTION_CATALOG });
+  } catch (err) { next(err); }
+});
+
+router.get('/ui-navigation/catalog', async (req, res, next) => {
+  try {
+    res.json({ success: true, data: NAV_SECTION_CATALOG });
+  } catch (err) { next(err); }
+});
+
+router.get('/ui-navigation/access', async (req, res, next) => {
+  try {
+    await ensureSectionAccessPrefsTable();
+
+    const target = await resolveAccessTarget(req.query.target, req.query.role, req.query.user_id);
+
+    const [globalRows] = await sequelize.query(
+      `SELECT section_key, is_visible
+       FROM ui_section_access_preferences
+       WHERE subject_type = 'global' AND subject_key = 'ALL'`,
+      { replacements: [] }
+    );
+
+    let roleRows = [];
+    if (target.role_name && target.role_name !== 'ALL') {
+      const [rows] = await sequelize.query(
+        `SELECT section_key, is_visible
+         FROM ui_section_access_preferences
+         WHERE subject_type = 'role' AND subject_key = ?`,
+        { replacements: [target.role_name] }
+      );
+      roleRows = rows;
+    }
+
+    let userRows = [];
+    if (target.user_id) {
+      const [rows] = await sequelize.query(
+        `SELECT section_key, is_visible
+         FROM ui_section_access_preferences
+         WHERE subject_type = 'user' AND subject_key = ?`,
+        { replacements: [String(target.user_id)] }
+      );
+      userRows = rows;
+    }
+
+    res.json({
+      success: true,
+      data: {
+        target_type: target.target_type,
+        role_name: target.role_name,
+        user_id: target.user_id,
+        sections: buildEffectiveSectionAccessRows(globalRows, roleRows, userRows)
+      }
+    });
+  } catch (err) { next(err); }
+});
+
+router.put('/ui-navigation/access', async (req, res, next) => {
+  try {
+    await ensureSectionAccessPrefsTable();
+
+    const target = await resolveAccessTarget(req.body.target || req.query.target, req.body.role_name || req.query.role, req.body.user_id || req.query.user_id);
+    const sections = Array.isArray(req.body.sections) ? req.body.sections : [];
+
+    for (const section of sections) {
+      const sectionKey = assertNavSection(section.section_key);
+      await sequelize.query(
+        `INSERT INTO ui_section_access_preferences
+          (section_key, subject_type, subject_key, is_visible)
+         VALUES (?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           is_visible = VALUES(is_visible)`,
+        {
+          replacements: [
+            sectionKey,
+            target.subject_type,
+            target.subject_key,
+            section.is_visible === false ? 0 : 1
+          ]
+        }
+      );
+    }
+
+    const [rows] = await sequelize.query(
+      `SELECT section_key, is_visible
+       FROM ui_section_access_preferences
+       WHERE subject_type = ? AND subject_key = ?
+       ORDER BY section_key ASC`,
+      { replacements: [target.subject_type, target.subject_key] }
+    );
+
+    res.json({
+      success: true,
+      data: rows,
+      target_type: target.target_type,
+      role_name: target.role_name,
+      user_id: target.user_id
+    });
+  } catch (err) { next(err); }
+});
+
+router.delete('/ui-navigation/access', async (req, res, next) => {
+  try {
+    await ensureSectionAccessPrefsTable();
+
+    const target = await resolveAccessTarget(req.query.target, req.query.role, req.query.user_id);
+    const sectionKey = req.query.section_key ? assertNavSection(req.query.section_key) : null;
+
+    if (sectionKey) {
+      await sequelize.query(
+        `DELETE FROM ui_section_access_preferences
+         WHERE subject_type = ? AND subject_key = ? AND section_key = ?`,
+        { replacements: [target.subject_type, target.subject_key, sectionKey] }
+      );
+    } else {
+      await sequelize.query(
+        `DELETE FROM ui_section_access_preferences
+         WHERE subject_type = ? AND subject_key = ?`,
+        { replacements: [target.subject_type, target.subject_key] }
+      );
+    }
+
+    res.json({ success: true, section_key: sectionKey || null });
+  } catch (err) { next(err); }
+});
+
+router.get('/ui-sections/:section/preferences', async (req, res, next) => {
+  try {
+    const sectionKey = assertCatalogSection(req.params.section);
+    const roleName = normalizeRoleName(req.query.role);
+    await ensureSectionPrefsTable();
+    await ensureSectionRolePrefsTable();
+
+    const [globalRows] = await sequelize.query(
+      `SELECT section_key, scope, field_key, label, is_visible, display_order
+       FROM ui_section_field_preferences
+       WHERE section_key = ?
+       ORDER BY scope ASC, display_order ASC, field_key ASC`,
+      { replacements: [sectionKey] }
+    );
+
+    let roleRows = [];
+    if (roleName !== 'ALL') {
+      const [rows] = await sequelize.query(
+        `SELECT section_key, scope, field_key, label, is_visible, display_order
+         FROM ui_section_field_role_preferences
+         WHERE section_key = ? AND role_name = ?
+         ORDER BY scope ASC, display_order ASC, field_key ASC`,
+        { replacements: [sectionKey, roleName] }
+      );
+      roleRows = rows;
+    }
+
+    const tableRows = buildEffectiveScopeRows(
+      UI_SECTION_CATALOG[sectionKey].table,
+      globalRows.filter(r => r.scope === 'table'),
+      roleRows.filter(r => r.scope === 'table')
+    );
+    const formRows = buildEffectiveScopeRows(
+      UI_SECTION_CATALOG[sectionKey].form,
+      globalRows.filter(r => r.scope === 'form'),
+      roleRows.filter(r => r.scope === 'form')
+    );
+
+    res.json({
+      success: true,
+      data: {
+        section_key: sectionKey,
+        role_name: roleName,
+        table: tableRows,
+        form: formRows,
+        defaults: UI_SECTION_CATALOG[sectionKey]
+      }
+    });
+  } catch (err) { next(err); }
+});
+
+router.put('/ui-sections/:section/preferences', async (req, res, next) => {
+  try {
+    const sectionKey = assertCatalogSection(req.params.section);
+    const scope = normalizeScope(req.body.scope);
+    const fields = Array.isArray(req.body.fields) ? req.body.fields : [];
+    const roleName = normalizeRoleName(req.body.role_name || req.query.role);
+
+    await ensureSectionPrefsTable();
+    await ensureSectionRolePrefsTable();
+
+    const targetTable = roleName === 'ALL' ? 'ui_section_field_preferences' : 'ui_section_field_role_preferences';
+
+    for (const [index, field] of fields.entries()) {
+      const fieldKey = validateIdentifier(field.field_key, 'field');
+      const order = Number.isFinite(Number(field.display_order)) ? Number(field.display_order) : index + 1;
+      if (targetTable === 'ui_section_field_preferences') {
+        await sequelize.query(
+          `INSERT INTO ui_section_field_preferences
+            (section_key, scope, field_key, label, is_visible, display_order)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE
+             label = VALUES(label),
+             is_visible = VALUES(is_visible),
+             display_order = VALUES(display_order)`,
+          {
+            replacements: [
+              sectionKey,
+              scope,
+              fieldKey,
+              field.label || null,
+              field.is_visible === false ? 0 : 1,
+              order
+            ]
+          }
+        );
+      } else {
+        await sequelize.query(
+          `INSERT INTO ui_section_field_role_preferences
+            (section_key, scope, role_name, field_key, label, is_visible, display_order)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE
+             label = VALUES(label),
+             is_visible = VALUES(is_visible),
+             display_order = VALUES(display_order)`,
+          {
+            replacements: [
+              sectionKey,
+              scope,
+              roleName,
+              fieldKey,
+              field.label || null,
+              field.is_visible === false ? 0 : 1,
+              order
+            ]
+          }
+        );
+      }
+    }
+
+    let rows;
+    if (targetTable === 'ui_section_field_preferences') {
+      [rows] = await sequelize.query(
+        `SELECT section_key, scope, field_key, label, is_visible, display_order
+         FROM ui_section_field_preferences
+         WHERE section_key = ? AND scope = ?
+         ORDER BY display_order ASC, field_key ASC`,
+        { replacements: [sectionKey, scope] }
+      );
+    } else {
+      [rows] = await sequelize.query(
+        `SELECT section_key, scope, role_name, field_key, label, is_visible, display_order
+         FROM ui_section_field_role_preferences
+         WHERE section_key = ? AND scope = ? AND role_name = ?
+         ORDER BY display_order ASC, field_key ASC`,
+        { replacements: [sectionKey, scope, roleName] }
+      );
+    }
+
+    res.json({ success: true, data: rows, role_name: roleName });
+  } catch (err) { next(err); }
+});
+
+router.delete('/ui-sections/:section/preferences', async (req, res, next) => {
+  try {
+    const sectionKey = assertCatalogSection(req.params.section);
+    const scope = normalizeScope(req.query.scope);
+    const roleName = normalizeRoleName(req.query.role);
+
+    await ensureSectionPrefsTable();
+    await ensureSectionRolePrefsTable();
+
+    if (roleName === 'ALL') {
+      await sequelize.query(
+        `DELETE FROM ui_section_field_preferences WHERE section_key = ? AND scope = ?`,
+        { replacements: [sectionKey, scope] }
+      );
+    } else {
+      await sequelize.query(
+        `DELETE FROM ui_section_field_role_preferences WHERE section_key = ? AND scope = ? AND role_name = ?`,
+        { replacements: [sectionKey, scope, roleName] }
+      );
+    }
+
     res.json({ success: true });
   } catch (err) { next(err); }
 });

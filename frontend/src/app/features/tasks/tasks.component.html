@@ -30,22 +30,22 @@
         </button>
       </div>
 
-      <select class="form-control control-sm" [(ngModel)]="priorityFilter">
-        <option value="">All Priorities</option>
-        <option value="CRITICAL">Critical</option>
-        <option value="HIGH">High</option>
-        <option value="MEDIUM">Medium</option>
-        <option value="LOW">Low</option>
-      </select>
+      <app-dropdown class="form-control control-sm" [(ngModel)]="priorityFilter" placeholder="All Priorities">
+        <app-dropdown-option value="">All Priorities</app-dropdown-option>
+        <app-dropdown-option value="CRITICAL">Critical</app-dropdown-option>
+        <app-dropdown-option value="HIGH">High</app-dropdown-option>
+        <app-dropdown-option value="MEDIUM">Medium</app-dropdown-option>
+        <app-dropdown-option value="LOW">Low</app-dropdown-option>
+      </app-dropdown>
 
-      <select class="form-control control-sm" [(ngModel)]="statusFilter" (change)="loadTasks()">
-        <option value="">All Status</option>
-        <option value="TODO">To Do</option>
-        <option value="IN_PROGRESS">In Progress</option>
-        <option value="REVIEW">In Review</option>
-        <option value="DONE">Done</option>
-        <option value="OVERDUE">Overdue</option>
-      </select>
+      <app-dropdown class="form-control control-sm" [(ngModel)]="statusFilter" (change)="loadTasks()" placeholder="All Status">
+        <app-dropdown-option value="">All Status</app-dropdown-option>
+        <app-dropdown-option value="TODO">To Do</app-dropdown-option>
+        <app-dropdown-option value="IN_PROGRESS">In Progress</app-dropdown-option>
+        <app-dropdown-option value="REVIEW">In Review</app-dropdown-option>
+        <app-dropdown-option value="DONE">Done</app-dropdown-option>
+        <app-dropdown-option value="OVERDUE">Overdue</app-dropdown-option>
+      </app-dropdown>
 
       <div class="sort-group" role="group" aria-label="Sort tasks">
         <button *ngFor="let s of [
@@ -272,49 +272,49 @@
     </div>
 
     <div class="modal-body">
-      <div class="form-group">
-        <label class="form-label">Title *</label>
+      <div class="form-group" *ngIf="showFormField('title')">
+        <label class="form-label">{{fieldLabel('form','title','Title')}} *</label>
         <input class="form-control" [(ngModel)]="form.title" placeholder="What needs to be done?">
       </div>
 
       <div class="form-row four">
-        <div class="form-group">
-          <label class="form-label">Interval *</label>
-          <select class="form-control" [(ngModel)]="form.interval_type">
-            <option value="ONCE">One-time</option>
-            <option value="DAILY">Daily</option>
-            <option value="WEEKLY">Weekly</option>
-            <option value="MONTHLY">Monthly</option>
-            <option value="YEARLY">Yearly</option>
-          </select>
+        <div class="form-group" *ngIf="showFormField('interval_type')">
+          <label class="form-label">{{fieldLabel('form','interval_type','Interval')}} *</label>
+          <app-dropdown class="form-control" [(ngModel)]="form.interval_type">
+            <app-dropdown-option value="ONCE">One-time</app-dropdown-option>
+            <app-dropdown-option value="DAILY">Daily</app-dropdown-option>
+            <app-dropdown-option value="WEEKLY">Weekly</app-dropdown-option>
+            <app-dropdown-option value="MONTHLY">Monthly</app-dropdown-option>
+            <app-dropdown-option value="YEARLY">Yearly</app-dropdown-option>
+          </app-dropdown>
         </div>
-        <div class="form-group">
-          <label class="form-label">Priority</label>
-          <select class="form-control" [(ngModel)]="form.priority">
-            <option value="LOW">Low</option>
-            <option value="MEDIUM">Medium</option>
-            <option value="HIGH">High</option>
-            <option value="CRITICAL">Critical</option>
-          </select>
+        <div class="form-group" *ngIf="showFormField('priority')">
+          <label class="form-label">{{fieldLabel('form','priority','Priority')}}</label>
+          <app-dropdown class="form-control" [(ngModel)]="form.priority">
+            <app-dropdown-option value="LOW">Low</app-dropdown-option>
+            <app-dropdown-option value="MEDIUM">Medium</app-dropdown-option>
+            <app-dropdown-option value="HIGH">High</app-dropdown-option>
+            <app-dropdown-option value="CRITICAL">Critical</app-dropdown-option>
+          </app-dropdown>
         </div>
-        <div class="form-group">
-          <label class="form-label">Status</label>
-          <select class="form-control" [(ngModel)]="form.status">
-            <option value="TODO">To Do</option>
-            <option value="IN_PROGRESS">In Progress</option>
-            <option value="REVIEW">In Review</option>
-            <option value="DONE">Done</option>
-          </select>
+        <div class="form-group" *ngIf="showFormField('status')">
+          <label class="form-label">{{fieldLabel('form','status','Status')}}</label>
+          <app-dropdown class="form-control" [(ngModel)]="form.status">
+            <app-dropdown-option value="TODO">To Do</app-dropdown-option>
+            <app-dropdown-option value="IN_PROGRESS">In Progress</app-dropdown-option>
+            <app-dropdown-option value="REVIEW">In Review</app-dropdown-option>
+            <app-dropdown-option value="DONE">Done</app-dropdown-option>
+          </app-dropdown>
         </div>
-        <div class="form-group">
-          <label class="form-label">Est. Hours</label>
+        <div class="form-group" *ngIf="showFormField('estimated_hours')">
+          <label class="form-label">{{fieldLabel('form','estimated_hours','Est. Hours')}}</label>
           <input type="number" class="form-control" [(ngModel)]="form.estimated_hours" min="0" step="0.5" placeholder="0">
         </div>
       </div>
 
       <div class="form-row two">
-        <div class="form-group">
-          <label class="form-label">Due Date</label>
+        <div class="form-group" *ngIf="showFormField('due_date')">
+          <label class="form-label">{{fieldLabel('form','due_date','Due Date')}}</label>
           <div class="datetime-picker-wrapper">
             <input class="form-control"
                    [owlDateTime]="dtDue"
@@ -325,22 +325,22 @@
             <owl-date-time #dtDue pickerMode="dialog"></owl-date-time>
           </div>
         </div>
-        <div class="form-group">
-          <label class="form-label">Parent Task</label>
-          <select class="form-control" [(ngModel)]="form.parent_id">
-            <option [ngValue]="null">— None (top-level) —</option>
-            <option *ngFor="let t of allTasks" [value]="t.id">{{t.title}}</option>
-          </select>
+        <div class="form-group" *ngIf="showFormField('parent_id')">
+          <label class="form-label">{{fieldLabel('form','parent_id','Parent Task')}}</label>
+          <app-dropdown class="form-control" [(ngModel)]="form.parent_id" placeholder="— None (top-level) —">
+            <app-dropdown-option [ngValue]="null">— None (top-level) —</app-dropdown-option>
+            <app-dropdown-option *ngFor="let t of allTasks" [value]="t.id">{{t.title}}</app-dropdown-option>
+          </app-dropdown>
         </div>
       </div>
 
-      <div class="form-group">
-        <label class="form-label">Description</label>
+      <div class="form-group" *ngIf="showFormField('description')">
+        <label class="form-label">{{fieldLabel('form','description','Description')}}</label>
         <textarea class="form-control" rows="3" [(ngModel)]="form.description" placeholder="Describe this task…"></textarea>
       </div>
 
-      <div class="form-group">
-        <label class="form-label">Tags <span class="text-muted" style="font-weight:400">(comma separated)</span></label>
+      <div class="form-group" *ngIf="showFormField('tags')">
+        <label class="form-label">{{fieldLabel('form','tags','Tags')}} <span class="text-muted" style="font-weight:400">(comma separated)</span></label>
         <input class="form-control" [(ngModel)]="tagsInput" placeholder="e.g. infra, security, urgent">
       </div>
 
@@ -374,7 +374,7 @@
 
     <div class="modal-footer">
       <button type="button" class="btn btn-ghost" (click)="showModal=false">Cancel</button>
-      <button type="button" class="btn btn-primary" (click)="saveTask()" [disabled]="saving || !form.title">
+      <button type="button" class="btn btn-primary" (click)="saveTask()" [disabled]="saving || (showFormField('title') && !form.title)">
         <div class="spinner spinner-sm" *ngIf="saving"></div>
         {{saving ? 'Saving…' : (editingTask ? 'Update Task' : 'Create Task')}}
       </button>

@@ -58,6 +58,17 @@ export interface DashboardKPIs {
   lowStockCount: number;
   openTasks: number;
   activeUsers: number;
+  totalAssets?: number;
+  activeAssets?: number;
+  maintenanceAssets?: number;
+  overdueTasks?: number;
+  criticalMaint?: number;
+}
+
+export interface DashboardUrgentAlerts {
+  overdueTasks: Task[];
+  criticalMaintenance: MaintenanceRecord[];
+  outOfStock: InventoryItem[];
 }
 
 export interface TrendPoint { date: string; count: number; status: string; }
@@ -122,6 +133,7 @@ export interface MaintenanceRecord {
   next_scheduled?: string;
   asset?: Asset;
   technician?: Partial<User>;
+  created_at?: string;
 }
 
 // ── Planned Maintenance ───────────────────────────────────────────────────────
@@ -163,6 +175,7 @@ export interface InventoryItem {
   id: number;
   category_id: number;
   sku: string;
+  part_number?: string;
   name: string;
   description?: string;
   unit: string;
@@ -190,6 +203,7 @@ export interface StockMovement {
   reason?: string;
   movement_date: string;
   user?: Partial<User>;
+  item?: Partial<InventoryItem>;
 }
 
 // ── Shifts ────────────────────────────────────────────────────────────────────

@@ -20,66 +20,66 @@
     <!-- Navigation -->
     <nav class="sidebar-nav">
 
-      <div class="nav-section-label">Overview</div>
+      <div class="nav-section-label" *ngIf="showNavSection('dashboard')">Overview</div>
 
-      <a class="nav-item" routerLink="/dashboard" routerLinkActive="active">
+      <a class="nav-item" routerLink="/dashboard" routerLinkActive="active" *ngIf="showNavSection('dashboard')">
         <span class="nav-icon">dashboard</span>
         <span class="nav-label">Dashboard</span>
       </a>
 
-      <div class="nav-section-label">Operations</div>
+      <div class="nav-section-label" *ngIf="showAnyNavSection(['operations','maintenance','warehouse','shifts'])">Operations</div>
 
-      <a class="nav-item" routerLink="/operations" routerLinkActive="active">
+      <a class="nav-item" routerLink="/operations" routerLinkActive="active" *ngIf="showNavSection('operations')">
         <span class="nav-icon">rocket_launch</span>
         <span class="nav-label">Operations & Sorties</span>
         <span class="nav-badge" *ngIf="activeOpsCount > 0">{{activeOpsCount}}</span>
       </a>
 
-      <a class="nav-item" routerLink="/maintenance" routerLinkActive="active">
+      <a class="nav-item" routerLink="/maintenance" routerLinkActive="active" *ngIf="showNavSection('maintenance')">
         <span class="nav-icon">build_circle</span>
         <span class="nav-label">Maintenance</span>
         <span class="nav-badge" *ngIf="pendingMaintCount > 0">{{pendingMaintCount}}</span>
       </a>
 
-      <a class="nav-item" routerLink="/warehouse" routerLinkActive="active">
+      <a class="nav-item" routerLink="/warehouse" routerLinkActive="active" *ngIf="showNavSection('warehouse')">
         <span class="nav-icon">inventory_2</span>
         <span class="nav-label">Warehouse</span>
         <span class="nav-badge" *ngIf="lowStockCount > 0">{{lowStockCount}}</span>
       </a>
 
-      <a class="nav-item" routerLink="/shifts" routerLinkActive="active">
+      <a class="nav-item" routerLink="/shifts" routerLinkActive="active" *ngIf="showNavSection('shifts')">
         <span class="nav-icon">schedule</span>
         <span class="nav-label">Shifts</span>
       </a>
 
-      <div class="nav-section-label">Intelligence</div>
+      <div class="nav-section-label" *ngIf="showAnyNavSection(['analytics','operations_analytics','tasks'])">Intelligence</div>
 
-      <a class="nav-item" routerLink="/analytics" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}">
+      <a class="nav-item" routerLink="/analytics" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}" *ngIf="showNavSection('analytics')">
         <span class="nav-icon">insights</span>
         <span class="nav-label">Analytics & Reports</span>
       </a>
 
-      <a class="nav-item" routerLink="/analytics/operations" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}">
+      <a class="nav-item" routerLink="/analytics/operations" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}" *ngIf="showNavSection('operations_analytics')">
         <span class="nav-icon">analytics</span>
         <span class="nav-label">Operations Analytics</span>
       </a>
 
-      <a class="nav-item" routerLink="/tasks" routerLinkActive="active">
+      <a class="nav-item" routerLink="/tasks" routerLinkActive="active" *ngIf="showNavSection('tasks')">
         <span class="nav-icon">task_alt</span>
         <span class="nav-label">Task Manager</span>
         <span class="nav-badge" *ngIf="openTasksCount > 0">{{openTasksCount}}</span>
       </a>
 
-      <div class="nav-section-label">Knowledge</div>
+      <div class="nav-section-label" *ngIf="showNavSection('wiki')">Knowledge</div>
 
-      <a class="nav-item" routerLink="/wiki" routerLinkActive="active">
+      <a class="nav-item" routerLink="/wiki" routerLinkActive="active" *ngIf="showNavSection('wiki')">
         <span class="nav-icon">menu_book</span>
         <span class="nav-label">Wiki & Docs</span>
       </a>
 
-      <div class="nav-section-label">Administration</div>
+      <div class="nav-section-label" *ngIf="showNavSection('admin')">Administration</div>
 
-      <a class="nav-item" routerLink="/admin" routerLinkActive="active">
+      <a class="nav-item" routerLink="/admin" routerLinkActive="active" *ngIf="showNavSection('admin')">
         <span class="nav-icon">admin_panel_settings</span>
         <span class="nav-label">Admin Settings</span>
       </a>
@@ -156,30 +156,30 @@
         width:360px;
         max-height:420px;
         overflow:auto;
-        background:#fff;
-        border:1px solid #E5E7EB;
-        border-radius:8px;
-        box-shadow:0 16px 32px rgba(15,23,42,0.18);
+        background:var(--surface);
+        border:1px solid var(--border);
+        border-radius:var(--radius-md);
+        box-shadow:var(--shadow-md);
         z-index:1200;">
-        <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 14px; border-bottom:1px solid #EEF2F7;">
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 14px; border-bottom:1px solid var(--border);">
           <strong style="font-size:0.95rem;">Notifications</strong>
           <button class="btn btn-ghost" style="padding:4px 8px; font-size:0.78rem;" (click)="markAllAsRead($event)">Mark all read</button>
         </div>
 
-        <div *ngIf="notifications.length === 0" style="padding:18px 14px; color:#64748B; font-size:0.9rem;">
+        <div *ngIf="notifications.length === 0" style="padding:18px 14px; color:var(--blue-700); font-size:0.9rem;">
           No notifications yet.
         </div>
 
         <div *ngFor="let n of notifications; trackBy: trackByNotificationId"
              (click)="openNotification(n, $event)"
-             style="display:block; width:100%; text-align:left; border:0; background:#fff; padding:12px 14px; border-bottom:1px solid #F1F5F9; cursor:pointer;"
-             [style.background]="n.is_read ? '#FFFFFF' : '#F8FAFF'">
+             style="display:block; width:100%; text-align:left; border:0; background:var(--surface); padding:12px 14px; border-bottom:1px solid var(--blue-100); cursor:pointer;"
+             [style.background]="n.is_read ? 'var(--surface)' : 'var(--blue-50)'">
           <div style="display:flex; gap:10px; align-items:flex-start;">
-            <span [style.background]="n.is_read ? '#CBD5E1' : '#3B82F6'" style="margin-top:6px; width:8px; height:8px; border-radius:50%; flex:0 0 auto;"></span>
+            <span [style.background]="n.is_read ? 'var(--blue-300)' : 'var(--primary)'" style="margin-top:6px; width:8px; height:8px; border-radius:50%; flex:0 0 auto;"></span>
             <div style="min-width:0; flex:1 1 auto;">
-              <div style="font-size:0.86rem; font-weight:600; color:#0F172A; margin-bottom:2px;">{{ n.title }}</div>
-              <div *ngIf="n.body" style="font-size:0.82rem; color:#475569; line-height:1.35; white-space:normal;">{{ n.body }}</div>
-              <div style="font-size:0.74rem; color:#94A3B8; margin-top:6px;">{{ n.created_at | date:'short' }}</div>
+              <div style="font-size:0.86rem; font-weight:600; color:var(--blue-900); margin-bottom:2px;">{{ n.title }}</div>
+              <div *ngIf="n.body" style="font-size:0.82rem; color:var(--blue-800); line-height:1.35; white-space:normal;">{{ n.body }}</div>
+              <div style="font-size:0.74rem; color:var(--blue-400); margin-top:6px;">{{ n.created_at | date:'short' }}</div>
             </div>
             <button *ngIf="!n.is_read" class="btn btn-ghost btn-icon-only" style="width:24px; height:24px;" (click)="markAsRead(n, $event)" title="Mark as read">
               <span class="btn-icon" style="font-size:16px;">done</span>

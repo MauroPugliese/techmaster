@@ -103,6 +103,11 @@ const validateInventoryItem = [
     .trim()
     .isLength({ min: 1, max: 80 })
     .withMessage('SKU required (max 80 chars)'),
+  body('part_number')
+    .trim()
+    .isLength({ max: 120 })
+    .optional({ checkFalsy: true })
+    .withMessage('Part number max 120 chars'),
   body('name')
     .trim()
     .isLength({ min: 1, max: 200 })

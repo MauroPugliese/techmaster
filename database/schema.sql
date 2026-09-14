@@ -231,6 +231,7 @@ CREATE TABLE inventory_items (
     category_id     INT UNSIGNED NOT NULL,
     location_id     INT UNSIGNED,
     sku             VARCHAR(80) NOT NULL UNIQUE,
+    part_number     VARCHAR(120),
     name            VARCHAR(200) NOT NULL,
     description     TEXT,
     unit            VARCHAR(30) DEFAULT 'pcs',

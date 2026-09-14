@@ -1,0 +1,290 @@
+<div class="section-access-manager">
+  <!-- ── Top Header ───────────────────────────────────────────────────────── -->
+  <div class="header-card">
+    <div class="header-content">
+      <div class="header-icon-wrap">
+        <span class="material-icons-round">visibility</span>
+      </div>
+      <div>
+        <h2 class="header-title">Section Access Control</h2>
+        <p class="header-subtitle">
+          Configure app section visibility globally, by role, or for individual users.
+        </p>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <button class="btn btn-secondary btn-sm"
+              [disabled]="loading || saving || (target==='user' && !selectedUserId)"
+              (click)="resetAll()"
+              title="Reset configuration to defaults">
+        <span class="material-icons-round btn-icon">restart_alt</span>
+        Reset to Defaults
+      </button>
+      <button class="btn btn-primary btn-sm"
+              [disabled]="loading || saving || (target==='user' && !selectedUserId)"
+              (click)="save()">
+        <span class="material-icons-round btn-icon">{{ saving ? 'hourglass_top' : 'save' }}</span>
+        {{ saving ? 'Saving...' : 'Save Changes' }}
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Target Mode Selection ─────────────────────────────────────────────── -->
+  <div class="target-card">
+    <div class="target-tabs">
+      <button class="target-tab"
+              [class.active]="target === 'global'"
+              (click)="setTarget('global')">
+        <span class="material-icons-round">public</span>
+        <div class="tab-text">
+          <span class="tab-title">All Users (Default)</span>
+          <span class="tab-desc">System baseline for everyone</span>
+        </div>
+      </button>
+
+      <button class="target-tab"
+              [class.active]="target === 'role'"
+              (click)="setTarget('role')">
+        <span class="material-icons-round">badge</span>
+        <div class="tab-text">
+          <span class="tab-title">By Role</span>
+          <span class="tab-desc">Apply rules to all users with a role</span>
+        </div>
+      </button>
+
+      <button class="target-tab"
+              [class.active]="target === 'user'"
+              (click)="setTarget('user')">
+        <span class="material-icons-round">person_search</span>
+        <div class="tab-text">
+          <span class="tab-title">By Specific User</span>
+          <span class="tab-desc">Custom overrides for an individual</span>
+        </div>
+      </button>
+    </div>
+
+    <!-- Sub-selector for Role -->
+    <div class="subtarget-area" *ngIf="target === 'role'">
+      <span class="subtarget-label">Select Role:</span>
+      <div class="role-chips">
+        <button *ngFor="let r of roles"
+                class="role-chip"
+                [class.active]="selectedRole === r.name"
+                (click)="onRoleChange(r.name)">
+          <span class="role-dot" [style.background]="getRoleBadgeColor(r.name)"></span>
+          {{ r.name | titlecase }}
+        </button>
+      </div>
+    </div>
+
+    <!-- Sub-selector for User -->
+    <div class="subtarget-area user-selector-area" *ngIf="target === 'user'">
+      <div class="user-search-wrapper">
+        <span class="material-icons-round search-icon">search</span>
+        <input class="form-control user-search-input"
+               [(ngModel)]="userSearch"
+               placeholder="Search user by name, username or role..." />
+      </div>
+
+      <div class="user-dropdown-wrapper">
+        <app-dropdown class="form-control"
+                      [ngModel]="selectedUserId"
+                      (change)="selectUser($event)"
+                      placeholder="-- Select a user --">
+          <app-dropdown-option [ngValue]="null">-- Select a user --</app-dropdown-option>
+          <app-dropdown-option *ngFor="let u of filteredUsers" [ngValue]="u.id">
+            {{ u.first_name }} {{ u.last_name }} ({{ u.username }} &middot; {{ u.role?.name | titlecase }})
+          </app-dropdown-option>
+        </app-dropdown>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Selected User Identity Card (if user target) ───────────────────────── -->
+  <div class="user-profile-banner" *ngIf="target === 'user' && selectedUser">
+    <div class="user-avatar-badge" [style.background]="getRoleBadgeColor(selectedUser.role?.name)">
+      {{ getUserInitials(selectedUser) }}
+    </div>
+    <div class="user-banner-info">
+      <div class="user-banner-name">
+        {{ selectedUser.first_name }} {{ selectedUser.last_name }}
+        <span class="user-banner-username">&#64;{{ selectedUser.username }}</span>
+      </div>
+      <div class="user-banner-meta">
+        <span class="role-pill" [style.background]="getRoleBadgeColor(selectedUser.role?.name)">
+          {{ selectedUser.role?.name | titlecase }}
+        </span>
+        <span class="email-text" *ngIf="selectedUser.email">{{ selectedUser.email }}</span>
+        <span class="inheritance-hint">Inherits baseline from <strong>{{ selectedUser.role?.name | titlecase }}</strong> role</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Status & Metrics Bar ──────────────────────────────────────────────── -->
+  <div class="metrics-bar" *ngIf="sections.length">
+    <div class="metrics-summary">
+      <span class="metric-pill"
+            *ngFor="let item of summary"
+            [style.background]="item.color"
+            [style.color]="item.textColor">
+        <span class="metric-value">{{ item.value }}</span> {{ item.label }}
+      </span>
+    </div>
+
+    <div class="bulk-actions">
+      <button class="bulk-btn" (click)="setAllVisibility(true)" title="Show all sections">
+        <span class="material-icons-round">visibility</span> Show All
+      </button>
+      <button class="bulk-btn" (click)="setAllVisibility(false)" title="Hide all sections">
+        <span class="material-icons-round">visibility_off</span> Hide All
+      </button>
+      <button class="bulk-btn" (click)="invertVisibility()" title="Invert current visibility">
+        <span class="material-icons-round">swap_horiz</span> Invert
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Safety Warning if Admin section hidden ───────────────────────────── -->
+  <div class="safety-alert" *ngIf="isAdminSectionHidden">
+    <span class="material-icons-round alert-icon">warning</span>
+    <div class="alert-content">
+      <strong>Warning: Admin Settings Section is currently Hidden</strong>
+      <p>Hiding the Admin Settings section will prevent users with this configuration from accessing the administration panel.</p>
+    </div>
+    <button class="btn btn-secondary btn-sm" (click)="toggleSection('admin')">
+      Make Admin Visible
+    </button>
+  </div>
+
+  <!-- ── Filters & Search Toolbar ─────────────────────────────────────────── -->
+  <div class="toolbar-card" *ngIf="sections.length">
+    <div class="search-box">
+      <span class="material-icons-round search-icon">search</span>
+      <input class="form-control"
+             [(ngModel)]="sectionSearch"
+             placeholder="Filter sections by name, path or group..." />
+      <button class="clear-btn" *ngIf="sectionSearch" (click)="sectionSearch=''">
+        <span class="material-icons-round">close</span>
+      </button>
+    </div>
+
+    <div class="filter-group">
+      <label class="filter-label">Group:</label>
+      <div class="chip-group">
+        <button class="chip"
+                [class.active]="selectedGroupFilter === 'ALL'"
+                (click)="selectedGroupFilter = 'ALL'">
+          All
+        </button>
+        <button class="chip"
+                *ngFor="let grp of availableGroups"
+                [class.active]="selectedGroupFilter === grp"
+                (click)="selectedGroupFilter = grp">
+          {{ grp }}
+        </button>
+      </div>
+    </div>
+
+    <div class="filter-group">
+      <label class="filter-label">Status:</label>
+      <div class="chip-group">
+        <button class="chip"
+                [class.active]="selectedStatusFilter === 'all'"
+                (click)="selectedStatusFilter = 'all'">
+          All
+        </button>
+        <button class="chip"
+                [class.active]="selectedStatusFilter === 'visible'"
+                (click)="selectedStatusFilter = 'visible'">
+          Visible
+        </button>
+        <button class="chip"
+                [class.active]="selectedStatusFilter === 'hidden'"
+                (click)="selectedStatusFilter = 'hidden'">
+          Hidden
+        </button>
+        <button class="chip"
+                *ngIf="target !== 'global'"
+                [class.active]="selectedStatusFilter === 'overridden'"
+                (click)="selectedStatusFilter = 'overridden'">
+          Overridden
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Sections Grid ────────────────────────────────────────────────────── -->
+  <div class="loading-state" *ngIf="loading">
+    <div class="spinner"></div>
+    <p>Loading section configuration...</p>
+  </div>
+
+  <div class="sections-grid" *ngIf="!loading && filteredSections.length">
+    <div *ngFor="let s of filteredSections"
+         class="section-card"
+         [class.is-hidden]="!s.is_visible"
+         [class.is-overridden]="s.source === 'user' || (target === 'role' && s.source === 'role')">
+
+      <div class="card-left">
+        <div class="section-icon-wrap" [class.icon-hidden]="!s.is_visible">
+          <span class="material-icons-round">{{ s.icon }}</span>
+        </div>
+
+        <div class="section-info">
+          <div class="section-title-row">
+            <h4 class="section-name">{{ s.label }}</h4>
+            <span class="group-tag">{{ s.group }}</span>
+          </div>
+
+          <div class="section-path-row">
+            <code class="path-code">{{ s.path }}</code>
+            <span class="source-badge" [ngClass]="getSourceBadgeClass(s.source)">
+              {{ getSourceLabel(s.source) }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-right">
+        <!-- Granular revert button for single section if custom override exists -->
+        <button *ngIf="canRevertSection(s)"
+                class="revert-btn"
+                (click)="revertSingleSection(s.section_key, $event)"
+                title="Revert to inherited default">
+          <span class="material-icons-round">undo</span>
+          Revert
+        </button>
+
+        <!-- Toggle switch -->
+        <label class="switch-toggle" [title]="s.is_visible ? 'Visible in navigation' : 'Hidden from navigation'">
+          <input type="checkbox"
+                 [checked]="s.is_visible"
+                 (change)="toggleSection(s.section_key)" />
+          <span class="slider"></span>
+        </label>
+
+        <span class="status-indicator-text" [class.status-hidden]="!s.is_visible">
+          <ng-container *ngIf="s.is_visible">Visible</ng-container>
+          <ng-container *ngIf="!s.is_visible">Hidden</ng-container>
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Empty States ──────────────────────────────────────────────────────── -->
+  <div class="empty-state" *ngIf="!loading && target === 'user' && !selectedUserId">
+    <span class="material-icons-round empty-icon">person_search</span>
+    <h3>Select a user to manage section access</h3>
+    <p class="text-muted">Choose a user from the dropdown above or search by name to configure custom visibility rules.</p>
+  </div>
+
+  <div class="empty-state" *ngIf="!loading && sections.length && !filteredSections.length">
+    <span class="material-icons-round empty-icon">filter_list_off</span>
+    <h3>No sections match your filter criteria</h3>
+    <p class="text-muted">Try clearing the search query or resetting the group / status filters.</p>
+    <button class="btn btn-secondary btn-sm" (click)="sectionSearch=''; selectedGroupFilter='ALL'; selectedStatusFilter='all'">
+      Clear Filters
+    </button>
+  </div>
+</div>

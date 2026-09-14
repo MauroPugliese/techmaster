@@ -42,12 +42,12 @@
         <input placeholder="Search articles..." [(ngModel)]="searchQuery" (input)="onSearch()">
       </div>
       <div class="flex gap-2">
-        <select class="form-control" style="width:150px" [(ngModel)]="statusFilter" (change)="loadArticles()">
-          <option value="PUBLISHED">Published</option>
-          <option value="DRAFT">Drafts</option>
-          <option value="REVIEW">In Review</option>
-          <option value="ARCHIVED">Archived</option>
-        </select>
+        <app-dropdown class="form-control select-w-150" [(ngModel)]="statusFilter" (change)="page=1; loadArticles()">
+          <app-dropdown-option value="PUBLISHED">Published</app-dropdown-option>
+          <app-dropdown-option value="DRAFT">Drafts</app-dropdown-option>
+          <app-dropdown-option value="REVIEW">In Review</app-dropdown-option>
+          <app-dropdown-option value="ARCHIVED">Archived</app-dropdown-option>
+        </app-dropdown>
         <app-export-menu endpoint="wiki" filename="Wiki_Articles" label="Export"
                          [params]="{ status: statusFilter }"></app-export-menu>
         <button class="btn btn-secondary btn-sm" type="button" (click)="exportArticlesCsv()">
@@ -92,12 +92,16 @@
         </div>
         <table class="data-table">
           <thead><tr>
-            <th>Title</th><th>Category</th><th>Status</th><th>Author</th>
-            <th>Views</th><th>Last Updated</th><th>Actions</th>
+            <th *ngIf="showTableField('title')">{{fieldLabel('table','title','Title')}}</th>
+            <th *ngIf="showTableField('category')">{{fieldLabel('table','category','Category')}}</th>
+            <th *ngIf="showTableField('status')">{{fieldLabel('table','status','Status')}}</th>
+            <th *ngIf="showTableField('author')">{{fieldLabel('table','author','Author')}}</th>
+            <th *ngIf="showTableField('views')">{{fieldLabel('table','views','Views')}}</th>
+            <th *ngIf="showTableField('updated_at')">{{fieldLabel('table','updated_at','Last Updated')}}</th><th>Actions</th>
           </tr></thead>
           <tbody>
             <tr *ngFor="let a of articles" style="cursor:pointer" (click)="viewArticle(a)">
-              <td>
+              <td *ngIf="showTableField('title')">
                 <div class="flex items-center gap-2">
                   <span *ngIf="a.is_pinned"
                         style="font-family:'Material Icons Round';font-style:normal;font-size:14px;color:#F59E0B">push_pin</span>
@@ -107,16 +111,16 @@
                   </div>
                 </div>
               </td>
-              <td class="text-sm">{{a.category?.name || '—'}}</td>
-              <td><span class="badge" [ngClass]="getArticleStatusBadge(a.status)">{{a.status}}</span></td>
-              <td class="text-sm">{{a.author?.first_name}} {{a.author?.last_name}}</td>
-              <td>
+              <td class="text-sm" *ngIf="showTableField('category')">{{a.category?.name || '—'}}</td>
+              <td *ngIf="showTableField('status')"><span class="badge" [ngClass]="getArticleStatusBadge(a.status)">{{a.status}}</span></td>
+              <td class="text-sm" *ngIf="showTableField('author')">{{a.author?.first_name}} {{a.author?.last_name}}</td>
+              <td *ngIf="showTableField('views')">
                 <div class="flex items-center gap-1 text-sm">
                   <span style="font-family:'Material Icons Round';font-style:normal;font-size:14px;color:#9CA3AF">visibility</span>
                   {{a.view_count}}
                 </div>
               </td>
-              <td class="text-sm text-muted">{{a.updated_at | date:'MMM d, y'}}</td>
+              <td class="text-sm text-muted" *ngIf="showTableField('updated_at')">{{a.updated_at | date:'MMM d, y'}}</td>
               <td (click)="$event.stopPropagation()">
                 <div class="flex gap-1">
                   <button class="btn btn-ghost btn-icon-only btn-sm" (click)="editArticle(a)">
@@ -138,6 +142,24 @@
           <h3>No articles found</h3>
           <p>Start building your knowledge base</p>
           <button class="btn btn-primary" (click)="openEditor()">Write First Article</button>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-top:1px solid var(--border)"
+             *ngIf="total > 0">
+          <div class="table-page-size-control">
+            <span class="text-sm text-muted">Showing {{(page-1)*pageSize+1}}–{{Math.min(page*pageSize,total)}} of {{total}}</span>
+            <app-dropdown class="form-control table-page-size-select" [(ngModel)]="pageSize" (change)="onPageSizeChange()" ariaLabel="Rows per page">
+              <app-dropdown-option *ngFor="let size of pageSizeOptions" [ngValue]="size">{{size}}</app-dropdown-option>
+            </app-dropdown>
+          </div>
+          <div class="flex gap-2">
+            <button class="btn btn-secondary btn-sm" [disabled]="page <= 1" (click)="changePage(page-1)">
+              <span class="btn-icon">chevron_left</span>
+            </button>
+            <span style="padding:5px 12px;font-size:0.85rem;font-weight:600">{{page}} / {{totalPages}}</span>
+            <button class="btn btn-secondary btn-sm" [disabled]="page >= totalPages" (click)="changePage(page+1)">
+              <span class="btn-icon">chevron_right</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -207,52 +229,64 @@
     <div class="modal-header">
       <h3>{{editingArticle ? 'Edit Article' : 'New Article'}}</h3>
       <div class="flex gap-2">
-        <select class="form-control" style="width:140px" [(ngModel)]="articleForm.status">
-          <option value="DRAFT">Draft</option>
-          <option value="REVIEW">Send for Review</option>
-          <option value="PUBLISHED">Publish</option>
-        </select>
+        <app-dropdown class="form-control select-w-140" [(ngModel)]="articleForm.status" *ngIf="showFormField('status')">
+          <app-dropdown-option value="DRAFT">Draft</app-dropdown-option>
+          <app-dropdown-option value="REVIEW">Send for Review</app-dropdown-option>
+          <app-dropdown-option value="PUBLISHED">Publish</app-dropdown-option>
+        </app-dropdown>
         <button class="btn btn-ghost btn-icon-only" (click)="showEditor=false">
           <span class="btn-icon">close</span>
         </button>
       </div>
     </div>
     <div class="modal-body">
-      <div class="form-group">
-        <label class="form-label">Title *</label>
+      <div class="form-group" *ngIf="showFormField('title')">
+        <label class="form-label">{{fieldLabel('form','title','Title')}} *</label>
         <input class="form-control" [(ngModel)]="articleForm.title" placeholder="Article title" style="font-size:1.1rem;font-weight:600">
       </div>
       <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Category</label>
-          <select class="form-control" [(ngModel)]="articleForm.category_id">
-            <option [ngValue]="null">— Uncategorized —</option>
-            <option *ngFor="let c of categories" [value]="c.id">{{c.name}}</option>
-          </select>
+        <div class="form-group" *ngIf="showFormField('category_id')">
+          <label class="form-label">{{fieldLabel('form','category_id','Category')}}</label>
+          <app-dropdown class="form-control" [(ngModel)]="articleForm.category_id" placeholder="— Uncategorized —">
+            <app-dropdown-option [ngValue]="null">— Uncategorized —</app-dropdown-option>
+            <app-dropdown-option *ngFor="let c of categories" [value]="c.id">{{c.name}}</app-dropdown-option>
+          </app-dropdown>
         </div>
-        <div class="form-group">
-          <label class="form-label">Tags (comma separated)</label>
+        <div class="form-group" *ngIf="showFormField('tags')">
+          <label class="form-label">{{fieldLabel('form','tags','Tags (comma separated)')}}</label>
           <input class="form-control" [(ngModel)]="articleTagsInput" placeholder="e.g. sop, network, security">
         </div>
       </div>
-      <div class="form-group">
-        <label class="form-label">Excerpt</label>
+      <div class="form-group" *ngIf="showFormField('excerpt')">
+        <label class="form-label">{{fieldLabel('form','excerpt','Excerpt')}}</label>
         <input class="form-control" [(ngModel)]="articleForm.excerpt" placeholder="Brief summary shown in article list">
       </div>
-      <div class="form-group" style="display:grid;grid-template-columns:1fr 120px;gap:12px;align-items:start">
-        <div>
-          <label class="form-label">Content (Markdown supported) *</label>
-          <textarea class="form-control" [(ngModel)]="articleForm.content"
-                    style="min-height:300px;font-family:var(--font-mono);font-size:0.875rem"
-                    placeholder="# Heading&#10;&#10;Write your article content here..."></textarea>
+      <div class="form-group" *ngIf="showFormField('content')">
+        <div class="flex items-center justify-between" style="margin-bottom:8px">
+          <label class="form-label">{{fieldLabel('form','content','Content (Markdown supported)')}} *</label>
+          <div class="flex gap-2">
+            <button class="btn btn-secondary btn-sm" type="button" (click)="insertMarkdownTemplate()">
+              <span class="btn-icon">description</span> Insert Template
+            </button>
+            <button class="btn btn-secondary btn-sm" type="button" (click)="showMarkdownLegend = !showMarkdownLegend">
+              <span class="btn-icon">menu_book</span>
+              {{ showMarkdownLegend ? 'Hide Legend' : 'Markdown Legend' }}
+            </button>
+            <button class="btn btn-secondary btn-sm" type="button" (click)="openPreviewDialog()">
+              <span class="btn-icon">open_in_new</span> Show Preview
+            </button>
+          </div>
         </div>
-        <div style="display:flex;flex-direction:column;gap:12px;margin-top:24px">
-          <button class="btn btn-secondary btn-sm" type="button" (click)="togglePreview()">
-            <span class="btn-icon">preview</span>
-            {{ showPreview ? 'Hide Preview' : 'Show Preview' }}
-          </button>
-          <div *ngIf="showPreview" class="card" style="background:var(--gray-50);padding:12px;min-height:300px;overflow:auto">
-            <div [innerHTML]="renderContent(articleForm.content || '')"></div>
+        <textarea class="form-control" [(ngModel)]="articleForm.content"
+                  style="min-height:320px;font-family:var(--font-mono);font-size:0.875rem"
+                  placeholder="# Heading&#10;&#10;Write your article content here..."></textarea>
+        <div *ngIf="showMarkdownLegend" class="card" style="margin-top:12px;background:var(--gray-50);padding:14px">
+          <div style="font-weight:700;font-size:0.9rem;color:var(--blue-900);margin-bottom:8px">Markdown Legend</div>
+          <div style="display:grid;grid-template-columns:220px 1fr;gap:8px 14px;align-items:center">
+            <ng-container *ngFor="let item of markdownLegend">
+              <code style="font-size:0.8rem;background:#e5e7eb;padding:3px 7px;border-radius:6px">{{item.syntax}}</code>
+              <span class="text-sm text-muted">{{item.description}}</span>
+            </ng-container>
           </div>
         </div>
       </div>
@@ -263,6 +297,27 @@
         <div class="spinner" *ngIf="saving" style="width:16px;height:16px;border-width:2px;border-top-color:#fff"></div>
         {{saving ? 'Saving…' : (editingArticle ? 'Update' : 'Publish')}}
       </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Markdown Preview Dialog ─────────────────────────────────────────────── -->
+<div class="modal-overlay" *ngIf="showPreviewDialog" (click)="closePreviewDialog($event)">
+  <div class="modal" style="max-width:1200px;max-height:92vh;width:min(96vw,1200px)">
+    <div class="modal-header">
+      <h3>Markdown Preview</h3>
+      <button class="btn btn-ghost btn-icon-only" (click)="closePreviewDialog()">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+    <div class="modal-body" style="overflow:auto;background:#f8fafc;padding:20px">
+      <div class="card wiki-content" style="max-width:100%;line-height:1.8;color:var(--blue-900);padding:24px 28px;min-height:420px">
+        <h2 style="margin-top:0;margin-bottom:14px">{{ articleForm.title || 'Untitled Article' }}</h2>
+        <div [innerHTML]="renderContent(articleForm.content || '')"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" (click)="closePreviewDialog()">Close</button>
     </div>
   </div>
 </div>

@@ -1,10 +1,11 @@
 // =============================================================================
-// analytics.component.ts — Full Analytics with Multiple Chart.js Charts
+// analytics.component.ts — Operational Intelligence & Analytics Dashboard
 // =============================================================================
 import { Component, OnInit, AfterViewInit, OnDestroy, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule, DecimalPipe, TitleCasePipe } from '@angular/common';
-import { Subject, forkJoin } from 'rxjs';
-import { takeUntil, switchMap } from 'rxjs/operators';
+import { FormsModule } from '@angular/forms';
+import { Subject, forkJoin, of } from 'rxjs';
+import { takeUntil, switchMap, catchError } from 'rxjs/operators';
 import { Chart, registerables, ChartConfiguration } from 'chart.js';
 import zoomPlugin from 'chartjs-plugin-zoom';
 import html2canvas from 'html2canvas';
@@ -12,381 +13,686 @@ import jsPDF from 'jspdf';
 
 import { ApiService } from '../../core/services/services';
 import { DateFilterService } from '../../core/services/services';
+import { UiCustomizationService, UiSectionPreferences } from '../../core/services/services';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
+import { DropdownComponent, DropdownOptionComponent } from '../../shared/components/dropdown/dropdown.component';
 
 Chart.register(...registerables, zoomPlugin);
+
+export interface AnalyticsKpis {
+  totalOperations: number;
+  operationCompletionRate: number;
+  totalMaintenanceCost: number;
+  totalDowntimeHours: number;
+  avgDowntimeHours: number;
+  netStockFlow: number;
+  taskCompletionRate: number;
+  shiftAttendanceRate: number;
+}
 
 @Component({
   selector: 'app-analytics',
   standalone: true,
-  imports: [CommonModule, DecimalPipe, TitleCasePipe, ExportMenuComponent],
+  imports: [CommonModule, FormsModule, DecimalPipe, TitleCasePipe, ExportMenuComponent, DropdownComponent, DropdownOptionComponent],
   templateUrl: './analytics.component.html',
+  styleUrls: ['./analytics.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
   private destroy$ = new Subject<void>();
+  Math = Math;
+
+  loading = true;
+  dateLabel = 'All time';
+  uiPrefs: UiSectionPreferences | null = null;
+
+  kpis: AnalyticsKpis | null = null;
+  maintSummary: any[] = [];
+  summaryPage = 1;
+  summaryPageSize = 10;
+  readonly summaryPageSizeOptions = [10, 20, 50, 100];
+
+  // Cached API data to handle async view readiness smoothly
+  private rawData: {
+    opsByType?: any[];
+    opsByStatus?: any[];
+    maintData?: any[];
+    stockData?: any[];
+    taskData?: any[];
+    shiftData?: any[];
+  } = {};
+
   private charts: Record<string, Chart | null> = {
-    opsByType: null, maintOverview: null, stock: null,
-    taskComp: null, shiftCoverage: null, statusDonut: null
+    opsByType: null,
+    statusDonut: null,
+    maintOverview: null,
+    stock: null,
+    taskComp: null,
+    shiftCoverage: null
   };
 
-  maintSummary: any[] = [];
-  dateLabel = 'All time';
+  private isViewReady = false;
 
   constructor(
     private api: ApiService,
     private dateFilter: DateFilterService,
+    private uiCustomization: UiCustomizationService,
     private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
+    this.uiCustomization.load('analytics').subscribe(p => {
+      this.uiPrefs = p;
+      this.cdr.markForCheck();
+    });
+
     this.dateFilter.range$.pipe(
       takeUntil(this.destroy$),
       switchMap(range => {
+        this.loading = true;
         this.dateLabel = this.dateFilter.getLabel();
+        this.cdr.markForCheck();
+
         return forkJoin({
-          opsByType:  this.api.get<any>('/analytics/operations-by-type', {}, range),
-          maintData:  this.api.get<any>('/analytics/maintenance-overview', {}, range),
-          stockData:  this.api.get<any>('/analytics/stock-movements', {}, range),
-          taskData:   this.api.get<any>('/analytics/task-completion', {}, range),
-          shiftData:  this.api.get<any>('/analytics/shift-coverage', {}, range)
+          kpis:        this.api.get<any>('/analytics/kpis', {}, range).pipe(catchError(() => of({ data: null }))),
+          opsByType:   this.api.get<any>('/analytics/operations-by-type', {}, range).pipe(catchError(() => of({ data: [] }))),
+          opsByStatus: this.api.get<any>('/analytics/operations-by-status', {}, range).pipe(catchError(() => of({ data: [] }))),
+          maintData:   this.api.get<any>('/analytics/maintenance-overview', {}, range).pipe(catchError(() => of({ data: [] }))),
+          stockData:   this.api.get<any>('/analytics/stock-movements', {}, range).pipe(catchError(() => of({ data: [] }))),
+          taskData:    this.api.get<any>('/analytics/task-completion', {}, range).pipe(catchError(() => of({ data: [] }))),
+          shiftData:   this.api.get<any>('/analytics/shift-coverage', {}, range).pipe(catchError(() => of({ data: [] })))
         });
       })
     ).subscribe({
-      next: ({ opsByType, maintData, stockData, taskData, shiftData }) => {
-        this.updateOpsByType(opsByType.data);
-        this.updateMaintOverview(maintData.data);
-        this.updateStockChart(stockData.data);
-        this.updateTaskChart(taskData.data);
-        this.updateShiftChart(shiftData.data);
-        this.updateStatusDonut(opsByType.data);
-        this.buildMaintSummary(maintData.data);
+      next: ({ kpis, opsByType, opsByStatus, maintData, stockData, taskData, shiftData }) => {
+        this.kpis = kpis?.data || null;
+        this.rawData = {
+          opsByType: opsByType?.data || [],
+          opsByStatus: opsByStatus?.data || [],
+          maintData: maintData?.data || [],
+          stockData: stockData?.data || [],
+          taskData: taskData?.data || [],
+          shiftData: shiftData?.data || []
+        };
+
+        this.buildMaintSummary(this.rawData.maintData || []);
+        this.loading = false;
+
+        if (this.isViewReady) {
+          this.renderAllCharts();
+        }
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.loading = false;
         this.cdr.markForCheck();
       }
     });
   }
 
-  ngAfterViewInit(): void { setTimeout(() => this.initCharts(), 50); }
+  ngAfterViewInit(): void {
+    this.isViewReady = true;
+    setTimeout(() => {
+      this.renderAllCharts();
+      this.cdr.markForCheck();
+    }, 60);
+  }
 
-  private initCharts(): void {
-    // Shared chart defaults
-    const baseFont = { family: 'Plus Jakarta Sans', size: 12 };
-    const gridColor = '#E1EAF5';
+  // ── Render / Update All Charts ─────────────────────────────────────────────
+  renderAllCharts(): void {
+    if (!this.isViewReady) return;
+    this.renderOpsByType(this.rawData.opsByType || []);
+    this.renderStatusDonut(this.rawData.opsByStatus || []);
+    this.renderMaintOverview(this.rawData.maintData || []);
+    this.renderStockChart(this.rawData.stockData || []);
+    this.renderTaskChart(this.rawData.taskData || []);
+    this.renderShiftChart(this.rawData.shiftData || []);
+  }
 
-    // 1) Operations by Type — Grouped Bar
-    const opsCtx = this.getCtx('opsByTypeChart');
-    if (opsCtx) {
-      this.charts['opsByType'] = new Chart(opsCtx, {
-        type: 'bar',
-        data: { labels: [], datasets: [] },
-        options: {
-          responsive: true, maintainAspectRatio: false,
-          plugins: {
-            legend: { position: 'top', labels: { font: baseFont, usePointStyle: true, padding: 14 } },
-            zoom: {
-              pan: { enabled: true, mode: 'x' },
-              zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }
-            }
+  private getOrCreateChart(canvasId: string, config: ChartConfiguration | any): Chart | null {
+    const canvas = document.getElementById(canvasId) as HTMLCanvasElement | null;
+    if (!canvas) return null;
+    Chart.getChart(canvas)?.destroy();
+    return new Chart(canvas, config);
+  }
+
+  private getBaseFont(): { family: string; size: number } {
+    return { family: 'Plus Jakarta Sans, sans-serif', size: 11 };
+  }
+
+  // ── 1) Operations by Category (Bar Chart) ──────────────────────────────────
+  private renderOpsByType(data: any[]): void {
+    const baseFont = this.getBaseFont();
+    const labels = data.map(d => d.type || 'Unnamed');
+    const totalData = data.map(d => Number(d.count) || 0);
+    const completedData = data.map(d => Number(d.completed) || 0);
+    const colors = data.map(d => d.color || '#1565C0');
+
+    this.charts['opsByType'] = this.getOrCreateChart('opsByTypeChart', {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Total Planned / Assigned',
+            data: totalData,
+            backgroundColor: colors.map(c => c + '80'),
+            borderColor: colors,
+            borderWidth: 1.5,
+            borderRadius: 6
           },
-          scales: {
-            x: { grid: { display: false }, ticks: { font: baseFont } },
-            y: { beginAtZero: true, grid: { color: gridColor }, ticks: { font: baseFont, precision: 0 } }
+          {
+            label: 'Completed Operations',
+            data: completedData,
+            backgroundColor: '#10B981CC',
+            borderColor: '#10B981',
+            borderWidth: 1.5,
+            borderRadius: 6
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'top',
+            labels: { font: baseFont, usePointStyle: true, padding: 14 }
           },
-          borderRadius: 6
+          tooltip: {
+            padding: 10,
+            cornerRadius: 8,
+            titleFont: { ...baseFont, weight: 'bold' as any },
+            bodyFont: baseFont
+          }
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { font: baseFont } },
+          y: {
+            beginAtZero: true,
+            grid: { color: '#F1F5F9' },
+            ticks: { font: baseFont, precision: 0 }
+          }
         }
-      } as ChartConfiguration);
-    }
+      }
+    });
+  }
 
-    // 2) Maintenance Overview — Horizontal Bar
-    const maintCtx = this.getCtx('maintOverviewChart');
-    if (maintCtx) {
-      this.charts['maintOverview'] = new Chart(maintCtx, {
-        type: 'bar',
-        data: { labels: [], datasets: [] },
-        options: {
-          indexAxis: 'y', responsive: true, maintainAspectRatio: false,
-          plugins: {
-            legend: { position: 'top', labels: { font: baseFont, usePointStyle: true } },
-            zoom: {
-              pan: { enabled: true, mode: 'x' },
-              zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }
-            }
-          },
-          scales: {
-            x: { beginAtZero: true, stacked: true, grid: { color: gridColor }, ticks: { font: baseFont, precision: 0 } },
-            y: { stacked: true, grid: { display: false }, ticks: { font: baseFont } }
-          },
-          borderRadius: 4
-        }
-      } as ChartConfiguration);
-    }
+  // ── 2) Operation Status Lifecycle (Donut Chart) ────────────────────────────
+  private renderStatusDonut(data: any[]): void {
+    const baseFont = this.getBaseFont();
+    const statusColorMap: Record<string, string> = {
+      'COMPLETED':   '#10B981',
+      'IN_PROGRESS': '#0288D1',
+      'PLANNED':     '#5C6BC0',
+      'ON_HOLD':     '#F59E0B',
+      'CANCELLED':   '#EF4444'
+    };
 
-    // 3) Stock Movements — Stacked Area Chart
-    const stockCtx = this.getCtx('stockChart');
-    if (stockCtx) {
-      this.charts['stock'] = new Chart(stockCtx, {
-        type: 'line',
-        data: { labels: [], datasets: [] },
-        options: {
-          responsive: true, maintainAspectRatio: false,
-          plugins: {
-            legend: { position: 'top', labels: { font: baseFont, usePointStyle: true } },
-            zoom: {
-              pan: { enabled: true, mode: 'x' },
-              zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }
-            }
-          },
-          scales: {
-            x: { grid: { color: gridColor }, ticks: { font: baseFont } },
-            y: { beginAtZero: true, stacked: true, grid: { color: gridColor }, ticks: { font: baseFont, precision: 0 } }
-          },
-          elements: { line: { tension: 0.4, borderWidth: 2 }, point: { radius: 3 } }
-        }
-      });
-    }
+    const labels = data.length ? data.map(d => d.status) : ['No Data'];
+    const counts = data.length ? data.map(d => Number(d.count) || 0) : [0];
+    const bgColors = data.length ? data.map(d => statusColorMap[d.status] || '#94A3B8') : ['#E2E8F0'];
 
-    // 4) Task Completion — Radar
-    const taskCtx = this.getCtx('taskCompChart');
-    if (taskCtx) {
-      this.charts['taskComp'] = new Chart(taskCtx, {
-        type: 'radar',
-        data: { labels: ['Daily','Weekly','Monthly','Yearly','Once'], datasets: [] },
-        options: {
-          responsive: true, maintainAspectRatio: false,
-          plugins: {
-            legend: { position: 'top', labels: { font: baseFont, usePointStyle: true } },
-            zoom: {
-              pan: { enabled: true, mode: 'xy' },
-              zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' }
-            }
+    this.charts['statusDonut'] = this.getOrCreateChart('statusDonutChart', {
+      type: 'doughnut',
+      data: {
+        labels,
+        datasets: [{
+          data: counts,
+          backgroundColor: bgColors,
+          borderWidth: 2,
+          borderColor: '#FFFFFF',
+          hoverOffset: 6
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '70%',
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: { font: baseFont, usePointStyle: true, padding: 12 }
           },
-          scales: {
-            r: {
-              beginAtZero: true,
-              grid: { color: gridColor },
-              ticks: { font: baseFont, backdropColor: 'transparent' },
-              pointLabels: { font: { ...baseFont, size: 13 } }
-            }
-          },
-          elements: { line: { borderWidth: 2 } }
-        }
-      });
-    }
-
-    // 5) Shift Coverage — Stacked Bar
-    const shiftCtx = this.getCtx('shiftCoverageChart');
-    if (shiftCtx) {
-      this.charts['shiftCoverage'] = new Chart(shiftCtx, {
-        type: 'bar',
-        data: { labels: [], datasets: [] },
-        options: {
-          responsive: true, maintainAspectRatio: false,
-          plugins: {
-            legend: { position: 'top', labels: { font: baseFont, usePointStyle: true, padding: 12 } },
-            zoom: {
-              pan: { enabled: true, mode: 'x' },
-              zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }
-            }
-          },
-          scales: {
-            x: { stacked: true, grid: { display: false }, ticks: { font: baseFont } },
-            y: { stacked: true, beginAtZero: true, grid: { color: gridColor }, ticks: { font: baseFont, precision: 0 } }
-          },
-          borderRadius: 4
-        }
-      } as ChartConfiguration);
-    }
-
-    // 6) Status Donut
-    const donutCtx = this.getCtx('statusDonutChart');
-    if (donutCtx) {
-      this.charts['statusDonut'] = new Chart(donutCtx, {
-        type: 'doughnut',
-        data: { labels: [], datasets: [{ data: [], backgroundColor: [], borderWidth: 0, hoverOffset: 8 }] },
-        options: {
-          responsive: true, maintainAspectRatio: false, cutout: '70%',
-          plugins: {
-            legend: { position: 'bottom', labels: { font: baseFont, usePointStyle: true, padding: 12 } },
-            zoom: {
-              pan: { enabled: true, mode: 'xy' },
-              zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' }
+          tooltip: {
+            padding: 10,
+            cornerRadius: 8,
+            titleFont: { ...baseFont, weight: 'bold' as any },
+            bodyFont: baseFont,
+            callbacks: {
+              label: (item) => {
+                const total = counts.reduce((a, b) => a + b, 0);
+                const val = Number(item.raw) || 0;
+                const pct = total > 0 ? ((val / total) * 100).toFixed(0) : '0';
+                return ` ${item.label}: ${val} (${pct}%)`;
+              }
             }
           }
         }
-      });
-    }
-  }
-
-  // ── Data Update Methods ───────────────────────────────────────────────────
-  private updateOpsByType(data: any[]): void {
-    const c = this.charts['opsByType'];
-    if (!c || !data?.length) return;
-    c.data.labels = data.map(d => d.type);
-    c.data.datasets = [
-      { label: 'Total', data: data.map(d => +d.count), backgroundColor: data.map(d => d.color + 'CC'), borderColor: data.map(d => d.color), borderWidth: 1.5 },
-      { label: 'Completed', data: data.map(d => +d.completed), backgroundColor: '#10B98144', borderColor: '#10B981', borderWidth: 1.5 }
-    ];
-    c.update('active');
-  }
-
-  private updateMaintOverview(data: any[]): void {
-    const c = this.charts['maintOverview'];
-    if (!c || !data?.length) return;
-    const types = [...new Set(data.map((d: any) => d.type))];
-    const statuses = [...new Set(data.map((d: any) => d.status))];
-    const colors: Record<string,string> = { 'SCHEDULED':'#0288D1','IN_PROGRESS':'#F59E0B','COMPLETED':'#10B981','FAILED':'#EF4444','DEFERRED':'#6B7280' };
-
-    c.data.labels = types;
-    c.data.datasets = statuses.map(s => ({
-      label: s,
-      data: types.map(t => {
-        const row = data.find((d: any) => d.type === t && d.status === s);
-        return row ? +row.count : 0;
-      }),
-      backgroundColor: (colors[s] || '#9CA3AF') + 'BB',
-      borderColor: colors[s] || '#9CA3AF',
-      borderWidth: 1
-    }));
-    c.update('active');
-  }
-
-  private updateStockChart(data: any[]): void {
-    const c = this.charts['stock'];
-    if (!c || !data?.length) return;
-    const dates = [...new Set(data.map((d: any) => d.date))].sort();
-    c.data.labels = dates;
-    c.data.datasets = [
-      {
-        label: 'Stock In',
-        data: dates.map(d => { const r = data.find((x: any) => x.date === d && x.type === 'IN'); return r ? +r.total_qty : 0; }),
-        borderColor: '#10B981',
-        backgroundColor: '#10B98140',
-        fill: true,
-        stack: 'stock',
-        tension: 0.4,
-        borderWidth: 2
-      },
-      {
-        label: 'Stock Out',
-        data: dates.map(d => { const r = data.find((x: any) => x.date === d && x.type === 'OUT'); return r ? +r.total_qty : 0; }),
-        borderColor: '#EF4444',
-        backgroundColor: '#EF444440',
-        fill: true,
-        stack: 'stock',
-        tension: 0.4,
-        borderWidth: 2
       }
-    ];
-    c.update('active');
+    });
   }
 
-  private updateTaskChart(data: any[]): void {
-    const c = this.charts['taskComp'];
-    if (!c || !data?.length) return;
-    const intervals = ['DAILY','WEEKLY','MONTHLY','YEARLY','ONCE'];
-    const doneData  = intervals.map(i => { const r = data.find((d: any) => d.interval_type === i && d.status === 'DONE'); return r ? +r.count : 0; });
-    const pendData  = intervals.map(i => { const r = data.find((d: any) => d.interval_type === i && d.status !== 'DONE'); return r ? +r.count : 0; });
-    c.data.datasets = [
-      { label: 'Completed', data: doneData, backgroundColor: '#10B98130', borderColor: '#10B981', pointBackgroundColor: '#10B981' },
-      { label: 'Pending',   data: pendData, backgroundColor: '#F59E0B30', borderColor: '#F59E0B', pointBackgroundColor: '#F59E0B' }
-    ];
-    c.update('active');
-  }
-
-  private updateShiftChart(data: any[]): void {
-    const c = this.charts['shiftCoverage'];
-    if (!c || !data?.length) return;
-    const dates      = [...new Set(data.map((d: any) => d.date))].sort().slice(-14);
-    const shiftNames = [...new Set(data.map((d: any) => d.shift_name))];
-    const colorMap   = data.reduce((acc: any, d: any) => { acc[d.shift_name] = d.color; return acc; }, {});
-
-    c.data.labels = dates.map(d => new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric'}));
-    c.data.datasets = shiftNames.map(name => ({
-      label: name,
-      data: dates.map(d => { const r = data.find((x: any) => x.date === d && x.shift_name === name); return r ? +r.employees : 0; }),
-      backgroundColor: (colorMap[name] || '#1565C0') + 'BB',
-      borderColor: colorMap[name] || '#1565C0',
-      borderWidth: 1
-    }));
-    c.update('active');
-  }
-
-  private updateStatusDonut(data: any[]): void {
-    const c = this.charts['statusDonut'];
-    if (!c || !data?.length) return;
-    // aggregate by status (use ops data as proxy)
-    const statusColors: Record<string,string> = {
-      'PLANNED':'#5C6BC0','IN_PROGRESS':'#0288D1','COMPLETED':'#10B981','CANCELLED':'#EF4444','ON_HOLD':'#F59E0B'
+  // ── 3) Maintenance Overview & Costs (Grouped Bar) ──────────────────────────
+  private renderMaintOverview(data: any[]): void {
+    const baseFont = this.getBaseFont();
+    const types = Array.from(new Set(data.map(d => d.type)));
+    const colors: Record<string, string> = {
+      'PREVENTIVE': '#10B981',
+      'CORRECTIVE': '#EF4444',
+      'PREDICTIVE': '#6366F1',
+      'UPGRADE':    '#0288D1',
+      'INSPECTION': '#F59E0B'
     };
-    c.data.labels = data.map(d => d.type);
-    (c.data.datasets[0] as any).data = data.map(d => +d.count);
-    (c.data.datasets[0] as any).backgroundColor = data.map(d => d.color + 'CC');
-    c.update('active');
+
+    const typeTotals = types.map(t => {
+      const rows = data.filter(d => d.type === t);
+      return {
+        type: t,
+        count: rows.reduce((s, r) => s + (Number(r.count) || 0), 0),
+        cost: rows.reduce((s, r) => s + (Number(r.total_cost) || 0), 0),
+        avgDowntime: rows.length ? Number(rows[0].avg_downtime) || 0 : 0
+      };
+    });
+
+    this.charts['maintOverview'] = this.getOrCreateChart('maintOverviewChart', {
+      type: 'bar',
+      data: {
+        labels: typeTotals.map(t => t.type),
+        datasets: [
+          {
+            label: 'Total Cost ($)',
+            data: typeTotals.map(t => t.cost),
+            backgroundColor: '#6366F1B3',
+            borderColor: '#6366F1',
+            borderWidth: 1.5,
+            borderRadius: 6,
+            yAxisID: 'y'
+          },
+          {
+            label: 'Avg Downtime (hrs)',
+            data: typeTotals.map(t => t.avgDowntime),
+            backgroundColor: '#F59E0BCC',
+            borderColor: '#F59E0B',
+            borderWidth: 1.5,
+            borderRadius: 6,
+            yAxisID: 'y1'
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'top',
+            labels: { font: baseFont, usePointStyle: true, padding: 12 }
+          },
+          tooltip: {
+            padding: 10,
+            cornerRadius: 8,
+            callbacks: {
+              label: (ctx) => {
+                if (ctx.datasetIndex === 0) return ` Cost: $${(Number(ctx.raw) || 0).toLocaleString()}`;
+                return ` Avg Downtime: ${Number(ctx.raw) || 0} hrs`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { font: baseFont } },
+          y: {
+            beginAtZero: true,
+            position: 'left',
+            grid: { color: '#F1F5F9' },
+            ticks: {
+              font: baseFont,
+              callback: (val) => `$${val}`
+            }
+          },
+          y1: {
+            beginAtZero: true,
+            position: 'right',
+            grid: { drawOnChartArea: false },
+            ticks: {
+              font: baseFont,
+              callback: (val) => `${val}h`
+            }
+          }
+        }
+      }
+    });
   }
 
+  // ── 4) Stock Movements Velocity (IN vs OUT Area/Bar) ──────────────────────
+  private renderStockChart(data: any[]): void {
+    const baseFont = this.getBaseFont();
+    const dates = Array.from(new Set(data.map(d => d.date))).sort();
+
+    const inData = dates.map(d => {
+      const r = data.find(x => x.date === d && x.type === 'IN');
+      return r ? Number(r.total_qty) || 0 : 0;
+    });
+
+    const outData = dates.map(d => {
+      const r = data.find(x => x.date === d && x.type === 'OUT');
+      return r ? Number(r.total_qty) || 0 : 0;
+    });
+
+    const formattedDates = dates.map(d => {
+      const dt = new Date(d);
+      return isNaN(dt.getTime()) ? d : dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    });
+
+    this.charts['stock'] = this.getOrCreateChart('stockChart', {
+      type: 'line',
+      data: {
+        labels: formattedDates,
+        datasets: [
+          {
+            label: 'Stock IN (Received)',
+            data: inData,
+            borderColor: '#10B981',
+            backgroundColor: '#10B98125',
+            fill: true,
+            tension: 0.35,
+            borderWidth: 2,
+            pointRadius: 3,
+            pointHoverRadius: 6
+          },
+          {
+            label: 'Stock OUT (Dispatched)',
+            data: outData,
+            borderColor: '#EF4444',
+            backgroundColor: '#EF444420',
+            fill: true,
+            tension: 0.35,
+            borderWidth: 2,
+            pointRadius: 3,
+            pointHoverRadius: 6
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'top',
+            labels: { font: baseFont, usePointStyle: true }
+          },
+          tooltip: {
+            padding: 10,
+            cornerRadius: 8
+          }
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { font: baseFont } },
+          y: {
+            beginAtZero: true,
+            grid: { color: '#F1F5F9' },
+            ticks: { font: baseFont, precision: 0 }
+          }
+        }
+      }
+    });
+  }
+
+  // ── 5) Task Completion Performance (Radar) ────────────────────────────────
+  private renderTaskChart(data: any[]): void {
+    const baseFont = this.getBaseFont();
+    const intervals = ['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY', 'ONCE'];
+
+    const doneData = intervals.map(i => {
+      const r = data.find(d => d.interval_type === i && d.status === 'DONE');
+      return r ? Number(r.count) || 0 : 0;
+    });
+
+    const pendingData = intervals.map(i => {
+      const r = data.find(d => d.interval_type === i && d.status !== 'DONE');
+      return r ? Number(r.count) || 0 : 0;
+    });
+
+    this.charts['taskComp'] = this.getOrCreateChart('taskCompChart', {
+      type: 'radar',
+      data: {
+        labels: ['Daily', 'Weekly', 'Monthly', 'Yearly', 'One-time'],
+        datasets: [
+          {
+            label: 'Completed Tasks',
+            data: doneData,
+            backgroundColor: '#10B98135',
+            borderColor: '#10B981',
+            pointBackgroundColor: '#10B981',
+            borderWidth: 2,
+            pointRadius: 4
+          },
+          {
+            label: 'Pending / In-Progress',
+            data: pendingData,
+            backgroundColor: '#F59E0B35',
+            borderColor: '#F59E0B',
+            pointBackgroundColor: '#F59E0B',
+            borderWidth: 2,
+            pointRadius: 4
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'top',
+            labels: { font: baseFont, usePointStyle: true }
+          },
+          tooltip: {
+            padding: 10,
+            cornerRadius: 8
+          }
+        },
+        scales: {
+          r: {
+            beginAtZero: true,
+            grid: { color: '#E2E8F0' },
+            ticks: { font: baseFont, backdropColor: 'transparent', precision: 0 },
+            pointLabels: { font: { ...baseFont, size: 12, weight: 'bold' as any } }
+          }
+        }
+      }
+    });
+  }
+
+  // ── 6) Shift Workforce & Absences (Stacked Bar) ───────────────────────────
+  private renderShiftChart(data: any[]): void {
+    const baseFont = this.getBaseFont();
+    const dates = Array.from(new Set(data.map(d => d.date))).sort().slice(-14);
+    const shiftNames = Array.from(new Set(data.map(d => d.shift_name)));
+    const colorMap = data.reduce((acc: any, d: any) => {
+      acc[d.shift_name] = d.color || '#1565C0';
+      return acc;
+    }, {});
+
+    const formattedDates = dates.map(d => {
+      const dt = new Date(d);
+      return isNaN(dt.getTime()) ? d : dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    });
+
+    const datasets: any[] = shiftNames.map(name => ({
+      type: 'bar',
+      label: `${name} Staff`,
+      data: dates.map(d => {
+        const r = data.find(x => x.date === d && x.shift_name === name);
+        return r ? Number(r.employees) || 0 : 0;
+      }),
+      backgroundColor: (colorMap[name] || '#1565C0') + 'CC',
+      borderColor: colorMap[name] || '#1565C0',
+      borderWidth: 1,
+      stack: 'staff'
+    }));
+
+    // Add absence line overlay
+    const absenceData = dates.map(d => {
+      const rows = data.filter(x => x.date === d);
+      return rows.reduce((s, r) => s + (Number(r.absences) || 0), 0);
+    });
+
+    datasets.push({
+      type: 'line',
+      label: 'Total Absences',
+      data: absenceData,
+      borderColor: '#EF4444',
+      backgroundColor: '#EF4444',
+      borderWidth: 2,
+      pointRadius: 4,
+      fill: false,
+      tension: 0.2
+    });
+
+    this.charts['shiftCoverage'] = this.getOrCreateChart('shiftCoverageChart', {
+      type: 'bar',
+      data: {
+        labels: formattedDates,
+        datasets
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'top',
+            labels: { font: baseFont, usePointStyle: true, padding: 12 }
+          },
+          tooltip: {
+            padding: 10,
+            cornerRadius: 8
+          }
+        },
+        scales: {
+          x: { stacked: true, grid: { display: false }, ticks: { font: baseFont } },
+          y: {
+            stacked: true,
+            beginAtZero: true,
+            grid: { color: '#F1F5F9' },
+            ticks: { font: baseFont, precision: 0 }
+          }
+        }
+      }
+    });
+  }
+
+  // ── Maintenance Summary Table ─────────────────────────────────────────────
   private buildMaintSummary(data: any[]): void {
-    const types = [...new Set(data.map((d: any) => d.type))];
+    const types = Array.from(new Set(data.map(d => d.type)));
     this.maintSummary = types.map(type => {
-      const rows = data.filter((d: any) => d.type === type);
-      const total = rows.reduce((s: number, r: any) => s + +r.count, 0);
-      const done  = rows.filter((r: any) => r.status === 'COMPLETED').reduce((s: number, r: any) => s + +r.count, 0);
+      const rows = data.filter(d => d.type === type);
+      const total = rows.reduce((s: number, r: any) => s + (Number(r.count) || 0), 0);
+      const done = rows.filter((r: any) => r.status === 'COMPLETED').reduce((s: number, r: any) => s + (Number(r.count) || 0), 0);
       return {
         type,
         count: total,
         avg_downtime: rows[0]?.avg_downtime || 0,
-        total_cost: rows.reduce((s: number, r: any) => s + (+r.total_cost || 0), 0),
+        total_cost: rows.reduce((s: number, r: any) => s + (Number(r.total_cost) || 0), 0),
         completion_rate: total > 0 ? (done / total) * 100 : 0
       };
     });
+    this.summaryPage = 1;
   }
 
-  private getCtx(id: string): CanvasRenderingContext2D | null {
-    return (document.getElementById(id) as HTMLCanvasElement)?.getContext('2d') ?? null;
+  get pagedMaintSummary(): any[] {
+    const start = (this.summaryPage - 1) * this.summaryPageSize;
+    return this.maintSummary.slice(start, start + this.summaryPageSize);
   }
 
+  get summaryTotalPages(): number {
+    return Math.max(1, Math.ceil(this.maintSummary.length / this.summaryPageSize));
+  }
+
+  changeSummaryPage(page: number): void {
+    if (page < 1 || page > this.summaryTotalPages) return;
+    this.summaryPage = page;
+  }
+
+  onSummaryPageSizeChange(): void {
+    this.summaryPage = 1;
+  }
+
+  // ── Helper Checks for Template ────────────────────────────────────────────
+  hasChartData(chartKey: 'opsByType' | 'statusDonut' | 'maintOverview' | 'stock' | 'taskComp' | 'shiftCoverage'): boolean {
+    switch (chartKey) {
+      case 'opsByType':    return (this.rawData.opsByType?.length ?? 0) > 0;
+      case 'statusDonut':  return (this.rawData.opsByStatus?.length ?? 0) > 0;
+      case 'maintOverview':return (this.rawData.maintData?.length ?? 0) > 0;
+      case 'stock':        return (this.rawData.stockData?.length ?? 0) > 0;
+      case 'taskComp':     return (this.rawData.taskData?.length ?? 0) > 0;
+      case 'shiftCoverage':return (this.rawData.shiftData?.length ?? 0) > 0;
+    }
+  }
+
+  // ── Export Features ───────────────────────────────────────────────────────
   exportReport(): void {
-    const report: any = { generated: new Date().toISOString(), period: this.dateLabel, summary: this.maintSummary };
+    const report = {
+      generated: new Date().toISOString(),
+      period: this.dateLabel,
+      kpis: this.kpis,
+      summary: this.maintSummary,
+      data: this.rawData
+    };
     const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
-    const url  = URL.createObjectURL(blob);
-    const a    = Object.assign(document.createElement('a'), { href: url, download: `smart-report-${Date.now()}.json` });
-    a.click(); URL.revokeObjectURL(url);
+    const url = URL.createObjectURL(blob);
+    const a = Object.assign(document.createElement('a'), { href: url, download: `smart-analytics-${Date.now()}.json` });
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   async exportPdf(): Promise<void> {
     const dashboard = document.getElementById('analytics-dashboard');
     if (!dashboard) return;
 
-    const canvas = await html2canvas(dashboard, {
-      scale: 2,
-      backgroundColor: '#F0F4F8',
-      useCORS: true
-    });
-    const imgData = canvas.toDataURL('image/png');
-    const pdf = new jsPDF('p', 'mm', 'a4');
+    try {
+      const canvas = await html2canvas(dashboard, {
+        scale: 2,
+        backgroundColor: '#F8FAFC',
+        useCORS: true
+      });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
 
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-    const imgWidth = pageWidth;
-    const imgHeight = (canvas.height * pageWidth) / canvas.width;
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * pageWidth) / canvas.width;
 
-    let heightLeft = imgHeight;
-    let position = 0;
+      let heightLeft = imgHeight;
+      let position = 0;
 
-    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-    heightLeft -= pageHeight;
-
-    while (heightLeft > 0) {
-      position = heightLeft - imgHeight;
-      pdf.addPage();
       pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
       heightLeft -= pageHeight;
-    }
 
-    pdf.save(`smart-analytics-${new Date().toISOString().slice(0, 10)}.pdf`);
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
+      pdf.save(`smart-analytics-${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (e) {
+      console.error('PDF generation error:', e);
+    }
+  }
+
+  showTableField(fieldKey: string): boolean {
+    return this.uiCustomization.isVisible(this.uiPrefs, 'table', fieldKey, true);
+  }
+
+  fieldLabel(scope: 'table' | 'form', fieldKey: string, fallback: string): string {
+    return this.uiCustomization.getLabel(this.uiPrefs, scope, fieldKey, fallback);
   }
 
   ngOnDestroy(): void {
     Object.values(this.charts).forEach(c => c?.destroy());
-    this.destroy$.next(); this.destroy$.complete();
+    this.destroy$.next();
+    this.destroy$.complete();
   }
 }

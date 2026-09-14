@@ -9,31 +9,39 @@ import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 import { ApiService }       from '../../core/services/services';
 import { DateFilterService } from '../../core/services/services';
+import { UiCustomizationService, UiSectionPreferences } from '../../core/services/services';
 import { ToastService }     from '../../core/services/toast.service';
 import { ConfirmService }   from '../../core/services/confirm.service';
 import { MaintenanceRecord, Asset } from '../../core/models/interfaces';
 import { OwlDateTimeModule, OwlNativeDateTimeModule } from '@danielmoncada/angular-datetime-picker';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
+import { DropdownComponent, DropdownOptionComponent } from '../../shared/components/dropdown/dropdown.component';
 
 @Component({
   selector: 'app-maintenance',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, TitleCasePipe, RouterLink, OwlDateTimeModule, OwlNativeDateTimeModule, ExportMenuComponent],
+  imports: [CommonModule, FormsModule, DatePipe, TitleCasePipe, RouterLink, OwlDateTimeModule, OwlNativeDateTimeModule, ExportMenuComponent, DropdownComponent, DropdownOptionComponent],
   templateUrl: './maintenance.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class MaintenanceComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();
+  Math = Math;
   records: MaintenanceRecord[] = [];
   assets:  Asset[]             = [];
   loading  = true;
   saving   = false;
+  total    = 0;
+  page     = 1;
+  pageSize = 20;
+  readonly pageSizeOptions = [10, 20, 50, 100];
   searchQuery = '';
   statusFilter   = '';
   priorityFilter = '';
   showModal = false;
   editing:  MaintenanceRecord | null = null;
   form:     any = this.emptyForm();
+  uiPrefs: UiSectionPreferences | null = null;
 
   get stats() {
     return [
@@ -48,12 +56,17 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
   constructor(
     private api:     ApiService,
     private dateFilter: DateFilterService,
+    private uiCustomization: UiCustomizationService,
     private toast:   ToastService,
     private confirm: ConfirmService,
     private cdr:     ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
+    this.uiCustomization.load('maintenance').subscribe(p => {
+      this.uiPrefs = p;
+      this.cdr.markForCheck();
+    });
     this.api.get<any>('/maintenance/assets').subscribe({
       next: r => { this.assets = r?.data || []; this.cdr.markForCheck(); }
     });
@@ -68,11 +81,37 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
       search: this.searchQuery,
       status: this.statusFilter,
       priority: this.priorityFilter,
-      limit: 100
+      page: this.page,
+      limit: this.pageSize
     }).subscribe({
-      next: r => { this.records = r?.data?.items || []; this.loading = false; this.cdr.markForCheck(); },
+      next: r => {
+        this.records = r?.data?.items || [];
+        this.total = r?.data?.total || this.records.length;
+        this.loading = false;
+        this.cdr.markForCheck();
+      },
       error: () => { this.loading = false; this.cdr.markForCheck(); }
     });
+  }
+
+  applyFilters(): void {
+    this.page = 1;
+    this.load();
+  }
+
+  get totalPages(): number {
+    return Math.max(1, Math.ceil(this.total / this.pageSize));
+  }
+
+  changePage(page: number): void {
+    if (page < 1 || page > this.totalPages) return;
+    this.page = page;
+    this.load();
+  }
+
+  onPageSizeChange(): void {
+    this.page = 1;
+    this.load();
   }
 
   private emptyForm() {
@@ -99,10 +138,10 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
   }
 
   save(): void {
-    if (!this.form.title?.trim())       { this.toast.warning('Title is required.');          return; }
-    if (!this.form.asset_id)            { this.toast.warning('Please select an asset.');     return; }
-    if (!this.form.scheduled_date)      { this.toast.warning('Scheduled date is required.'); return; }
-    if (!this.form.description?.trim()) { this.toast.warning('Description is required.');    return; }
+    if (this.showFormField('title') && !this.form.title?.trim())       { this.toast.warning('Title is required.');          return; }
+    if (this.showFormField('asset_id') && !this.form.asset_id)         { this.toast.warning('Please select an asset.');     return; }
+    if (this.showFormField('scheduled_date') && !this.form.scheduled_date) { this.toast.warning('Scheduled date is required.'); return; }
+    if (this.showFormField('description') && !this.form.description?.trim()) { this.toast.warning('Description is required.');    return; }
 
     const payload: any = { ...this.form };
     if (payload.status === 'COMPLETED' && !payload.completed_date)
@@ -151,5 +190,17 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
   getPriorityBadge(p: string): string {
     const m: Record<string,string> = { LOW:'badge-low', MEDIUM:'badge-medium', HIGH:'badge-high', CRITICAL:'badge-critical' };
     return m[p] || 'badge-medium';
+  }
+
+  showTableField(fieldKey: string): boolean {
+    return this.uiCustomization.isVisible(this.uiPrefs, 'table', fieldKey, true);
+  }
+
+  showFormField(fieldKey: string): boolean {
+    return this.uiCustomization.isVisible(this.uiPrefs, 'form', fieldKey, true);
+  }
+
+  fieldLabel(scope: 'table' | 'form', fieldKey: string, fallback: string): string {
+    return this.uiCustomization.getLabel(this.uiPrefs, scope, fieldKey, fallback);
   }
 }

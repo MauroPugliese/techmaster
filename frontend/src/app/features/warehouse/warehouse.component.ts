@@ -8,25 +8,32 @@ import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 import { ApiService }       from '../../core/services/api.service';
 import { DateFilterService } from '../../core/services/date-filter.service';
+import { UiCustomizationService, UiSectionPreferences } from '../../core/services/ui-customization.service';
 import { ToastService }     from '../../core/services/toast.service';
 import { ConfirmService }   from '../../core/services/confirm.service';
-import { InventoryItem, MovementType } from '../../core/models/interfaces';
+import { InventoryItem, MovementType, StockMovement } from '../../core/models/interfaces';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
+import { DropdownComponent, DropdownOptionComponent } from '../../shared/components/dropdown/dropdown.component';
 
 @Component({
   selector: 'app-warehouse',
   standalone: true,
-  imports: [CommonModule, FormsModule, DecimalPipe, ExportMenuComponent],
+  imports: [CommonModule, FormsModule, DecimalPipe, ExportMenuComponent, DropdownComponent, DropdownOptionComponent],
   templateUrl: './warehouse.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class WarehouseComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();
+  Math = Math;
 
   items:      InventoryItem[] = [];
   categories: any[]           = [];
   loading  = true;
   saving   = false;
+  total    = 0;
+  page     = 1;
+  pageSize = 20;
+  readonly pageSizeOptions = [10, 20, 50, 100];
   search   = '';
   lowStockOnly = false;
   categoryFilter: number | '' = '';
@@ -40,6 +47,15 @@ export class WarehouseComponent implements OnInit, OnDestroy {
   movementForm: { type: MovementType; quantity: number; reference: string; reason: string } = {
     type: 'IN', quantity: 1, reference: '', reason: ''
   };
+
+  showHistoryModal = false;
+  historyLoading = false;
+  historyItem: InventoryItem | null = null;
+  itemHistory: StockMovement[] = [];
+  uiPrefs: UiSectionPreferences | null = null;
+  historyPage = 1;
+  historyPageSize = 10;
+  readonly historyPageSizeOptions = [10, 20, 50, 100];
 
   movementTypes = [
     { value: 'IN'         as MovementType, label: 'Stock In',  color: '#10B981' },
@@ -76,12 +92,17 @@ export class WarehouseComponent implements OnInit, OnDestroy {
   constructor(
     private api:     ApiService,
     private dateFilter: DateFilterService,
+    private uiCustomization: UiCustomizationService,
     private toast:   ToastService,
     private confirm: ConfirmService,
     private cdr:     ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
+    this.uiCustomization.load('warehouse').subscribe(p => {
+      this.uiPrefs = p;
+      this.cdr.markForCheck();
+    });
     this.api.get<any>('/warehouse/categories').subscribe({
       next: r => { this.categories = r?.data || []; this.cdr.markForCheck(); }
     });
@@ -96,17 +117,43 @@ export class WarehouseComponent implements OnInit, OnDestroy {
       search: this.search,
       low_stock: this.lowStockOnly ? 'true' : '',
       category_id: this.categoryFilter || '',
-      limit: 100
+      page: this.page,
+      limit: this.pageSize
     }).subscribe({
-      next: r => { this.items = r?.data?.items || r?.data || []; this.loading = false; this.cdr.markForCheck(); },
+      next: r => {
+        this.items = r?.data?.items || r?.data || [];
+        this.total = r?.data?.total || this.items.length;
+        this.loading = false;
+        this.cdr.markForCheck();
+      },
       error: () => { this.loading = false; this.cdr.markForCheck(); }
     });
   }
 
-  toggleLowStock(): void { this.lowStockOnly = !this.lowStockOnly; this.loadItems(); }
+  applyFilters(): void {
+    this.page = 1;
+    this.loadItems();
+  }
+
+  toggleLowStock(): void { this.lowStockOnly = !this.lowStockOnly; this.applyFilters(); }
+
+  get totalPages(): number {
+    return Math.max(1, Math.ceil(this.total / this.pageSize));
+  }
+
+  changePage(page: number): void {
+    if (page < 1 || page > this.totalPages) return;
+    this.page = page;
+    this.loadItems();
+  }
+
+  onPageSizeChange(): void {
+    this.page = 1;
+    this.loadItems();
+  }
 
   private emptyItemForm() {
-    return { category_id: null, sku:'', name:'', description:'', unit:'pcs',
+    return { category_id: null, sku:'', part_number:'', name:'', description:'', unit:'pcs',
              quantity:0, min_stock:0, max_stock:null, reorder_point:0, unit_cost:null, supplier:'' };
   }
 
@@ -115,7 +162,10 @@ export class WarehouseComponent implements OnInit, OnDestroy {
       this.editingItem = item;
       this.itemForm = {
         category_id:   (item as any).category_id ?? null,
-        sku: item.sku, name: item.name, description: item.description ?? '',
+        sku: item.sku,
+        part_number: item.part_number ?? '',
+        name: item.name,
+        description: item.description ?? '',
         unit: item.unit, quantity: item.quantity, min_stock: item.min_stock,
         max_stock: item.max_stock ?? null, reorder_point: item.reorder_point,
         unit_cost: item.unit_cost ?? null, supplier: item.supplier ?? '',
@@ -133,9 +183,9 @@ export class WarehouseComponent implements OnInit, OnDestroy {
   }
 
   saveItem(): void {
-    if (!this.itemForm.name?.trim())  { this.toast.warning('Item name is required.'); return; }
-    if (!this.itemForm.sku?.trim())   { this.toast.warning('SKU is required.'); return; }
-    if (!this.editingItem && !this.itemForm.category_id) { this.toast.warning('Please select a category.'); return; }
+    if (this.showFormField('name') && !this.itemForm.name?.trim())  { this.toast.warning('Item name is required.'); return; }
+    if (this.showFormField('sku') && !this.itemForm.sku?.trim())   { this.toast.warning('SKU is required.'); return; }
+    if (!this.editingItem && this.showFormField('category_id') && !this.itemForm.category_id) { this.toast.warning('Please select a category.'); return; }
 
     this.saving = true;
     const isEdit = !!this.editingItem;
@@ -206,6 +256,71 @@ export class WarehouseComponent implements OnInit, OnDestroy {
     });
   }
 
+  openHistoryModal(item: InventoryItem): void {
+    this.historyItem = item;
+    this.itemHistory = [];
+    this.historyPage = 1;
+    this.showHistoryModal = true;
+    this.historyLoading = true;
+    this.cdr.markForCheck();
+
+    this.api.get<any>(`/warehouse/${item.id}/movements`).subscribe({
+      next: (r) => {
+        this.itemHistory = r?.data || [];
+        this.historyLoading = false;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.historyLoading = false;
+        this.toast.error('Failed to load item history.');
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  closeHistoryModal(e: MouseEvent): void {
+    if ((e.target as HTMLElement).classList.contains('modal-overlay')) this.showHistoryModal = false;
+  }
+
+  movementTypeLabel(type: MovementType): string {
+    return this.movementTypes.find(t => t.value === type)?.label || type;
+  }
+
+  movementTypeColor(type: MovementType): string {
+    return this.movementTypes.find(t => t.value === type)?.color || '#6B7280';
+  }
+
+  get pagedItemHistory(): StockMovement[] {
+    const start = (this.historyPage - 1) * this.historyPageSize;
+    return this.itemHistory.slice(start, start + this.historyPageSize);
+  }
+
+  get historyTotalPages(): number {
+    return Math.max(1, Math.ceil(this.itemHistory.length / this.historyPageSize));
+  }
+
+  changeHistoryPage(page: number): void {
+    if (page < 1 || page > this.historyTotalPages) return;
+    this.historyPage = page;
+  }
+
+  onHistoryPageSizeChange(): void {
+    this.historyPage = 1;
+  }
+
+  movementDelta(m: StockMovement): string {
+    const delta = m.quantity_after - m.quantity_before;
+    const sign = delta > 0 ? '+' : '';
+    return `${sign}${delta}`;
+  }
+
+  movementUserName(m: StockMovement): string {
+    const first = m.user?.first_name || '';
+    const last = m.user?.last_name || '';
+    const fullName = `${first} ${last}`.trim();
+    return fullName || 'System';
+  }
+
   getStockColor(i: InventoryItem): string {
     if (i.quantity === 0) return '#EF4444';
     if (i.quantity <= i.reorder_point) return '#F59E0B';
@@ -220,6 +335,18 @@ export class WarehouseComponent implements OnInit, OnDestroy {
     if (i.quantity === 0) return '#FEE2E2';
     if (i.quantity <= i.reorder_point) return '#FEF3C7';
     return '#DCFCE7';
+  }
+
+  showTableField(fieldKey: string): boolean {
+    return this.uiCustomization.isVisible(this.uiPrefs, 'table', fieldKey, true);
+  }
+
+  showFormField(fieldKey: string): boolean {
+    return this.uiCustomization.isVisible(this.uiPrefs, 'form', fieldKey, true);
+  }
+
+  fieldLabel(scope: 'table' | 'form', fieldKey: string, fallback: string): string {
+    return this.uiCustomization.getLabel(this.uiPrefs, scope, fieldKey, fallback);
   }
 }
 

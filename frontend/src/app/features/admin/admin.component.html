@@ -105,7 +105,7 @@
       <div class="search-bar" style="width:300px;margin-bottom:20px">
         <span class="search-icon">search</span>
         <input placeholder="Search by name, email, username…"
-               [(ngModel)]="userSearch" (input)="loadUsers()">
+               [(ngModel)]="userSearch" (input)="onUsersSearch()">
       </div>
 
       <div class="table-container">
@@ -174,13 +174,323 @@
         <div class="empty-state" *ngIf="!users.length && !userLoading">
           <span class="empty-icon">group</span><h3>No users found</h3>
         </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-top:1px solid var(--border)"
+             *ngIf="userTotal > 0">
+          <div class="table-page-size-control">
+            <span class="text-sm text-muted">
+              Showing {{(userPage-1)*userPageSize+1}}–{{Math.min(userPage*userPageSize,userTotal)}} of {{userTotal}}
+            </span>
+            <app-dropdown class="form-control table-page-size-select" [(ngModel)]="userPageSize" (change)="onUserPageSizeChange()" ariaLabel="Users per page">
+              <app-dropdown-option *ngFor="let size of userPageSizeOptions" [ngValue]="size">{{size}}</app-dropdown-option>
+            </app-dropdown>
+          </div>
+          <div class="flex gap-2">
+            <button class="btn btn-secondary btn-sm" [disabled]="userPage <= 1" (click)="changeUserPage(userPage-1)">
+              <span class="btn-icon">chevron_left</span>
+            </button>
+            <span style="padding:5px 12px;font-size:0.85rem;font-weight:600">{{userPage}} / {{userTotalPages}}</span>
+            <button class="btn btn-secondary btn-sm" [disabled]="userPage >= userTotalPages" (click)="changeUserPage(userPage+1)">
+              <span class="btn-icon">chevron_right</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </ng-container>
+
+    <!-- ==============================================================
+         SECTION ACCESS
+         ============================================================== -->
+    <ng-container *ngIf="activeTab==='section-access'">
+      <app-section-access-manager [roles]="roles"></app-section-access-manager>
+    </ng-container>
+
+    <!-- ==============================================================
+         CUSTOMIZATION
+         ============================================================== -->
+    <ng-container *ngIf="activeTab==='customization'">
+      <div class="flex items-center justify-between mb-5">
+        <div>
+          <h2 style="margin-bottom:4px">Table Customization</h2>
+          <p class="text-muted text-sm">Manage DB schema and UI table/form visibility from one place</p>
+        </div>
+      </div>
+
+      <div class="card" style="padding:12px;margin-bottom:14px">
+        <div class="flex gap-2">
+            <button class="btn" (click)="setCustomizationMode('db')"
+                  [style.background]="customizationMode==='db' ? 'var(--blue-100)' : 'transparent'"
+                  [style.color]="customizationMode==='db' ? 'var(--primary)' : 'var(--blue-900)'"
+                  style="border:1px solid var(--border)">
+            <span class="btn-icon">storage</span> DB Table Customization
+          </button>
+            <button class="btn" (click)="setCustomizationMode('ui')"
+                  [style.background]="customizationMode==='ui' ? 'var(--blue-100)' : 'transparent'"
+                  [style.color]="customizationMode==='ui' ? 'var(--primary)' : 'var(--blue-900)'"
+                  style="border:1px solid var(--border)">
+            <span class="btn-icon">view_list</span> UI Table and Form Customization
+          </button>
+        </div>
+      </div>
+
+      <div class="card" style="padding:16px;margin-bottom:14px" *ngIf="customizationMode==='db'">
+        <div class="form-row" style="align-items:flex-end">
+          <div class="form-group" style="max-width:380px">
+            <label class="form-label">Table</label>
+            <app-dropdown class="form-control" [(ngModel)]="selectedCustomizationTable" (change)="onCustomizationTableChange()" placeholder="- Select table -">
+              <app-dropdown-option value="">- Select table -</app-dropdown-option>
+              <app-dropdown-option *ngFor="let t of customizationTables" [ngValue]="t.table_name">{{t.table_name}}</app-dropdown-option>
+            </app-dropdown>
+          </div>
+          <div class="flex gap-2">
+            <button class="btn btn-secondary" [disabled]="!selectedCustomizationTable" (click)="loadTableColumns(selectedCustomizationTable)">
+              <span class="btn-icon">refresh</span> Refresh
+            </button>
+            <button class="btn btn-primary" [disabled]="!selectedCustomizationTable" (click)="openColumnModal()">
+              <span class="btn-icon">add</span> Add Column
+            </button>
+            <button class="btn btn-primary" [disabled]="!selectedCustomizationTable || schemaActionLoading" (click)="saveColumnPreferences()">
+              <span class="btn-icon">save</span> Save Visibility
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <ng-container *ngIf="customizationMode==='db' && !customizationLoading">
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Column</th>
+                <th>Type</th>
+                <th>Nullable</th>
+                <th>Default</th>
+                <th>Visible</th>
+                <th>Label</th>
+                <th>Order</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let c of customizationColumns; let i = index">
+                <td>
+                  <div class="font-bold text-sm">{{c.column_name}}</div>
+                  <div class="text-muted" style="font-size:0.72rem" *ngIf="c.is_protected">Protected</div>
+                </td>
+                <td><code style="font-size:0.78rem">{{c.column_type}}</code></td>
+                <td>
+                  <span class="badge" [style.background]="c.is_nullable==='YES' ? '#DBEAFE' : '#FEE2E2'"
+                        [style.color]="c.is_nullable==='YES' ? '#1D4ED8' : '#B91C1C'">
+                    {{c.is_nullable==='YES' ? 'Yes' : 'No'}}
+                  </span>
+                </td>
+                <td class="text-sm text-muted">{{c.column_default || 'NULL'}}</td>
+                <td>
+                  <input type="checkbox" [(ngModel)]="c.is_visible" [disabled]="c.is_system">
+                </td>
+                <td>
+                  <input class="form-control" [(ngModel)]="c.label" placeholder="Display label" style="min-width:160px">
+                </td>
+                <td>
+                  <div class="flex gap-1">
+                    <button class="btn btn-ghost btn-icon-only btn-sm" [disabled]="i===0" (click)="moveColumn(c, -1)">
+                      <span class="btn-icon" style="font-size:16px">arrow_upward</span>
+                    </button>
+                    <button class="btn btn-ghost btn-icon-only btn-sm" [disabled]="i===customizationColumns.length-1" (click)="moveColumn(c, 1)">
+                      <span class="btn-icon" style="font-size:16px">arrow_downward</span>
+                    </button>
+                  </div>
+                </td>
+                <td>
+                  <div class="flex gap-1">
+                    <button class="btn btn-ghost btn-icon-only btn-sm" [disabled]="c.is_protected" (click)="openColumnModal(c)">
+                      <span class="btn-icon" style="font-size:16px">edit</span>
+                    </button>
+                    <button class="btn btn-ghost btn-icon-only btn-sm" [disabled]="c.is_protected" (click)="deleteColumn(c)">
+                      <span class="btn-icon" style="font-size:16px;color:#EF4444">delete</span>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="empty-state" *ngIf="!customizationColumns.length && selectedCustomizationTable">
+            <span class="empty-icon">table_view</span>
+            <h3>No columns found</h3>
+          </div>
+          <div class="empty-state" *ngIf="!selectedCustomizationTable">
+            <span class="empty-icon">tune</span>
+            <h3>Select a table to customize</h3>
+          </div>
+        </div>
+      </ng-container>
+      <ng-container *ngIf="customizationMode==='db' && customizationLoading">
+        <ng-container *ngTemplateOutlet="loadingTpl"></ng-container>
+      </ng-container>
+
+      <div class="card" style="padding:16px;margin-top:18px" *ngIf="customizationMode==='ui'">
+        <div class="flex items-center justify-between" style="margin-bottom:12px">
+          <div>
+            <h3 style="margin-bottom:2px">Section UI Visibility</h3>
+            <p class="text-muted text-sm">Choose which table columns and CRUD form fields are visible per section</p>
+          </div>
+          <div class="flex gap-2">
+            <button class="btn btn-secondary" [disabled]="schemaActionLoading || !selectedUiSection" (click)="resetUiSectionPreferences()">
+              <span class="btn-icon">restart_alt</span> Reset to Default
+            </button>
+            <button class="btn btn-primary" [disabled]="schemaActionLoading || !selectedUiSection" (click)="saveUiSectionPreferences()">
+              <span class="btn-icon">save</span> Save Section Settings
+            </button>
+          </div>
+        </div>
+
+        <div class="form-row" style="align-items:flex-end;margin-bottom:14px">
+          <div class="form-group" style="max-width:300px">
+            <label class="form-label">Section</label>
+            <app-dropdown class="form-control" [(ngModel)]="selectedUiSection" (change)="onUiSectionChange()">
+              <app-dropdown-option *ngFor="let section of uiSections" [ngValue]="section">{{section}}</app-dropdown-option>
+            </app-dropdown>
+          </div>
+          <div class="form-group" style="max-width:200px">
+            <label class="form-label">Scope</label>
+            <app-dropdown class="form-control" [(ngModel)]="selectedUiScope" (change)="onUiScopeChange()">
+              <app-dropdown-option value="table">Table Columns</app-dropdown-option>
+              <app-dropdown-option value="form">Form Fields</app-dropdown-option>
+            </app-dropdown>
+          </div>
+          <div class="form-group" style="max-width:220px">
+            <label class="form-label">Role</label>
+            <app-dropdown class="form-control" [(ngModel)]="selectedUiRole" (change)="onUiRoleChange()">
+              <app-dropdown-option value="ALL">All Roles (Global)</app-dropdown-option>
+              <app-dropdown-option *ngFor="let r of roles" [ngValue]="r.name">{{r.name | titlecase}}</app-dropdown-option>
+            </app-dropdown>
+          </div>
+        </div>
+
+        <ng-container *ngIf="!customizationLoading; else loadingTpl">
+        <div class="table-container" *ngIf="uiFieldsEditor.length; else noSectionFieldsTpl">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Field Key</th>
+                <th>Visible</th>
+                <th>Label Override</th>
+                <th>Source</th>
+                <th>Order</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let f of uiFieldsEditor; let i = index">
+                <td><code>{{f.field_key}}</code></td>
+                <td><input type="checkbox" [(ngModel)]="f.is_visible"></td>
+                <td><input class="form-control" [(ngModel)]="f.label" placeholder="Custom label"></td>
+                <td>
+                  <span class="badge"
+                        [style.background]="f.source==='role' ? '#DBEAFE' : (f.source==='global' ? '#DCFCE7' : '#F3F4F6')"
+                        [style.color]="f.source==='role' ? '#1D4ED8' : (f.source==='global' ? '#166534' : '#4B5563')">
+                    {{f.source || 'default'}}
+                  </span>
+                </td>
+                <td>
+                  <div class="flex gap-1">
+                    <button class="btn btn-ghost btn-icon-only btn-sm" [disabled]="i===0" (click)="moveUiField(f, -1)">
+                      <span class="btn-icon" style="font-size:16px">arrow_upward</span>
+                    </button>
+                    <button class="btn btn-ghost btn-icon-only btn-sm" [disabled]="i===uiFieldsEditor.length-1" (click)="moveUiField(f, 1)">
+                      <span class="btn-icon" style="font-size:16px">arrow_downward</span>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        </ng-container>
+
+        <ng-template #noSectionFieldsTpl>
+          <div class="empty-state">
+            <span class="empty-icon">view_list</span>
+            <h3>No fields found for this section</h3>
+          </div>
+        </ng-template>
+
+        <div class="card" style="padding:10px 12px;margin-top:14px;border:1px solid var(--border)">
+          <div class="flex items-center justify-between" style="gap:8px;flex-wrap:wrap">
+            <div class="text-sm" style="font-weight:700">Effective Source Legend</div>
+            <div class="flex items-center gap-2" style="flex-wrap:wrap">
+              <span class="badge" style="background:#DBEAFE;color:#1D4ED8">role</span>
+              <span class="badge" style="background:#DCFCE7;color:#166534">global</span>
+              <span class="badge" style="background:#F3F4F6;color:#4B5563">default</span>
+            </div>
+          </div>
+          <p class="text-muted text-sm" style="margin:8px 0 0 0">
+            Priority is role override first, then global override, then section defaults.
+          </p>
+        </div>
+
+        <div class="card" style="padding:10px 12px;margin-top:10px;border:1px solid var(--border)">
+          <div class="form-row" style="align-items:flex-end;gap:8px;flex-wrap:wrap">
+            <div class="form-group" style="max-width:220px;margin-bottom:0">
+              <label class="form-label">Search</label>
+              <input class="form-control" [(ngModel)]="uiPreviewSearch" placeholder="Field or label">
+            </div>
+            <div class="form-group" style="max-width:170px;margin-bottom:0">
+              <label class="form-label">Visibility</label>
+              <app-dropdown class="form-control" [(ngModel)]="uiPreviewVisibilityFilter">
+                <app-dropdown-option value="visible">Visible</app-dropdown-option>
+                <app-dropdown-option value="hidden">Hidden</app-dropdown-option>
+                <app-dropdown-option value="all">All</app-dropdown-option>
+              </app-dropdown>
+            </div>
+            <div class="form-group" style="max-width:170px;margin-bottom:0">
+              <label class="form-label">Source</label>
+              <app-dropdown class="form-control" [(ngModel)]="uiPreviewSourceFilter">
+                <app-dropdown-option value="all">All</app-dropdown-option>
+                <app-dropdown-option value="role">Role</app-dropdown-option>
+                <app-dropdown-option value="global">Global</app-dropdown-option>
+                <app-dropdown-option value="default">Default</app-dropdown-option>
+              </app-dropdown>
+            </div>
+            <button class="btn btn-secondary" style="height:40px" (click)="clearUiPreviewFilters()">
+              <span class="btn-icon">filter_alt_off</span> Clear
+            </button>
+          </div>
+        </div>
+
+        <div class="table-container" style="margin-top:10px" *ngIf="uiPreviewVisibleFields.length; else noPreviewRowsTpl">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th colspan="3">Preview - Visible Fields Order</th>
+              </tr>
+              <tr>
+                <th>#</th>
+                <th>Field Key</th>
+                <th>Label Used</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let p of uiPreviewVisibleFields; let i = index">
+                <td>{{i + 1}}</td>
+                <td><code>{{p.field_key}}</code></td>
+                <td>{{p.label || p.field_key}}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <ng-template #noPreviewRowsTpl>
+          <div class="empty-state" style="margin-top:10px">
+            <span class="empty-icon">filter_list</span>
+            <h3>No preview rows match the current filters</h3>
+          </div>
+        </ng-template>
       </div>
     </ng-container>
 
     <!-- ==============================================================
          GENERIC CONFIG TABS
          ============================================================== -->
-    <ng-container *ngIf="activeTab!=='overview' && activeTab!=='users'">
+    <ng-container *ngIf="activeTab!=='overview' && activeTab!=='users' && activeTab!=='customization' && activeTab!=='section-access'">
       <div class="flex items-center justify-between mb-5">
         <div>
           <!-- FIX: activeTabLabel getter used instead of broken pipe chain -->
@@ -216,7 +526,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let item of listData">
+              <tr *ngFor="let item of paginatedListData">
 
                 <!-- Operation Types -->
                 <ng-container *ngIf="activeTab==='operation-types'">
@@ -308,11 +618,99 @@
             <h3>No items yet</h3>
             <button class="btn btn-primary" (click)="openItemModal()">Add First</button>
           </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-top:1px solid var(--border)"
+               *ngIf="listData.length > 0">
+            <div class="table-page-size-control">
+              <span class="text-sm text-muted">
+                Showing {{(listPage-1)*listPageSize+1}}–{{Math.min(listPage*listPageSize,listData.length)}} of {{listData.length}}
+              </span>
+              <app-dropdown class="form-control table-page-size-select" [(ngModel)]="listPageSize" (change)="onListPageSizeChange()" ariaLabel="List rows per page">
+                <app-dropdown-option *ngFor="let size of listPageSizeOptions" [ngValue]="size">{{size}}</app-dropdown-option>
+              </app-dropdown>
+            </div>
+            <div class="flex gap-2">
+              <button class="btn btn-secondary btn-sm" [disabled]="listPage <= 1" (click)="changeListPage(listPage-1)">
+                <span class="btn-icon">chevron_left</span>
+              </button>
+              <span style="padding:5px 12px;font-size:0.85rem;font-weight:600">{{listPage}} / {{listTotalPages}}</span>
+              <button class="btn btn-secondary btn-sm" [disabled]="listPage >= listTotalPages" (click)="changeListPage(listPage+1)">
+                <span class="btn-icon">chevron_right</span>
+              </button>
+            </div>
+          </div>
         </div>
       </ng-container>
     </ng-container>
 
   </div><!-- /main -->
+</div>
+
+<!-- ================================================================
+     COLUMN CUSTOMIZATION MODAL
+     ================================================================ -->
+<div class="modal-overlay" *ngIf="showColumnModal" (click)="showColumnModal=false">
+  <div class="modal" style="max-width:520px" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h3>{{editingColumn ? 'Edit Column' : 'Add Column'}} - {{selectedCustomizationTable}}</h3>
+      <button class="btn btn-ghost btn-icon-only" (click)="showColumnModal=false">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Column Name *</label>
+        <input class="form-control" [(ngModel)]="columnForm.name" [disabled]="editingColumn?.is_protected">
+      </div>
+      <div class="form-row">
+        <div class="form-group" style="flex:2">
+          <label class="form-label">Type *</label>
+          <app-dropdown class="form-control" [(ngModel)]="columnForm.type" [disabled]="editingColumn?.is_protected">
+            <app-dropdown-option value="VARCHAR">VARCHAR</app-dropdown-option>
+            <app-dropdown-option value="CHAR">CHAR</app-dropdown-option>
+            <app-dropdown-option value="TEXT">TEXT</app-dropdown-option>
+            <app-dropdown-option value="LONGTEXT">LONGTEXT</app-dropdown-option>
+            <app-dropdown-option value="INT">INT</app-dropdown-option>
+            <app-dropdown-option value="BIGINT">BIGINT</app-dropdown-option>
+            <app-dropdown-option value="DECIMAL">DECIMAL</app-dropdown-option>
+            <app-dropdown-option value="FLOAT">FLOAT</app-dropdown-option>
+            <app-dropdown-option value="DOUBLE">DOUBLE</app-dropdown-option>
+            <app-dropdown-option value="DATE">DATE</app-dropdown-option>
+            <app-dropdown-option value="DATETIME">DATETIME</app-dropdown-option>
+            <app-dropdown-option value="TIMESTAMP">TIMESTAMP</app-dropdown-option>
+            <app-dropdown-option value="BOOLEAN">BOOLEAN</app-dropdown-option>
+            <app-dropdown-option value="JSON">JSON</app-dropdown-option>
+          </app-dropdown>
+        </div>
+        <div class="form-group" *ngIf="needsLength(columnForm.type)">
+          <label class="form-label">Length</label>
+          <input type="number" class="form-control" [(ngModel)]="columnForm.length" min="1"
+                 [disabled]="editingColumn?.is_protected">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group" style="display:flex;align-items:center;gap:10px;padding-top:28px">
+          <input type="checkbox" id="colNullable" [(ngModel)]="columnForm.nullable" [disabled]="editingColumn?.is_protected"
+                 style="width:16px;height:16px">
+          <label for="colNullable" style="font-weight:600;cursor:pointer">Nullable</label>
+        </div>
+        <div class="form-group" style="flex:2">
+          <label class="form-label">Default Value</label>
+          <input class="form-control" [(ngModel)]="columnForm.defaultValue" [disabled]="editingColumn?.is_protected"
+                 placeholder="Leave blank for NULL">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Display Label</label>
+        <input class="form-control" [(ngModel)]="columnForm.label" placeholder="Label shown in app tables">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" (click)="showColumnModal=false">Cancel</button>
+      <button class="btn btn-primary" (click)="saveColumn()" [disabled]="schemaActionLoading || editingColumn?.is_protected">
+        {{schemaActionLoading ? 'Saving...' : (editingColumn ? 'Save Changes' : 'Add Column')}}
+      </button>
+    </div>
+  </div>
 </div>
 
 <!-- Loading template -->
@@ -357,10 +755,10 @@
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Role *</label>
-          <select class="form-control" [(ngModel)]="userForm.role_id">
-            <option [ngValue]="null">— Select role —</option>
-            <option *ngFor="let r of roles" [ngValue]="r.id">{{r.name | titlecase}}</option>
-          </select>
+          <app-dropdown class="form-control" [(ngModel)]="userForm.role_id" placeholder="— Select role —">
+            <app-dropdown-option [ngValue]="null">— Select role —</app-dropdown-option>
+            <app-dropdown-option *ngFor="let r of roles" [ngValue]="r.id">{{r.name | titlecase}}</app-dropdown-option>
+          </app-dropdown>
         </div>
         <div class="form-group">
           <label class="form-label">Password {{editingUser ? '(blank = keep current)' : '*'}}</label>
@@ -516,12 +914,12 @@
         </div>
         <div class="form-group">
           <label class="form-label">Type</label>
-          <select class="form-control" [(ngModel)]="itemForm.type">
-            <option value="HARDWARE">Hardware</option>
-            <option value="SOFTWARE">Software</option>
-            <option value="NETWORK">Network</option>
-            <option value="OTHER">Other</option>
-          </select>
+          <app-dropdown class="form-control" [(ngModel)]="itemForm.type">
+            <app-dropdown-option value="HARDWARE">Hardware</app-dropdown-option>
+            <app-dropdown-option value="SOFTWARE">Software</app-dropdown-option>
+            <app-dropdown-option value="NETWORK">Network</app-dropdown-option>
+            <app-dropdown-option value="OTHER">Other</app-dropdown-option>
+          </app-dropdown>
         </div>
         <div class="form-group">
           <label class="form-label">Description</label>
