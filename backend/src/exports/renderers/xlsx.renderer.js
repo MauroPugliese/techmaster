@@ -2,16 +2,19 @@
 // exports/renderers/xlsx.renderer.js — Excel (.xlsx) renderer
 // -----------------------------------------------------------------------------
 // Renders a ReportSpec into a professionally styled ExcelJS workbook:
+//   • Embedded CAE white logo in corporate Navy (#06103D) title banner
+//   • Red Hat Display corporate typography with clean system fallback
 //   • Branded title band + metadata / filter block on every sheet
-//   • Optional summary key/value block
+//   • Optional summary key/value block with CAE accent highlights
 //   • Styled, frozen, auto-filtered table header with zebra striping
 //   • Per-row conditional formatting via the `_flag` hint
 //   • Printable page setup with repeating header + footer page numbers
 // =============================================================================
 
+const fs = require('fs');
 const ExcelJS = require('exceljs');
-const { COMPANY, COLORS, FONTS, flagStyle, argb } = require('../core/branding');
-const { str } = require('../core/helpers');
+const { COMPANY, LOGOS, COLORS, FONTS, flagStyle, argb } = require('../core/branding');
+const { str, FORMAT_META } = require('../core/helpers');
 
 const BASE_FONT = { name: FONTS.xlsx, size: 10 };
 
@@ -32,7 +35,7 @@ const thinBorder = () => ({
  * Render the report-level title band + meta/filter block at the top of a sheet.
  * Returns the next free row index.
  */
-function renderHeaderBlock(ws, spec, colCount) {
+function renderHeaderBlock(wb, ws, spec, colCount) {
   const lastCol = Math.max(colCount, 4);
   const colLetter = (n) => ws.getColumn(n).letter;
   const span = (r) => `A${r}:${colLetter(lastCol)}${r}`;
@@ -40,11 +43,24 @@ function renderHeaderBlock(ws, spec, colCount) {
   // Title band
   ws.mergeCells(span(1));
   const titleCell = ws.getCell('A1');
-  titleCell.value = `${COMPANY.mark}  ·  ${spec.title}`;
-  titleCell.font = { name: FONTS.xlsx, size: 16, bold: true, color: { argb: argb(COLORS.white) } };
+  titleCell.value = spec.title;
+  titleCell.font = { name: FONTS.xlsx, size: 15, bold: true, color: { argb: argb(COLORS.white) } };
   titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(COLORS.band) } };
-  titleCell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
-  ws.getRow(1).height = 30;
+  titleCell.alignment = { vertical: 'middle', horizontal: 'left', indent: 7 };
+  ws.getRow(1).height = 36;
+
+  // Embed CAE White Logo in Title Band (left side)
+  if (fs.existsSync(LOGOS.lightPng)) {
+    const imgId = wb.addImage({
+      filename: LOGOS.lightPng,
+      extension: 'png'
+    });
+    ws.addImage(imgId, {
+      tl: { col: 0.12, row: 0.12 },
+      ext: { width: 104, height: 39 }, // maintains 8:3 ratio
+      editAs: 'oneCell'
+    });
+  }
 
   let r = 2;
   if (spec.subtitle) {
@@ -54,6 +70,7 @@ function renderHeaderBlock(ws, spec, colCount) {
     sub.font = { name: FONTS.xlsx, size: 10, italic: true, color: { argb: argb(COLORS.white) } };
     sub.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(COLORS.headerRow) } };
     sub.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+    ws.getRow(r).height = 20;
     r += 1;
   }
 
@@ -86,7 +103,7 @@ function renderSummary(ws, summary, startRow, colCount) {
 
   ws.mergeCells(`A${startRow}:${colLetter(lastCol)}${startRow}`);
   const head = ws.getCell(`A${startRow}`);
-  head.value = 'Summary';
+  head.value = 'Executive Summary';
   head.font = { ...BASE_FONT, bold: true, size: 11, color: { argb: argb(COLORS.white) } };
   head.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(COLORS.headerRow) } };
   head.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
@@ -99,7 +116,7 @@ function renderSummary(ws, summary, startRow, colCount) {
     lbl.border = thinBorder();
     const val = ws.getCell(`B${r}`);
     val.value = value;
-    val.font = { ...BASE_FONT, color: { argb: argb(COLORS.ink) } };
+    val.font = { ...BASE_FONT, bold: true, color: { argb: argb(COLORS.ink) } };
     val.border = thinBorder();
     r += 1;
   });
@@ -117,11 +134,11 @@ function renderTable(ws, table, startRow) {
     const cell = headerRow.getCell(i + 1);
     cell.value = col.header;
     cell.font = { name: FONTS.xlsx, size: 10, bold: true, color: { argb: argb(COLORS.white) } };
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(COLORS.headerRow) } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(COLORS.navy) } };
     cell.alignment = { vertical: 'middle', horizontal: col.align || 'left', wrapText: true };
     cell.border = thinBorder();
   });
-  headerRow.height = 22;
+  headerRow.height = 24;
   headerRow.commit();
 
   // Data rows
@@ -133,8 +150,8 @@ function renderTable(ws, table, startRow) {
       const cell = xlRow.getCell(i + 1);
       const raw = row[col.key];
       cell.value = (raw === null || raw === undefined) ? '' : raw;
-      cell.font = { ...BASE_FONT, color: { argb: argb(flag ? flag.fg : COLORS.ink) } };
-      cell.alignment = { vertical: 'top', horizontal: col.align || 'left', wrapText: col.wrap !== false };
+      cell.font = { ...BASE_FONT, bold: !!flag, color: { argb: argb(flag ? flag.fg : COLORS.ink) } };
+      cell.alignment = { vertical: 'middle', horizontal: col.align || 'left', wrapText: col.wrap !== false };
       cell.border = thinBorder();
       if (col.numFmt) cell.numFmt = col.numFmt;
       if (flag) {
@@ -143,6 +160,7 @@ function renderTable(ws, table, startRow) {
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(COLORS.zebra) } };
       }
     });
+    xlRow.height = 20;
   });
 
   // Column widths
@@ -184,7 +202,7 @@ function buildWorkbook(spec) {
     });
 
     const colCount = (table.columns || []).length;
-    let row = renderHeaderBlock(ws, spec, colCount);
+    let row = renderHeaderBlock(wb, ws, spec, colCount);
     row = renderSummary(ws, table.summary, row, colCount);
     if (table.note) {
       ws.getCell(`A${row}`).value = table.note;
@@ -203,10 +221,11 @@ function buildWorkbook(spec) {
 /** Stream the workbook to an Express response. */
 async function streamXlsx(spec, res, filename) {
   const wb = buildWorkbook(spec);
-  res.setHeader('Content-Type', require('../core/helpers').FORMAT_META.xlsx.mime);
+  res.setHeader('Content-Type', FORMAT_META.xlsx.mime);
   res.setHeader('Content-Disposition', `attachment; filename="${filename}.xlsx"`);
   await wb.xlsx.write(res);
   res.end();
 }
 
 module.exports = { buildWorkbook, streamXlsx };
+

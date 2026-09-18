@@ -2,30 +2,39 @@
 // exports/core/branding.js — Centralised brand palette & document constants
 // -----------------------------------------------------------------------------
 // Single source of truth for the visual identity shared by every exported
-// document (Excel / Word / PDF). Keeping it here guarantees that all formats
-// render with the exact same colours, fonts and corporate metadata.
+// document (Excel / Word / PDF / PowerPoint). Configured from CAE corporate
+// template assets (Red Hat Display font, CAE Navy/Blue/Lime palette, logo mark).
 // =============================================================================
+
+const path = require('path');
+
+/** Absolute paths to extracted brand logo assets. */
+const LOGOS = {
+  darkPng: path.resolve(__dirname, '../templates/cae_logo_dark.png'),
+  lightPng: path.resolve(__dirname, '../templates/cae_logo_light.png')
+};
 
 /** Corporate identity shown in headers / footers of every document. */
 const COMPANY = {
-  name: 'SMaRT Platform',
+  name: 'CAE · SMaRT Platform',
   tagline: 'Smart Maintenance & Resource Tracking',
-  // Plain-text logo mark (no external asset dependency needed at render time).
-  mark: 'SMaRT'
+  mark: 'CAE · SMaRT'
 };
 
 /**
- * Brand colour palette. Stored as plain hex strings (with leading '#').
+ * Brand colour palette extracted from CAE templates.
  * ExcelJS expects 'FFRRGGBB' ARGB strings — use `argb()` to convert.
  */
 const COLORS = {
-  ink:        '#0F172A', // primary titles
-  band:       '#1E293B', // document header band background
-  headerRow:  '#334155', // table header row background
-  accent:     '#2563EB', // accent / links
+  navy:       '#06103D', // CAE corporate primary navy
+  ink:        '#06103D', // primary text
+  band:       '#06103D', // document header band background
+  headerRow:  '#132252', // table header row background
+  accent:     '#2969F2', // template vibrant electric blue accent
+  lime:       '#B4F62A', // template neon lime accent (highlights / success badges)
   subtle:     '#64748B', // secondary / meta text
-  zebra:      '#F1F5F9', // alternating row background
-  border:     '#CBD5E1', // table borders
+  zebra:      '#F8FAFC', // alternating row background
+  border:     '#E2E8F0', // table / divider borders
   white:      '#FFFFFF',
 
   // Semantic status styles (foreground + background pairs).
@@ -37,9 +46,10 @@ const COLORS = {
 
 /** Per-format default font families. */
 const FONTS = {
-  xlsx: 'Segoe UI',
+  xlsx: 'Red Hat Display',
   pdf:  'Helvetica',
-  docx: 'Calibri'
+  docx: 'Red Hat Display',
+  pptx: 'Red Hat Display'
 };
 
 /**
@@ -59,7 +69,7 @@ const flagStyle = (flag) => {
 /** Convert a '#RRGGBB' hex string to an ExcelJS 'FFRRGGBB' ARGB string. */
 const argb = (hex) => 'FF' + String(hex || '#000000').replace('#', '').toUpperCase();
 
-/** Convert a '#RRGGBB' hex string to a docx 'RRGGBB' (no hash) string. */
+/** Convert a '#RRGGBB' hex string to a docx / pptx 'RRGGBB' (no hash) string. */
 const noHash = (hex) => String(hex || '#000000').replace('#', '').toUpperCase();
 
-module.exports = { COMPANY, COLORS, FONTS, flagStyle, argb, noHash };
+module.exports = { COMPANY, LOGOS, COLORS, FONTS, flagStyle, argb, noHash };
