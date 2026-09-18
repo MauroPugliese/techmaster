@@ -28,3 +28,8 @@ coverage/
 tmp/
 docker_setup_guide.txt
 implementation_plan.md
+
+# files 
+docs/*.pptx
+docs/*.docx
+docs/*.pdf
