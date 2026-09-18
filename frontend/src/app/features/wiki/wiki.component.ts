@@ -286,7 +286,7 @@ export class WikiComponent implements OnInit, OnDestroy {
     ].join('\n');
   }
 
-  async exportCurrentArticle(format: 'xlsx' | 'pdf' | 'docx'): Promise<void> {
+  async exportCurrentArticle(format: 'xlsx' | 'pdf' | 'docx' | 'pptx'): Promise<void> {
     if (!this.viewingArticle?.id) {
       this.toast.info('Open an article first to export it.');
       return;
