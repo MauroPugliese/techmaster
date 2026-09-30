@@ -8,7 +8,7 @@ import { Injectable } from '@angular/core';
 import { environment } from '../../../environments/environment';
 import { ToastService } from './toast.service';
 
-export type ExportFormat = 'xlsx' | 'pdf' | 'docx';
+export type ExportFormat = 'xlsx' | 'pdf' | 'docx' | 'pptx';
 
 @Injectable({ providedIn: 'root' })
 export class ExportService {
@@ -16,9 +16,10 @@ export class ExportService {
 
   /** Friendly file extension + label per format. */
   static readonly FORMATS: { value: ExportFormat; label: string; icon: string }[] = [
-    { value: 'xlsx', label: 'Excel',  icon: 'table_view' },
-    { value: 'docx', label: 'Word',   icon: 'description' },
-    { value: 'pdf',  label: 'PDF',    icon: 'picture_as_pdf' }
+    { value: 'xlsx', label: 'Excel',       icon: 'table_view' },
+    { value: 'docx', label: 'Word',        icon: 'description' },
+    { value: 'pdf',  label: 'PDF',         icon: 'picture_as_pdf' },
+    { value: 'pptx', label: 'PowerPoint',  icon: 'slideshow' }
   ];
 
   constructor(private toast: ToastService) {}

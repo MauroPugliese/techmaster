@@ -2,19 +2,22 @@
 // exports/renderers/docx.renderer.js — Word (.docx) renderer
 // -----------------------------------------------------------------------------
 // Renders a ReportSpec into a styled Word document using the `docx` library:
-//   • Running header (brand + report title) and footer (page X of Y)
+//   • Embedded high-resolution CAE logo on document cover / header
+//   • Red Hat Display corporate typography and CAE Navy/Blue/Lime palette
+//   • Running header (CAE logo + brand + report title) and footer (page X of Y)
 //   • Title, subtitle, metadata / filter block and optional summary block
 //   • Styled tables with shaded header rows, zebra striping, conditional flags
 //   • Page orientation respected (portrait / landscape)
 // =============================================================================
 
+const fs = require('fs');
 const {
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
   HeadingLevel, WidthType, AlignmentType, BorderStyle, Header, Footer,
-  PageNumber, PageOrientation, VerticalAlign
+  PageNumber, PageOrientation, VerticalAlign, ImageRun
 } = require('docx');
 
-const { COMPANY, COLORS, FONTS, noHash } = require('./../core/branding');
+const { COMPANY, LOGOS, COLORS, FONTS, noHash } = require('../core/branding');
 const { str, FORMAT_META } = require('../core/helpers');
 
 const FONT = FONTS.docx;
@@ -41,7 +44,7 @@ function makeCell(text, { header = false, align = 'left', fill, color, widthPct 
     shading: fill ? { fill } : undefined,
     verticalAlign: VerticalAlign.CENTER,
     borders: cellBorder(),
-    margins: { top: 40, bottom: 40, left: 80, right: 80 },
+    margins: { top: 60, bottom: 60, left: 100, right: 100 },
     children: [new Paragraph({
       alignment: align === 'right' ? AlignmentType.RIGHT : align === 'center' ? AlignmentType.CENTER : AlignmentType.LEFT,
       children: [new TextRun({
@@ -67,7 +70,7 @@ function buildTable(table) {
   const headerRow = new TableRow({
     tableHeader: true,
     children: columns.map((col, i) => makeCell(col.header, {
-      header: true, align: col.align, fill: noHash(COLORS.headerRow), widthPct: pct[i]
+      header: true, align: col.align, fill: noHash(COLORS.navy), widthPct: pct[i]
     }))
   });
 
@@ -116,13 +119,13 @@ function summaryParagraphs(summary) {
   if (!summary || !summary.length) return [];
   const out = [new Paragraph({
     spacing: { before: 120, after: 60 },
-    children: [new TextRun({ text: 'Summary', bold: true, font: FONT, size: 20, color: noHash(COLORS.ink) })]
+    children: [new TextRun({ text: 'Executive Summary', bold: true, font: FONT, size: 20, color: noHash(COLORS.ink) })]
   })];
   summary.forEach(({ label, value }) => out.push(new Paragraph({
     spacing: { after: 20 },
     children: [
       new TextRun({ text: `${label}: `, bold: true, font: FONT, size: 16, color: noHash(COLORS.subtle) }),
-      new TextRun({ text: str(value), font: FONT, size: 16, color: noHash(COLORS.ink) })
+      new TextRun({ text: str(value), bold: true, font: FONT, size: 16, color: noHash(COLORS.ink) })
     ]
   })));
   return out;
@@ -132,13 +135,28 @@ function summaryParagraphs(summary) {
 function buildDocument(spec) {
   const tables = spec.tables && spec.tables.length ? spec.tables : [];
 
-  const children = [
-    new Paragraph({
-      heading: HeadingLevel.HEADING_1,
-      spacing: { after: 60 },
-      children: [new TextRun({ text: spec.title, bold: true, font: FONT, size: 32, color: noHash(COLORS.ink) })]
-    })
-  ];
+  const children = [];
+
+  // Top Cover Logo
+  if (fs.existsSync(LOGOS.darkPng)) {
+    children.push(new Paragraph({
+      spacing: { after: 140 },
+      children: [
+        new ImageRun({
+          data: fs.readFileSync(LOGOS.darkPng),
+          transformation: { width: 120, height: 45 }
+        })
+      ]
+    }));
+  }
+
+  // Report Title
+  children.push(new Paragraph({
+    heading: HeadingLevel.HEADING_1,
+    spacing: { after: 60 },
+    children: [new TextRun({ text: spec.title, bold: true, font: FONT, size: 32, color: noHash(COLORS.ink) })]
+  }));
+
   if (spec.subtitle) {
     children.push(new Paragraph({
       spacing: { after: 120 },
@@ -164,15 +182,30 @@ function buildDocument(spec) {
     children.push(buildTable(table));
   });
 
-  const header = new Header({
-    children: [new Paragraph({
+  const headerChildren = [];
+  if (fs.existsSync(LOGOS.darkPng)) {
+    headerChildren.push(new Paragraph({
+      border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: noHash(COLORS.border) } },
+      children: [
+        new ImageRun({
+          data: fs.readFileSync(LOGOS.darkPng),
+          transformation: { width: 64, height: 24 }
+        }),
+        new TextRun({ text: `   ${COMPANY.mark}  ·  `, bold: true, font: FONT, size: 16, color: noHash(COLORS.accent) }),
+        new TextRun({ text: spec.title, font: FONT, size: 16, color: noHash(COLORS.subtle) })
+      ]
+    }));
+  } else {
+    headerChildren.push(new Paragraph({
       border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: noHash(COLORS.border) } },
       children: [
         new TextRun({ text: `${COMPANY.mark}  ·  `, bold: true, font: FONT, size: 16, color: noHash(COLORS.accent) }),
         new TextRun({ text: spec.title, font: FONT, size: 16, color: noHash(COLORS.subtle) })
       ]
-    })]
-  });
+    }));
+  }
+
+  const header = new Header({ children: headerChildren });
 
   const footer = new Footer({
     children: [new Paragraph({
@@ -213,3 +246,4 @@ async function streamDocx(spec, res, filename) {
 }
 
 module.exports = { buildDocument, streamDocx };
+

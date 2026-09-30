@@ -3,15 +3,16 @@
 // -----------------------------------------------------------------------------
 // PDFKit has no native table primitive, so this renderer implements a complete
 // grid layout engine on top of it:
-//   • Branded header band (full on page 1, compact running header afterwards)
+//   • Branded header band with embedded CAE white logo and electric blue accent
 //   • Metadata / filter block and optional summary block
 //   • Column-weighted, word-wrapping table with header rows repeated on every
 //     page, zebra striping and per-row conditional flags
 //   • Footer with brand + centred timestamp + "Page X of Y" on every page
 // =============================================================================
 
+const fs = require('fs');
 const PDFDocument = require('pdfkit');
-const { COMPANY, COLORS, FONTS } = require('../core/branding');
+const { COMPANY, LOGOS, COLORS, FONTS } = require('../core/branding');
 const { str, FORMAT_META } = require('../core/helpers');
 
 const MARGIN = 40;
@@ -37,17 +38,37 @@ function drawDocHeader(doc, spec) {
   let y = MARGIN;
 
   // Header band
-  const bandH = spec.subtitle ? 56 : 44;
+  const bandH = spec.subtitle ? 58 : 46;
   doc.save();
   doc.rect(x, y, w, bandH).fill(COLORS.band);
-  doc.fillColor(COLORS.white).font(`${FONTS.pdf}-Bold`).fontSize(18)
-    .text(`${COMPANY.mark}  ·  ${spec.title}`, x + 12, y + 10, { width: w - 24 });
+
+  let textX = x + 14;
+  let textW = w - 28;
+
+  // Embed CAE White Logo
+  if (fs.existsSync(LOGOS.lightPng)) {
+    const logoW = 72;
+    const logoH = 27; // 8:3 ratio
+    const logoY = y + (bandH - logoH) / 2;
+    doc.image(LOGOS.lightPng, x + 12, logoY, { width: logoW, height: logoH });
+    textX = x + 12 + logoW + 14;
+    textW = w - (logoW + 38);
+  }
+
+  doc.fillColor(COLORS.white).font(`${FONTS.pdf}-Bold`).fontSize(16)
+    .text(spec.title, textX, y + (spec.subtitle ? 11 : 15), { width: textW });
   if (spec.subtitle) {
-    doc.font(FONTS.pdf).fontSize(10).fillColor('#CBD5E1')
-      .text(spec.subtitle, x + 12, y + 34, { width: w - 24 });
+    doc.font(FONTS.pdf).fontSize(9.5).fillColor('#CBD5E1')
+      .text(spec.subtitle, textX, y + 33, { width: textW });
   }
   doc.restore();
-  y += bandH + 10;
+
+  // Accent Line under header band
+  doc.save();
+  doc.rect(x, y + bandH, w, 2.5).fill(COLORS.accent);
+  doc.restore();
+
+  y += bandH + 12;
 
   // Meta / filter lines
   const meta = spec.meta || {};
@@ -71,11 +92,28 @@ function drawRunningHeader(doc, spec) {
   const x = MARGIN;
   const y = MARGIN;
   doc.save();
-  doc.rect(x, y, w, 22).fill(COLORS.headerRow);
-  doc.fillColor(COLORS.white).font(`${FONTS.pdf}-Bold`).fontSize(10)
-    .text(`${COMPANY.mark}  ·  ${spec.title}`, x + 10, y + 6, { width: w - 20 });
+  doc.rect(x, y, w, 24).fill(COLORS.navy);
+
+  let textX = x + 10;
+  let textW = w - 20;
+  if (fs.existsSync(LOGOS.lightPng)) {
+    const logoW = 40;
+    const logoH = 15;
+    doc.image(LOGOS.lightPng, x + 8, y + 4.5, { width: logoW, height: logoH });
+    textX = x + 8 + logoW + 10;
+    textW = w - (logoW + 26);
+  }
+
+  doc.fillColor(COLORS.white).font(`${FONTS.pdf}-Bold`).fontSize(9.5)
+    .text(`${COMPANY.mark}  ·  ${spec.title}`, textX, y + 6.5, { width: textW });
   doc.restore();
-  return y + 32;
+
+  // Accent line under running header
+  doc.save();
+  doc.rect(x, y + 24, w, 1.5).fill(COLORS.accent);
+  doc.restore();
+
+  return y + 34;
 }
 
 /** Draw an optional summary block; returns the next Y position. */
@@ -84,14 +122,14 @@ function drawSummary(doc, summary, y) {
   const x = MARGIN;
   const w = contentWidth(doc);
   doc.save();
-  doc.rect(x, y, w, 18).fill(COLORS.headerRow);
-  doc.fillColor(COLORS.white).font(`${FONTS.pdf}-Bold`).fontSize(10).text('Summary', x + 8, y + 4);
+  doc.rect(x, y, w, 20).fill(COLORS.headerRow);
+  doc.fillColor(COLORS.white).font(`${FONTS.pdf}-Bold`).fontSize(10).text('Executive Summary', x + 8, y + 5);
   doc.restore();
-  y += 22;
+  y += 24;
   doc.fontSize(9);
   summary.forEach(({ label, value }) => {
     doc.font(`${FONTS.pdf}-Bold`).fillColor(COLORS.subtle).text(`${label}:  `, x + 4, y, { continued: true });
-    doc.font(FONTS.pdf).fillColor(COLORS.ink).text(str(value));
+    doc.font(`${FONTS.pdf}-Bold`).fillColor(COLORS.ink).text(str(value));
     y = doc.y + 2;
   });
   return y + 8;

@@ -59,6 +59,8 @@ smart/
 
 > Sensitive configuration values are stored in `.env` and should never be committed. A sample file is provided in `.env.example`.
 >
+> 📖 **New User Guide**: See [docs/USER_GUIDE.md](docs/USER_GUIDE.md) or download the printable [docs/USER_GUIDE.pdf](docs/USER_GUIDE.pdf) for a complete walkthrough of all application sections, features, and user roles.
+>
 > Deploying on Synology NAS? See [docs/synology-ds224-install.md](docs/synology-ds224-install.md) for the DS224+ step-by-step setup.
 
 ### 1 — Database

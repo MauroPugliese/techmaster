@@ -87,7 +87,7 @@ router.get('/', authenticate, (req, res) => {
     key: m.key,
     title: m.title,
     subtitle: m.subtitle,
-    formats: ['xlsx', 'pdf', 'docx'],
+    formats: ['xlsx', 'pdf', 'docx', 'pptx'],
     restricted: !!(m.roles && m.roles.length)
   }));
   res.json({ success: true, data: list });

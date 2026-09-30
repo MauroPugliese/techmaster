@@ -4,13 +4,14 @@
 // Pure, dependency-free helpers used by module builders and renderers.
 // =============================================================================
 
-const EXPORT_FORMATS = new Set(['xlsx', 'pdf', 'docx']);
+const EXPORT_FORMATS = new Set(['xlsx', 'pdf', 'docx', 'pptx']);
 
 /** MIME type + file extension per supported format. */
 const FORMAT_META = {
   xlsx: { ext: 'xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
   pdf:  { ext: 'pdf',  mime: 'application/pdf' },
-  docx: { ext: 'docx', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }
+  docx: { ext: 'docx', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+  pptx: { ext: 'pptx', mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' }
 };
 
 /** Resolve the requested export format, falling back to a safe default. */
