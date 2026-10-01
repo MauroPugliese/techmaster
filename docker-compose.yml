@@ -77,15 +77,7 @@ services:
     # which means Node.js will NOT start until this passes.
     # mysqladmin ping is the official lightweight check recommended by MySQL.
     healthcheck:
-      test:
-        [
-          "CMD",
-          "mysqladmin", "ping",
-          "--host=127.0.0.1",
-          "--user=$$MYSQL_USER",
-          "--password=$$MYSQL_PASSWORD",
-          "--silent"
-        ]
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
       interval:     15s   # Check every 15 s
       timeout:      5s    # Fail if no response within 5 s
       retries:      8     # Try 8 times before giving up (~2 min total)

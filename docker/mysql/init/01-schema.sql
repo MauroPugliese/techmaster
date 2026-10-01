@@ -7,20 +7,20 @@
 -- Subsequent starts skip this directory entirely.
 --
 -- Convention: prefix files with NN- to control execution order.
---   01-schema.sql  → tables, indexes, constraints
---   02-seeds.sql   → reference / lookup data  (this file includes both)
+--   01-schema.sql  -> tables, indexes, constraints, seeds
 -- =============================================================================
-
--- Use the database created by MYSQL_DATABASE env var
--- (MySQL already created it; this just makes sure we're on it)
-CREATE DATABASE IF NOT EXISTS smart
-    CHARACTER SET utf8mb4
-    COLLATE utf8mb4_unicode_ci;
-
-USE smart;
 
 SET FOREIGN_KEY_CHECKS = 0;
 SET time_zone = '+00:00';
+
+-- =============================================================================
+-- SCHEMA MIGRATIONS
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name        VARCHAR(255) NOT NULL UNIQUE,
+    executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================================================
 -- ROLES
@@ -56,6 +56,20 @@ CREATE TABLE IF NOT EXISTS users (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================================================
+-- REFRESH TOKENS
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+    id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id    INT UNSIGNED NOT NULL,
+    token      TEXT         NOT NULL,
+    expires_at TIMESTAMP    NOT NULL,
+    is_revoked BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_tokens_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =============================================================================
 -- OPERATION TYPES
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS operation_types (
@@ -85,6 +99,8 @@ CREATE TABLE IF NOT EXISTS operations (
     metadata        JSON,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_operations_status     (status),
+    INDEX idx_operations_start_date (start_date),
     CONSTRAINT fk_ops_type    FOREIGN KEY (type_id)    REFERENCES operation_types(id),
     CONSTRAINT fk_ops_creator FOREIGN KEY (created_by) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -162,6 +178,9 @@ CREATE TABLE IF NOT EXISTS maintenance_records (
     deleted_at      DATETIME NULL,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_maint_asset     (asset_id),
+    INDEX idx_maint_scheduled (scheduled_date),
+    INDEX idx_maint_status    (status),
     CONSTRAINT fk_maint_asset FOREIGN KEY (asset_id)     REFERENCES assets(id),
     CONSTRAINT fk_maint_user  FOREIGN KEY (performed_by) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -171,24 +190,24 @@ CREATE TABLE IF NOT EXISTS maintenance_records (
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS planned_maintenance_tasks (
     id                   INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    system               VARCHAR(150) NOT NULL,
+    `system`             VARCHAR(150) NOT NULL,
     subsystem            VARCHAR(150) NOT NULL,
     task                 TEXT NOT NULL,
     reference            VARCHAR(200) DEFAULT NULL,
-    operation_date_start  DATETIME NOT NULL,
-    operation_date_end    DATETIME NOT NULL,
-    repeat_task_type      ENUM('DAY','WEEK','MONTH') NOT NULL DEFAULT 'WEEK',
-    repeat_task_number    INT NOT NULL DEFAULT 1,
-    recurrence_end_date   DATETIME DEFAULT NULL,
-    report_template       VARCHAR(300) DEFAULT NULL,
-    status                ENUM('TODO','DONE') NOT NULL DEFAULT 'TODO',
-    optional              TINYINT(1) NOT NULL DEFAULT 0,
-    created_by            INT UNSIGNED DEFAULT NULL,
-    deleted_at            DATETIME DEFAULT NULL,
-    created_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    operation_date_start DATETIME NOT NULL,
+    operation_date_end   DATETIME NOT NULL,
+    repeat_task_type     ENUM('DAY','WEEK','MONTH') NOT NULL DEFAULT 'WEEK',
+    repeat_task_number   INT NOT NULL DEFAULT 1,
+    recurrence_end_date  DATETIME DEFAULT NULL,
+    report_template      VARCHAR(300) DEFAULT NULL,
+    status               ENUM('TODO','DONE') NOT NULL DEFAULT 'TODO',
+    optional             TINYINT(1) NOT NULL DEFAULT 0,
+    created_by           INT UNSIGNED DEFAULT NULL,
+    deleted_at           DATETIME DEFAULT NULL,
+    created_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    INDEX idx_pmt_system        (system),
+    INDEX idx_pmt_system        (`system`),
     INDEX idx_pmt_subsystem     (subsystem),
     INDEX idx_pmt_operation_date(operation_date_start),
     INDEX idx_pmt_status        (status),
@@ -198,53 +217,32 @@ CREATE TABLE IF NOT EXISTS planned_maintenance_tasks (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS planned_maintenance_task_instances (
-    id                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    planned_task_id     INT UNSIGNED NOT NULL,
-    occurrence_date     DATE NOT NULL,
-    exception_type      ENUM('OVERRIDE','DELETED') NOT NULL DEFAULT 'OVERRIDE',
-    system              VARCHAR(150) DEFAULT NULL,
-    subsystem           VARCHAR(150) DEFAULT NULL,
-    task                TEXT DEFAULT NULL,
-    reference           VARCHAR(200) DEFAULT NULL,
+    id                   INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    planned_task_id      INT UNSIGNED NOT NULL,
+    occurrence_date      DATE NOT NULL,
+    exception_type       ENUM('OVERRIDE','DELETED') NOT NULL DEFAULT 'OVERRIDE',
+    `system`             VARCHAR(150) DEFAULT NULL,
+    subsystem            VARCHAR(150) DEFAULT NULL,
+    task                 TEXT DEFAULT NULL,
+    reference            VARCHAR(200) DEFAULT NULL,
     operation_date_start DATETIME DEFAULT NULL,
     operation_date_end   DATETIME DEFAULT NULL,
-    repeat_task_type    ENUM('DAY','WEEK','MONTH') DEFAULT NULL,
+    repeat_task_type     ENUM('DAY','WEEK','MONTH') DEFAULT NULL,
     repeat_task_number   INT DEFAULT NULL,
     recurrence_end_date  DATETIME DEFAULT NULL,
-    report_template     VARCHAR(300) DEFAULT NULL,
-    status              ENUM('TODO','DONE') DEFAULT 'TODO',
-    optional            TINYINT(1) DEFAULT 0,
-    created_by          INT UNSIGNED DEFAULT NULL,
-    created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    report_template      VARCHAR(300) DEFAULT NULL,
+    status               ENUM('TODO','DONE') DEFAULT 'TODO',
+    optional             TINYINT(1) DEFAULT 0,
+    created_by           INT UNSIGNED DEFAULT NULL,
+    created_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     UNIQUE KEY uniq_pmti_task_date (planned_task_id, occurrence_date),
     INDEX idx_pmti_task_date (planned_task_id, occurrence_date),
     INDEX idx_pmti_date      (occurrence_date),
-    CONSTRAINT fk_pmti_master FOREIGN KEY (planned_task_id) REFERENCES planned_maintenance_tasks(id) ON DELETE CASCADE,
-    CONSTRAINT fk_pmti_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+    CONSTRAINT fk_pmti_master     FOREIGN KEY (planned_task_id) REFERENCES planned_maintenance_tasks(id) ON DELETE CASCADE,
+    CONSTRAINT fk_pmti_created_by FOREIGN KEY (created_by)      REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-INSERT IGNORE INTO planned_maintenance_tasks
-  (id, system, subsystem, task, reference, operation_date_start, operation_date_end, repeat_task_type, repeat_task_number, report_template, status, optional)
-VALUES
-  (1, 'Server Room', 'DEHUMIDIFIER', 'Empty the external tank', '', '2025-02-03 09:00:00', '2025-02-03 09:15:00', 'DAY', 1, '', 'TODO', 0),
-  (2, 'Server Room', 'DATALOGGERS', 'Collect log files', '', '2025-02-03 10:00:00', '2025-02-03 10:30:00', 'WEEK', 2, '', 'TODO', 0),
-  (3, 'Computer and Peripherials', 'OPSERVER', 'Check the auto-backup on Windows Backup Server', '', '2025-02-04 10:00:00', '2025-02-04 10:30:00', 'WEEK', 1, '', 'TODO', 0),
-  (4, 'Computer and Peripherials', 'ALL', 'Swap main/backup disks on all the nodes but OPSERVER', '', '2025-02-07 14:00:00', '2025-02-07 15:00:00', 'WEEK', 2, '', 'TODO', 0),
-  (5, 'Computer and Peripherials', 'SESRV1', 'Check integrity of the RAID, check status of RAID BATTERY', '', '2025-02-07 10:00:00', '2025-02-07 10:15:00', 'WEEK', 1, '', 'TODO', 0),
-  (6, 'Server Room', 'DEHUMIDIFIER', 'Check filter status and clean if necessary', '', '2026-05-14 09:00:00', '2026-05-14 09:15:00', 'MONTH', 1, '', 'DONE', 0),
-  (7, 'Server Room', 'ELECTRICAL PANELS', 'Apply Lockout-Tagout Procedure to Server Room Electrical Panels', '', '2026-05-14 00:00:00', '2026-05-14 00:00:00', 'WEEK', 1, '', 'TODO', 1),
-  (8, 'Server Room', 'ALL', 'Restore all systems in Server Room', '', '2026-05-14 00:00:00', '2026-05-14 00:00:00', 'WEEK', 1, '', 'TODO', 1),
-  (9, 'Server Room', 'ALL', 'Shutdown all systems in Server Room', '', '2026-05-14 00:00:00', '2026-05-14 00:00:00', 'WEEK', 1, '', 'TODO', 1),
-  (10, 'Server Room', 'DEHUMIDIFIER', 'Empty the external tank', '', '2026-05-14 09:00:00', '2026-05-14 09:15:00', 'DAY', 1, '', 'DONE', 0),
-  (11, 'Computer and Peripherials', 'OPSERVER', 'Check the funcionality of the hi-temp emergency shutdown system', '', '2026-05-14 17:00:00', '2026-05-14 18:00:00', 'WEEK', 1, '', 'TODO', 0),
-  (12, 'Computer and Peripherials', 'ALL', 'Verify network connectivity on all nodes', '', '2026-05-15 08:00:00', '2026-05-15 08:30:00', 'WEEK', 1, '', 'TODO', 0),
-  (13, 'Server Room', 'DATALOGGERS', 'Download and archive temperature logs', '', '2026-05-18 10:00:00', '2026-05-18 10:30:00', 'WEEK', 2, '', 'TODO', 0),
-  (14, 'Computer and Peripherials', 'SESRV1', 'Update firmware on RAID controller', '', '2026-05-20 14:00:00', '2026-05-20 15:00:00', 'MONTH', 1, '', 'TODO', 0),
-  (15, 'Server Room', 'ELECTRICAL PANELS', 'Inspect UPS battery status and run self-test', '', '2026-05-21 09:00:00', '2026-05-21 09:45:00', 'WEEK', 1, '', 'TODO', 0),
-  (16, 'Computer and Peripherials', 'OPSERVER', 'Rotate backup tapes and verify offsite copy', '', '2026-05-25 11:00:00', '2026-05-25 12:00:00', 'WEEK', 2, '', 'TODO', 1),
-  (17, 'Server Room', 'DEHUMIDIFIER', 'Quarterly deep cleaning of internal coils', '', '2026-05-28 08:00:00', '2026-05-28 10:00:00', 'MONTH', 1, '', 'TODO', 0);
 
 -- =============================================================================
 -- WAREHOUSE / INVENTORY
@@ -287,6 +285,7 @@ CREATE TABLE IF NOT EXISTS inventory_items (
     deleted_at      DATETIME NULL,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_inventory_qty (quantity),
     CONSTRAINT fk_inv_cat      FOREIGN KEY (category_id) REFERENCES item_categories(id),
     CONSTRAINT fk_inv_location FOREIGN KEY (location_id) REFERENCES warehouse_locations(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -303,6 +302,8 @@ CREATE TABLE IF NOT EXISTS stock_movements (
     reason          TEXT,
     destination     VARCHAR(200),
     movement_date   TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_stock_date (movement_date),
+    INDEX idx_stock_type (type),
     CONSTRAINT fk_stock_item FOREIGN KEY (item_id) REFERENCES inventory_items(id),
     CONSTRAINT fk_stock_user FOREIGN KEY (user_id) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -335,6 +336,7 @@ CREATE TABLE IF NOT EXISTS shifts (
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_shift_user_date (user_id, date),
+    INDEX idx_shifts_date (date),
     CONSTRAINT fk_shift_type  FOREIGN KEY (shift_type_id) REFERENCES shift_types(id),
     CONSTRAINT fk_shift_user  FOREIGN KEY (user_id)       REFERENCES users(id),
     CONSTRAINT fk_shift_super FOREIGN KEY (supervisor_id) REFERENCES users(id) ON DELETE SET NULL
@@ -387,6 +389,10 @@ CREATE TABLE IF NOT EXISTS tasks (
     attachments      JSON,
     created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_tasks_interval (interval_type),
+    INDEX idx_tasks_due      (due_date),
+    INDEX idx_tasks_status   (status),
+    INDEX idx_tasks_parent   (parent_id),
     CONSTRAINT fk_task_parent   FOREIGN KEY (parent_id)   REFERENCES tasks(id) ON DELETE CASCADE,
     CONSTRAINT fk_task_cat      FOREIGN KEY (category_id) REFERENCES task_categories(id) ON DELETE SET NULL,
     CONSTRAINT fk_task_creator  FOREIGN KEY (created_by)  REFERENCES users(id),
@@ -434,6 +440,7 @@ CREATE TABLE IF NOT EXISTS wiki_articles (
     published_at   TIMESTAMP NULL,
     created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_wiki_status (status),
     CONSTRAINT fk_wiki_cat    FOREIGN KEY (category_id)    REFERENCES wiki_categories(id) ON DELETE SET NULL,
     CONSTRAINT fk_wiki_author FOREIGN KEY (author_id)      REFERENCES users(id),
     CONSTRAINT fk_wiki_editor FOREIGN KEY (last_editor_id) REFERENCES users(id) ON DELETE SET NULL
@@ -463,6 +470,7 @@ CREATE TABLE IF NOT EXISTS notifications (
     link       VARCHAR(500),
     is_read    BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_notif_user_read (user_id, is_read),
     CONSTRAINT fk_notif_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -484,41 +492,69 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================================================
--- REFRESH TOKENS
+-- UI PREFERENCES
 -- =============================================================================
-CREATE TABLE IF NOT EXISTS refresh_tokens (
-    id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    user_id    INT UNSIGNED NOT NULL,
-    token      VARCHAR(500) NOT NULL,
-    expires_at TIMESTAMP    NOT NULL,
-    is_revoked BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    CONSTRAINT fk_tokens_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+CREATE TABLE IF NOT EXISTS ui_section_access_preferences (
+    id           INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    section_key  VARCHAR(60) NOT NULL,
+    subject_type ENUM('global', 'role', 'user') NOT NULL DEFAULT 'global',
+    subject_key  VARCHAR(120) NOT NULL,
+    is_visible   BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_section_subject_pref (section_key, subject_type, subject_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS ui_section_field_preferences (
+    id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    section_key   VARCHAR(60) NOT NULL,
+    scope         ENUM('table', 'form') NOT NULL,
+    field_key     VARCHAR(100) NOT NULL,
+    label         VARCHAR(150) NULL,
+    is_visible    BOOLEAN NOT NULL DEFAULT TRUE,
+    display_order INT NOT NULL DEFAULT 0,
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_section_scope_field (section_key, scope, field_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS ui_section_field_role_preferences (
+    id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    section_key   VARCHAR(60) NOT NULL,
+    scope         ENUM('table', 'form') NOT NULL,
+    role_name     VARCHAR(60) NOT NULL,
+    field_key     VARCHAR(100) NOT NULL,
+    label         VARCHAR(150) NULL,
+    is_visible    BOOLEAN NOT NULL DEFAULT TRUE,
+    display_order INT NOT NULL DEFAULT 0,
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_section_scope_role_field (section_key, scope, role_name, field_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS ui_table_column_preferences (
+    id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    table_name    VARCHAR(100) NOT NULL,
+    column_name   VARCHAR(100) NOT NULL,
+    label         VARCHAR(150) NULL,
+    is_visible    BOOLEAN NOT NULL DEFAULT TRUE,
+    display_order INT NOT NULL DEFAULT 0,
+    width         VARCHAR(20) NULL,
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_table_column_pref (table_name, column_name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================================================
--- INDEXES
+-- SEED DATA - Lookup / Reference tables
 -- =============================================================================
-CREATE INDEX idx_operations_status     ON operations(status);
-CREATE INDEX idx_operations_start_date ON operations(start_date);
-CREATE INDEX idx_maint_asset           ON maintenance_records(asset_id);
-CREATE INDEX idx_maint_scheduled       ON maintenance_records(scheduled_date);
-CREATE INDEX idx_maint_status          ON maintenance_records(status);
-CREATE INDEX idx_inventory_qty         ON inventory_items(quantity);
-CREATE INDEX idx_stock_date            ON stock_movements(movement_date);
-CREATE INDEX idx_stock_type            ON stock_movements(type);
-CREATE INDEX idx_shifts_date           ON shifts(date);
-CREATE INDEX idx_tasks_interval        ON tasks(interval_type);
-CREATE INDEX idx_tasks_due             ON tasks(due_date);
-CREATE INDEX idx_tasks_status          ON tasks(status);
-CREATE INDEX idx_tasks_parent          ON tasks(parent_id);
-CREATE INDEX idx_wiki_status           ON wiki_articles(status);
-CREATE INDEX idx_notif_user_read       ON notifications(user_id, is_read);
 
--- =============================================================================
--- SEED DATA — Lookup / Reference tables
--- =============================================================================
+-- Schema migrations tracking baseline
+INSERT IGNORE INTO schema_migrations (id, name) VALUES
+(1, '001_baseline_schema'),
+(2, '002_add_part_number_to_inventory_items'),
+(3, '003_create_planned_maintenance_tasks'),
+(4, '004_create_ui_preferences');
 
 -- Roles
 INSERT IGNORE INTO roles (id, name, description, permissions) VALUES
@@ -583,6 +619,7 @@ INSERT IGNORE INTO item_categories (id, name, description) VALUES
 (4, 'Peripherals',         'Keyboards, mice, monitors'),
 (5, 'Storage Media',       'SSDs, HDDs, USBs');
 
+-- Assets
 INSERT IGNORE INTO assets
   (id, category_id, name, serial_number, model, manufacturer, location, status)
 VALUES
@@ -597,23 +634,44 @@ VALUES
   (9, 4, 'NAS Storage Array',      'STR-001-NAS',  'DS1823xs+',        'Synology','Server Room B', 'ACTIVE'),
   (10,4, 'Tape Library',           'STR-002-TAPE', 'StoreEver MSL3040','HP',      'Server Room B', 'INACTIVE');
 
+-- Planned maintenance tasks
+INSERT IGNORE INTO planned_maintenance_tasks
+  (id, `system`, subsystem, task, reference, operation_date_start, operation_date_end, repeat_task_type, repeat_task_number, report_template, status, optional)
+VALUES
+  (1, 'Server Room', 'DEHUMIDIFIER', 'Empty the external tank', '', '2025-02-03 09:00:00', '2025-02-03 09:15:00', 'DAY', 1, '', 'TODO', 0),
+  (2, 'Server Room', 'DATALOGGERS', 'Collect log files', '', '2025-02-03 10:00:00', '2025-02-03 10:30:00', 'WEEK', 2, '', 'TODO', 0),
+  (3, 'Computer and Peripherials', 'OPSERVER', 'Check the auto-backup on Windows Backup Server', '', '2025-02-04 10:00:00', '2025-02-04 10:30:00', 'WEEK', 1, '', 'TODO', 0),
+  (4, 'Computer and Peripherials', 'ALL', 'Swap main/backup disks on all the nodes but OPSERVER', '', '2025-02-07 14:00:00', '2025-02-07 15:00:00', 'WEEK', 2, '', 'TODO', 0),
+  (5, 'Computer and Peripherials', 'SESRV1', 'Check integrity of the RAID, check status of RAID BATTERY', '', '2025-02-07 10:00:00', '2025-02-07 10:15:00', 'WEEK', 1, '', 'TODO', 0),
+  (6, 'Server Room', 'DEHUMIDIFIER', 'Check filter status and clean if necessary', '', '2026-05-14 09:00:00', '2026-05-14 09:15:00', 'MONTH', 1, '', 'DONE', 0),
+  (7, 'Server Room', 'ELECTRICAL PANELS', 'Apply Lockout-Tagout Procedure to Server Room Electrical Panels', '', '2026-05-14 00:00:00', '2026-05-14 00:00:00', 'WEEK', 1, '', 'TODO', 1),
+  (8, 'Server Room', 'ALL', 'Restore all systems in Server Room', '', '2026-05-14 00:00:00', '2026-05-14 00:00:00', 'WEEK', 1, '', 'TODO', 1),
+  (9, 'Server Room', 'ALL', 'Shutdown all systems in Server Room', '', '2026-05-14 00:00:00', '2026-05-14 00:00:00', 'WEEK', 1, '', 'TODO', 1),
+  (10, 'Server Room', 'DEHUMIDIFIER', 'Empty the external tank', '', '2026-05-14 09:00:00', '2026-05-14 09:15:00', 'DAY', 1, '', 'DONE', 0),
+  (11, 'Computer and Peripherials', 'OPSERVER', 'Check the funcionality of the hi-temp emergency shutdown system', '', '2026-05-14 17:00:00', '2026-05-14 18:00:00', 'WEEK', 1, '', 'TODO', 0),
+  (12, 'Computer and Peripherials', 'ALL', 'Verify network connectivity on all nodes', '', '2026-05-15 08:00:00', '2026-05-15 08:30:00', 'WEEK', 1, '', 'TODO', 0),
+  (13, 'Server Room', 'DATALOGGERS', 'Download and archive temperature logs', '', '2026-05-18 10:00:00', '2026-05-18 10:30:00', 'WEEK', 2, '', 'TODO', 0),
+  (14, 'Computer and Peripherials', 'SESRV1', 'Update firmware on RAID controller', '', '2026-05-20 14:00:00', '2026-05-20 15:00:00', 'MONTH', 1, '', 'TODO', 0),
+  (15, 'Server Room', 'ELECTRICAL PANELS', 'Inspect UPS battery status and run self-test', '', '2026-05-21 09:00:00', '2026-05-21 09:45:00', 'WEEK', 1, '', 'TODO', 0),
+  (16, 'Computer and Peripherials', 'OPSERVER', 'Rotate backup tapes and verify offsite copy', '', '2026-05-25 11:00:00', '2026-05-25 12:00:00', 'WEEK', 2, '', 'TODO', 1),
+  (17, 'Server Room', 'DEHUMIDIFIER', 'Quarterly deep cleaning of internal coils', '', '2026-05-28 08:00:00', '2026-05-28 10:00:00', 'MONTH', 1, '', 'TODO', 0);
 
--- Demo admin user
--- Password: Admin@1234  (bcrypt hash, 12 rounds)
+-- Demo admin users
+-- Password: Admin@1234 (bcrypt hash, 12 rounds)
 INSERT IGNORE INTO users (id, role_id, username, email, password_hash, first_name, last_name, department, job_title) VALUES
 (1, 1, 'admin', 'admin@smart.local',
  '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewFX5nGLPBhDvb4W',
  'System', 'Admin', 'IT', 'Platform Administrator');
 
- INSERT INTO users
-    (role_id, username, email, password_hash, first_name, last_name, is_active, created_at, updated_at)
-VALUES
-    (1, 'Admin2', 'admin@admin.com', '$2a$12$mT2ebUe8xkTaPtkN1um38eHC8WoWiFH2wMa1LiqXyRUv6SdxhTKZm', 'System', 'Administrator', TRUE, NOW(), NOW());
+INSERT IGNORE INTO users (id, role_id, username, email, password_hash, first_name, last_name, is_active, created_at, updated_at) VALUES
+(2, 1, 'Admin2', 'admin@admin.com',
+ '$2a$12$mT2ebUe8xkTaPtkN1um38eHC8WoWiFH2wMa1LiqXyRUv6SdxhTKZm',
+ 'System', 'Administrator', TRUE, NOW(), NOW());
 
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- Confirmation message (visible in docker logs on first boot)
 SELECT CONCAT(
-    '✅  SMaRT schema initialised. ',
+    'SMaRT schema initialised successfully. ',
     COUNT(*), ' roles loaded.'
 ) AS init_status FROM roles;
