@@ -37,7 +37,7 @@
 
     <div class="flex gap-2">
       <app-export-menu endpoint="operations" filename="Operations"
-                       [params]="{ status: statusFilter, priority: priorityFilter }"></app-export-menu>
+                       [params]="{ status: statusFilter, priority: priorityFilter, search: searchQuery }"></app-export-menu>
       <button class="btn btn-primary" (click)="openModal()">
         <span class="btn-icon">add</span>
         New Operation

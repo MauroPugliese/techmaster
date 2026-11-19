@@ -1,14 +1,12 @@
 // =============================================================================
-// routes/export.routes.js — Unified multi-format export endpoints
+// routes/export.routes.js — Unified Multi-Format Executive Export Endpoints
 // -----------------------------------------------------------------------------
-// Thin routing layer over the unified export engine (src/exports). Every module
-// is exported through a single generic handler producing branded, paginated,
-// professionally styled Excel / Word / PDF documents.
-//
-//   GET /api/export/:module?format=xlsx|pdf|docx[&filters...]
-//   GET /api/export/wiki/:id?format=...          (single full article)
-//   GET /api/export/shift-report?format=...       (alias → shifts)
-//   GET /api/export/planned-maintenance-report    (alias → planned-maintenance)
+//   GET /api/export/                          (module discovery)
+//   GET /api/export/:module?format=xlsx|pdf|docx|pptx[&filters...]
+//   GET /api/export/wiki/:id?format=...       (single full Markdown article)
+//   GET /api/export/shift-report?format=...   (alias -> shifts)
+//   GET /api/export/planned-maintenance-report (alias -> planned-maintenance)
+//   GET /api/export/planned-maintenance-daily/:date/:template?format=docx|pdf
 // =============================================================================
 
 const router = require('express').Router();
@@ -16,6 +14,7 @@ const { authenticate } = require('../middleware/auth.middleware');
 const { render } = require('../exports/core/export.service');
 const { streamDailyTemplateExport } = require('../exports/core/planned-daily-template.service');
 const { fullName } = require('../exports/core/helpers');
+const { COMPANY } = require('../exports/core/branding');
 const { MODULES, wiki } = require('../exports/modules');
 
 /** Ensure the current user may export the given module. Sends 403 if not. */
@@ -27,26 +26,41 @@ const ensureRole = (mod, req, res) => {
   return false;
 };
 
-/** Compose a full ReportSpec from a module build result and stream it. */
+/** Compose a full ReportSpec v3 from a module build result and stream it. */
 const composeAndRender = async (mod, built, req, res) => {
   if (built === null) {
     return res.status(404).json({ success: false, message: 'Resource not found' });
   }
   const spec = {
+    moduleKey: built.moduleKey || mod.key,
+    docCode: built.docCode || mod.docCode,
+    theme: built.theme || mod.theme || mod.key,
     title: built.title || mod.title,
     subtitle: built.subtitle !== undefined ? built.subtitle : mod.subtitle,
+    category: built.category || mod.category || 'OPERATIONS INTELLIGENCE',
     orientation: built.orientation || mod.orientation || 'portrait',
     filename: built.filename || mod.title,
     meta: {
       generatedBy: fullName(req.user, req.user?.username || 'System'),
+      generatedAt: new Date(),
+      confidentiality: built.confidentiality || COMPANY.confidentiality,
       filters: built.filters || []
     },
+    executiveBrief: built.executiveBrief || '',
+    coverHighlights: built.coverHighlights || [],
+    pages: built.pages || [],
+    kpis: built.kpis || [],
+    scorecards: built.scorecards || [],
+    highlights: built.highlights || [],
+    insights: built.insights || [],
+    charts: built.charts || [],
+    documentBlocks: built.documentBlocks || [],
     tables: built.tables || []
   };
   return render(spec, res, req.query.format, mod.fallback || 'xlsx');
 };
 
-// ── Single wiki article (full content) ───────────────────────────────────────
+// ── Single wiki article (full Markdown content) ──────────────────────────────
 router.get('/wiki/:id', authenticate, async (req, res, next) => {
   try {
     if (!ensureRole(wiki, req, res)) return undefined;
@@ -85,8 +99,11 @@ router.get('/planned-maintenance-daily/:date/:template', authenticate, async (re
 router.get('/', authenticate, (req, res) => {
   const list = Object.values(MODULES).map((m) => ({
     key: m.key,
+    docCode: m.docCode,
+    theme: m.theme || m.key,
     title: m.title,
     subtitle: m.subtitle,
+    category: m.category,
     formats: ['xlsx', 'pdf', 'docx', 'pptx'],
     restricted: !!(m.roles && m.roles.length)
   }));

@@ -80,7 +80,7 @@
       </button>
 
       <app-export-menu endpoint="tasks" filename="Tasks"
-                       [params]="{ status: statusFilter }"></app-export-menu>
+                       [params]="{ status: statusFilter, priority: priorityFilter, interval_type: activeInterval, search: searchTerm }"></app-export-menu>
 
       <button type="button" class="btn btn-primary" (click)="openModal()">
         <span class="btn-icon">add</span> New Task

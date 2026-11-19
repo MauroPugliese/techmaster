@@ -95,7 +95,7 @@
           <p class="text-muted text-sm">Create, edit, deactivate and reset passwords</p>
         </div>
         <div class="flex gap-2">
-          <app-export-menu endpoint="users" filename="Users" label="Export"></app-export-menu>
+          <app-export-menu endpoint="users" filename="Users" label="Export" [includeDateRange]="false"></app-export-menu>
           <button class="btn btn-primary" (click)="openUserModal()">
             <span class="btn-icon">person_add</span> New User
           </button>

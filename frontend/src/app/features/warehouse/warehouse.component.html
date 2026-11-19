@@ -46,7 +46,7 @@
     </div>
     <div class="flex gap-2">
       <app-export-menu endpoint="warehouse" filename="Warehouse_Inventory"
-                       [params]="{ category_id: categoryFilter }"></app-export-menu>
+                       [params]="{ category_id: categoryFilter, low_stock: lowStockOnly ? 'true' : '', search }"></app-export-menu>
       <button class="btn btn-primary" (click)="openItemModal()">
         <span class="btn-icon">add</span> Add Item
       </button>

@@ -44,7 +44,7 @@ ARG INSTALL_LIBREOFFICE=false
 
 # Re-install dumb-init in the final stage (base was an intermediate)
 RUN apk add --no-cache dumb-init \
-    && if [ "$INSTALL_LIBREOFFICE" = "true" ]; then apk add --no-cache libreoffice; fi
+    && if [ "$INSTALL_LIBREOFFICE" = "true" ]; then apk add --no-cache libreoffice fontconfig; fi
 
 WORKDIR /app
 
@@ -59,6 +59,13 @@ COPY --from=deps --chown=node:node /app/node_modules ./node_modules
 # ── Copy application source code ─────────────────────────────────────────────
 COPY --chown=node:node src/ ./src/
 COPY --chown=node:node package.json ./
+
+RUN if [ "$INSTALL_LIBREOFFICE" = "true" ]; then \
+      mkdir -p /usr/share/fonts/truetype/redhat \
+      && cp ./src/exports/fonts/*.ttf /usr/share/fonts/truetype/redhat/ \
+      && chmod 644 /usr/share/fonts/truetype/redhat/*.ttf \
+      && fc-cache -f; \
+    fi
 
 # ── Switch to non-root user ───────────────────────────────────────────────────
 USER node

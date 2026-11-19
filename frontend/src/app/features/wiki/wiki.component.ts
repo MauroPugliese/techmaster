@@ -13,6 +13,7 @@ import { UiCustomizationService, UiSectionPreferences } from '../../core/service
 import { WikiArticle, WikiCategory } from '../../core/models/interfaces';
 import { ToastService }   from '../../core/services/toast.service';
 import { ConfirmService } from '../../core/services/confirm.service';
+import { ExportService, ExportFormat } from '../../core/services/export.service';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
 import { DropdownComponent, DropdownOptionComponent } from '../../shared/components/dropdown/dropdown.component';
 
@@ -71,6 +72,7 @@ export class WikiComponent implements OnInit, OnDestroy {
     private cdr: ChangeDetectorRef,
     private toast: ToastService,
     private confirm: ConfirmService,
+    private exportSvc: ExportService,
   ) {}
 
   ngOnInit(): void {
@@ -286,27 +288,21 @@ export class WikiComponent implements OnInit, OnDestroy {
     ].join('\n');
   }
 
-  async exportCurrentArticle(format: 'xlsx' | 'pdf' | 'docx' | 'pptx'): Promise<void> {
+  async exportCurrentArticle(format: ExportFormat): Promise<void> {
     if (!this.viewingArticle?.id) {
       this.toast.info('Open an article first to export it.');
       return;
     }
-    try {
-      const token = localStorage.getItem('access_token');
-      const url = `${this.api.baseUrl}/export/wiki/${this.viewingArticle.id}?format=${format}`;
-      const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-      if (!res.ok) throw new Error('Export failed');
-      const blob = await res.blob();
-      const href = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = href;
-      a.download = `wiki_${this.viewingArticle.slug || this.viewingArticle.id}.${format}`;
-      a.click();
-      URL.revokeObjectURL(href);
-      this.toast.success(`Wiki article exported (${format.toUpperCase()}).`);
-    } catch {
-      this.toast.error('Wiki export failed.');
-    }
+    await this.exportSvc.download(
+      `wiki/${this.viewingArticle.id}`,
+      format,
+      `wiki_${this.viewingArticle.slug || this.viewingArticle.id}`,
+      {},
+      {
+        includeDateRange: false,
+        successMessage: `Wiki article exported (${format.toUpperCase()}).`,
+      },
+    );
   }
   getArticleStatusBadge(s: string): string {
     const m: Record<string,string> = { 'PUBLISHED':'badge-completed','DRAFT':'badge-planned','REVIEW':'badge-in-progress','ARCHIVED':'badge-cancelled' };

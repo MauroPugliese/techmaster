@@ -61,7 +61,8 @@ app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:4200',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Date-From', 'X-Date-To']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Date-From', 'X-Date-To'],
+  exposedHeaders: ['Content-Disposition']
 }));
 
 // ── Rate Limiting ─────────────────────────────────────────────────────────────

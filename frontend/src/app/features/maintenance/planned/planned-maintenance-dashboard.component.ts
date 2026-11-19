@@ -12,6 +12,7 @@ import { PlannedMaintenanceService } from './planned-maintenance.service';
 import { ToastService } from '../../../core/services/services';
 import { ConfirmService } from '../../../core/services/services';
 import { UiCustomizationService, UiSectionPreferences } from '../../../core/services/services';
+import { ExportService } from '../../../core/services/export.service';
 import { OwlDateTimeModule, OwlNativeDateTimeModule } from '@danielmoncada/angular-datetime-picker';
 import { ExportMenuComponent } from '../../../shared/components/export-menu/export-menu.component';
 import { DropdownComponent, DropdownOptionComponent } from '../../../shared/components/dropdown/dropdown.component';
@@ -64,6 +65,7 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
     private uiCustomization: UiCustomizationService,
     private toast: ToastService,
     private confirm: ConfirmService,
+    private exportSvc: ExportService,
     private cdr: ChangeDetectorRef
   ) {}
 
@@ -277,7 +279,7 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
     const newStatus = task.status === 'DONE' ? 'TODO' : 'DONE';
     const masterId = task.masterId || task.id;
     const occurrenceDate = task.occurrenceDate || this.selectedDate;
-    const obs = task.isOccurrence
+    const obs = !!task.occurrenceDate
       ? this.svc.updateOccurrence(masterId, occurrenceDate, { status: newStatus })
       : this.svc.update(task.id, { status: newStatus });
 
@@ -445,58 +447,18 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
   }
 
   
-  async exportPlanned(format: 'xlsx' | 'pdf' | 'docx'): Promise<void> {
-    try {
-      const token = localStorage.getItem('access_token');
-      const periodStart = `${this.calYear}-${String(this.calMonth).padStart(2, '0')}-01`;
-      const periodEnd = `${this.calYear}-${String(this.calMonth).padStart(2, '0')}-${String(new Date(this.calYear, this.calMonth, 0).getDate()).padStart(2, '0')}`;
-      const url = this.svc.getExportUrl(format, periodStart, periodEnd);
-      const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-      if (!res.ok) throw new Error('Export failed');
-      const blob = await res.blob();
-      const href = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = href;
-      a.download = `planned_maintenance_${periodStart}_${periodEnd}.${format}`;
-      a.click();
-      URL.revokeObjectURL(href);
-      this.toast.success(`Planned maintenance report exported (${format.toUpperCase()}).`);
-    } catch {
-      this.toast.error('Planned maintenance export failed.');
-    }
-  }
-
-  async exportDailyWord(template: 'checklist' | 'report'): Promise<void> {
-    try {
-      const token = localStorage.getItem('access_token');
-      const format: 'docx' = 'docx';
-      const url = this.svc.getDailyTemplateExportUrl(this.selectedDate, template, format);
-      const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-      if (!res.ok) {
-        let backendMessage = '';
-        try {
-          const payload = await res.json();
-          backendMessage = payload?.message ? `: ${payload.message}` : '';
-        } catch {
-          backendMessage = '';
-        }
-        throw new Error(`Failed to export ${template} (DOCX)${backendMessage}`);
-      }
-
-      const blob = await res.blob();
-      const href = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = href;
-      link.download = `planned_maintenance_${template}_${this.selectedDate}.docx`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(href);
-
-      this.toast.success(`${template === 'checklist' ? 'Checklist' : 'Report'} DOCX exported for ${this.selectedDate}.`);
-    } catch (err: any) {
-      this.toast.error(err?.message || 'Daily export failed.');
-    }
+  async exportDailyTemplate(template: 'checklist' | 'report', format: 'docx' | 'pdf'): Promise<void> {
+    const label = template === 'checklist' ? 'Checklist' : 'Report';
+    await this.exportSvc.download(
+      `planned-maintenance-daily/${this.selectedDate}/${template}`,
+      format,
+      `planned_maintenance_${template}_${this.selectedDate}`,
+      {},
+      {
+        includeDateRange: false,
+        successMessage: `${label} ${format.toUpperCase()} exported for ${this.selectedDate}.`,
+      },
+    );
   }
 
   private emptyForm(): any {

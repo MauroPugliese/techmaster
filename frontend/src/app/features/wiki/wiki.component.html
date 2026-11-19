@@ -48,8 +48,8 @@
           <app-dropdown-option value="REVIEW">In Review</app-dropdown-option>
           <app-dropdown-option value="ARCHIVED">Archived</app-dropdown-option>
         </app-dropdown>
-        <app-export-menu endpoint="wiki" filename="Wiki_Articles" label="Export"
-                         [params]="{ status: statusFilter }"></app-export-menu>
+        <app-export-menu endpoint="wiki" filename="Wiki_Articles" label="Export" [includeDateRange]="false"
+                         [params]="{ status: statusFilter, category_id: selectedCategory, search: searchQuery }"></app-export-menu>
         <button class="btn btn-secondary btn-sm" type="button" (click)="exportArticlesCsv()">
           <span class="btn-icon">file_download</span> Export CSV
         </button>

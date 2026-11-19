@@ -8,7 +8,8 @@
              [(ngModel)]="searchTerm" (input)="onSearch()">
     </div>
     <div class="flex gap-2">
-      <app-export-menu endpoint="planned-maintenance" filename="Planned_Maintenance"></app-export-menu>
+      <app-export-menu endpoint="planned-maintenance" filename="Planned_Maintenance"
+                       [params]="{ search: searchTerm }"></app-export-menu>
       <button class="btn btn-primary" (click)="openModal()">
         <span class="btn-icon">add</span> New Task
       </button>
@@ -144,14 +145,22 @@
           <h3>Tasks for {{ selectedDateLabel }}</h3>
           <p>Recurring tasks on this date</p>
         </div>
-        <div class="flex gap-2">
-          <button class="btn btn-primary btn-sm" (click)="exportDailyWord('checklist')">
+        <div class="flex gap-2" style="flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" (click)="exportDailyTemplate('checklist', 'docx')" title="Download official Word checklist">
             <span class="btn-icon" style="font-size:16px">description</span>
             Checklist DOCX
           </button>
-          <button class="btn btn-ghost btn-sm" (click)="exportDailyWord('report')">
+          <button class="btn btn-secondary btn-sm" (click)="exportDailyTemplate('checklist', 'pdf')" title="Download checklist PDF">
+            <span class="btn-icon" style="font-size:16px">picture_as_pdf</span>
+            Checklist PDF
+          </button>
+          <button class="btn btn-ghost btn-sm" (click)="exportDailyTemplate('report', 'docx')" title="Download official Word daily report">
             <span class="btn-icon" style="font-size:16px">description</span>
             Report DOCX
+          </button>
+          <button class="btn btn-ghost btn-sm" (click)="exportDailyTemplate('report', 'pdf')" title="Download daily report PDF">
+            <span class="btn-icon" style="font-size:16px">picture_as_pdf</span>
+            Report PDF
           </button>
         </div>
       </div>

@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "migrate": "node src/config/migrate.js"
+    "migrate": "node src/config/migrate.js",
+    "test": "node --test src/exports/__tests__/*.test.js",
+    "build:guide": "node src/exports/generate-user-guide-pdf.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

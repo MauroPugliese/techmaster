@@ -38,7 +38,7 @@
         <span class="btn-icon">calendar_month</span> Planned Maintenance
       </button>
       <app-export-menu endpoint="maintenance" filename="Maintenance_Records"
-                       [params]="{ status: statusFilter, priority: priorityFilter }"></app-export-menu>
+                       [params]="{ status: statusFilter, priority: priorityFilter, search: searchQuery }"></app-export-menu>
       <button class="btn btn-primary" (click)="openModal()">
         <span class="btn-icon">add</span> Log Maintenance
       </button>

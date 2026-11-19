@@ -7,34 +7,30 @@
 const fs = require('fs');
 const path = require('path');
 const PDFDocument = require('pdfkit');
+const { registerPdfFonts } = require('./core/fonts');
+const { COLORS: BRAND_COLORS, COMPANY } = require('./core/branding');
 
 const LOGO_PATH = path.resolve(__dirname, 'templates/cae_logo_light.png');
-const OUTPUT_PATH = path.resolve(__dirname, '../../../docs/USER_GUIDE.pdf');
+const OUTPUT_PATH = path.resolve(__dirname, '../../../docs/USER_GUIDE_SMaRT_PLATFORM.pdf');
 
 const MARGIN = 40;
 const FOOTER_H = 26;
 
 const COLORS = {
-  navy:       '#06103D',
-  ink:        '#0F172A',
-  body:       '#334155',
-  band:       '#06103D',
-  headerRow:  '#132252',
-  accent:     '#2969F2',
-  lime:       '#B4F62A',
-  subtle:     '#64748B',
-  zebra:      '#F8FAFC',
-  border:     '#CBD5E1',
-  white:      '#FFFFFF',
-  cardBg:     '#F1F5F9',
-  tagBg:      '#E0E7FF',
-  tagFg:      '#3730A3'
-};
-
-const FONTS = {
-  regular: 'Helvetica',
-  bold: 'Helvetica-Bold',
-  oblique: 'Helvetica-Oblique'
+  navy:       BRAND_COLORS.navy,
+  ink:        BRAND_COLORS.ink,
+  body:       BRAND_COLORS.body,
+  band:       BRAND_COLORS.band,
+  headerRow:  BRAND_COLORS.headerRow,
+  accent:     BRAND_COLORS.accent,
+  lime:       BRAND_COLORS.lime,
+  subtle:     BRAND_COLORS.subtle,
+  zebra:      BRAND_COLORS.zebra,
+  border:     BRAND_COLORS.border,
+  white:      BRAND_COLORS.white,
+  cardBg:     BRAND_COLORS.surface,
+  tagBg:      BRAND_COLORS.accentSoft,
+  tagFg:      BRAND_COLORS.royal
 };
 
 const doc = new PDFDocument({
@@ -42,6 +38,13 @@ const doc = new PDFDocument({
   margins: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN },
   bufferPages: true
 });
+
+const F = registerPdfFonts(doc);
+const FONTS = {
+  regular: F.body,
+  bold:    F.displayBold,
+  oblique: F.bodyItalic
+};
 
 const outStream = fs.createWriteStream(OUTPUT_PATH);
 doc.pipe(outStream);
@@ -443,9 +446,9 @@ for (let i = range.start; i < range.start + range.count; i += 1) {
     .moveTo(MARGIN, yy - 6).lineTo(MARGIN + w, yy - 6).stroke();
 
   doc.font(FONTS.regular).fontSize(8).fillColor(COLORS.subtle);
-  doc.text('CAE · SMaRT Platform', MARGIN, yy, { width: w / 3, align: 'left' });
-  doc.text(`Generated: ${generatedDate}`, MARGIN + w / 3, yy, { width: w / 3, align: 'center' });
-  doc.text(`Page ${i - range.start + 1} of ${range.count}`, MARGIN + (2 * w) / 3, yy, { width: w / 3, align: 'right' });
+  doc.text(COMPANY.name, MARGIN, yy, { width: w / 3, align: 'left', lineBreak: false });
+  doc.text(`Generated: ${generatedDate}`, MARGIN + w / 3, yy, { width: w / 3, align: 'center', lineBreak: false });
+  doc.text(`Page ${i - range.start + 1} of ${range.count}`, MARGIN + (2 * w) / 3, yy, { width: w / 3, align: 'right', lineBreak: false });
   doc.restore();
 }
 

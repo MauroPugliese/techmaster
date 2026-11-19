@@ -3,14 +3,28 @@
 // Full CRUD + recurrence expansion for calendar & date endpoints
 // =============================================================================
 const { Op } = require('sequelize');
+const {
+  buildOccurrenceDateTime,
+  normalizeMasterTask,
+  taskOccursOnDate,
+  loadSeriesAndInstances,
+  resolveOccurrencesForDate,
+  buildMonthRange
+} = require('../services/planned-recurrence.service');
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-function toUtcDateOnly(value) {
-  const d = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-}
+const ALLOWED_SORT_COLUMNS = new Set([
+  'id',
+  'system',
+  'subsystem',
+  'task',
+  'operation_date_start',
+  'operation_date_end',
+  'repeat_task_type',
+  'repeat_task_number',
+  'recurrence_end_date',
+  'status',
+  'created_at'
+]);
 
 function normalizeTaskPayload(body) {
   const payload = {};
@@ -35,227 +49,6 @@ function normalizeTaskPayload(body) {
   });
 
   return payload;
-}
-
-function formatDateOnly(date) {
-  return date.toISOString().slice(0, 10);
-}
-
-function buildOccurrenceDateTime(occurrenceDate, baseDateTime) {
-  const base = new Date(baseDateTime);
-  if (Number.isNaN(base.getTime())) return null;
-
-  const [y, m, d] = occurrenceDate.split('-').map(Number);
-  return new Date(Date.UTC(
-    y, m - 1, d,
-    base.getUTCHours(),
-    base.getUTCMinutes(),
-    base.getUTCSeconds(),
-    base.getUTCMilliseconds()
-  ));
-}
-
-function addDuration(startDate, durationMs) {
-  return new Date(startDate.getTime() + durationMs);
-}
-
-function normalizeMasterTask(task) {
-  return {
-    id: task.id,
-    system: task.system,
-    subsystem: task.subsystem,
-    task: task.task,
-    reference: task.reference ?? '',
-    operationDateStart: task.operation_date_start ?? task.operationDateStart ?? '',
-    operationDateEnd: task.operation_date_end ?? task.operationDateEnd ?? '',
-    repeatTaskType: task.repeat_task_type ?? task.repeatTaskType ?? 'WEEK',
-    repeatTaskNumber: task.repeat_task_number ?? task.repeatTaskNumber ?? 1,
-    recurrenceEndDate: task.recurrence_end_date ?? task.recurrenceEndDate ?? null,
-    reportTemplate: task.report_template ?? task.reportTemplate ?? '',
-    status: task.status ?? 'TODO',
-    optional: task.optional ?? false,
-    createdBy: task.created_by ?? task.createdBy ?? null,
-    isOccurrence: false,
-    masterId: task.id,
-    instanceId: null,
-    occurrenceDate: null,
-    exceptionType: null
-  };
-}
-
-function normalizeOccurrence(master, occurrenceDate, instance) {
-  if (instance && instance.exception_type === 'DELETED') return null;
-
-  const source = instance || master;
-  const baseStart = new Date(source.operation_date_start ?? master.operation_date_start);
-  const baseEnd = new Date(source.operation_date_end ?? master.operation_date_end);
-  if (Number.isNaN(baseStart.getTime()) || Number.isNaN(baseEnd.getTime())) return null;
-
-  const occurrenceStart = source.operation_date_start
-    ? new Date(source.operation_date_start)
-    : buildOccurrenceDateTime(occurrenceDate, master.operation_date_start);
-
-  if (!occurrenceStart || Number.isNaN(occurrenceStart.getTime())) return null;
-
-  const durationMs = Math.max(0, baseEnd.getTime() - baseStart.getTime());
-  const occurrenceEnd = source.operation_date_end
-    ? new Date(source.operation_date_end)
-    : addDuration(occurrenceStart, durationMs);
-
-  const serialized = {
-    ...normalizeMasterTask(master),
-    id: source.id ?? master.id,
-    masterId: master.id,
-    instanceId: instance ? instance.id : null,
-    isOccurrence: !!instance,
-    occurrenceDate,
-    exceptionType: instance ? instance.exception_type : null,
-    system: source.system ?? master.system,
-    subsystem: source.subsystem ?? master.subsystem,
-    task: source.task ?? master.task,
-    reference: source.reference ?? master.reference ?? '',
-    operationDateStart: occurrenceStart.toISOString(),
-    operationDateEnd: occurrenceEnd.toISOString(),
-    repeatTaskType: source.repeat_task_type ?? master.repeat_task_type ?? 'WEEK',
-    repeatTaskNumber: source.repeat_task_number ?? master.repeat_task_number ?? 1,
-    recurrenceEndDate: source.recurrence_end_date ?? master.recurrence_end_date ?? null,
-    reportTemplate: source.report_template ?? master.report_template ?? '',
-    status: source.status ?? master.status ?? 'TODO',
-    optional: source.optional ?? master.optional ?? false
-  };
-
-  return serialized;
-}
-
-function buildMonthRange(year, month) {
-  const y = parseInt(year, 10);
-  const m = parseInt(month, 10);
-  const start = `${y}-${String(m).padStart(2, '0')}-01`;
-  const endDate = new Date(Date.UTC(y, m, 0));
-  const end = formatDateOnly(endDate);
-  return { y, m, start, end, endOfMonth: new Date(Date.UTC(y, m, 0, 23, 59, 59, 999)) };
-}
-
-// ─── Recurrence Engine ───────────────────────────────────────────────────────
-
-/**
- * Check if a task occurs on a given date, considering its repeat settings.
- * @param {object} task - the task row
- * @param {Date} targetDate - the date to check
- * @returns {boolean}
- */
-function taskOccursOnDate(task, targetDate) {
-  try {
-    const start = new Date(task.operation_date_start ?? task.operationDateStart);
-    if (Number.isNaN(start.getTime())) return false;
-    const startDay = toUtcDateOnly(start);
-    const target = toUtcDateOnly(targetDate);
-    if (!startDay || !target) return false;
-
-    const recurrenceEnd = task.recurrence_end_date ?? task.recurrenceEndDate;
-    if (recurrenceEnd) {
-      const end = toUtcDateOnly(recurrenceEnd);
-      if (end && target > end) return false;
-    }
-
-    // Task can't occur before its start
-    if (target < startDay) return false;
-
-    const diffDays = Math.round((target.getTime() - startDay.getTime()) / DAY_MS);
-
-    const type = task.repeat_task_type ?? task.repeatTaskType;
-    const interval = task.repeat_task_number ?? task.repeatTaskNumber ?? 1;
-
-    if (type === 'DAY') {
-      return diffDays % interval === 0;
-    }
-
-    if (type === 'WEEK') {
-      // Same weekday and correct week interval
-      if (start.getUTCDay() !== target.getUTCDay()) return false;
-      const diffWeeks = Math.floor(diffDays / 7);
-      return diffWeeks % interval === 0;
-    }
-
-    if (type === 'MONTH') {
-      // Same day of month and correct month interval
-      if (start.getUTCDate() !== target.getUTCDate()) return false;
-      const diffMonths = (target.getUTCFullYear() - start.getUTCFullYear()) * 12 + (target.getUTCMonth() - start.getUTCMonth());
-      return diffMonths >= 0 && diffMonths % interval === 0;
-    }
-
-    return false;
-  } catch {
-    return false;
-  }
-}
-
-async function loadSeriesAndInstances(startDate, endDate) {
-  const { PlannedMaintenanceTask, PlannedMaintenanceTaskInstance } = require('../models');
-
-  const queryEnd = `${endDate}T23:59:59.999Z`;
-
-  const masters = await PlannedMaintenanceTask.findAll({
-    where: {
-      operation_date_start: { [Op.lte]: queryEnd }
-    },
-    order: [['operation_date_start', 'ASC']]
-  });
-
-  const instances = await PlannedMaintenanceTaskInstance.findAll({
-    where: {
-      occurrence_date: { [Op.between]: [startDate, endDate] }
-    },
-    order: [['occurrence_date', 'ASC'], ['updated_at', 'DESC']]
-  });
-
-  const instancesByKey = new Map();
-  const deletedKeys = new Set();
-
-  for (const instance of instances) {
-    const key = `${instance.planned_task_id}|${instance.occurrence_date}`;
-    if (instance.exception_type === 'DELETED') {
-      deletedKeys.add(key);
-      continue;
-    }
-    if (!instancesByKey.has(key)) instancesByKey.set(key, instance);
-  }
-
-  return { masters, instancesByKey, deletedKeys };
-}
-
-function resolveOccurrencesForDate(dateStr, masters, instancesByKey, deletedKeys) {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  const targetDate = new Date(Date.UTC(y, m - 1, d));
-  const results = [];
-  const seen = new Set();
-
-  for (const master of masters) {
-    const key = `${master.id}|${dateStr}`;
-    const instance = instancesByKey.get(key);
-
-    if (deletedKeys.has(key)) continue;
-    if (!taskOccursOnDate(master, targetDate) && !instance) continue;
-
-    const occurrence = normalizeOccurrence(master, dateStr, instance);
-    if (!occurrence) continue;
-
-    results.push(occurrence);
-    seen.add(key);
-  }
-
-  for (const [key, instance] of instancesByKey.entries()) {
-    if (seen.has(key)) continue;
-    if (deletedKeys.has(key)) continue;
-    if (instance.occurrence_date !== dateStr) continue;
-    const master = masters.find((m) => m.id === instance.planned_task_id);
-    if (!master) continue;
-    const occurrence = normalizeOccurrence(master, instance.occurrence_date, instance);
-    if (occurrence) results.push(occurrence);
-  }
-
-  results.sort((a, b) => new Date(a.operationDateStart) - new Date(b.operationDateStart));
-  return results;
 }
 
 // ─── Controllers ─────────────────────────────────────────────────────────────
@@ -285,11 +78,14 @@ const getAll = async (req, res, next) => {
       ];
     }
 
+    const safeSortBy = ALLOWED_SORT_COLUMNS.has(sort_by) ? sort_by : 'operation_date_start';
+    const safeSortDir = String(sort_dir).toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
+
     const { count, rows } = await PlannedMaintenanceTask.findAndCountAll({
       where,
       limit: +limit,
       offset: (+page - 1) * +limit,
-      order: [[sort_by, sort_dir.toUpperCase() === 'DESC' ? 'DESC' : 'ASC']]
+      order: [[safeSortBy, safeSortDir]]
     });
 
     res.json({
@@ -349,7 +145,6 @@ const getCalendarIndicators = async (req, res, next) => {
     const daysInMonth = endOfMonth.getUTCDate();
     const { masters, instancesByKey, deletedKeys } = await loadSeriesAndInstances(start, end);
 
-    // For each day of the month, check which tasks occur
     const COLOR_MAP = { DAY: '#0288D1', WEEK: '#F59E0B', MONTH: '#EF4444' };
     const COLOR_DONE = '#10B981';
     const indicators = {};
@@ -365,7 +160,6 @@ const getCalendarIndicators = async (req, res, next) => {
       });
     }
 
-    // Transform to array format
     const result = {};
     Object.keys(indicators).forEach(day => {
       result[day] = Object.entries(indicators[day]).map(([color, count]) => ({ color, count }));

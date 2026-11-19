@@ -1,9 +1,19 @@
+// =============================================================================
+// exports/core/planned-daily-template.service.js
+// -----------------------------------------------------------------------------
+// Renders Daily Planned Maintenance Checklists & Daily Reports:
+//   - DOCX: fills official Word templates in /docs via docxtemplater
+//   - PDF: uses LibreOffice if installed, or automatically falls back to a
+//     publication-grade CAE native PDFKit renderer with bundled Red Hat fonts
+// =============================================================================
+
 const fs = require('fs/promises');
 const path = require('path');
 const util = require('util');
 const { execFileSync } = require('child_process');
 const PizZip = require('pizzip');
 const Docxtemplater = require('docxtemplater');
+const PDFDocument = require('pdfkit');
 
 let expressionParser = null;
 try {
@@ -12,16 +22,20 @@ try {
   expressionParser = null;
 }
 
-const { Op } = require('sequelize');
-const { PlannedMaintenanceTask, PlannedMaintenanceTaskInstance } = require('../../models');
-const { resolveFormat, FORMAT_META, buildFilename, fullName } = require('./helpers');
-
-const DAY_MS = 24 * 60 * 60 * 1000;
+const { getTasksForDate } = require('../../services/planned-recurrence.service');
+const { resolveFormat, FORMAT_META, buildFilename, fullName, fmtDurationMin } = require('./helpers');
+const { COLORS, COMPANY, getLogoBuffer } = require('./branding');
+const { registerPdfFonts } = require('./fonts');
 
 const TEMPLATE_FILES = {
   checklist: 'maintenance_daily_checklist.docx',
   report: 'maintenance_daily_report.docx'
 };
+
+const TASK_SHUTDOWN = 'Shutdown all systems in Server Room';
+const TASK_RESTORE = 'Restore all systems in Server Room';
+const TASK_LOTO = 'Apply Lockout-Tagout Procedure to Server Room Electrical Panels';
+const SPECIAL_TASKS = new Set([TASK_SHUTDOWN, TASK_RESTORE, TASK_LOTO]);
 
 function normalizeTemplateTagInner(inner) {
   let out = String(inner || '');
@@ -39,7 +53,7 @@ function normalizeTemplateTagInner(inner) {
 
 function normalizeTemplateXml(xml) {
   if (!xml) return xml;
-  return xml.replace(/\{([^{}]+)\}/g, (full, inner) => `{${normalizeTemplateTagInner(inner)}}`);
+  return xml.replace(/\{([^{}]+)\}/g, (_, inner) => `{${normalizeTemplateTagInner(inner)}}`);
 }
 
 async function resolveTemplatePath(fileName) {
@@ -54,7 +68,7 @@ async function resolveTemplatePath(fileName) {
       await fs.access(candidate);
       return candidate;
     } catch {
-      // Try next candidate.
+      // Try next candidate
     }
   }
 
@@ -63,242 +77,72 @@ async function resolveTemplatePath(fileName) {
   throw err;
 }
 
-const TASK_SHUTDOWN = 'Shutdown all systems in Server Room';
-const TASK_RESTORE = 'Restore all systems in Server Room';
-const TASK_LOTO = 'Apply Lockout-Tagout Procedure to Server Room Electrical Panels';
-
-function toUtcDateOnly(value) {
-  const d = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-}
-
-function taskOccursOnDate(task, targetDate) {
-  try {
-    const start = new Date(task.operation_date_start);
-    if (Number.isNaN(start.getTime())) return false;
-
-    const startDay = toUtcDateOnly(start);
-    const target = toUtcDateOnly(targetDate);
-    if (!startDay || !target) return false;
-
-    if (task.recurrence_end_date) {
-      const end = toUtcDateOnly(task.recurrence_end_date);
-      if (end && target > end) return false;
-    }
-
-    if (target < startDay) return false;
-
-    const diffDays = Math.round((target.getTime() - startDay.getTime()) / DAY_MS);
-    const type = task.repeat_task_type;
-    const interval = task.repeat_task_number || 1;
-
-    if (type === 'DAY') return diffDays % interval === 0;
-
-    if (type === 'WEEK') {
-      if (start.getUTCDay() !== target.getUTCDay()) return false;
-      const diffWeeks = Math.floor(diffDays / 7);
-      return diffWeeks % interval === 0;
-    }
-
-    if (type === 'MONTH') {
-      if (start.getUTCDate() !== target.getUTCDate()) return false;
-      const diffMonths = (target.getUTCFullYear() - start.getUTCFullYear()) * 12 + (target.getUTCMonth() - start.getUTCMonth());
-      return diffMonths >= 0 && diffMonths % interval === 0;
-    }
-
-    return false;
-  } catch {
-    return false;
-  }
-}
-
-function buildOccurrenceDateTime(occurrenceDate, baseDateTime) {
-  const base = new Date(baseDateTime);
-  if (Number.isNaN(base.getTime())) return null;
-
-  const [y, m, d] = occurrenceDate.split('-').map(Number);
-  return new Date(Date.UTC(
-    y,
-    m - 1,
-    d,
-    base.getUTCHours(),
-    base.getUTCMinutes(),
-    base.getUTCSeconds(),
-    base.getUTCMilliseconds()
-  ));
-}
-
-function addDuration(startDate, durationMs) {
-  return new Date(startDate.getTime() + durationMs);
-}
-
-function normalizeOccurrence(master, occurrenceDate, instance) {
-  if (instance && instance.exception_type === 'DELETED') return null;
-
-  const source = instance || master;
-  const baseStart = new Date(source.operation_date_start || master.operation_date_start);
-  const baseEnd = new Date(source.operation_date_end || master.operation_date_end);
-  if (Number.isNaN(baseStart.getTime()) || Number.isNaN(baseEnd.getTime())) return null;
-
-  const occurrenceStart = source.operation_date_start
-    ? new Date(source.operation_date_start)
-    : buildOccurrenceDateTime(occurrenceDate, master.operation_date_start);
-
-  if (!occurrenceStart || Number.isNaN(occurrenceStart.getTime())) return null;
-
-  const durationMs = Math.max(0, baseEnd.getTime() - baseStart.getTime());
-  const occurrenceEnd = source.operation_date_end
-    ? new Date(source.operation_date_end)
-    : addDuration(occurrenceStart, durationMs);
-
-  return {
-    id: source.id || master.id,
-    masterId: master.id,
-    occurrenceDate,
-    system: source.system || master.system,
-    subsystem: source.subsystem || master.subsystem,
-    task: source.task || master.task,
-    reference: source.reference || master.reference || '',
-    operationDateStart: occurrenceStart.toISOString(),
-    operationDateEnd: occurrenceEnd.toISOString(),
-    status: source.status || master.status || 'TODO',
-    reportTemplate: source.report_template || master.report_template || ''
-  };
-}
-
-async function getTasksForDate(dateStr) {
-  const queryEnd = `${dateStr}T23:59:59.999Z`;
-
-  const masters = await PlannedMaintenanceTask.findAll({
-    where: { operation_date_start: { [Op.lte]: queryEnd } },
-    order: [['operation_date_start', 'ASC']]
-  });
-
-  const instances = await PlannedMaintenanceTaskInstance.findAll({
-    where: { occurrence_date: dateStr },
-    order: [['updated_at', 'DESC']]
-  });
-
-  const instancesByKey = new Map();
-  const deletedKeys = new Set();
-
-  for (const instance of instances) {
-    const key = `${instance.planned_task_id}|${instance.occurrence_date}`;
-    if (instance.exception_type === 'DELETED') {
-      deletedKeys.add(key);
-      continue;
-    }
-    if (!instancesByKey.has(key)) instancesByKey.set(key, instance);
-  }
-
-  const [y, m, d] = dateStr.split('-').map(Number);
-  const targetDate = new Date(Date.UTC(y, m - 1, d));
-
-  const results = [];
-  const seen = new Set();
-
-  for (const master of masters) {
-    const key = `${master.id}|${dateStr}`;
-    const instance = instancesByKey.get(key);
-
-    if (deletedKeys.has(key)) continue;
-    if (!taskOccursOnDate(master, targetDate) && !instance) continue;
-
-    const occurrence = normalizeOccurrence(master, dateStr, instance);
-    if (!occurrence) continue;
-
-    results.push(occurrence);
-    seen.add(key);
-  }
-
-  for (const [key, instance] of instancesByKey.entries()) {
-    if (seen.has(key) || deletedKeys.has(key)) continue;
-    const master = masters.find((mItem) => mItem.id === instance.planned_task_id);
-    if (!master) continue;
-
-    const occurrence = normalizeOccurrence(master, dateStr, instance);
-    if (occurrence) results.push(occurrence);
-  }
-
-  results.sort((a, b) => new Date(a.operationDateStart) - new Date(b.operationDateStart));
-  return results;
-}
-
 function formatDate(dateStr) {
   const date = new Date(`${dateStr}T00:00:00Z`);
-  return date.toLocaleDateString('en-GB');
+  return date.toLocaleDateString('en-GB', { timeZone: 'UTC' });
 }
 
-function formatTime(isoDate) {
+function formatUtcTime(isoDate) {
   if (!isoDate) return '00:00';
   const date = new Date(isoDate);
   if (Number.isNaN(date.getTime())) return '00:00';
-  return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const hh = String(date.getUTCHours()).padStart(2, '0');
+  const mm = String(date.getUTCMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
 }
 
-function formatDuration(startIso, endIso) {
+function taskDurationMinutes(startIso, endIso) {
   const start = new Date(startIso);
   const end = new Date(endIso);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return '0 min';
-
-  const minutes = Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000));
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  if (!h) return `${m} min`;
-  if (!m) return `${h} h`;
-  return `${h} h ${m} min`;
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 0;
+  return Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000));
 }
 
 function buildTemplateData(tasks, dateStr, user) {
   const baseDate = new Date(`${dateStr}T00:00:00Z`);
-  const monthName = baseDate.toLocaleString('en-US', { month: 'long' });
+  const monthName = baseDate.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' });
   const year = String(baseDate.getUTCFullYear());
   const day = String(baseDate.getUTCDate()).padStart(2, '0');
 
-  // Keep the original 3-section layout always visible in generated Word files.
-  const hasShutdown = true;
-  const hasRestore = true;
+  const hasShutdown = tasks.some((t) => t.task === TASK_SHUTDOWN) || tasks.length >= 0;
+  const hasRestore = tasks.some((t) => t.task === TASK_RESTORE) || tasks.length >= 0;
 
-  const taskRows = tasks
-    .filter((t) => ![TASK_SHUTDOWN, TASK_RESTORE, TASK_LOTO].includes(t.task))
-    .map((t) => ({
+  // Include ALL tasks so template filters for LOTO in Section 1 and excludes
+  // Shutdown/Restore/LOTO in Section 2 accurately.
+  const allRows = tasks.map((t) => {
+    const mins = taskDurationMinutes(t.operationDateStart, t.operationDateEnd);
+    return {
       Subsystem: t.subsystem || '',
       Task: t.task || '',
-      FormattedDuration: formatDuration(t.operationDateStart, t.operationDateEnd),
+      FormattedDuration: fmtDurationMin(mins),
+      DurationMinutes: mins,
       Status: t.status === 'DONE' ? 'Done' : 'Todo',
       ReportTemplate: t.reportTemplate || ''
-    }));
+    };
+  });
 
-  const safeTaskRows = taskRows.length ? taskRows : tasks.map((t) => ({
-    Subsystem: t.subsystem || '',
-    Task: t.task || '',
-    FormattedDuration: formatDuration(t.operationDateStart, t.operationDateEnd),
-    Status: t.status === 'DONE' ? 'Done' : 'Todo',
-    ReportTemplate: t.reportTemplate || ''
-  }));
+  const maintRows = allRows.filter((r) => !SPECIAL_TASKS.has(r.Task));
+  const durationPool = maintRows.length ? maintRows : allRows;
+  const totalMinutes = durationPool.reduce((acc, row) => acc + row.DurationMinutes, 0);
+  const totalDuration = fmtDurationMin(totalMinutes);
 
-  const totalMinutes = safeTaskRows.reduce((acc, row) => {
-    const match = /(?:(\d+)\s*h)?\s*(?:(\d+)\s*min)?/i.exec(row.FormattedDuration || '');
-    if (!match) return acc;
-    const hours = Number(match[1] || 0);
-    const mins = Number(match[2] || 0);
-    return acc + (hours * 60) + mins;
-  }, 0);
+  // Compute StartOpsTime / EndOpsTime from tasks that specify explicit non-midnight times
+  const timedTasks = tasks.filter((t) => {
+    const st = formatUtcTime(t.operationDateStart);
+    const en = formatUtcTime(t.operationDateEnd);
+    return st !== '00:00' || en !== '00:00';
+  });
 
-  const totalDuration = (() => {
-    const h = Math.floor(totalMinutes / 60);
-    const m = totalMinutes % 60;
-    if (!h) return `${m} min`;
-    if (!m) return `${h} h`;
-    return `${h} h ${m} min`;
-  })();
+  const timeSource = timedTasks.length ? timedTasks : tasks;
+  const startTimes = timeSource
+    .map((t) => new Date(t.operationDateStart).getTime())
+    .filter((v) => !Number.isNaN(v));
+  const endTimes = timeSource
+    .map((t) => new Date(t.operationDateEnd).getTime())
+    .filter((v) => !Number.isNaN(v));
 
-  const startTimes = tasks.map((t) => t.operationDateStart).filter(Boolean).map((v) => new Date(v).getTime()).filter((v) => !Number.isNaN(v));
-  const endTimes = tasks.map((t) => t.operationDateEnd).filter(Boolean).map((v) => new Date(v).getTime()).filter((v) => !Number.isNaN(v));
-
-  const startOpsTime = startTimes.length ? formatTime(new Date(Math.min(...startTimes)).toISOString()) : '00:00';
-  const endOpsTime = endTimes.length ? formatTime(new Date(Math.max(...endTimes)).toISOString()) : '00:00';
+  const startOpsTime = startTimes.length ? formatUtcTime(new Date(Math.min(...startTimes)).toISOString()) : '00:00';
+  const endOpsTime = endTimes.length ? formatUtcTime(new Date(Math.max(...endTimes)).toISOString()) : '00:00';
 
   return {
     block_name: true,
@@ -311,19 +155,14 @@ function buildTemplateData(tasks, dateStr, user) {
     StartOpsTime: startOpsTime,
     EndOpsTime: endOpsTime,
     AssignedTo: fullName(user, 'All') || 'All',
-    TASKS: safeTaskRows,
+    TASKS: allRows,
+    MAINT_TASKS: maintRows,
+    HAS_LOTO: tasks.some((t) => t.task === TASK_LOTO),
     TOTAL_DURATION: totalDuration
   };
 }
 
 async function renderTemplateDocx(templateType, data) {
-  let expression = null;
-  try {
-    expression = expressionParser;
-  } catch {
-    expression = null;
-  }
-
   const fileName = TEMPLATE_FILES[templateType];
   const templatePath = await resolveTemplatePath(fileName);
   const templateBuffer = await fs.readFile(templatePath);
@@ -344,8 +183,8 @@ async function renderTemplateDocx(templateType, data) {
     }
   };
 
-  if (expression) {
-    options.parser = expression;
+  if (expressionParser) {
+    options.parser = expressionParser;
   }
 
   const doc = new Docxtemplater(zip, options);
@@ -366,7 +205,7 @@ async function convertDocxToPdf(docxBuffer) {
   try {
     libre = require('libreoffice-convert');
   } catch {
-    const err = new Error('Missing PDF converter dependency: install libreoffice-convert.');
+    const err = new Error('Missing PDF converter dependency: libreoffice-convert.');
     err.statusCode = 500;
     throw err;
   }
@@ -381,10 +220,226 @@ function detectLibreOfficeBinary() {
       execFileSync(bin, ['--version'], { stdio: 'ignore' });
       return { available: true, binary: bin };
     } catch {
-      // Try next candidate.
+      // Try next candidate
     }
   }
   return { available: false, binary: null };
+}
+
+/**
+ * Draw a crisp vector checkbox inside PDFKit.
+ */
+function drawCheckbox(doc, x, y, checked, label, fonts) {
+  doc.save();
+  doc.lineWidth(1).strokeColor(checked ? COLORS.navy : COLORS.borderStrong);
+  if (checked) {
+    doc.rect(x, y + 1, 9, 9).fillAndStroke(COLORS.navy, COLORS.navy);
+    doc.lineWidth(1.4).strokeColor(COLORS.white)
+      .moveTo(x + 2, y + 5.5).lineTo(x + 4, y + 7.5).lineTo(x + 7.5, y + 3).stroke();
+  } else {
+    doc.rect(x, y + 1, 9, 9).stroke();
+  }
+  doc.font(fonts.bodyMedium).fontSize(8.5).fillColor(COLORS.body)
+    .text(label, x + 13, y + 0.5, { lineBreak: false });
+  doc.restore();
+}
+
+/**
+ * Native PDFKit fallback for Daily Maintenance Checklist / Report using the
+ * bundled Red Hat Display & Red Hat Text fonts and CAE corporate layout.
+ */
+function renderDailyNativePdf(templateType, data, dateStr) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({
+      size: 'A4',
+      layout: 'portrait',
+      margins: { top: 36, bottom: 44, left: 36, right: 36 },
+      bufferPages: true
+    });
+
+    const F = registerPdfFonts(doc);
+    const chunks = [];
+    doc.on('data', (c) => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    const margin = 36;
+    const w = doc.page.width - margin * 2;
+    const bottomLimit = doc.page.height - 54;
+    const isReport = templateType === 'report';
+    const titleText = isReport ? 'PLANNED MAINTENANCE DAILY REPORT' : 'PLANNED MAINTENANCE DAILY CHECKLIST';
+    const subtitleText = isReport
+      ? `Täglicher Wartungsbericht  ·  Report #${data.DAYDATE}-${data.YEAR}  ·  ${data.MONTHNAME} ${data.YEAR}`
+      : `Checklist Manutenzione Giornaliera  ·  Scheduled: ${data.DATE}`;
+
+    // Header banner
+    const drawTopHeader = () => {
+      const y = margin;
+      doc.save().rect(margin, y, w, 54).fill(COLORS.navy).restore();
+      const logo = getLogoBuffer('light');
+      let tx = margin + 14;
+      if (logo) {
+        doc.image(logo, margin + 12, y + 14, { width: 68, height: 25.5 });
+        tx = margin + 92;
+      }
+      doc.font(F.displaySemiBold).fontSize(7.5).fillColor(COLORS.lime)
+        .text('CAE · PLANNED MAINTENANCE OPERATIONS', tx, y + 10, { width: w - (tx - margin) - 12 });
+      doc.font(F.displayBold).fontSize(13.5).fillColor(COLORS.white)
+        .text(titleText, tx, y + 20, { width: w - (tx - margin) - 12 });
+      doc.font(F.displayLight).fontSize(8.5).fillColor('#CBD5E1')
+        .text(subtitleText, tx, y + 37, { width: w - (tx - margin) - 12 });
+      doc.save().rect(margin, y + 54, w, 2.5).fill(COLORS.accent).restore();
+      return y + 66;
+    };
+
+    let y = drawTopHeader();
+
+    // Metadata strip
+    doc.save().roundedRect(margin, y, w, 26, 4).fillAndStroke(COLORS.zebra, COLORS.border).restore();
+    doc.font(F.displaySemiBold).fontSize(8.5).fillColor(COLORS.subtle).text('Date: ', margin + 10, y + 8, { continued: true });
+    doc.font(F.bodyBold).fillColor(COLORS.ink).text(data.DATE, { continued: true });
+    doc.font(F.displaySemiBold).fillColor(COLORS.subtle).text('    |    Technician / Owner: ', { continued: true });
+    doc.font(F.bodyBold).fillColor(COLORS.ink).text(data.AssignedTo || 'All', { continued: true });
+    doc.font(F.displaySemiBold).fillColor(COLORS.subtle).text('    |    Total Duration: ', { continued: true });
+    doc.font(F.bodyBold).fillColor(COLORS.accent).text(data.TOTAL_DURATION || '0 min');
+    y += 36;
+
+    // Section 1: Shutdown & LOTO
+    doc.save().rect(margin, y, w, 20).fill(COLORS.navyLight).restore();
+    doc.font(F.displayBold).fontSize(9.5).fillColor(COLORS.white)
+      .text('1. MANDATORY SHUTDOWN & LOTO PROCEDURE', margin + 10, y + 5);
+    y += 24;
+
+    doc.save().roundedRect(margin, y, w, 58, 4).fillAndStroke(COLORS.white, COLORS.border).restore();
+    const hasOpsTime = data.StartOpsTime && data.StartOpsTime !== '00:00';
+    doc.font(F.bodyBold).fontSize(8.5).fillColor(COLORS.ink).text('Mandatory Shutdown Required?', margin + 12, y + 10);
+    drawCheckbox(doc, margin + 175, y + 9, isReport && hasOpsTime, 'YES', F);
+    drawCheckbox(doc, margin + 225, y + 9, isReport && !hasOpsTime, 'NO', F);
+
+    doc.font(F.bodyBold).fontSize(8.5).fillColor(COLORS.ink).text('LOTO Procedure Applied?', margin + 290, y + 10);
+    drawCheckbox(doc, margin + 415, y + 9, isReport && data.HAS_LOTO, 'YES', F);
+    drawCheckbox(doc, margin + 465, y + 9, isReport && !data.HAS_LOTO, 'N/A', F);
+
+    doc.font(F.body).fontSize(8.5).fillColor(COLORS.subtle)
+      .text(`Start Time: ${isReport && hasOpsTime ? data.StartOpsTime : '____________'}`, margin + 12, y + 32)
+      .text('Authorized Technician Signature: ______________________________________', margin + 175, y + 32);
+    y += 68;
+
+    // Section 2: Maintenance Tasks
+    doc.save().rect(margin, y, w, 20).fill(COLORS.navyLight).restore();
+    doc.font(F.displayBold).fontSize(9.5).fillColor(COLORS.white)
+      .text('2. SCHEDULED MAINTENANCE ACTIVITIES', margin + 10, y + 5);
+    y += 24;
+
+    const tasks = data.MAINT_TASKS && data.MAINT_TASKS.length ? data.MAINT_TASKS : data.TASKS;
+    const colW = [28, 105, w - 28 - 105 - 70 - 58, 70, 58];
+    const headers = ['Done', 'Subsystem', 'Task Description', 'Est. Duration', 'Status'];
+
+    const drawTblHead = (yy) => {
+      doc.save().rect(margin, yy, w, 20).fill(COLORS.navy).restore();
+      let cx = margin;
+      headers.forEach((h, i) => {
+        doc.font(F.displayBold).fontSize(8).fillColor(COLORS.white)
+          .text(h, cx + 5, yy + 6, { width: colW[i] - 10, align: i >= 3 ? 'center' : 'left' });
+        cx += colW[i];
+      });
+      return yy + 20;
+    };
+
+    y = drawTblHead(y);
+
+    if (!tasks.length) {
+      doc.save().rect(margin, y, w, 26).fillAndStroke(COLORS.zebra, COLORS.border).restore();
+      doc.font(F.bodyItalic).fontSize(8.5).fillColor(COLORS.subtle)
+        .text('No maintenance tasks scheduled for this date.', margin + 10, y + 8);
+      y += 32;
+    } else {
+      tasks.forEach((t, idx) => {
+        doc.font(F.body).fontSize(8.5);
+        const h1 = doc.heightOfString(t.Subsystem || '—', { width: colW[1] - 10 });
+        const h2 = doc.heightOfString(t.Task || '—', { width: colW[2] - 10 });
+        const rowH = Math.max(20, Math.max(h1, h2) + 10);
+
+        if (y + rowH > bottomLimit) {
+          doc.addPage();
+          y = drawTopHeader();
+          y = drawTblHead(y);
+        }
+
+        if (idx % 2 === 1) {
+          doc.save().rect(margin, y, w, rowH).fill(COLORS.zebra).restore();
+        }
+        doc.save().lineWidth(0.4).strokeColor(COLORS.border).rect(margin, y, w, rowH).stroke().restore();
+
+        const isDone = t.Status === 'Done';
+        drawCheckbox(doc, margin + 9, y + (rowH - 10) / 2, isReport && isDone, '', F);
+
+        let cx = margin + colW[0];
+        doc.font(F.bodyBold).fontSize(8).fillColor(COLORS.ink)
+          .text(t.Subsystem || '—', cx + 5, y + 5, { width: colW[1] - 10 });
+        cx += colW[1];
+        doc.font(F.body).fontSize(8.5).fillColor(COLORS.body)
+          .text(t.Task || '—', cx + 5, y + 5, { width: colW[2] - 10 });
+        cx += colW[2];
+        doc.font(F.body).fontSize(8.5).fillColor(COLORS.subtle)
+          .text(t.FormattedDuration || '—', cx + 5, y + 5, { width: colW[3] - 10, align: 'center' });
+        cx += colW[3];
+        doc.font(F.displayBold).fontSize(8).fillColor(isDone ? COLORS.successFg : COLORS.infoFg)
+          .text(isDone ? 'DONE' : 'TODO', cx + 5, y + 5, { width: colW[4] - 10, align: 'center' });
+
+        y += rowH;
+      });
+
+      // Totals row
+      doc.save().rect(margin, y, w, 20).fill(COLORS.navyTint).restore();
+      doc.save().lineWidth(1).strokeColor(COLORS.navy).moveTo(margin, y).lineTo(margin + w, y).stroke().restore();
+      doc.font(F.displayBold).fontSize(8.5).fillColor(COLORS.navy)
+        .text(`TOTAL (${tasks.length} tasks)`, margin + colW[0] + 5, y + 5);
+      doc.font(F.displayBold).fontSize(8.5).fillColor(COLORS.navy)
+        .text(data.TOTAL_DURATION, margin + colW[0] + colW[1] + colW[2] + 5, y + 5, { width: colW[3] - 10, align: 'center' });
+      y += 28;
+    }
+
+    // Comments & Section 3 Re-entry into Service
+    if (y + 130 > bottomLimit) {
+      doc.addPage();
+      y = drawTopHeader();
+    }
+
+    doc.font(F.displayBold).fontSize(9).fillColor(COLORS.navy).text('Remarks / Comments', margin, y);
+    y += 14;
+    const notesText = (data.MAINT_TASKS || []).map((t) => t.ReportTemplate).filter(Boolean).join(' · ');
+    doc.save().roundedRect(margin, y, w, 40, 4).fillAndStroke(COLORS.white, COLORS.border).restore();
+    if (notesText) {
+      doc.font(F.body).fontSize(8.5).fillColor(COLORS.body).text(notesText, margin + 8, y + 8, { width: w - 16 });
+    }
+    y += 50;
+
+    doc.save().rect(margin, y, w, 20).fill(COLORS.navyLight).restore();
+    doc.font(F.displayBold).fontSize(9.5).fillColor(COLORS.white)
+      .text('3. RE-ENTRY INTO SERVICE & SIGN-OFF', margin + 10, y + 5);
+    y += 24;
+    doc.save().roundedRect(margin, y, w, 36, 4).fillAndStroke(COLORS.white, COLORS.border).restore();
+    doc.font(F.body).fontSize(8.5).fillColor(COLORS.subtle)
+      .text(`Completion Time: ${isReport && data.EndOpsTime !== '00:00' ? data.EndOpsTime : '____________'}`, margin + 12, y + 12)
+      .text('Authorized Technician Signature: ______________________________________', margin + 175, y + 12);
+
+    // Footers (with lineBreak: false to avoid trailing blank pages)
+    const range = doc.bufferedPageRange();
+    for (let i = range.start; i < range.start + range.count; i += 1) {
+      doc.switchToPage(i);
+      const fy = doc.page.height - 28;
+      doc.save()
+        .lineWidth(0.5).strokeColor(COLORS.border)
+        .moveTo(margin, fy - 4).lineTo(margin + w, fy - 4).stroke()
+        .font(F.body).fontSize(7.5).fillColor(COLORS.subtle)
+        .text(`${COMPANY.name}  ·  Daily Operations (${dateStr})`, margin, fy, { width: w * 0.65, lineBreak: false })
+        .text(`Page ${i - range.start + 1} of ${range.count}`, margin + w * 0.65, fy, { width: w * 0.35, align: 'right', lineBreak: false })
+        .restore();
+    }
+
+    doc.end();
+  });
 }
 
 async function streamDailyTemplateExport({ req, res }) {
@@ -400,31 +455,49 @@ async function streamDailyTemplateExport({ req, res }) {
     return res.status(400).json({ success: false, message: 'Invalid template type. Use checklist or report.' });
   }
 
-  let docxBuffer;
+  let data;
   try {
     const tasks = await getTasksForDate(date);
-    const data = buildTemplateData(tasks, date, req.user || null);
-    docxBuffer = await renderTemplateDocx(templateType, data);
+    data = buildTemplateData(tasks, date, req.user || null);
   } catch (err) {
-    const message = err?.message || 'Failed to render daily template.';
-    return res.status(err?.statusCode || 500).json({ success: false, message });
+    return res.status(err?.statusCode || 500).json({
+      success: false,
+      message: err?.message || 'Failed to load daily planned maintenance data.'
+    });
   }
 
   const baseName = buildFilename(`planned_maintenance_${templateType}_${date}`);
 
   if (format === 'pdf') {
-    try {
-      const pdfBuffer = await convertDocxToPdf(docxBuffer);
-      res.setHeader('Content-Type', FORMAT_META.pdf.mime);
-      res.setHeader('Content-Disposition', `attachment; filename="${baseName}.pdf"`);
-      res.send(pdfBuffer);
-      return undefined;
-    } catch (err) {
-      return res.status(500).json({
-        success: false,
-        message: err?.message || 'PDF conversion failed on server. Install LibreOffice in the backend runtime to enable template PDF export.'
-      });
+    let pdfBuffer = null;
+    const lo = detectLibreOfficeBinary();
+    if (lo.available) {
+      try {
+        const docxBuffer = await renderTemplateDocx(templateType, data);
+        pdfBuffer = await convertDocxToPdf(docxBuffer);
+      } catch {
+        pdfBuffer = null;
+      }
     }
+
+    if (!pdfBuffer) {
+      pdfBuffer = await renderDailyNativePdf(templateType, data, date);
+    }
+
+    res.setHeader('Content-Type', FORMAT_META.pdf.mime);
+    res.setHeader('Content-Disposition', `attachment; filename="${baseName}.pdf"`);
+    res.send(pdfBuffer);
+    return undefined;
+  }
+
+  let docxBuffer;
+  try {
+    docxBuffer = await renderTemplateDocx(templateType, data);
+  } catch (err) {
+    return res.status(err?.statusCode || 500).json({
+      success: false,
+      message: err?.message || 'Failed to render daily template.'
+    });
   }
 
   res.setHeader('Content-Type', FORMAT_META.docx.mime);
@@ -433,4 +506,10 @@ async function streamDailyTemplateExport({ req, res }) {
   return undefined;
 }
 
-module.exports = { streamDailyTemplateExport, detectLibreOfficeBinary };
+module.exports = {
+  streamDailyTemplateExport,
+  detectLibreOfficeBinary,
+  buildTemplateData,
+  renderTemplateDocx,
+  renderDailyNativePdf
+};

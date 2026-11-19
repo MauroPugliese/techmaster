@@ -40,7 +40,7 @@ import { DropdownComponent, DropdownOptionComponent } from '../../shared/compone
       <button class="btn btn-ghost btn-sm" (click)="goToday()">Today</button>
     </div>
     <div class="flex gap-2">
-      <app-export-menu endpoint="shifts" filename="Shifts"
+      <app-export-menu endpoint="shifts" filename="Shifts" [includeDateRange]="false"
                        [params]="{ from: (weekStart | date:'yyyy-MM-dd'), to: (weekEnd | date:'yyyy-MM-dd') }"></app-export-menu>
       <button class="btn btn-primary" (click)="openModal()">
         <span class="btn-icon">add</span> Schedule Shift
@@ -373,26 +373,6 @@ export class ShiftsComponent implements OnInit, OnDestroy {
     });
   }
 
-
-  async exportShift(format: 'xlsx' | 'pdf' | 'docx'): Promise<void> {
-    try {
-      const date = this.weekStart.toISOString().slice(0, 10);
-      const token = localStorage.getItem('access_token');
-      const url = `${this.api.baseUrl}/export/shift-report?format=${format}&date=${date}`;
-      const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-      if (!res.ok) throw new Error('Export failed');
-      const blob = await res.blob();
-      const href = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = href;
-      a.download = `shift_report_${date}.${format}`;
-      a.click();
-      URL.revokeObjectURL(href);
-      this.toast.success(`Shift report exported (${format.toUpperCase()}).`);
-    } catch {
-      this.toast.error('Shift export failed.');
-    }
-  }
   async deleteShift(): Promise<void> {
     if (!this.editingShift) return;
     const ok = await this.confirm.confirm('Delete this shift? This cannot be undone.', 'Delete Shift');

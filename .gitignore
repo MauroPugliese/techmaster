@@ -33,3 +33,5 @@ implementation_plan.md
 docs/*.pptx
 docs/*.docx
 docs/*.pdf
+docs/docs.7z
+docs/docs.zip

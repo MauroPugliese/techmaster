@@ -481,6 +481,18 @@ pre     { padding: 16px; overflow-x: auto; }
 }
 
 /* ── Buttons ────────────────────────────────────────────────────────────────── */
+.btn-icon {
+  font-family: 'Material Icons Round';
+  font-style: normal;
+  font-weight: 400;
+  line-height: 1;
+  font-size: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-font-smoothing: antialiased;
+}
+
 .btn {
   display: inline-flex;
   align-items: center;

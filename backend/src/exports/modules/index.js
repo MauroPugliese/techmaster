@@ -1,16 +1,9 @@
 // =============================================================================
-// exports/modules/index.js — Module registry
-// -----------------------------------------------------------------------------
-// Central registry of every exportable module. Each entry exposes:
-//   key          unique route segment
-//   title        document title
-//   subtitle     document subtitle
-//   orientation  'portrait' | 'landscape'
-//   roles        optional array of roles allowed to export (admin always allowed)
-//   build(req)   async → { filters, tables, [subtitle], [orientation], [filename] }
+// exports/modules/index.js — Export Module Registry
 // =============================================================================
 
 const operations = require('./operations');
+const operationsAnalytics = require('./operations-analytics');
 const maintenance = require('./maintenance');
 const plannedMaintenance = require('./planned-maintenance');
 const warehouse = require('./warehouse');
@@ -24,6 +17,7 @@ const dashboard = require('./dashboard');
 
 const MODULES = {
   operations,
+  'operations-analytics': operationsAnalytics,
   maintenance,
   'planned-maintenance': plannedMaintenance,
   warehouse,
