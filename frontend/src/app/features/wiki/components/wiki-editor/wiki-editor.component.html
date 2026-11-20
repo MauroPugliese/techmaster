@@ -1,0 +1,292 @@
+<!-- ==========================================================================
+     wiki-editor.component.html — Full-Screen Dual-Mode Docs Workspace
+     ========================================================================== -->
+
+<div class="editor-overlay" *ngIf="open" role="dialog" aria-modal="true" aria-label="Wiki Document Editor">
+
+  <!-- ── Top Header Bar ─────────────────────────────────────────────────────── -->
+  <header class="editor-topbar">
+    <div class="topbar-left">
+      <button type="button" class="btn btn-ghost btn-sm" (click)="requestClose()" title="Close (Esc)">
+        <span class="btn-icon">close</span>
+      </button>
+
+      <input *ngIf="showFormField('title')"
+             type="text"
+             class="title-field"
+             [(ngModel)]="title"
+             placeholder="Untitled Documentation Page…">
+    </div>
+
+    <div class="topbar-right">
+      <div class="mode-switch" role="group" aria-label="Editor mode">
+        <button type="button" class="mode-btn" [class.active]="editorMode==='visual'" (click)="setMode('visual')">
+          <span class="mat-i">edit</span> Visual
+        </button>
+        <button type="button" class="mode-btn" [class.active]="editorMode==='split'" (click)="setMode('split')">
+          <span class="mat-i">view_column</span> Split
+        </button>
+      </div>
+
+      <!-- Template Picker -->
+      <div class="tpl-wrap">
+        <button type="button" class="btn btn-secondary btn-sm" (click)="showTemplatesMenu = !showTemplatesMenu">
+          <span class="btn-icon">description</span> Templates
+        </button>
+        <div class="tpl-menu" *ngIf="showTemplatesMenu">
+          <div class="tpl-head">Choose Engineering Template</div>
+          <button *ngFor="let tpl of templates"
+                  type="button"
+                  class="tpl-item"
+                  (click)="applyTemplate(tpl)">
+            <span class="mat-i tpl-ic">{{tpl.icon}}</span>
+            <div class="tpl-info">
+              <div class="tpl-title">
+                <span>{{tpl.name}}</span>
+                <span class="tpl-badge">{{tpl.badge}}</span>
+              </div>
+              <div class="tpl-desc">{{tpl.description}}</div>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <button type="button"
+              class="btn btn-ghost btn-sm"
+              (click)="showMetaBar = !showMetaBar"
+              title="Toggle metadata bar">
+        <span class="btn-icon">tune</span> Metadata
+      </button>
+
+      <app-dropdown *ngIf="showFormField('status')" class="form-control status-select" [(ngModel)]="status">
+        <app-dropdown-option value="DRAFT">Draft</app-dropdown-option>
+        <app-dropdown-option value="REVIEW">In Review</app-dropdown-option>
+        <app-dropdown-option value="PUBLISHED">Published</app-dropdown-option>
+        <app-dropdown-option value="ARCHIVED">Archived</app-dropdown-option>
+      </app-dropdown>
+
+      <button type="button"
+              class="btn btn-primary btn-sm"
+              (click)="saveClick()"
+              [disabled]="saving || (showFormField('title') && !title.trim())">
+        <span class="btn-icon">{{saving ? 'hourglass_top' : 'save'}}</span>
+        {{saving ? 'Saving…' : (article ? 'Update' : 'Save')}}
+      </button>
+    </div>
+  </header>
+
+  <!-- ── Collapsible Metadata Strip ─────────────────────────────────────────── -->
+  <section class="meta-strip" *ngIf="showMetaBar">
+    <div class="meta-cell" *ngIf="showFormField('category_id')">
+      <label class="meta-label">{{fieldLabel('form','category_id','Category')}}</label>
+      <app-dropdown class="form-control" [(ngModel)]="categoryId" placeholder="— Uncategorized —">
+        <app-dropdown-option [ngValue]="null">— Uncategorized —</app-dropdown-option>
+        <app-dropdown-option *ngFor="let c of flatCategories" [value]="c.id">{{c.label}}</app-dropdown-option>
+      </app-dropdown>
+    </div>
+
+    <div class="meta-cell meta-tags" *ngIf="showFormField('tags')">
+      <label class="meta-label">{{fieldLabel('form','tags','Tags')}}</label>
+      <div class="tags-editor">
+        <span *ngFor="let tag of tagsList; let i = index" class="tag-chip">
+          {{tag}}
+          <button type="button" (click)="removeTag(i)">&times;</button>
+        </span>
+        <input type="text"
+               [(ngModel)]="tagDraft"
+               (keydown)="onTagKeydown($event)"
+               (blur)="commitTagDraft()"
+               placeholder="Add tag…">
+      </div>
+    </div>
+
+    <div class="meta-cell meta-excerpt" *ngIf="showFormField('excerpt')">
+      <label class="meta-label">{{fieldLabel('form','excerpt','Summary Excerpt')}}</label>
+      <input class="form-control" [(ngModel)]="excerpt" placeholder="Short summary (auto-generated if left blank)">
+    </div>
+
+    <label class="pin-check">
+      <input type="checkbox" [(ngModel)]="isPinned">
+      <span class="mat-i">bookmark</span> Pin
+    </label>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════════════
+       MODE 1: TIPTAP VISUAL WYSIWYG WORKSPACE
+       ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="visual-workspace" *ngIf="editorMode === 'visual'">
+    <div class="visual-toolbar" *ngIf="ed as editor">
+      <button type="button" class="tb-btn" (click)="execAction('undo')"
+              [disabled]="!editor.can().undo()" title="Undo">
+        <span class="mat-i">undo</span>
+      </button>
+      <button type="button" class="tb-btn" (click)="execAction('redo')"
+              [disabled]="!editor.can().redo()" title="Redo">
+        <span class="mat-i">redo</span>
+      </button>
+
+      <span class="tb-sep"></span>
+
+      <button type="button" class="tb-btn tb-text" [class.active]="editor.isActive('heading', { level: 1 })"
+              (click)="toggleHeading(1)">H1</button>
+      <button type="button" class="tb-btn tb-text" [class.active]="editor.isActive('heading', { level: 2 })"
+              (click)="toggleHeading(2)">H2</button>
+      <button type="button" class="tb-btn tb-text" [class.active]="editor.isActive('heading', { level: 3 })"
+              (click)="toggleHeading(3)">H3</button>
+
+      <span class="tb-sep"></span>
+
+      <button type="button" class="tb-btn" [class.active]="editor.isActive('bold')"
+              (click)="toggleMark('bold')" title="Bold">
+        <span class="mat-i">format_bold</span>
+      </button>
+      <button type="button" class="tb-btn" [class.active]="editor.isActive('italic')"
+              (click)="toggleMark('italic')" title="Italic">
+        <span class="mat-i">format_italic</span>
+      </button>
+      <button type="button" class="tb-btn" [class.active]="editor.isActive('strike')"
+              (click)="toggleMark('strike')" title="Strikethrough">
+        <span class="mat-i">strikethrough_s</span>
+      </button>
+      <button type="button" class="tb-btn" [class.active]="editor.isActive('code')"
+              (click)="toggleMark('code')" title="Inline code">
+        <span class="mat-i">code</span>
+      </button>
+
+      <span class="tb-sep"></span>
+
+      <button type="button" class="tb-btn" [class.active]="editor.isActive('bulletList')"
+              (click)="toggleBlock('bulletList')" title="Bullet list">
+        <span class="mat-i">format_list_bulleted</span>
+      </button>
+      <button type="button" class="tb-btn" [class.active]="editor.isActive('orderedList')"
+              (click)="toggleBlock('orderedList')" title="Numbered list">
+        <span class="mat-i">format_list_numbered</span>
+      </button>
+      <button type="button" class="tb-btn" [class.active]="editor.isActive('taskList')"
+              (click)="toggleBlock('taskList')" title="SOP Checklist">
+        <span class="mat-i">check_box</span>
+      </button>
+
+      <span class="tb-sep"></span>
+
+      <button type="button" class="tb-btn" [class.active]="editor.isActive('blockquote')"
+              (click)="toggleBlock('blockquote')" title="Blockquote">
+        <span class="mat-i">format_quote</span>
+      </button>
+      <button type="button" class="tb-btn" (click)="insertCallout('WARNING')" title="Insert Warning Callout">
+        <span class="mat-i">warning</span>
+      </button>
+      <button type="button" class="tb-btn" (click)="insertCallout('TIP')" title="Insert Tip Callout">
+        <span class="mat-i">lightbulb</span>
+      </button>
+      <button type="button" class="tb-btn tb-text" [class.active]="editor.isActive('codeBlock')"
+              (click)="toggleBlock('codeBlock')" title="Code Block">
+        &lt;/&gt;
+      </button>
+      <button type="button" class="tb-btn tb-mermaid" (click)="insertMermaidNode()" title="Insert Mermaid Diagram">
+        <span class="mat-i">account_tree</span> Mermaid
+      </button>
+
+      <span class="tb-sep"></span>
+
+      <button type="button" class="tb-btn" (click)="execAction('insertTable')"
+              title="Insert Table">
+        <span class="mat-i">table_chart</span>
+      </button>
+      <ng-container *ngIf="editor.isActive('table')">
+        <button type="button" class="tb-btn tb-mini" (click)="execAction('addRow')" title="Add Row">+Row</button>
+        <button type="button" class="tb-btn tb-mini" (click)="execAction('addCol')" title="Add Column">+Col</button>
+        <button type="button" class="tb-btn tb-mini danger" (click)="execAction('deleteTable')" title="Remove Table">DelTbl</button>
+      </ng-container>
+
+      <button type="button" class="tb-btn" (click)="showLinkBox = !showLinkBox; showImgBox = false" title="Insert Link">
+        <span class="mat-i">link</span>
+      </button>
+      <button type="button" class="tb-btn" (click)="showImgBox = !showImgBox; showLinkBox = false" title="Insert Image URL">
+        <span class="mat-i">image</span>
+      </button>
+      <button type="button" class="tb-btn" (click)="execAction('hr')" title="Divider">
+        <span class="mat-i">horizontal_rule</span>
+      </button>
+    </div>
+
+    <!-- Inline URL inputs for Link / Image (no browser prompt) -->
+    <div class="inline-url-bar" *ngIf="showLinkBox">
+      <span>Link URL:</span>
+      <input class="form-control" [(ngModel)]="linkUrlDraft" (keydown.enter)="applyLink()" placeholder="https://...">
+      <button type="button" class="btn btn-primary btn-sm" (click)="applyLink()">Apply</button>
+      <button type="button" class="btn btn-ghost btn-sm" (click)="showLinkBox=false">Cancel</button>
+    </div>
+
+    <div class="inline-url-bar" *ngIf="showImgBox">
+      <span>Image URL:</span>
+      <input class="form-control" [(ngModel)]="imgUrlDraft" (keydown.enter)="applyImage()" placeholder="https://.../diagram.png">
+      <button type="button" class="btn btn-primary btn-sm" (click)="applyImage()">Insert</button>
+      <button type="button" class="btn btn-ghost btn-sm" (click)="showImgBox=false">Cancel</button>
+    </div>
+
+    <div class="visual-scroll">
+      <div class="visual-canvas">
+        <div #tiptapHost class="tiptap-surface wiki-prose"></div>
+
+        <!-- Floating Slash Menu (/) -->
+        <div class="slash-menu" *ngIf="slashItems.length"
+             [style.top.px]="slashPos.top"
+             [style.left.px]="slashPos.left">
+          <div class="slash-head">Insert Block</div>
+          <button *ngFor="let item of slashItems; let idx = index"
+                  type="button"
+                  class="slash-option"
+                  [class.active]="idx === slashIndex"
+                  (mousedown)="$event.preventDefault(); executeSlashItem(item)">
+            <span class="mat-i">{{item.icon}}</span>
+            <div class="slash-text">
+              <div class="slash-lbl">{{item.label}}</div>
+              <div class="slash-hint">{{item.hint}}</div>
+            </div>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════════
+       MODE 2: MARKDOWN SPLIT-SCREEN STUDIO
+       ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="split-workspace" *ngIf="editorMode === 'split'">
+    <div class="split-pane split-source">
+      <div class="pane-head">
+        <span>Markdown Source</span>
+        <div class="snippet-bar">
+          <button type="button" (click)="insertMarkdownSnippet('**bold** ')">Bold</button>
+          <button type="button" (click)="insertMarkdownSnippet('\n- [ ] Checklist item\n')">Checklist</button>
+          <button type="button" (click)="insertMarkdownSnippet('\n> [!WARNING]\n> Critical safety warning.\n')">Warning</button>
+          <button type="button" (click)="insertMarkdownSnippet('\n```bash\necho hello\n```\n')">Code</button>
+          <button type="button" (click)="insertMarkdownSnippet('\n```mermaid\nflowchart LR\n  A[Start] --> B[End]\n```\n')">Mermaid</button>
+          <button type="button" (click)="insertMarkdownSnippet('\n| Col 1 | Col 2 |\n| --- | --- |\n| Val 1 | Val 2 |\n')">Table</button>
+        </div>
+      </div>
+      <textarea #mdTextarea
+                class="md-textarea"
+                [(ngModel)]="markdownSource"
+                (ngModelChange)="onMarkdownInput()"
+                placeholder="# Write clean Markdown or insert a template…"></textarea>
+    </div>
+
+    <div class="split-pane split-preview-pane">
+      <div class="pane-head">
+        <span>Live Rendered Preview (Mermaid + Highlight)</span>
+        <span class="preview-stats">{{livePreview.readingMinutes}} min read · {{wordCount}} words</span>
+      </div>
+      <div #splitPreview class="split-preview-body wiki-prose" [innerHTML]="livePreview.safeHtml"></div>
+    </div>
+  </div>
+
+  <!-- ── Footer Status Bar ──────────────────────────────────────────────────── -->
+  <footer class="editor-footer">
+    <span class="foot-hint" *ngIf="editorMode==='visual'">Type <code>/</code> for blocks · Stored cleanly as Markdown</span>
+    <span class="foot-hint" *ngIf="editorMode==='split'">Live GitHub Flavored Markdown + Mermaid + Highlight.js</span>
+    <span class="foot-stats">{{wordCount}} words · <code>Ctrl+S</code> to save</span>
+  </footer>
+</div>

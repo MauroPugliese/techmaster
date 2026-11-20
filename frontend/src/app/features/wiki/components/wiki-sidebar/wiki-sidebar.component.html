@@ -1,0 +1,180 @@
+<!-- ==========================================================================
+     wiki-sidebar.component.html — Collapsible Nested Docs Category Rail
+     ========================================================================== -->
+
+<aside class="wiki-rail" [class.collapsed]="collapsed">
+  <div class="rail-header">
+    <span class="rail-title" *ngIf="!collapsed">Categories</span>
+
+    <div class="rail-head-actions">
+      <button *ngIf="!collapsed && canManageCategories"
+              type="button"
+              class="rail-icon-btn"
+              (click)="openCreateCategory(null)"
+              title="New category">
+        <span class="mat-i">create_new_folder</span>
+      </button>
+      <button type="button"
+              class="rail-icon-btn"
+              (click)="toggleCollapse.emit()"
+              [title]="collapsed ? 'Expand sidebar' : 'Collapse sidebar'">
+        <span class="mat-i">{{collapsed ? 'chevron_right' : 'chevron_left'}}</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Expanded Tree -->
+  <div class="rail-body" *ngIf="!collapsed">
+    <button type="button"
+            class="cat-row all-row"
+            [class.active]="selectedCategoryId === null"
+            (click)="selectCategory.emit(null)">
+      <span class="mat-i cat-ic">apps</span>
+      <span class="cat-name">All Documents</span>
+      <span class="cat-count">{{totalArticles}}</span>
+    </button>
+
+    <div *ngFor="let cat of categories; trackBy: trackById" class="cat-branch">
+      <div class="cat-row"
+           [class.active]="selectedCategoryId === cat.id"
+           (click)="selectCategory.emit(cat.id)">
+        <button *ngIf="cat.children?.length; else leafSpacer"
+                type="button"
+                class="expand-toggle"
+                (click)="toggleExpand(cat, $event)"
+                [title]="isExpanded(cat.id) ? 'Collapse' : 'Expand'">
+          <span class="mat-i">{{isExpanded(cat.id) ? 'expand_more' : 'chevron_right'}}</span>
+        </button>
+        <ng-template #leafSpacer><span class="leaf-spacer"></span></ng-template>
+
+        <span class="mat-i cat-ic">{{cat.icon || 'folder'}}</span>
+        <span class="cat-name">{{cat.name}}</span>
+
+        <div class="cat-row-tools" *ngIf="canManageCategories" (click)="$event.stopPropagation()">
+          <button type="button" class="tool-btn" (click)="openCreateCategory(cat.id, $event)" title="Add subcategory">
+            <span class="mat-i">add</span>
+          </button>
+          <button type="button" class="tool-btn" (click)="openEditCategory(cat, $event)" title="Edit category">
+            <span class="mat-i">edit</span>
+          </button>
+          <button type="button" class="tool-btn danger" (click)="removeCategory(cat, $event)" title="Delete category">
+            <span class="mat-i">delete</span>
+          </button>
+        </div>
+
+        <span class="cat-count">{{cat.total_count ?? cat.article_count ?? 0}}</span>
+      </div>
+
+      <!-- Nested Child Categories -->
+      <div class="cat-children" *ngIf="cat.children?.length && isExpanded(cat.id)">
+        <div *ngFor="let child of cat.children; trackBy: trackById"
+             class="cat-row child-row"
+             [class.active]="selectedCategoryId === child.id"
+             (click)="selectCategory.emit(child.id)">
+          <span class="mat-i cat-ic">{{child.icon || 'subdirectory_arrow_right'}}</span>
+          <span class="cat-name">{{child.name}}</span>
+
+          <div class="cat-row-tools" *ngIf="canManageCategories" (click)="$event.stopPropagation()">
+            <button type="button" class="tool-btn" (click)="openEditCategory(child, $event)" title="Edit">
+              <span class="mat-i">edit</span>
+            </button>
+            <button type="button" class="tool-btn danger" (click)="removeCategory(child, $event)" title="Delete">
+              <span class="mat-i">delete</span>
+            </button>
+          </div>
+
+          <span class="cat-count">{{child.article_count ?? 0}}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pinned Quick Access -->
+    <div class="pinned-nav" *ngIf="pinnedArticles.length">
+      <div class="pinned-heading">Pinned</div>
+      <button *ngFor="let a of pinnedArticles.slice(0, 6); trackBy: trackById"
+              type="button"
+              class="pin-item"
+              [class.active]="activeArticleSlug === a.slug"
+              (click)="selectArticle.emit(a)">
+        <span class="mat-i">bookmark</span>
+        <span class="pin-title">{{a.title}}</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Collapsed Icon Rail -->
+  <div class="rail-collapsed-icons" *ngIf="collapsed">
+    <button type="button"
+            class="collapsed-btn"
+            [class.active]="selectedCategoryId === null"
+            (click)="selectCategory.emit(null)"
+            title="All Documents">
+      <span class="mat-i">apps</span>
+    </button>
+    <button *ngFor="let cat of categories; trackBy: trackById"
+            type="button"
+            class="collapsed-btn"
+            [class.active]="selectedCategoryId === cat.id"
+            (click)="selectCategory.emit(cat.id)"
+            [title]="cat.name">
+      <span class="mat-i">{{cat.icon || 'folder'}}</span>
+    </button>
+  </div>
+</aside>
+
+<!-- ── Category Manager Modal ─────────────────────────────────────────────── -->
+<div class="modal-overlay" *ngIf="showCatModal" (click)="closeCatModal($event)">
+  <div class="modal cat-modal">
+    <div class="modal-header">
+      <h3>{{editingCat ? 'Edit Category' : 'New Wiki Category'}}</h3>
+      <button type="button" class="btn btn-ghost btn-icon-only" (click)="closeCatModal()">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body cat-modal-body">
+      <div class="form-group">
+        <label class="form-label">Category Name *</label>
+        <input class="form-control" [(ngModel)]="catForm.name" placeholder="e.g. Standard Operating Procedures">
+      </div>
+
+      <div class="form-row-two">
+        <div class="form-group">
+          <label class="form-label">Parent Category</label>
+          <app-dropdown class="form-control" [(ngModel)]="catForm.parent_id" placeholder="— Root Category —">
+            <app-dropdown-option [ngValue]="null">— Root Category —</app-dropdown-option>
+            <app-dropdown-option *ngFor="let c of rootCategoryOptions" [value]="c.id">{{c.name}}</app-dropdown-option>
+          </app-dropdown>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Sort Order</label>
+          <input type="number" class="form-control" [(ngModel)]="catForm.sort_order" step="1">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Icon</label>
+        <div class="icon-picker">
+          <button *ngFor="let ic of iconChoices"
+                  type="button"
+                  class="icon-choice"
+                  [class.selected]="catForm.icon === ic"
+                  (click)="catForm.icon = ic"
+                  [title]="ic">
+            <span class="mat-i">{{ic}}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button type="button" class="btn btn-ghost" (click)="closeCatModal()">Cancel</button>
+      <button type="button"
+              class="btn btn-primary"
+              (click)="saveCategory()"
+              [disabled]="savingCat || !catForm.name.trim()">
+        {{savingCat ? 'Saving…' : (editingCat ? 'Update' : 'Create')}}
+      </button>
+    </div>
+  </div>
+</div>

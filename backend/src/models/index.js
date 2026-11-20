@@ -330,6 +330,7 @@ Task.belongsTo(User, { foreignKey: 'assigned_to', as: 'assignee' });
 
 WikiArticle.belongsTo(WikiCategory, { foreignKey: 'category_id', as: 'category' });
 WikiArticle.belongsTo(User, { foreignKey: 'author_id', as: 'author' });
+WikiArticle.belongsTo(User, { foreignKey: 'last_editor_id', as: 'lastEditor' });
 WikiCategory.belongsTo(WikiCategory, { foreignKey: 'parent_id', as: 'parent' });
 WikiCategory.hasMany(WikiCategory, { foreignKey: 'parent_id', as: 'children' });
 

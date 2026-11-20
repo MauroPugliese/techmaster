@@ -1,0 +1,248 @@
+// =============================================================================
+// wiki-article-viewer.component.scss — Clean Documentation Reader + Sticky TOC
+// Note: .wiki-prose typography is imported globally in src/styles.scss.
+// =============================================================================
+
+:host { display: block; width: 100%; }
+
+.reader-shell {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.reading-track {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  height: 3px;
+  width: 100%;
+  background: var(--blue-100);
+  border-radius: 3px;
+  overflow: hidden;
+
+  .reading-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary), var(--accent));
+    transition: width .12s linear;
+  }
+}
+
+.reader-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.topbar-nav {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+}
+
+.danger-btn {
+  color: #dc2626;
+  &:hover { background: #fee2e2; color: #b91c1c; }
+}
+
+.breadcrumbs {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  font-size: 0.82rem; color: #64748b;
+
+  .crumb-link {
+    border: 0; background: transparent; color: var(--primary); font-weight: 600;
+    cursor: pointer; padding: 2px 4px; border-radius: 4px; font-family: inherit;
+    &:hover { background: var(--blue-50); text-decoration: underline; }
+  }
+  .crumb-sep { color: #94a3b8; }
+  .crumb-current { color: var(--blue-950); font-weight: 700; }
+}
+
+.reader-grid {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 248px;
+  gap: 20px;
+  align-items: start;
+}
+
+.doc-surface {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 30px 36px;
+  box-shadow: var(--shadow-sm);
+  min-width: 0;
+}
+
+.doc-header {
+  padding-bottom: 20px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.doc-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin-bottom: 14px;
+}
+
+.doc-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.doc-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+
+  .pin-btn.is-pinned {
+    background: var(--blue-100);
+    border-color: var(--primary);
+    color: var(--primary);
+  }
+
+  .danger-btn {
+    padding: 5px 7px;
+    .btn-icon { font-size: 18px; }
+  }
+
+  ::ng-deep .export-trigger-btn {
+    padding: 5px 12px;
+    font-size: 0.8rem;
+  }
+}
+
+.doc-cat-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid var(--blue-200); background: var(--blue-50); color: var(--primary);
+  font-size: 0.74rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; cursor: pointer;
+  .mat-i { font-size: 14px; }
+  &:hover { background: var(--blue-100); }
+}
+
+.doc-title {
+  font-size: 1.9rem;
+  font-weight: 800;
+  color: var(--blue-950);
+  line-height: 1.24;
+  margin-bottom: 10px;
+}
+
+.doc-excerpt {
+  font-size: 0.98rem;
+  color: #475569;
+  margin-bottom: 14px;
+  line-height: 1.6;
+}
+
+.doc-meta-row {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
+  font-size: 0.8rem; color: #64748b; font-weight: 500;
+  span { display: inline-flex; align-items: center; gap: 5px; }
+  .mat-i { font-size: 15px; color: #94a3b8; }
+  .meta-dot { color: #cbd5e1; }
+}
+
+.doc-tags {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px;
+}
+
+.tag-pill {
+  border: 1px solid var(--border); background: var(--surface-raised); color: var(--blue-900);
+  font-family: inherit; font-size: 0.82rem; font-weight: 600; padding: 4px 12px; border-radius: 999px; cursor: pointer;
+  &:hover { border-color: var(--primary); color: var(--primary); background: var(--blue-50); }
+}
+
+// ── Sticky Right TOC & Details ─────────────────────────────────────────────
+.doc-aside {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.aside-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 15px 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+.aside-title {
+  font-size: 0.74rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--blue-900); margin-bottom: 10px;
+}
+
+.toc-list {
+  display: flex; flex-direction: column; gap: 3px;
+  max-height: 320px; overflow-y: auto;
+  border-left: 2px solid var(--border); padding-left: 10px;
+}
+
+.toc-item {
+  font-size: 0.8rem; color: #64748b; text-decoration: none;
+  padding: 4px 6px; border-radius: 4px; line-height: 1.35;
+  &.lvl-2 { padding-left: 12px; font-size: 0.78rem; }
+  &.lvl-3 { padding-left: 20px; font-size: 0.75rem; }
+  &:hover { color: var(--primary); background: var(--blue-50); }
+  &.active { color: var(--primary); font-weight: 700; background: var(--blue-50); }
+}
+
+.control-kv {
+  display: flex; flex-direction: column; gap: 8px;
+  div {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    font-size: 0.78rem; padding-bottom: 6px; border-bottom: 1px solid var(--border);
+    &:last-child { border-bottom: 0; padding-bottom: 0; }
+  }
+  dt { color: #64748b; font-weight: 600; }
+  dd { margin: 0; color: var(--blue-950); font-weight: 600; text-align: right; }
+}
+
+// ── Lightbox ───────────────────────────────────────────────────────────────
+.lightbox-overlay {
+  position: fixed; inset: 0; background: rgba(10, 22, 40, 0.72);
+  backdrop-filter: blur(4px); z-index: 2500;
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+
+.lightbox-card {
+  position: relative; max-width: 92vw; max-height: 90vh;
+  background: var(--surface); border-radius: var(--radius-lg); padding: 24px;
+  overflow: auto; box-shadow: var(--shadow-xl);
+
+  img { max-width: 84vw; max-height: 80vh; display: block; }
+  .lightbox-svg ::ng-deep svg { min-width: min(72vw, 900px); height: auto; }
+}
+
+.lightbox-close {
+  position: sticky; top: 0; float: right; border: 0; background: var(--blue-950);
+  color: #fff; width: 30px; height: 30px; border-radius: 50%;
+  font-size: 1.2rem; line-height: 1; cursor: pointer;
+}
+
+@media (max-width: 1100px) {
+  .reader-grid { grid-template-columns: 1fr; }
+  .doc-aside   { position: static; }
+  .doc-surface { padding: 22px; }
+}

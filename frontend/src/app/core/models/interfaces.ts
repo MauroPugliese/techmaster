@@ -275,13 +275,23 @@ export interface Task {
 export type ArticleStatus = 'DRAFT' | 'PUBLISHED' | 'ARCHIVED' | 'REVIEW';
 
 export interface WikiCategory {
-  id: number; parent_id?: number; name: string; slug: string; icon?: string;
+  id: number;
+  parent_id?: number | null;
+  name: string;
+  slug: string;
+  icon?: string;
+  sort_order?: number;
+  article_count?: number;
+  total_count?: number;
+  parent?: { id: number; name: string; icon?: string } | null;
   children?: WikiCategory[];
 }
 
 export interface WikiArticle {
   id: number;
-  category_id?: number;
+  category_id?: number | null;
+  author_id?: number;
+  last_editor_id?: number | null;
   title: string;
   slug: string;
   content: string;
@@ -293,7 +303,8 @@ export interface WikiArticle {
   version: number;
   published_at?: string;
   author?: Partial<User>;
-  category?: WikiCategory;
+  lastEditor?: Partial<User> | null;
+  category?: WikiCategory | null;
   created_at: string;
   updated_at: string;
 }

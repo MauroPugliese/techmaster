@@ -481,16 +481,26 @@ pre     { padding: 16px; overflow-x: auto; }
 }
 
 /* ── Buttons ────────────────────────────────────────────────────────────────── */
-.btn-icon {
+.btn-icon,
+.mat-i {
   font-family: 'Material Icons Round';
   font-style: normal;
   font-weight: 400;
   line-height: 1;
   font-size: 18px;
+  letter-spacing: normal !important;
+  text-transform: none !important;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  font-feature-settings: 'liga';
+  -webkit-font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  -webkit-font-smoothing: antialiased;
+  vertical-align: middle;
 }
 
 .btn {
@@ -1085,3 +1095,6 @@ textarea.form-control { resize: vertical; min-height: 100px; }
     border-radius: var(--radius-lg) !important;
   }
 }
+
+/* ── Global Wiki Prose & TipTap Surface Typography ─────────────────────────── */
+@import './app/features/wiki/styles/wiki-prose';

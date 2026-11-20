@@ -1,0 +1,154 @@
+<!-- ==========================================================================
+     wiki-article-viewer.component.html — Clean 2-Pane Documentation Reader
+     ========================================================================== -->
+
+<div class="reader-shell">
+  <!-- Reading Progress Bar -->
+  <div class="reading-track">
+    <div class="reading-fill" [style.width.%]="readingProgress"></div>
+  </div>
+
+  <!-- Clean Top Breadcrumb Bar -->
+  <div class="reader-topbar">
+    <div class="topbar-nav">
+      <button type="button" class="btn btn-ghost btn-sm" (click)="back.emit()">
+        <span class="btn-icon">arrow_back</span> Back
+      </button>
+
+      <nav class="breadcrumbs" aria-label="Breadcrumb">
+        <button type="button" class="crumb-link" (click)="back.emit()">Wiki</button>
+        <ng-container *ngIf="article.category?.parent as pCat">
+          <span class="crumb-sep">/</span>
+          <button type="button" class="crumb-link" (click)="categoryClick.emit(pCat.id)">{{pCat.name}}</button>
+        </ng-container>
+        <ng-container *ngIf="article.category as cat">
+          <span class="crumb-sep">/</span>
+          <button type="button" class="crumb-link" (click)="categoryClick.emit(cat.id)">{{cat.name}}</button>
+        </ng-container>
+        <span class="crumb-sep">/</span>
+        <span class="crumb-current">{{article.title}}</span>
+      </nav>
+    </div>
+  </div>
+
+  <!-- Main Document + Sticky Right Rail -->
+  <div class="reader-grid">
+    <article class="doc-surface">
+      <header class="doc-header">
+        <div class="doc-header-top">
+          <div class="doc-chips">
+            <button *ngIf="article.category"
+                    type="button"
+                    class="doc-cat-pill"
+                    (click)="categoryClick.emit(article.category.id)">
+              <span class="mat-i">{{article.category.icon || 'folder'}}</span>
+              <span>{{article.category.name}}</span>
+            </button>
+            <span class="badge" [ngClass]="statusBadge(article.status)">{{statusLabel(article.status)}}</span>
+          </div>
+
+          <div class="doc-actions">
+            <button type="button" class="btn btn-primary btn-sm" (click)="edit.emit(article)">
+              <span class="btn-icon">edit</span> Edit
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" (click)="copyShareLink()" title="Copy share link">
+              <span class="btn-icon">link</span> Share
+            </button>
+            <button type="button"
+                    class="btn btn-secondary btn-sm pin-btn"
+                    [class.is-pinned]="article.is_pinned"
+                    (click)="togglePin.emit(article)"
+                    [title]="article.is_pinned ? 'Unpin document' : 'Pin document'">
+              <span class="btn-icon">{{article.is_pinned ? 'bookmark' : 'bookmark_border'}}</span>
+              {{article.is_pinned ? 'Pinned' : 'Pin'}}
+            </button>
+            <app-export-menu [endpoint]="'wiki/' + article.id"
+                             [filename]="'SOP_' + article.slug"
+                             [includeDateRange]="false"
+                             label="Export"></app-export-menu>
+            <button type="button"
+                    class="btn btn-ghost btn-icon-only btn-sm danger-btn"
+                    (click)="remove.emit(article)"
+                    title="Delete document">
+              <span class="btn-icon">delete</span>
+            </button>
+          </div>
+        </div>
+
+        <h1 class="doc-title">{{article.title}}</h1>
+
+        <p class="doc-excerpt" *ngIf="article.excerpt">{{article.excerpt}}</p>
+
+        <div class="doc-meta-row">
+          <span><span class="mat-i">person</span> {{authorName}}</span>
+          <span class="meta-dot">·</span>
+          <span>Updated {{article.updated_at | date:'mediumDate'}}</span>
+          <span class="meta-dot">·</span>
+          <span>v{{article.version}}</span>
+          <span class="meta-dot">·</span>
+          <span><span class="mat-i">schedule</span> {{rendered.readingMinutes}} min read</span>
+          <span class="meta-dot">·</span>
+          <span><span class="mat-i">visibility</span> {{article.view_count}} views</span>
+        </div>
+
+        <div class="doc-tags" *ngIf="article.tags?.length">
+          <button *ngFor="let tag of article.tags"
+                  type="button"
+                  class="tag-pill"
+                  (click)="tagClick.emit(tag)">
+            {{tag}}
+          </button>
+        </div>
+      </header>
+
+      <div #proseContainer
+           class="wiki-prose"
+           [innerHTML]="rendered.safeHtml"
+           (click)="onProseClick($event)">
+      </div>
+    </article>
+
+    <!-- Right Sticky Sidebar: "On This Page" TOC & Compact Details -->
+    <aside class="doc-aside">
+      <div class="aside-card" *ngIf="rendered.toc.length">
+        <div class="aside-title">On This Page</div>
+        <nav class="toc-list">
+          <a *ngFor="let h of rendered.toc"
+             [href]="'#' + h.id"
+             class="toc-item"
+             [class.lvl-2]="h.level === 2"
+             [class.lvl-3]="h.level === 3"
+             [class.active]="activeHeadingId === h.id"
+             (click)="scrollToHeading(h, $event)">
+            {{h.text}}
+          </a>
+        </nav>
+      </div>
+
+      <div class="aside-card">
+        <div class="aside-title">Details</div>
+        <dl class="control-kv">
+          <div><dt>Status</dt><dd>{{statusLabel(article.status)}}</dd></div>
+          <div><dt>Version</dt><dd>v{{article.version}}</dd></div>
+          <div><dt>Author</dt><dd>{{authorName}}</dd></div>
+          <div *ngIf="lastEditorName && lastEditorName !== authorName">
+            <dt>Last Editor</dt><dd>{{lastEditorName}}</dd>
+          </div>
+          <div *ngIf="article.published_at">
+            <dt>Published</dt><dd>{{article.published_at | date:'MMM d, y'}}</dd>
+          </div>
+          <div><dt>Updated</dt><dd>{{article.updated_at | date:'MMM d, y HH:mm'}}</dd></div>
+        </dl>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<!-- ── Diagram & Image Lightbox ─────────────────────────────────────────────── -->
+<div class="lightbox-overlay" *ngIf="lightboxImgSrc || lightboxSvgHtml" (click)="closeLightbox()">
+  <div class="lightbox-card" (click)="$event.stopPropagation()">
+    <button type="button" class="lightbox-close" (click)="closeLightbox()" title="Close (Esc)">&times;</button>
+    <img *ngIf="lightboxImgSrc" [src]="lightboxImgSrc" alt="Expanded diagram preview">
+    <div *ngIf="lightboxSvgHtml" class="lightbox-svg" [innerHTML]="lightboxSvgHtml"></div>
+  </div>
+</div>

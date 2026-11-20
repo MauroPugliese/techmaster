@@ -25,7 +25,17 @@
               "core-js",
               "html2canvas",
               "raf",
-              "rgbcolor"
+              "rgbcolor",
+              "markdown-it-task-lists",
+              "@braintree/sanitize-url",
+              "dayjs",
+              "dayjs/plugin/advancedFormat.js",
+              "dayjs/plugin/customParseFormat.js",
+              "dayjs/plugin/isoWeek.js",
+              "cytoscape-fcose",
+              "cytoscape-cose-bilkent",
+              "vscode-jsonrpc/lib/common/cancellation.js",
+              "vscode-jsonrpc/lib/common/events.js"
             ]
           },
           "configurations": {
