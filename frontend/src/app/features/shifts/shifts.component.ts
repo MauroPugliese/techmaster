@@ -4,7 +4,6 @@
 import { Component, OnInit, OnDestroy, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { OwlDateTimeModule, OwlNativeDateTimeModule } from '@danielmoncada/angular-datetime-picker';
 import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 import { ApiService }       from '../../core/services/api.service';
@@ -13,13 +12,15 @@ import { UiCustomizationService, UiSectionPreferences } from '../../core/service
 import { ToastService }     from '../../core/services/toast.service';
 import { ConfirmService }   from '../../core/services/confirm.service';
 import { Shift, ShiftType } from '../../core/models/interfaces';
+import { DateTimePickerComponent } from '../../shared/components/datetime-picker/datetime-picker.component';
+import { formatLocalYmd } from '../../shared/components/datetime-picker/datetime-picker.utils';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
 import { DropdownComponent, DropdownOptionComponent } from '../../shared/components/dropdown/dropdown.component';
 
 @Component({
   selector: 'app-shifts',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, OwlDateTimeModule, OwlNativeDateTimeModule, ExportMenuComponent, DropdownComponent, DropdownOptionComponent],
+  imports: [CommonModule, FormsModule, DatePipe, DateTimePickerComponent, ExportMenuComponent, DropdownComponent, DropdownOptionComponent],
   template: `
 <div class="shifts-page fade-in">
 
@@ -134,7 +135,7 @@ import { DropdownComponent, DropdownOptionComponent } from '../../shared/compone
 
 <!-- Shift Modal -->
 <div class="modal-overlay" *ngIf="showModal" (click)="closeModal($event)">
-  <div class="modal" style="max-width:440px" (click)="$event.stopPropagation()">
+  <div class="modal" style="max-width:540px" (click)="$event.stopPropagation()">
     <div class="modal-header">
       <h3>{{editingShift ? 'Edit Shift' : 'Schedule Shift'}}</h3>
       <button class="btn btn-ghost btn-icon-only" (click)="showModal=false">
@@ -161,15 +162,12 @@ import { DropdownComponent, DropdownOptionComponent } from '../../shared/compone
         </div>
         <div class="form-group" *ngIf="showFormField('date')">
           <label class="form-label">{{fieldLabel('form','date','Date')}} *</label>
-          <div class="datetime-picker-wrapper">
-            <input class="form-control"
-                   [owlDateTime]="shiftDatePicker"
-                   [owlDateTimeTrigger]="shiftDatePicker"
-                   [(ngModel)]="shiftForm.date"
-                   placeholder="Select shift date">
-            <span class="picker-trigger-icon" [owlDateTimeTrigger]="shiftDatePicker">event</span>
-            <owl-date-time #shiftDatePicker pickerType="calendar" pickerMode="dialog"></owl-date-time>
-          </div>
+          <app-datetime-picker
+            class="form-control"
+            mode="date"
+            [(ngModel)]="shiftForm.date"
+            placeholder="Select shift date">
+          </app-datetime-picker>
         </div>
       </div>
       <div class="form-group" *ngIf="showFormField('status')">
@@ -268,8 +266,8 @@ export class ShiftsComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void { this.destroy$.next(); this.destroy$.complete(); }
 
   loadShifts(): void {
-    const from = this.weekStart.toISOString().slice(0, 10);
-    const to   = this.weekEnd.toISOString().slice(0, 10);
+    const from = formatLocalYmd(this.weekStart);
+    const to   = formatLocalYmd(this.weekEnd);
     this.api.get<any>('/shifts', { from, to, limit: this.employeeLimit }).subscribe({
       next: r => {
         this.shifts = r?.data?.items || r?.data || [];
@@ -312,7 +310,8 @@ export class ShiftsComponent implements OnInit, OnDestroy {
     return day.getDate() === t.getDate() && day.getMonth() === t.getMonth() && day.getFullYear() === t.getFullYear();
   }
   getShift(userId: number, day: Date): Shift | undefined {
-    return this.shifts.find(s => s.user_id === userId && s.date === day.toISOString().slice(0, 10));
+    const key = formatLocalYmd(day);
+    return this.shifts.find(s => s.user_id === userId && s.date === key);
   }
   getShiftTypeColor(id: number): string { return this.shiftTypes.find(st => st.id === id)?.color || '#1565C0'; }
   getShiftTypeName(id: number):  string { return this.shiftTypes.find(st => st.id === id)?.code  || '?'; }
@@ -344,10 +343,10 @@ export class ShiftsComponent implements OnInit, OnDestroy {
     if (this.showFormField('date') && !this.shiftForm.date)          { this.toast.warning('Please select a date.'); return; }
 
     const selectedDate = this.shiftForm.date instanceof Date
-      ? this.shiftForm.date.toISOString().slice(0, 10)
-      : this.shiftForm.date;
+      ? formatLocalYmd(this.shiftForm.date)
+      : String(this.shiftForm.date || '').slice(0, 10);
 
-    if (!this.editingShift) {
+    if (!this.editingShift && this.shiftForm.user_id && selectedDate) {
       const existing = this.getShift(this.shiftForm.user_id, new Date(selectedDate + 'T00:00:00'));
       if (existing) { this.toast.warning('This employee already has a shift that day.'); return; }
     }

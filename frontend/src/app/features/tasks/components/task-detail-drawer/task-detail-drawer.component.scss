@@ -79,6 +79,8 @@
 .drawer-main {
   padding: 20px 22px;
   overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -93,8 +95,13 @@
 .form-grid {
   display: grid;
   gap: 12px;
+  min-width: 0;
   &.two  { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   &.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+  > .form-group {
+    min-width: 0;
+  }
 }
 
 .label-with-action {

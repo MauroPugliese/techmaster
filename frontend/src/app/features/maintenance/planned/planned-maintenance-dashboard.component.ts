@@ -13,14 +13,15 @@ import { ToastService } from '../../../core/services/services';
 import { ConfirmService } from '../../../core/services/services';
 import { UiCustomizationService, UiSectionPreferences } from '../../../core/services/services';
 import { ExportService } from '../../../core/services/export.service';
-import { OwlDateTimeModule, OwlNativeDateTimeModule } from '@danielmoncada/angular-datetime-picker';
+import { DateTimePickerComponent } from '../../../shared/components/datetime-picker/datetime-picker.component';
+import { formatLocalYmd } from '../../../shared/components/datetime-picker/datetime-picker.utils';
 import { ExportMenuComponent } from '../../../shared/components/export-menu/export-menu.component';
 import { DropdownComponent, DropdownOptionComponent } from '../../../shared/components/dropdown/dropdown.component';
 
 @Component({
   selector: 'app-planned-maintenance-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule, OwlDateTimeModule, OwlNativeDateTimeModule, ExportMenuComponent, DropdownComponent, DropdownOptionComponent],
+  imports: [CommonModule, FormsModule, DateTimePickerComponent, ExportMenuComponent, DropdownComponent, DropdownOptionComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './planned-maintenance-dashboard.component.html',
   styleUrls: ['./planned-maintenance-dashboard.component.scss']
@@ -201,8 +202,8 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
     const operationDateEnd = this.form.operationDateEnd ? new Date(this.form.operationDateEnd).toISOString() : operationDateStart;
     const recurrenceEndDate = this.form.recurrenceEndDate
       ? (this.form.recurrenceEndDate instanceof Date
-          ? this.form.recurrenceEndDate.toISOString().slice(0, 10)
-          : new Date(this.form.recurrenceEndDate).toISOString().slice(0, 10))
+          ? formatLocalYmd(this.form.recurrenceEndDate)
+          : formatLocalYmd(new Date(this.form.recurrenceEndDate)))
       : null;
     const payload: Partial<PlannedMaintenanceTask> = {
       system: this.form.system,

@@ -5,13 +5,13 @@ import { Component, OnInit, OnDestroy, ChangeDetectionStrategy, ChangeDetectorRe
 import { Router, RouterModule, NavigationEnd } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { OwlDateTimeModule, OwlNativeDateTimeModule } from '@danielmoncada/angular-datetime-picker';
 import { Subject } from 'rxjs';
 import { takeUntil, filter } from 'rxjs/operators';
 import { AuthService, ApiService, DateFilterService, SocketService, SectionAccessService, NavSectionAccess } from '../../../core/services/services';
 import { User, Notification, ApiResponse } from '../../../core/models/interfaces';
 import { ToastComponent }   from '../toast/toast.component';
 import { ConfirmComponent } from '../confirm/confirm.component';
+import { DateTimePickerComponent } from '../datetime-picker/datetime-picker.component';
 
 interface NavPage {
   path: string;
@@ -34,7 +34,7 @@ const PAGE_MAP: Record<string, NavPage> = {
 @Component({
   selector: 'app-shell',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule, OwlDateTimeModule, OwlNativeDateTimeModule, ToastComponent, ConfirmComponent],
+  imports: [CommonModule, RouterModule, FormsModule, DateTimePickerComponent, ToastComponent, ConfirmComponent],
   templateUrl: './shell.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })

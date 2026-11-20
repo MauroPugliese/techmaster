@@ -13,14 +13,14 @@ import { UiCustomizationService, UiSectionPreferences } from '../../core/service
 import { ToastService }     from '../../core/services/toast.service';
 import { ConfirmService }   from '../../core/services/confirm.service';
 import { MaintenanceRecord, Asset } from '../../core/models/interfaces';
-import { OwlDateTimeModule, OwlNativeDateTimeModule } from '@danielmoncada/angular-datetime-picker';
+import { DateTimePickerComponent } from '../../shared/components/datetime-picker/datetime-picker.component';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
 import { DropdownComponent, DropdownOptionComponent } from '../../shared/components/dropdown/dropdown.component';
 
 @Component({
   selector: 'app-maintenance',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, TitleCasePipe, RouterLink, OwlDateTimeModule, OwlNativeDateTimeModule, ExportMenuComponent, DropdownComponent, DropdownOptionComponent],
+  imports: [CommonModule, FormsModule, DatePipe, TitleCasePipe, RouterLink, DateTimePickerComponent, ExportMenuComponent, DropdownComponent, DropdownOptionComponent],
   templateUrl: './maintenance.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })

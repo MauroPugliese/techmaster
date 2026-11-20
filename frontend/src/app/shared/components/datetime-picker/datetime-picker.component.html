@@ -1,0 +1,159 @@
+<!-- ==========================================================================
+     datetime-picker.component.html — Compact CDK Overlay Date & Time Picker
+     ========================================================================== -->
+
+<div #triggerOrigin class="dtp-shell" [class.open]="open" [class.disabled]="disabled">
+  <button type="button"
+          class="dtp-trigger"
+          [disabled]="disabled"
+          [attr.aria-expanded]="open"
+          [attr.aria-label]="ariaLabel || effectivePlaceholder"
+          (click)="togglePopover()">
+    <span class="mat-i dtp-lead-ic">{{ mode === 'datetime' ? 'schedule' : 'event' }}</span>
+    <span *ngIf="displayValue; else placeholderTpl" class="dtp-val">{{ displayValue }}</span>
+    <ng-template #placeholderTpl>
+      <span class="dtp-placeholder">{{ effectivePlaceholder }}</span>
+    </ng-template>
+    <span class="mat-i dtp-caret">expand_more</span>
+  </button>
+
+  <button *ngIf="clearable && value && !disabled"
+          type="button"
+          class="dtp-clear"
+          title="Clear"
+          aria-label="Clear date"
+          (click)="clearValue($event)">
+    <span class="mat-i">close</span>
+  </button>
+</div>
+
+<ng-template #popoverTpl>
+  <div class="dtp-popover"
+       [class.has-time]="mode === 'datetime'"
+       role="dialog"
+       [attr.aria-label]="ariaLabel || effectivePlaceholder">
+    <div class="dtp-body">
+      <!-- Left: Compact Calendar Pane -->
+      <div class="dtp-cal">
+        <div class="dtp-cal-head">
+          <button type="button" class="dtp-nav-btn" (click)="prevMonth()" title="Previous month" aria-label="Previous month">
+            <span class="mat-i">chevron_left</span>
+          </button>
+
+          <button type="button" class="dtp-month-btn" (click)="toggleMonthYear()">
+            <span>{{ monthLabel }} {{ viewYear }}</span>
+            <span class="mat-i" [class.flipped]="showMonthYear">expand_more</span>
+          </button>
+
+          <button type="button" class="dtp-nav-btn" (click)="nextMonth()" title="Next month" aria-label="Next month">
+            <span class="mat-i">chevron_right</span>
+          </button>
+        </div>
+
+        <!-- Day Grid -->
+        <ng-container *ngIf="!showMonthYear">
+          <div class="dtp-weekdays">
+            <span *ngFor="let wd of weekdayLabels">{{ wd }}</span>
+          </div>
+
+          <div class="dtp-days">
+            <button *ngFor="let cell of calendarDays; trackBy: trackByDayKey"
+                    type="button"
+                    class="dtp-day"
+                    [class.outside]="!cell.inCurrentMonth"
+                    [class.today]="cell.isToday"
+                    [class.selected]="cell.isSelected"
+                    [disabled]="cell.isDisabled"
+                    (click)="selectDay(cell)">
+              {{ cell.day }}
+            </button>
+          </div>
+        </ng-container>
+
+        <!-- Fast Month / Year Switcher -->
+        <div *ngIf="showMonthYear" class="dtp-my-panel">
+          <div class="dtp-year-bar">
+            <button type="button" class="dtp-nav-btn" (click)="prevYear()" title="Previous year">
+              <span class="mat-i">chevron_left</span>
+            </button>
+            <span class="dtp-year-label">{{ viewYear }}</span>
+            <button type="button" class="dtp-nav-btn" (click)="nextYear()" title="Next year">
+              <span class="mat-i">chevron_right</span>
+            </button>
+          </div>
+
+          <div class="dtp-months-grid">
+            <button *ngFor="let mName of monthShort; let mIdx = index"
+                    type="button"
+                    class="dtp-month-opt"
+                    [class.active]="mIdx === viewMonth"
+                    (click)="pickMonth(mIdx)">
+              {{ mName }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Side-by-Side 24h Immediate Time Selector -->
+      <div class="dtp-time" *ngIf="mode === 'datetime'">
+        <div class="dtp-time-head">
+          <input type="text"
+                 class="dtp-time-input"
+                 maxlength="2"
+                 inputmode="numeric"
+                 aria-label="Hours (24h)"
+                 [(ngModel)]="hourText"
+                 (blur)="onHourInputCommit()"
+                 (keydown.enter)="onHourInputCommit()">
+          <span class="dtp-time-sep">:</span>
+          <input type="text"
+                 class="dtp-time-input"
+                 maxlength="2"
+                 inputmode="numeric"
+                 aria-label="Minutes"
+                 [(ngModel)]="minuteText"
+                 (blur)="onMinuteInputCommit()"
+                 (keydown.enter)="onMinuteInputCommit()">
+        </div>
+
+        <div class="dtp-time-cols">
+          <div #hourList class="dtp-time-col" role="listbox" aria-label="Hour">
+            <button *ngFor="let h of hours24"
+                    type="button"
+                    class="dtp-t-opt"
+                    [class.active]="h === activeHour"
+                    (click)="selectHour(h)">
+              {{ pad2(h) }}
+            </button>
+          </div>
+
+          <div #minuteList class="dtp-time-col" role="listbox" aria-label="Minute">
+            <button *ngFor="let m of minuteOptions"
+                    type="button"
+                    class="dtp-t-opt"
+                    [class.active]="m === activeMinute"
+                    (click)="selectMinute(m)">
+              {{ pad2(m) }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Compact Quick Footer -->
+    <div class="dtp-foot">
+      <div class="dtp-foot-left">
+        <button type="button" class="dtp-foot-link" (click)="selectNow()">
+          {{ mode === 'datetime' ? 'Now' : 'Today' }}
+        </button>
+        <button *ngIf="clearable && value" type="button" class="dtp-foot-link danger" (click)="clearValue()">
+          Clear
+        </button>
+      </div>
+
+      <button *ngIf="mode === 'datetime'" type="button" class="dtp-done-btn" (click)="closePopover()">
+        Done
+      </button>
+    </div>
+  </div>
+</ng-template>

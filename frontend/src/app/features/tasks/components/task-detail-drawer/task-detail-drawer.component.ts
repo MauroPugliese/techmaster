@@ -1,20 +1,19 @@
 // =============================================================================
 // task-detail-drawer.component.ts — 2-Column Task Detail, Subtasks & @Mentions
 // =============================================================================
-import {
-  Component, Input, Output, EventEmitter, OnChanges, SimpleChanges, OnDestroy,
+import { Component, Input, Output, EventEmitter, OnChanges, SimpleChanges, OnDestroy,
   ChangeDetectionStrategy, ChangeDetectorRef, ViewChild, ElementRef, HostListener
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
-import { OwlDateTimeModule, OwlNativeDateTimeModule } from '@danielmoncada/angular-datetime-picker';
 
 import { ApiService, ToastService, UiCustomizationService, UiSectionPreferences } from '../../../../core/services/services';
 import {
   IntervalType, Priority, Task, TaskAssignee, TaskComment, TaskStatus, User
 } from '../../../../core/models/interfaces';
+import { DateTimePickerComponent } from '../../../../shared/components/datetime-picker/datetime-picker.component';
 import { DropdownComponent, DropdownOptionComponent } from '../../../../shared/components/dropdown/dropdown.component';
 import {
   CommentSegment,
@@ -35,8 +34,7 @@ import {
   imports: [
     CommonModule,
     FormsModule,
-    OwlDateTimeModule,
-    OwlNativeDateTimeModule,
+    DateTimePickerComponent,
     DropdownComponent,
     DropdownOptionComponent
   ],

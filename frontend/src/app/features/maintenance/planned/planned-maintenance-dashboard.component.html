@@ -231,28 +231,22 @@
 
         <div class="form-group" *ngIf="showFormField('operationDateStart')">
           <label class="form-label">{{fieldLabel('form','operationDateStart','Start Date')}} *</label>
-          <div class="datetime-picker-wrapper">
-            <input class="form-control"
-                   [owlDateTime]="dtStart"
-                   [owlDateTimeTrigger]="dtStart"
-                   [(ngModel)]="form.operationDateStart"
-                   placeholder="Select start date & time">
-            <span class="picker-trigger-icon" [owlDateTimeTrigger]="dtStart">event</span>
-            <owl-date-time #dtStart pickerMode="dialog"></owl-date-time>
-          </div>
+          <app-datetime-picker
+            class="form-control"
+            mode="datetime"
+            [(ngModel)]="form.operationDateStart"
+            placeholder="Select start date & time">
+          </app-datetime-picker>
         </div>
 
         <div class="form-group" *ngIf="showFormField('operationDateEnd')">
           <label class="form-label">{{fieldLabel('form','operationDateEnd','End Date')}}</label>
-          <div class="datetime-picker-wrapper">
-            <input class="form-control"
-                   [owlDateTime]="dtEnd"
-                   [owlDateTimeTrigger]="dtEnd"
-                   [(ngModel)]="form.operationDateEnd"
-                   placeholder="Select end date & time">
-            <span class="picker-trigger-icon" [owlDateTimeTrigger]="dtEnd">event</span>
-            <owl-date-time #dtEnd pickerMode="dialog"></owl-date-time>
-          </div>
+          <app-datetime-picker
+            class="form-control"
+            mode="datetime"
+            [(ngModel)]="form.operationDateEnd"
+            placeholder="Select end date & time">
+          </app-datetime-picker>
         </div>
 
         <div *ngIf="editingScope === 'series' && showFormField('repeatTaskType')" class="form-group">
@@ -274,15 +268,12 @@
 
         <div *ngIf="editingScope === 'series' && showFormField('recurrenceEndDate')" class="form-group">
           <label class="form-label">{{fieldLabel('form','recurrenceEndDate','Repeat Until')}}</label>
-          <div class="datetime-picker-wrapper">
-            <input class="form-control"
-                   [owlDateTime]="dtRecurrence"
-                   [owlDateTimeTrigger]="dtRecurrence"
-                   [(ngModel)]="form.recurrenceEndDate"
-                   placeholder="Select date">
-            <span class="picker-trigger-icon" [owlDateTimeTrigger]="dtRecurrence">event</span>
-            <owl-date-time #dtRecurrence pickerType="calendar" pickerMode="dialog"></owl-date-time>
-          </div>
+          <app-datetime-picker
+            class="form-control"
+            mode="date"
+            [(ngModel)]="form.recurrenceEndDate"
+            placeholder="Select date">
+          </app-datetime-picker>
           <span class="text-sm text-muted" style="margin-top:4px;display:block">
             Leave blank for an open-ended series.
           </span>

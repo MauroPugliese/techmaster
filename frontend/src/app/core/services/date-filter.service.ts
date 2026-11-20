@@ -31,8 +31,12 @@ export class DateFilterService {
   getLabel(): string {
     const { from, to } = this.currentRange;
     if (!from && !to) return 'All time';
-    const fmt = (d: Date) =>
-      d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const hasExplicitTime =
+      (from && (from.getHours() !== 0 || from.getMinutes() !== 0)) ||
+      (to && !((to.getHours() === 23 && to.getMinutes() === 59) || (to.getHours() === 0 && to.getMinutes() === 0)));
+    const fmt = (d: Date) => hasExplicitTime
+      ? d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
+      : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     if (from && to) return `${fmt(from)} – ${fmt(to)}`;
     if (from)       return `From ${fmt(from)}`;
     return `Until ${fmt(to!)}`;

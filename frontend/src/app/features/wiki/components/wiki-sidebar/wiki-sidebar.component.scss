@@ -137,7 +137,7 @@
 // ── Category Modal ─────────────────────────────────────────────────────────
 .cat-modal { max-width: 480px; }
 .cat-modal-body { display: flex; flex-direction: column; gap: 14px; }
-.form-row-two { display: grid; grid-template-columns: 1fr 120px; gap: 12px; }
+.form-row-two { display: grid; grid-template-columns: minmax(0, 1fr) 120px; gap: 12px; }
 
 .icon-picker { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
 

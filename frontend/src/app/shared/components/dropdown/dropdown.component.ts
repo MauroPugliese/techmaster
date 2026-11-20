@@ -122,8 +122,10 @@ export class DropdownOptionComponent {
   `,
   styles: [`
     :host {
-      display: inline-block;
+      display: block;
       width: 100%;
+      min-width: 0;
+      max-width: 100%;
       position: relative;
     }
 
@@ -143,12 +145,16 @@ export class DropdownOptionComponent {
     .dropdown-shell {
       position: relative;
       width: 100%;
+      min-width: 0;
+      max-width: 100%;
     }
 
     .dropdown-trigger {
       width: 100%;
+      min-width: 0;
+      max-width: 100%;
       min-height: 40px;
-      padding: 10px 36px 10px 14px;
+      padding: 8px 12px;
       border: 1.5px solid var(--border);
       border-radius: var(--radius-md);
       font-family: var(--font-sans);
@@ -162,7 +168,8 @@ export class DropdownOptionComponent {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
+      gap: 8px;
+      overflow: hidden;
     }
 
     .dropdown-trigger:hover:not(:disabled) {
@@ -207,7 +214,6 @@ export class DropdownOptionComponent {
     .dropdown-icon {
       color: var(--primary);
       transition: transform 0.2s ease;
-      margin-right: -4px;
     }
 
     .dropdown-shell.open .dropdown-icon {

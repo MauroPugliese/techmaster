@@ -48,7 +48,7 @@
                  placeholder="What needs to be done?">
         </div>
 
-        <div class="form-grid four">
+        <div class="form-grid two">
           <div class="form-group" *ngIf="showFormField('interval_type')">
             <label class="form-label">{{fieldLabel('form','interval_type','Interval')}} *</label>
             <app-dropdown class="form-control" [(ngModel)]="form.interval_type">
@@ -84,15 +84,12 @@
 
           <div class="form-group" *ngIf="showFormField('due_date')">
             <label class="form-label">{{fieldLabel('form','due_date','Due Date')}}</label>
-            <div class="datetime-picker-wrapper">
-              <input class="form-control"
-                     [owlDateTime]="dtDue"
-                     [owlDateTimeTrigger]="dtDue"
-                     [(ngModel)]="form.due_date"
-                     placeholder="Select date & time">
-              <span class="picker-trigger-icon" [owlDateTimeTrigger]="dtDue">event</span>
-              <owl-date-time #dtDue pickerMode="dialog"></owl-date-time>
-            </div>
+            <app-datetime-picker
+              class="form-control"
+              mode="datetime"
+              [(ngModel)]="form.due_date"
+              placeholder="Select due date & time">
+            </app-datetime-picker>
           </div>
         </div>
 

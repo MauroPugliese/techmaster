@@ -1,0 +1,519 @@
+// =============================================================================
+// datetime-picker.component.scss — Ultra-Compact Date & Time Overlay Styles
+// Note: .dtp-popover selectors live at top-level (not nested inside :host)
+// because CDK TemplatePortal mounts them in .cdk-overlay-container.
+// =============================================================================
+
+:host {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  position: relative;
+}
+
+:host(.form-control) {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  min-height: 0;
+}
+
+:host(.form-control):focus {
+  box-shadow: none;
+}
+
+.dtp-shell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.dtp-trigger {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  height: 38px;
+  padding: 0 8px 0 10px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--blue-950);
+  font-family: var(--font-sans);
+  font-size: 0.84rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  text-align: left;
+  outline: none;
+  transition: var(--transition);
+
+  &:hover:not(:disabled) {
+    border-color: var(--blue-400);
+  }
+
+  &:focus-visible {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(21, 101, 192, 0.14);
+  }
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    background: var(--surface-raised);
+  }
+}
+
+.dtp-shell.open .dtp-trigger {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(21, 101, 192, 0.14);
+}
+
+.dtp-lead-ic {
+  font-size: 16px;
+  color: #64748b;
+  flex-shrink: 0;
+  transition: color 0.15s ease;
+}
+
+.dtp-shell.open .dtp-lead-ic {
+  color: var(--primary);
+}
+
+.dtp-val,
+.dtp-placeholder {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dtp-placeholder {
+  color: #9ca3af;
+  font-weight: 400;
+}
+
+.dtp-caret {
+  font-size: 18px;
+  color: #94a3b8;
+  flex-shrink: 0;
+  margin-left: auto;
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+
+.dtp-shell.open .dtp-caret {
+  transform: rotate(180deg);
+  color: var(--primary);
+}
+
+.dtp-clear {
+  position: absolute;
+  right: 26px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface-raised);
+  color: #64748b;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+
+  .mat-i {
+    font-size: 13px;
+  }
+
+  &:hover {
+    background: #fee2e2;
+    color: #dc2626;
+  }
+}
+
+.dtp-shell:has(.dtp-clear) .dtp-caret {
+  margin-left: 22px;
+}
+
+// ── Top-level Popover Styles (mounted inside .cdk-overlay-container) ─────────
+.dtp-popover {
+  width: 248px;
+  max-width: calc(100vw - 20px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--blue-950);
+
+  &.has-time {
+    width: 368px;
+  }
+}
+
+.dtp-body {
+  display: flex;
+  align-items: stretch;
+}
+
+.dtp-cal {
+  width: 246px;
+  padding: 10px;
+  flex-shrink: 0;
+}
+
+.dtp-cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.dtp-nav-btn {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: #475569;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+
+  .mat-i {
+    font-size: 18px;
+  }
+
+  &:hover {
+    background: var(--blue-50);
+    color: var(--primary);
+  }
+}
+
+.dtp-month-btn {
+  border: 0;
+  background: transparent;
+  color: var(--blue-950);
+  font-family: inherit;
+  font-size: 0.84rem;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  cursor: pointer;
+
+  .mat-i {
+    font-size: 16px;
+    color: #64748b;
+    transition: transform 0.15s ease;
+    &.flipped { transform: rotate(180deg); }
+  }
+
+  &:hover {
+    background: var(--blue-50);
+    color: var(--primary);
+  }
+}
+
+.dtp-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  margin-bottom: 4px;
+
+  span {
+    text-align: center;
+    font-size: 0.69rem;
+    font-weight: 700;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding: 2px 0;
+  }
+}
+
+.dtp-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.dtp-day {
+  height: 29px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--blue-950);
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+
+  &.outside {
+    color: #cbd5e1;
+  }
+
+  &.today:not(.selected) {
+    border-color: var(--blue-300);
+    color: var(--primary);
+    font-weight: 700;
+  }
+
+  &:hover:not(:disabled):not(.selected) {
+    background: var(--blue-50);
+    color: var(--primary);
+  }
+
+  &.selected {
+    background: var(--primary);
+    color: #fff;
+    font-weight: 700;
+  }
+
+  &:disabled {
+    opacity: 0.32;
+    cursor: not-allowed;
+  }
+}
+
+.dtp-my-panel {
+  padding-top: 2px;
+}
+
+.dtp-year-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px;
+  margin-bottom: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+}
+
+.dtp-year-label {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--blue-900);
+}
+
+.dtp-months-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.dtp-month-opt {
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--blue-900);
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+
+  &:hover:not(.active) {
+    border-color: var(--primary);
+    background: var(--blue-50);
+    color: var(--primary);
+  }
+
+  &.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+    font-weight: 700;
+  }
+}
+
+// ── Side-by-Side Time Picker Column ──────────────────────────────────────────
+.dtp-time {
+  width: 120px;
+  border-left: 1px solid var(--border);
+  background: var(--surface-raised);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.dtp-time-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 8px 8px 7px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.dtp-time-input {
+  width: 36px;
+  height: 26px;
+  padding: 0 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  color: var(--blue-950);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-align: center;
+  outline: none;
+
+  &:focus {
+    border-color: var(--primary);
+    background: var(--surface);
+  }
+}
+
+.dtp-time-sep {
+  font-weight: 700;
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.dtp-time-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  height: 212px;
+}
+
+.dtp-time-col {
+  overflow-y: auto;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  scrollbar-width: thin;
+
+  & + .dtp-time-col {
+    border-left: 1px solid var(--border);
+  }
+}
+
+.dtp-t-opt {
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--blue-900);
+  font-family: var(--font-mono);
+  font-size: 0.77rem;
+  font-weight: 500;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.1s ease, color 0.1s ease;
+
+  &:hover:not(.active) {
+    background: var(--blue-100);
+    color: var(--primary);
+  }
+
+  &.active {
+    background: var(--primary);
+    color: #fff;
+    font-weight: 700;
+  }
+}
+
+// ── Compact Footer ───────────────────────────────────────────────────────────
+.dtp-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.dtp-foot-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dtp-foot-link {
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--blue-50);
+  }
+
+  &.danger {
+    color: #dc2626;
+    &:hover { background: #fee2e2; }
+  }
+}
+
+.dtp-done-btn {
+  border: 0;
+  background: var(--primary);
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 5px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--primary-hover);
+  }
+}
+
+@media (max-width: 420px) {
+  .dtp-popover.has-time {
+    width: 248px;
+  }
+
+  .dtp-body {
+    flex-direction: column;
+  }
+
+  .dtp-time {
+    width: 100%;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .dtp-time-cols {
+    height: 132px;
+  }
+}

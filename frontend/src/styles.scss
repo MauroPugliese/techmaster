@@ -6,7 +6,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 @import url('https://fonts.googleapis.com/icon?family=Material+Icons+Round');
 @import '~@angular/material/prebuilt-themes/indigo-pink.css';
-@import "@danielmoncada/angular-datetime-picker/assets/style/picker.min.css";
 
 
 /* ── CSS Custom Properties ─────────────────────────────────────────────────── */
@@ -570,6 +569,8 @@ pre     { padding: 16px; overflow-x: auto; }
   flex-direction: column;
   gap: 6px;
   margin-bottom: 18px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .form-label {
@@ -581,6 +582,8 @@ pre     { padding: 16px; overflow-x: auto; }
 
 .form-control {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   padding: 10px 14px;
   border: 1.5px solid var(--border);
   border-radius: var(--radius-md);
@@ -652,7 +655,19 @@ select.form-control option[disabled] {
 
 textarea.form-control { resize: vertical; min-height: 100px; }
 
-.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 600px) {
+  .form-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 
 /* ── Tables ─────────────────────────────────────────────────────────────────── */
 .table-container {
@@ -761,6 +776,8 @@ textarea.form-control { resize: vertical; min-height: 100px; }
   max-width: 560px;
   max-height: 90vh;
   overflow-y: auto;
+  overflow-x: hidden;
+  box-sizing: border-box;
   box-shadow: var(--shadow-xl);
   animation: slideUp 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
@@ -775,7 +792,7 @@ textarea.form-control { resize: vertical; min-height: 100px; }
   h3 { font-size: 1.15rem; }
 }
 
-.modal-body   { padding: 24px; }
+.modal-body   { padding: 24px; min-width: 0; overflow-x: hidden; }
 .modal-footer { padding: 16px 24px 24px; display: flex; gap: 10px; justify-content: flex-end; }
 
 /* ── Search Bar ─────────────────────────────────────────────────────────────── */
@@ -950,135 +967,7 @@ textarea.form-control { resize: vertical; min-height: 100px; }
   transition: var(--transition);
 }
 
-/* ── Owl Datetime Picker Overrides ────────────────────────────────────────── */
-
-/*
- * The actual dialog window shell — styled like app modals.
- * pickerMode="dialog" adds the class "owl-dt-dialog" to the CDK overlay pane.
- */
-.cdk-overlay-pane.owl-dt-dialog {
-  border-radius: var(--radius-xl) !important;   /* matches .modal → var(--radius-xl) = 24px */
-  overflow: hidden !important;                   /* clips content to rounded corners */
-  box-shadow: var(--shadow-xl) !important;
-  border: 1px solid var(--border) !important;
-}
-
-/*
- * Inner calendar container: background + font only.
- * NO overflow:hidden here — that was clipping the Saturday column.
- */
-.owl-dt-container {
-  font-family: var(--font-sans) !important;
-  font-size: 0.9rem !important;
-  background-color: var(--surface) !important;
-  color: var(--blue-950) !important;
-  width: 100% !important;
-}
-
-/* Action buttons row (Set / Cancel) */
-.owl-dt-container-buttons {
-  font-family: var(--font-sans) !important;
-  font-weight: 600 !important;
-
-  button {
-    color: var(--primary) !important;
-    border-radius: var(--radius-sm) !important;
-  }
-
-  button:hover {
-    background-color: var(--blue-50) !important;
-  }
-}
-
-/* Month/Year header row */
-.owl-dt-calendar-header {
-  font-family: var(--font-sans) !important;
-  color: var(--blue-900) !important;
-  font-weight: 700 !important;
-}
-
-/* Day-of-week labels (Mon, Tue … Sat, Sun) */
-.owl-dt-calendar-table .owl-dt-calendar-header {
-  color: #6B7280 !important;
-  font-size: 0.75rem !important;
-  font-weight: 700 !important;
-}
-
-/* Selected day */
-.owl-dt-calendar-cell-selected {
-  background-color: var(--primary) !important;
-  color: #ffffff !important;
-}
-
-/* Day number circles — size kept at library default so nothing gets clipped */
-.owl-dt-calendar-cell-content {
-  border-radius: 50% !important;
-}
-
-/* Today highlight */
-.owl-dt-calendar-cell-today {
-  border: 1px solid var(--primary) !important;
-}
-
-/* Timer inputs (date-time mode) */
-.owl-dt-timer-input {
-  font-family: var(--font-sans) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: var(--radius-sm) !important;
-  outline: none !important;
-
-  &:focus {
-    border-color: var(--border-focus) !important;
-  }
-}
-
-.owl-dt-timer-content {
-  font-family: var(--font-sans) !important;
-}
-
-.owl-dt-timer-hour12-box .owl-dt-timer-hour12-button {
-  background: var(--primary) !important;
-  color: #ffffff !important;
-}
-
-.owl-dt-control-button {
-  color: var(--primary) !important;
-}
-
-/* ── Date input field wrapper ─────────────────────────────────────────────── */
-/*
- * Restores normal .form-control appearance with extra right padding
- * so the calendar icon doesn't overlap the typed date text.
- */
-.datetime-picker-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-  width: 100%;
-
-  .form-control {
-    padding-right: 38px !important; /* room for the trigger icon */
-  }
-
-  .picker-trigger-icon {
-    position: absolute;
-    right: 10px;
-    cursor: pointer;
-    color: #9CA3AF;
-    font-size: 20px;
-    font-family: 'Material Icons Round';
-    font-style: normal;
-    user-select: none;
-    transition: var(--transition);
-    pointer-events: all;
-
-    &:hover {
-      color: var(--primary);
-    }
-  }
-}
-
-/* ── CDK overlay z-index (keeps picker above app modals) ──────────────────── */
+/* ── CDK overlay z-index (keeps pickers above app modals & drawers) ─────────── */
 .cdk-overlay-container {
   z-index: 3000 !important;
 }
@@ -1086,14 +975,6 @@ textarea.form-control { resize: vertical; min-height: 100px; }
 .cdk-global-overlay-wrapper,
 .cdk-overlay-pane {
   z-index: 3000 !important;
-}
-
-/* On small screens let the dialog fill available width */
-@media (max-width: 480px) {
-  .cdk-overlay-pane.owl-dt-dialog {
-    max-width: calc(100vw - 16px) !important;
-    border-radius: var(--radius-lg) !important;
-  }
 }
 
 /* ── Global Wiki Prose & TipTap Surface Typography ─────────────────────────── */
