@@ -1,130 +1,229 @@
 // =============================================================================
-// tasks.component.ts — Recursive Task Manager (Enhanced)
-//   • Drag & drop between Kanban columns (Angular CDK)
-//   • Resizable columns with persisted widths
-//   • Search, sort, priority filter, density toggle, Esc-to-close modal
-//   • Better card visuals, empty states, assignee color-hashing
+// tasks.component.ts — Full-Width Recursive Task Manager (Block 1 + Block 2)
+//   • Proportional fluid full-width Kanban (zero empty right-hand gap)
+//   • Multi-view switcher: Kanban | Full-Width List | Swimlanes
+//   • Interactive KPI cards, My Tasks / Assignee / Priority / Status / Search
+//   • Inline column Quick-Add + 2-column Slide-Over Detail Drawer + ?id= link
 // =============================================================================
 import {
   Component, OnInit, OnDestroy, ChangeDetectionStrategy, ChangeDetectorRef,
-  HostListener
+  HostListener, ViewChild, ViewChildren, QueryList, ElementRef
 } from '@angular/core';
-import { CommonModule, DatePipe } from '@angular/common';
+import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
 import { Subject } from 'rxjs';
 import { takeUntil, switchMap } from 'rxjs/operators';
 import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
 
-import { ToastService }   from '../../core/services/toast.service';
-import { ConfirmService } from '../../core/services/confirm.service';
-
-import { ApiService } from '../../core/services/services';
-import { DateFilterService } from '../../core/services/services';
-import { UiCustomizationService, UiSectionPreferences } from '../../core/services/services';
-import { Task, IntervalType, TaskStatus, Priority } from '../../core/models/interfaces';
-import { OwlDateTimeModule, OwlNativeDateTimeModule } from '@danielmoncada/angular-datetime-picker';
+import {
+  ApiService, AuthService, ConfirmService, DateFilterService,
+  ToastService, UiCustomizationService, UiSectionPreferences
+} from '../../core/services/services';
+import {
+  IntervalType, Priority, Task, TaskAssignee, TaskStatus, User
+} from '../../core/models/interfaces';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
 import { DropdownComponent, DropdownOptionComponent } from '../../shared/components/dropdown/dropdown.component';
+import {
+  BulkTaskCommand, TaskListViewComponent
+} from './components/task-list-view/task-list-view.component';
+import { TaskDetailDrawerComponent } from './components/task-detail-drawer/task-detail-drawer.component';
+import {
+  DEFAULT_COL_WEIGHTS,
+  Density,
+  KANBAN_COLUMNS,
+  SortKey,
+  StatFilterKey,
+  SwimlaneBy,
+  SwimlaneGroup,
+  TASK_INTERVAL_TABS,
+  TaskColumn,
+  TaskFilterState,
+  TaskViewMode,
+  buildSwimlanes,
+  daysUntilDue,
+  filterAndSortTasks,
+  formatDueLabel,
+  getAvatarColor,
+  getDoneSubtasks,
+  getHoursProgress,
+  getInitials,
+  getPriorityColor,
+  getUserDisplayName,
+  isTaskOverdue,
+  rebalanceWeights,
+  resolveDisplayColumn,
+  sumEstimatedHours
+} from './task-helpers';
 
-interface Column { status: TaskStatus; label: string; color: string; icon: string; }
-type   SortKey  = 'due' | 'priority' | 'created' | 'title';
-type   Density  = 'comfortable' | 'compact';
-
-const LS_WIDTHS  = 'tasks.columnWidths.v1';
-const LS_DENSITY = 'tasks.density.v1';
-const LS_SORT    = 'tasks.sort.v1';
+const LS_WEIGHTS  = 'tasks.columnWeights.v2';
+const LS_DENSITY  = 'tasks.density.v1';
+const LS_SORT     = 'tasks.sort.v1';
+const LS_VIEW     = 'tasks.viewMode.v1';
+const LS_SWIMLANE = 'tasks.swimlaneBy.v1';
 
 @Component({
   selector: 'app-tasks',
   standalone: true,
   imports: [
-    CommonModule, FormsModule, DatePipe,
-    OwlDateTimeModule, OwlNativeDateTimeModule,
-    ExportMenuComponent, DragDropModule, DropdownComponent, DropdownOptionComponent
+    CommonModule,
+    FormsModule,
+    DragDropModule,
+    ExportMenuComponent,
+    DropdownComponent,
+    DropdownOptionComponent,
+    TaskListViewComponent,
+    TaskDetailDrawerComponent
   ],
   templateUrl: './tasks.component.html',
   styleUrls:   ['./tasks.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class TasksComponent implements OnInit, OnDestroy {
+  @ViewChild('kanbanBoardEl') kanbanBoardRef?: ElementRef<HTMLDivElement>;
+  @ViewChild('searchInput')   searchInputRef?: ElementRef<HTMLInputElement>;
+  @ViewChildren('quickAddInput') quickAddInputs?: QueryList<ElementRef<HTMLInputElement>>;
+
   private destroy$ = new Subject<void>();
 
-  tasks:    Task[] = [];
-  allTasks: Task[] = []; // flat list for parent selector
-  loading = true;
-  saving  = false;
+  tasks:     Task[] = [];
+  allTasks:  Task[] = [];
+  assignees: TaskAssignee[] = [];
+  loading  = true;
+  saving   = false;
+  busyBulk = false;
 
-  // ── Filters / view state ────────────────────────────────────────────────
+  // ── View & filter state ────────────────────────────────────────────────────
+  viewMode:       TaskViewMode = 'kanban';
+  swimlaneBy:     SwimlaneBy   = 'assignee';
   activeInterval: IntervalType | '' = '';
-  statusFilter = '';
+  statusFilter   = '';
   priorityFilter: Priority | '' = '';
-  searchTerm = '';
+  assigneeFilter: number | 'unassigned' | '' = '';
+  statFilter:     StatFilterKey = 'all';
+  searchTerm     = '';
   sortKey: SortKey = 'due';
-  sortAsc  = true;
+  sortAsc        = true;
   density: Density = 'comfortable';
 
-  showModal   = false;
+  // ── Proportional Kanban weights (sum remains constant = 100% width) ────────
+  colWeights: number[] = [...DEFAULT_COL_WEIGHTS];
+  readonly MIN_COL_WEIGHT = 0.55;
+  readonly MIN_COL_PX     = 250;
+
+  // ── Inline quick-add per column ────────────────────────────────────────────
+  quickAddStatus: TaskStatus | null = null;
+  quickAddTitle  = '';
+  savingQuickAdd = false;
+
+  // ── Swimlane collapsed state ───────────────────────────────────────────────
+  collapsedLanes = new Set<string>();
+
+  // ── Detail drawer state ────────────────────────────────────────────────────
+  drawerOpen      = false;
   editingTask: Task | null = null;
-  form:        any = this.emptyForm();
-  tagsInput   = '';
+  drawerStatus: TaskStatus = 'TODO';
+  drawerPreTitle  = '';
+
   uiPrefs: UiSectionPreferences | null = null;
 
-  intervals = [
-    { value: '' as const,         label: 'All',     icon: 'apps' },
-    { value: 'DAILY' as const,    label: 'Daily',   icon: 'today' },
-    { value: 'WEEKLY' as const,   label: 'Weekly',  icon: 'view_week' },
-    { value: 'MONTHLY' as const,  label: 'Monthly', icon: 'calendar_month' },
-    { value: 'YEARLY' as const,   label: 'Yearly',  icon: 'event' },
-    { value: 'ONCE' as const,     label: 'Once',    icon: 'looks_one' },
+  readonly intervals = TASK_INTERVAL_TABS;
+  readonly columns: TaskColumn[] = KANBAN_COLUMNS;
+  readonly sortOptions: Array<{ k: SortKey; l: string }> = [
+    { k: 'due',      l: 'Due' },
+    { k: 'priority', l: 'Priority' },
+    { k: 'title',    l: 'Title' },
+    { k: 'created',  l: 'Created' }
   ];
-
-  columns: Column[] = [
-    { status: 'TODO',        label: 'To Do',       color: '#6B7280', icon: 'radio_button_unchecked' },
-    { status: 'IN_PROGRESS', label: 'In Progress', color: '#0288D1', icon: 'play_circle' },
-    { status: 'REVIEW',      label: 'In Review',   color: '#F59E0B', icon: 'rate_review' },
-    { status: 'DONE',        label: 'Done',        color: '#10B981', icon: 'check_circle' },
-  ];
-
-  /** Live width (px) per column, aligned with `columns`. */
-  colWidths: number[] = [300, 300, 300, 300];
-  readonly MIN_COL_WIDTH = 240;
-
-  /** IDs used by CDK drop lists for cross-column drag. */
-  get dropListIds(): string[] { return this.columns.map(c => 'col-' + c.status); }
-
-  connectedTo(status: TaskStatus): string[] {
-    return this.dropListIds.filter(id => id !== 'col-' + status);
-  }
-
-  get taskStats() {
-    const total    = this.tasks.length;
-    const progress = this.tasks.filter(t => t.status === 'IN_PROGRESS').length;
-    const overdue  = this.tasks.filter(t => this.isOverdue(t)).length;
-    const done     = this.tasks.filter(t => t.status === 'DONE').length;
-    const rate     = total ? Math.round((done / total) * 100) : 0;
-    return [
-      { label: 'Total',       count: total,    icon: 'task_alt',     color: '#1565C0', sub: 'All visible' },
-      { label: 'In Progress', count: progress, icon: 'pending',      color: '#0288D1', sub: 'Being worked on' },
-      { label: 'Overdue',     count: overdue,  icon: 'warning',      color: '#EF4444', sub: 'Past due date' },
-      { label: 'Completed',   count: done,     icon: 'check_circle', color: '#10B981', sub: rate + '% completion' },
-    ];
-  }
 
   constructor(
     private api: ApiService,
+    private auth: AuthService,
     private dateFilter: DateFilterService,
     private uiCustomization: UiCustomizationService,
     private cdr: ChangeDetectorRef,
-    private toast:   ToastService,
+    private toast: ToastService,
     private confirm: ConfirmService,
+    private route: ActivatedRoute,
+    private router: Router
   ) {
     this.restorePrefs();
   }
 
+  get currentUser(): User | null { return this.auth.currentUser; }
+  get isMyTasksActive(): boolean {
+    return !!this.currentUser?.id && this.assigneeFilter === this.currentUser.id;
+  }
+  get dropListIds(): string[] { return this.columns.map(c => 'col-' + c.status); }
+  get hasCustomWeights(): boolean {
+    return this.colWeights.some(w => Math.abs(w - 1) > 0.03);
+  }
+  get activeFilterCount(): number {
+    let n = 0;
+    if (this.activeInterval) n++;
+    if (this.statusFilter) n++;
+    if (this.priorityFilter) n++;
+    if (this.assigneeFilter !== '') n++;
+    if (this.statFilter !== 'all') n++;
+    if (this.searchTerm.trim()) n++;
+    return n;
+  }
+
+  private get filterState(): TaskFilterState {
+    return {
+      priority:   this.priorityFilter,
+      assigneeId: this.assigneeFilter,
+      statFilter: this.statFilter,
+      searchTerm: this.searchTerm,
+      sortKey:    this.sortKey,
+      sortAsc:    this.sortAsc
+    };
+  }
+
+  /** Tasks matching toolbar filters BEFORE KPI stat-card filter. */
+  get baseFilteredTasks(): Task[] {
+    return filterAndSortTasks(this.tasks, this.filterState, false);
+  }
+
+  /** Tasks displayed across active views after all filters & sorting. */
+  get filteredTasks(): Task[] {
+    return filterAndSortTasks(this.tasks, this.filterState, true);
+  }
+
+  get swimlanes(): SwimlaneGroup[] {
+    return buildSwimlanes(this.filteredTasks, this.swimlaneBy);
+  }
+
+  get taskStats(): Array<{
+    key: StatFilterKey; label: string; count: number; icon: string; color: string; sub: string;
+  }> {
+    const scope    = this.baseFilteredTasks;
+    const total    = scope.length;
+    const progress = scope.filter(t => t.status === 'IN_PROGRESS').length;
+    const overdue  = scope.filter(t => isTaskOverdue(t)).length;
+    const done     = scope.filter(t => t.status === 'DONE').length;
+    const rate     = total ? Math.round((done / total) * 100) : 0;
+    return [
+      { key: 'all',         label: 'Total',       count: total,    icon: 'task_alt',     color: '#1565C0', sub: 'Visible scope' },
+      { key: 'in_progress', label: 'In Progress', count: progress, icon: 'pending',      color: '#0288D1', sub: 'Active work' },
+      { key: 'overdue',     label: 'Overdue',     count: overdue,  icon: 'warning',      color: '#EF4444', sub: 'Past due date' },
+      { key: 'done',        label: 'Completed',   count: done,     icon: 'check_circle', color: '#10B981', sub: `${rate}% completion` }
+    ];
+  }
+
   ngOnInit(): void {
-    this.uiCustomization.load('tasks').subscribe(p => {
+    this.uiCustomization.load('tasks').pipe(takeUntil(this.destroy$)).subscribe(p => {
       this.uiPrefs = p;
       this.cdr.markForCheck();
+    });
+
+    this.api.get<any>('/tasks/assignees').pipe(takeUntil(this.destroy$)).subscribe({
+      next: res => {
+        this.assignees = res.data || [];
+        this.cdr.markForCheck();
+      },
+      error: () => { /* optional metadata fallback */ }
     });
 
     this.dateFilter.range$.pipe(
@@ -132,38 +231,88 @@ export class TasksComponent implements OnInit, OnDestroy {
       switchMap(() => {
         this.loading = true;
         this.cdr.markForCheck();
-        return this.api.get<any>('/tasks', {
-          interval_type: this.activeInterval,
-          status: this.statusFilter,
-          limit: 100
-        });
+        return this.fetchTasksObservable();
       })
     ).subscribe({
       next: res => {
-        this.tasks = res.data.items;
+        this.tasks = res.data.items || [];
         this.loading = false;
         this.cdr.markForCheck();
       },
       error: () => { this.loading = false; this.cdr.markForCheck(); }
     });
 
-    // Load all tasks for parent selector
-    this.api.get<any>('/tasks', { limit: 200 }).subscribe(res => {
-      this.allTasks = res.data.items;
-      this.cdr.markForCheck();
+    this.loadAllParentCandidates();
+
+    // Handle /tasks?id=123 deep-links from notifications
+    this.route.queryParamMap.pipe(takeUntil(this.destroy$)).subscribe(params => {
+      const id = Number(params.get('id'));
+      if (id > 0) this.openTaskById(id);
+    });
+  }
+
+  private fetchTasksObservable() {
+    return this.api.get<any>('/tasks', {
+      interval_type: this.activeInterval,
+      status:        this.statusFilter,
+      limit:         150
     });
   }
 
   loadTasks(): void {
     this.loading = true;
-    this.api.get<any>('/tasks', {
-      interval_type: this.activeInterval,
-      status: this.statusFilter,
-      limit: 100
-    }).subscribe({
-      next: res => { this.tasks = res.data.items; this.loading = false; this.cdr.markForCheck(); },
+    this.cdr.markForCheck();
+    this.fetchTasksObservable().pipe(takeUntil(this.destroy$)).subscribe({
+      next: res => {
+        this.tasks = res.data.items || [];
+        this.loading = false;
+        this.cdr.markForCheck();
+      },
       error: () => { this.loading = false; this.cdr.markForCheck(); }
     });
+  }
+
+  private loadAllParentCandidates(): void {
+    this.api.get<any>('/tasks', { limit: 200 }).pipe(takeUntil(this.destroy$)).subscribe({
+      next: res => {
+        this.allTasks = res.data.items || [];
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  private openTaskById(id: number): void {
+    const existing = this.tasks.find(t => t.id === id);
+    if (existing) {
+      this.openDrawerForEdit(existing);
+      return;
+    }
+    this.api.get<any>(`/tasks/${id}`).pipe(takeUntil(this.destroy$)).subscribe({
+      next: res => {
+        if (res.data) this.openDrawerForEdit(res.data);
+      },
+      error: () => this.toast.error('Requested task was not found.')
+    });
+  }
+
+  // ── View & filter actions ──────────────────────────────────────────────────
+  setViewMode(mode: TaskViewMode): void {
+    this.viewMode = mode;
+    this.cancelQuickAdd();
+    try { localStorage.setItem(LS_VIEW, mode); } catch { /* noop */ }
+  }
+
+  setSwimlaneBy(by: SwimlaneBy): void {
+    this.swimlaneBy = by;
+    this.collapsedLanes = new Set<string>();
+    try { localStorage.setItem(LS_SWIMLANE, by); } catch { /* noop */ }
+  }
+
+  toggleLaneCollapse(key: string): void {
+    const next = new Set(this.collapsedLanes);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    this.collapsedLanes = next;
   }
 
   setInterval(v: IntervalType | ''): void {
@@ -171,134 +320,31 @@ export class TasksComponent implements OnInit, OnDestroy {
     this.loadTasks();
   }
 
-  /** Filtered + sorted tasks for a given column. */
-  getTasksByStatus(status: TaskStatus): Task[] {
-    const q = this.searchTerm.trim().toLowerCase();
-    let list = this.tasks.filter(t => t.status === status);
-
-    if (this.priorityFilter) list = list.filter(t => t.priority === this.priorityFilter);
-    if (q) {
-      list = list.filter(t =>
-        t.title.toLowerCase().includes(q) ||
-        (t.description || '').toLowerCase().includes(q) ||
-        (t.tags || []).some(tag => tag.toLowerCase().includes(q))
-      );
-    }
-
-    const pri: Record<Priority, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
-    const dir = this.sortAsc ? 1 : -1;
-    return [...list].sort((a, b) => {
-      let d = 0;
-      switch (this.sortKey) {
-        case 'due': {
-          const av = a.due_date ? new Date(a.due_date).getTime() : Number.POSITIVE_INFINITY;
-          const bv = b.due_date ? new Date(b.due_date).getTime() : Number.POSITIVE_INFINITY;
-          d = av - bv; break;
-        }
-        case 'priority': d = (pri[a.priority] ?? 9) - (pri[b.priority] ?? 9); break;
-        case 'created':  d = new Date(a.created_at).getTime() - new Date(b.created_at).getTime(); break;
-        case 'title':    d = a.title.localeCompare(b.title); break;
-      }
-      return d * dir;
-    });
+  onStatusFilterChange(status: string): void {
+    this.statusFilter = status;
+    this.loadTasks();
   }
 
-  getDoneSubtasks(task: Task): number {
-    return task.subtasks?.filter(s => s.status === 'DONE').length ?? 0;
+  toggleMyTasks(): void {
+    if (!this.currentUser?.id) return;
+    this.assigneeFilter = this.isMyTasksActive ? '' : this.currentUser.id;
   }
 
-  isOverdue(task: Task): boolean {
-    if (!task.due_date || task.status === 'DONE') return false;
-    return new Date(task.due_date) < new Date();
+  toggleStatFilter(key: StatFilterKey): void {
+    this.statFilter = (key === 'all' || this.statFilter === key) ? 'all' : key;
   }
 
-  daysUntilDue(task: Task): number | null {
-    if (!task.due_date) return null;
-    const ms = new Date(task.due_date).getTime() - Date.now();
-    return Math.round(ms / 86_400_000);
+  clearFilters(): void {
+    const serverChanged = this.activeInterval !== '' || this.statusFilter !== '';
+    this.activeInterval = '';
+    this.statusFilter   = '';
+    this.priorityFilter = '';
+    this.assigneeFilter = '';
+    this.statFilter     = 'all';
+    this.searchTerm     = '';
+    if (serverChanged) this.loadTasks();
   }
 
-  dueLabel(task: Task): string {
-    if (!task.due_date) return 'No due date';
-    const d = this.daysUntilDue(task);
-    if (d === null) return 'No due date';
-    if (d <   0) return `Overdue ${-d}d`;
-    if (d === 0) return 'Due today';
-    if (d === 1) return 'Due tomorrow';
-    if (d <=  7) return `In ${d} days`;
-    return new Date(task.due_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  }
-
-  // ── Drag & drop ────────────────────────────────────────────────────────
-  onTaskDrop(event: CdkDragDrop<Task[]>, targetStatus: TaskStatus): void {
-    if (event.previousContainer === event.container) return; // same-column reorder isn't persisted
-    const task: Task = event.item.data;
-    if (!task || task.status === targetStatus) return;
-
-    const previous = task.status;
-    // Optimistic update
-    task.status = targetStatus;
-    this.cdr.markForCheck();
-
-    this.api.put<any>(`/tasks/${task.id}`, { status: targetStatus }).subscribe({
-      next: () => this.toast.success(`Moved to ${this.columnLabel(targetStatus)}`),
-      error: (e: any) => {
-        task.status = previous; // rollback
-        this.cdr.markForCheck();
-        this.toast.error(e?.error?.message || 'Failed to move task.');
-      }
-    });
-  }
-
-  columnLabel(status: TaskStatus): string {
-    return this.columns.find(c => c.status === status)?.label ?? status;
-  }
-
-  // ── Column resize ──────────────────────────────────────────────────────
-  private resizeState: { index: number; startX: number; startW: number; nextW: number } | null = null;
-
-  startResize(event: MouseEvent, index: number): void {
-    event.preventDefault();
-    this.resizeState = {
-      index,
-      startX: event.clientX,
-      startW: this.colWidths[index],
-      nextW:  this.colWidths[index + 1] ?? this.colWidths[index]
-    };
-    document.body.classList.add('tasks-resizing');
-    window.addEventListener('mousemove', this.onResizeMove);
-    window.addEventListener('mouseup',   this.onResizeEnd);
-  }
-
-  private onResizeMove = (e: MouseEvent) => {
-    if (!this.resizeState) return;
-    const { index, startX, startW, nextW } = this.resizeState;
-    const dx = e.clientX - startX;
-    const w  = Math.max(this.MIN_COL_WIDTH, startW + dx);
-    this.colWidths[index] = w;
-    if (index < this.colWidths.length - 1) {
-      const shrink = Math.max(this.MIN_COL_WIDTH, nextW - dx);
-      this.colWidths[index + 1] = shrink;
-    }
-    this.cdr.markForCheck();
-  };
-
-  private onResizeEnd = () => {
-    document.body.classList.remove('tasks-resizing');
-    window.removeEventListener('mousemove', this.onResizeMove);
-    window.removeEventListener('mouseup',   this.onResizeEnd);
-    this.resizeState = null;
-    try { localStorage.setItem(LS_WIDTHS, JSON.stringify(this.colWidths)); } catch { /* noop */ }
-  };
-
-  resetColumnWidths(): void {
-    this.colWidths = this.columns.map(() => 300);
-    try { localStorage.removeItem(LS_WIDTHS); } catch { /* noop */ }
-    this.cdr.markForCheck();
-    this.toast.info('Column widths reset.');
-  }
-
-  // ── Density / sort persistence ─────────────────────────────────────────
   setDensity(d: Density): void {
     this.density = d;
     try { localStorage.setItem(LS_DENSITY, d); } catch { /* noop */ }
@@ -311,70 +357,252 @@ export class TasksComponent implements OnInit, OnDestroy {
     this.cdr.markForCheck();
   }
 
-  clearFilters(): void {
-    this.activeInterval = '';
-    this.statusFilter   = '';
-    this.priorityFilter = '';
-    this.searchTerm     = '';
-    this.loadTasks();
+  // ── Column / swimlane selectors ────────────────────────────────────────────
+  getColumnTasks(colStatus: TaskStatus): Task[] {
+    return this.filteredTasks.filter(t => resolveDisplayColumn(t) === colStatus);
   }
 
-  private restorePrefs(): void {
-    try {
-      const raw = localStorage.getItem(LS_WIDTHS);
-      if (raw) {
-        const arr = JSON.parse(raw);
-        if (Array.isArray(arr) && arr.length === this.colWidths.length) {
-          this.colWidths = arr.map((n: any) => Math.max(this.MIN_COL_WIDTH, Number(n) || 300));
+  getLaneColumnTasks(lane: SwimlaneGroup, colStatus: TaskStatus): Task[] {
+    return lane.tasks.filter(t => resolveDisplayColumn(t) === colStatus);
+  }
+
+  colEstHours(colStatus: TaskStatus): number {
+    return sumEstimatedHours(this.getColumnTasks(colStatus));
+  }
+
+  laneEstHours(lane: SwimlaneGroup): number {
+    return sumEstimatedHours(lane.tasks);
+  }
+
+  // ── Drag & drop (immutable optimistic updates) ─────────────────────────────
+  onTaskDrop(event: CdkDragDrop<Task[]>, targetStatus: TaskStatus): void {
+    if (event.previousContainer === event.container) return;
+    const task: Task = event.item.data;
+    if (!task || task.status === targetStatus) return;
+
+    this.applyTaskPatchOptimistic(task, { status: targetStatus }, `Moved to ${this.columnLabel(targetStatus)}`);
+  }
+
+  onSwimlaneDrop(event: CdkDragDrop<Task[]>, targetStatus: TaskStatus, lane: SwimlaneGroup): void {
+    const task: Task = event.item.data;
+    if (!task) return;
+
+    const patch: Partial<Task> = {};
+    if (task.status !== targetStatus) patch.status = targetStatus;
+
+    if (this.swimlaneBy === 'priority') {
+      const targetPrio = lane.key.replace('priority-', '') as Priority;
+      if (targetPrio && task.priority !== targetPrio) patch.priority = targetPrio;
+    } else if (this.swimlaneBy === 'assignee') {
+      const nextAssigneeId = lane.key === 'unassigned' ? null : Number(lane.key.replace('user-', ''));
+      const currentAssigneeId = task.assigned_to ?? task.assignee?.id ?? null;
+      if (currentAssigneeId !== nextAssigneeId) patch.assigned_to = nextAssigneeId;
+    }
+
+    if (!Object.keys(patch).length) return;
+    this.applyTaskPatchOptimistic(task, patch, 'Task updated.');
+  }
+
+  onListInlineUpdate(ev: { task: Task; patch: Partial<Task> }): void {
+    this.applyTaskPatchOptimistic(ev.task, ev.patch, 'Task updated.');
+  }
+
+  private applyTaskPatchOptimistic(task: Task, patch: Partial<Task>, successMsg: string): void {
+    const prevTasks = this.tasks;
+    const matchedAssignee = Object.prototype.hasOwnProperty.call(patch, 'assigned_to')
+      ? (patch.assigned_to ? (this.assignees.find(u => u.id === patch.assigned_to) || task.assignee) : null)
+      : task.assignee;
+
+    this.tasks = this.tasks.map(t =>
+      t.id === task.id ? { ...t, ...patch, assignee: matchedAssignee } : t
+    );
+    this.cdr.markForCheck();
+
+    this.api.put<any>(`/tasks/${task.id}`, patch).pipe(takeUntil(this.destroy$)).subscribe({
+      next: res => {
+        const updated: Task = res.data;
+        if (updated) {
+          this.tasks = this.tasks.map(t => t.id === updated.id ? updated : t);
         }
+        this.toast.success(successMsg);
+        this.cdr.markForCheck();
+      },
+      error: (e: any) => {
+        this.tasks = prevTasks;
+        this.toast.error(e?.error?.message || 'Failed to update task.');
+        this.cdr.markForCheck();
       }
-      const d = localStorage.getItem(LS_DENSITY) as Density | null;
-      if (d === 'compact' || d === 'comfortable') this.density = d;
-      const s = localStorage.getItem(LS_SORT);
-      if (s) {
-        const parsed = JSON.parse(s);
-        if (parsed?.key) { this.sortKey = parsed.key; this.sortAsc = !!parsed.asc; }
-      }
-    } catch { /* ignore */ }
+    });
   }
 
-  @HostListener('document:keydown.escape')
-  onEsc(): void { if (this.showModal) { this.showModal = false; this.cdr.markForCheck(); } }
-
-  openModal(defaultStatus?: TaskStatus): void {
-    this.editingTask = null;
-    this.form = this.emptyForm();
-    if (defaultStatus) this.form.status = defaultStatus;
-    if (this.activeInterval) this.form.interval_type = this.activeInterval as IntervalType;
-    this.tagsInput = '';
-    this.showModal = true;
-  }
-
-  editTask(task: Task): void {
-    this.editingTask = task;
-    this.form = {
-      ...task,
-      due_date: task.due_date ? new Date(task.due_date) : null
+  quickStatusChange(task: Task, event: MouseEvent): void {
+    event.stopPropagation();
+    const nextStatus: Record<TaskStatus, TaskStatus> = {
+      TODO:        'IN_PROGRESS',
+      IN_PROGRESS: 'REVIEW',
+      REVIEW:      'DONE',
+      DONE:        'TODO',
+      CANCELLED:   'TODO',
+      OVERDUE:     'IN_PROGRESS'
     };
-    this.tagsInput = (task.tags || []).join(', ');
-    this.showModal = true;
+    const target = nextStatus[task.status];
+    this.applyTaskPatchOptimistic(task, { status: target }, `Moved to ${this.columnLabel(target)}.`);
   }
 
-  closeModal(event: MouseEvent): void {
-    if ((event.target as HTMLElement).classList.contains('modal-overlay')) this.showModal = false;
+  // ── Inline quick-add ───────────────────────────────────────────────────────
+  openQuickAdd(status: TaskStatus): void {
+    this.quickAddStatus = status;
+    this.quickAddTitle  = '';
+    this.cdr.markForCheck();
+    setTimeout(() => this.quickAddInputs?.first?.nativeElement.focus(), 0);
   }
 
-  saveTask(): void {
-    if (this.showFormField('title') && !this.form.title) return;
+  cancelQuickAdd(): void {
+    this.quickAddStatus = null;
+    this.quickAddTitle  = '';
+    this.savingQuickAdd = false;
+  }
+
+  submitQuickAdd(status: TaskStatus): void {
+    const title = this.quickAddTitle.trim();
+    if (!title || this.savingQuickAdd) return;
+
+    this.savingQuickAdd = true;
+    const payload: any = {
+      title,
+      status,
+      interval_type: this.activeInterval || 'ONCE',
+      priority:      this.priorityFilter || 'MEDIUM'
+    };
+    if (typeof this.assigneeFilter === 'number') {
+      payload.assigned_to = this.assigneeFilter;
+    }
+
+    this.api.post<any>('/tasks', payload).pipe(takeUntil(this.destroy$)).subscribe({
+      next: res => {
+        const created: Task = res.data;
+        if (created) {
+          this.tasks = [created, ...this.tasks];
+          this.allTasks = [created, ...this.allTasks];
+        }
+        this.quickAddTitle = '';
+        this.savingQuickAdd = false;
+        this.toast.success('Task added.');
+        this.cdr.markForCheck();
+        setTimeout(() => this.quickAddInputs?.first?.nativeElement.focus(), 0);
+      },
+      error: (e: any) => {
+        this.savingQuickAdd = false;
+        this.toast.error(e?.error?.message || 'Failed to add task.');
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  expandQuickAddToDrawer(status: TaskStatus): void {
+    const prefillTitle = this.quickAddTitle.trim();
+    this.cancelQuickAdd();
+    this.drawerStatus   = status;
+    this.editingTask    = prefillTitle
+      ? ({ title: prefillTitle, status, interval_type: (this.activeInterval || 'ONCE'), priority: 'MEDIUM' } as any)
+      : null;
+    // If prefilled, keep create mode cleanly by clearing id via null editingTask + drawerPreTitle:
+    if (prefillTitle) {
+      this.editingTask = null;
+      this.drawerPreTitle = prefillTitle;
+    }
+    this.drawerOpen = true;
+  }
+
+  // ── Proportional fluid column resizing ─────────────────────────────────────
+  private resizeState: { index: number; startX: number; boardW: number; startWeights: number[] } | null = null;
+
+  startResize(event: MouseEvent, index: number): void {
+    event.preventDefault();
+    const boardW = this.kanbanBoardRef?.nativeElement?.clientWidth || 1200;
+    this.resizeState = {
+      index,
+      startX:       event.clientX,
+      boardW,
+      startWeights: [...this.colWeights]
+    };
+    document.body.classList.add('tasks-resizing');
+    window.addEventListener('mousemove', this.onResizeMove);
+    window.addEventListener('mouseup',   this.onResizeEnd);
+  }
+
+  private onResizeMove = (e: MouseEvent) => {
+    if (!this.resizeState) return;
+    const { index, startX, boardW, startWeights } = this.resizeState;
+    const totalWeight = startWeights.reduce((acc, w) => acc + w, 0);
+    const deltaWeight = ((e.clientX - startX) / Math.max(400, boardW)) * totalWeight;
+    this.colWeights = rebalanceWeights(startWeights, index, deltaWeight, this.MIN_COL_WEIGHT);
+    this.cdr.markForCheck();
+  };
+
+  private onResizeEnd = () => {
+    document.body.classList.remove('tasks-resizing');
+    window.removeEventListener('mousemove', this.onResizeMove);
+    window.removeEventListener('mouseup',   this.onResizeEnd);
+    this.resizeState = null;
+    try { localStorage.setItem(LS_WEIGHTS, JSON.stringify(this.colWeights)); } catch { /* noop */ }
+  };
+
+  resetColumnWidths(): void {
+    this.colWeights = [...DEFAULT_COL_WEIGHTS];
+    try { localStorage.removeItem(LS_WEIGHTS); } catch { /* noop */ }
+    this.cdr.markForCheck();
+    this.toast.info('Column widths reset to balanced.');
+  }
+
+  // ── Detail drawer & CRUD ───────────────────────────────────────────────────
+  openDrawerForCreate(defaultStatus: TaskStatus = 'TODO'): void {
+    this.editingTask    = null;
+    this.drawerStatus   = defaultStatus;
+    this.drawerPreTitle = '';
+    this.drawerOpen     = true;
+  }
+
+  openDrawerForEdit(task: Task): void {
+    this.editingTask    = task;
+    this.drawerStatus   = task.status;
+    this.drawerPreTitle = '';
+    this.drawerOpen     = true;
+    this.cdr.markForCheck();
+  }
+
+  closeDrawer(): void {
+    this.drawerOpen  = false;
+    this.editingTask = null;
+    if (this.route.snapshot.queryParamMap.has('id')) {
+      this.router.navigate([], {
+        relativeTo: this.route,
+        queryParams: { id: null },
+        queryParamsHandling: 'merge',
+        replaceUrl: true
+      });
+    }
+  }
+
+  onDrawerSave(ev: { id: number | null; payload: any }): void {
     this.saving = true;
-    this.form.tags = this.tagsInput ? this.tagsInput.split(',').map(t => t.trim()).filter(Boolean) : [];
-    const isEdit = !!this.editingTask;
-    const req$   = isEdit
-      ? this.api.put<any>(`/tasks/${this.editingTask!.id}`, this.form)
-      : this.api.post<any>('/tasks', this.form);
-    req$.subscribe({
-      next: () => {
-        this.saving = false; this.showModal = false; this.loadTasks();
+    const isEdit = ev.id !== null;
+    const req$ = isEdit
+      ? this.api.put<any>(`/tasks/${ev.id}`, ev.payload)
+      : this.api.post<any>('/tasks', ev.payload);
+
+    req$.pipe(takeUntil(this.destroy$)).subscribe({
+      next: res => {
+        const saved: Task = res.data;
+        if (isEdit && saved) {
+          this.tasks    = this.tasks.map(t => t.id === saved.id ? saved : t);
+          this.allTasks = this.allTasks.map(t => t.id === saved.id ? saved : t);
+        } else if (saved) {
+          this.tasks    = [saved, ...this.tasks];
+          this.allTasks = [saved, ...this.allTasks];
+        }
+        this.saving = false;
+        this.closeDrawer();
         this.toast.success(isEdit ? 'Task updated.' : 'Task created.');
         this.cdr.markForCheck();
       },
@@ -386,104 +614,144 @@ export class TasksComponent implements OnInit, OnDestroy {
     });
   }
 
-  quickStatusChange(task: Task, event: MouseEvent): void {
-    event.stopPropagation();
-    const nextStatus: Record<TaskStatus, TaskStatus> = {
-      'TODO':'IN_PROGRESS','IN_PROGRESS':'REVIEW','REVIEW':'DONE',
-      'DONE':'TODO','CANCELLED':'TODO','OVERDUE':'IN_PROGRESS'
-    };
-    const target = nextStatus[task.status];
-    this.api.put<any>(`/tasks/${task.id}`, { status: target }).subscribe({
-      next: () => { this.loadTasks(); this.toast.info(`Moved to ${this.columnLabel(target)}.`); },
-      error: (e: any) => this.toast.error(e?.error?.message || 'Failed to update status.')
-    });
+  onTaskMutatedFromDrawer(updated: Task): void {
+    this.tasks       = this.tasks.map(t => t.id === updated.id ? { ...t, ...updated } : t);
+    this.editingTask = this.editingTask?.id === updated.id ? updated : this.editingTask;
+    this.cdr.markForCheck();
   }
 
-  async deleteTask(task: Task, event: MouseEvent): Promise<void> {
-    event.stopPropagation();
+  async deleteTask(task: Task, event?: MouseEvent): Promise<void> {
+    event?.stopPropagation();
     const ok = await this.confirm.confirm(`Delete "${task.title}"? This cannot be undone.`, 'Delete Task');
     if (!ok) return;
-    this.api.delete<any>(`/tasks/${task.id}`).subscribe({
-      next: () => { this.loadTasks(); this.toast.success('Task deleted.'); },
+
+    this.api.delete<any>(`/tasks/${task.id}`).pipe(takeUntil(this.destroy$)).subscribe({
+      next: () => {
+        this.tasks    = this.tasks.filter(t => t.id !== task.id);
+        this.allTasks = this.allTasks.filter(t => t.id !== task.id);
+        if (this.editingTask?.id === task.id) this.closeDrawer();
+        this.toast.success('Task deleted.');
+        this.cdr.markForCheck();
+      },
       error: (e: any) => this.toast.error(e?.error?.message || 'Failed to delete.')
     });
   }
 
-  duplicateTask(task: Task, event: MouseEvent): void {
-    event.stopPropagation();
+  duplicateTask(task: Task, event?: MouseEvent): void {
+    event?.stopPropagation();
     const payload: any = {
       title:           `${task.title} (copy)`,
       description:     task.description,
       interval_type:   task.interval_type,
       status:          'TODO',
       priority:        task.priority,
-      due_date:        task.due_date,
-      estimated_hours: task.estimated_hours,
+      assigned_to:     task.assigned_to ?? task.assignee?.id ?? null,
+      due_date:        task.due_date || null,
+      estimated_hours: task.estimated_hours ?? null,
       tags:            task.tags || []
     };
-    this.api.post<any>('/tasks', payload).subscribe({
-      next: () => { this.toast.success('Task duplicated.'); this.loadTasks(); },
+
+    this.api.post<any>('/tasks', payload).pipe(takeUntil(this.destroy$)).subscribe({
+      next: res => {
+        if (res.data) {
+          this.tasks    = [res.data, ...this.tasks];
+          this.allTasks = [res.data, ...this.allTasks];
+        }
+        this.toast.success('Task duplicated.');
+        this.cdr.markForCheck();
+      },
       error: (e: any) => this.toast.error(e?.error?.message || 'Failed to duplicate.')
     });
   }
 
-  addSubtaskToEditing(): void {
-    if (!this.editingTask) return;
-    const title = prompt('Subtask title:');
-    if (!title) return;
-    this.api.post<any>('/tasks', {
-      title, parent_id: this.editingTask.id,
-      interval_type: 'ONCE', status: 'TODO', priority: 'MEDIUM'
-    }).subscribe(() => {
-      this.api.get<any>(`/tasks/${this.editingTask!.id}`).subscribe(res => {
-        this.editingTask = res.data;
+  async onBulkAction(cmd: BulkTaskCommand): Promise<void> {
+    if (cmd.action === 'delete') {
+      const ok = await this.confirm.confirm(
+        `Delete ${cmd.ids.length} selected task(s)? This cannot be undone.`,
+        'Bulk Delete Tasks'
+      );
+      if (!ok) return;
+    }
+
+    this.busyBulk = true;
+    this.cdr.markForCheck();
+
+    this.api.patch<any>('/tasks/bulk', cmd).pipe(takeUntil(this.destroy$)).subscribe({
+      next: () => {
+        this.busyBulk = false;
+        this.toast.success(`Updated ${cmd.ids.length} task(s).`);
+        this.loadTasks();
+      },
+      error: (e: any) => {
+        this.busyBulk = false;
+        this.toast.error(e?.error?.message || 'Bulk action failed.');
         this.cdr.markForCheck();
-      });
-      this.loadTasks();
+      }
     });
   }
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
-  getPriorityColor(p: Priority): string {
-    const m: Record<string,string> = { LOW:'#10B981', MEDIUM:'#F59E0B', HIGH:'#EF4444', CRITICAL:'#9D174D' };
-    return m[p] || '#F59E0B';
+  // ── Keyboard shortcuts (outside inputs / closed drawer) ────────────────────
+  @HostListener('document:keydown', ['$event'])
+  onGlobalKeydown(event: KeyboardEvent): void {
+    if (this.drawerOpen || this.quickAddStatus || event.ctrlKey || event.metaKey || event.altKey) return;
+    const tag = (document.activeElement?.tagName || '').toUpperCase();
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+    if (event.key === '/') {
+      event.preventDefault();
+      this.searchInputRef?.nativeElement.focus();
+    } else if (event.key === 'n' || event.key === 'N') {
+      event.preventDefault();
+      this.openDrawerForCreate();
+    }
   }
 
-  getPriorityBadge(p: Priority): string {
-    const m: Record<string,string> = { LOW:'badge-low', MEDIUM:'badge-medium', HIGH:'badge-high', CRITICAL:'badge-critical' };
-    return m[p] || 'badge-medium';
+  // ── Prefs persistence & view helpers ───────────────────────────────────────
+  private restorePrefs(): void {
+    try {
+      const wRaw = localStorage.getItem(LS_WEIGHTS);
+      if (wRaw) {
+        const arr = JSON.parse(wRaw);
+        if (Array.isArray(arr) && arr.length === DEFAULT_COL_WEIGHTS.length) {
+          this.colWeights = arr.map((n: any) => Math.max(this.MIN_COL_WEIGHT, Number(n) || 1));
+        }
+      }
+      const d = localStorage.getItem(LS_DENSITY) as Density | null;
+      if (d === 'compact' || d === 'comfortable') this.density = d;
+
+      const v = localStorage.getItem(LS_VIEW) as TaskViewMode | null;
+      if (v === 'kanban' || v === 'list' || v === 'swimlanes') this.viewMode = v;
+
+      const sw = localStorage.getItem(LS_SWIMLANE) as SwimlaneBy | null;
+      if (sw === 'assignee' || sw === 'priority') this.swimlaneBy = sw;
+
+      const s = localStorage.getItem(LS_SORT);
+      if (s) {
+        const parsed = JSON.parse(s);
+        if (parsed?.key) { this.sortKey = parsed.key; this.sortAsc = !!parsed.asc; }
+      }
+    } catch { /* ignore */ }
   }
 
-  getInitials(user: Partial<{ first_name: string; last_name: string }>): string {
-    return `${user.first_name?.[0] || ''}${user.last_name?.[0] || ''}`.toUpperCase();
+  columnLabel(status: TaskStatus): string {
+    return this.columns.find(c => c.status === status)?.label ?? status;
   }
 
-  /** Stable, pleasant HSL color per user (hashed from name). */
-  getAvatarColor(user: Partial<{ first_name: string; last_name: string }>): string {
-    const s = `${user.first_name || ''} ${user.last_name || ''}`;
-    let h = 0;
-    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-    const hue = Math.abs(h) % 360;
-    return `hsl(${hue} 55% 45%)`;
+  trackById  = (_: number, t: Task) => t.id;
+  trackByKey = (_: number, g: SwimlaneGroup) => g.key;
+
+  readonly isOverdue       = isTaskOverdue;
+  readonly daysUntilDue    = daysUntilDue;
+  readonly dueLabel        = formatDueLabel;
+  readonly getDoneSubtasks = getDoneSubtasks;
+  readonly hoursProgress   = getHoursProgress;
+  readonly priorityColor   = getPriorityColor;
+  readonly getInitials     = getInitials;
+  readonly getAvatarColor  = getAvatarColor;
+  readonly userName        = getUserDisplayName;
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
   }
-
-  trackById = (_: number, t: Task) => t.id;
-
-  private emptyForm(): any {
-    return {
-      title: '', description: '', interval_type: 'ONCE', status: 'TODO',
-      priority: 'MEDIUM', due_date: null, estimated_hours: undefined,
-      parent_id: undefined, tags: []
-    };
-  }
-
-  showFormField(fieldKey: string): boolean {
-    return this.uiCustomization.isVisible(this.uiPrefs, 'form', fieldKey, true);
-  }
-
-  fieldLabel(scope: 'table' | 'form', fieldKey: string, fallback: string): string {
-    return this.uiCustomization.getLabel(this.uiPrefs, scope, fieldKey, fallback);
-  }
-
-  ngOnDestroy(): void { this.destroy$.next(); this.destroy$.complete(); }
 }

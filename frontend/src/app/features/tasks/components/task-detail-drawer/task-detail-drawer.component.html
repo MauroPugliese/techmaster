@@ -1,0 +1,341 @@
+<!-- ==========================================================================
+     task-detail-drawer.component.html — 2-Column Slide-Over Task Detail Drawer
+     ========================================================================== -->
+
+<div class="drawer-backdrop" *ngIf="open" (click)="onBackdropClick($event)">
+  <aside class="task-drawer" role="dialog" aria-modal="true"
+         [attr.aria-label]="task ? 'Edit Task' : 'New Task'">
+
+    <!-- ── Header ─────────────────────────────────────────────────────────── -->
+    <header class="drawer-header">
+      <div class="header-left">
+        <span class="mat-i header-icon">{{task ? 'edit_note' : 'add_task'}}</span>
+        <div>
+          <h3>{{task ? 'Task Details #' + task.id : 'Create New Task'}}</h3>
+          <p class="header-sub" *ngIf="task">
+            Created {{task.created_at | date:'mediumDate'}}
+            <span *ngIf="task.creator"> by {{userName(task.creator)}}</span>
+          </p>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <button *ngIf="task"
+                type="button"
+                class="btn btn-ghost btn-sm danger-btn"
+                (click)="deleteTask.emit(task)"
+                title="Delete task">
+          <span class="btn-icon">delete</span> Delete
+        </button>
+        <button type="button"
+                class="btn btn-ghost btn-icon-only"
+                (click)="close.emit()"
+                title="Close (Esc)">
+          <span class="btn-icon">close</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- ── 2-Column Body ──────────────────────────────────────────────────── -->
+    <div class="drawer-body">
+
+      <!-- LEFT COLUMN: Form + Effort + Subtasks -->
+      <section class="drawer-main">
+        <div class="form-group" *ngIf="showFormField('title')">
+          <label class="form-label">{{fieldLabel('form','title','Title')}} *</label>
+          <input class="form-control title-input"
+                 [(ngModel)]="form.title"
+                 placeholder="What needs to be done?">
+        </div>
+
+        <div class="form-grid four">
+          <div class="form-group" *ngIf="showFormField('interval_type')">
+            <label class="form-label">{{fieldLabel('form','interval_type','Interval')}} *</label>
+            <app-dropdown class="form-control" [(ngModel)]="form.interval_type">
+              <app-dropdown-option value="ONCE">One-time</app-dropdown-option>
+              <app-dropdown-option value="DAILY">Daily</app-dropdown-option>
+              <app-dropdown-option value="WEEKLY">Weekly</app-dropdown-option>
+              <app-dropdown-option value="MONTHLY">Monthly</app-dropdown-option>
+              <app-dropdown-option value="YEARLY">Yearly</app-dropdown-option>
+            </app-dropdown>
+          </div>
+
+          <div class="form-group" *ngIf="showFormField('priority')">
+            <label class="form-label">{{fieldLabel('form','priority','Priority')}}</label>
+            <app-dropdown class="form-control" [(ngModel)]="form.priority">
+              <app-dropdown-option value="LOW">Low</app-dropdown-option>
+              <app-dropdown-option value="MEDIUM">Medium</app-dropdown-option>
+              <app-dropdown-option value="HIGH">High</app-dropdown-option>
+              <app-dropdown-option value="CRITICAL">Critical</app-dropdown-option>
+            </app-dropdown>
+          </div>
+
+          <div class="form-group" *ngIf="showFormField('status')">
+            <label class="form-label">{{fieldLabel('form','status','Status')}}</label>
+            <app-dropdown class="form-control" [(ngModel)]="form.status">
+              <app-dropdown-option value="TODO">To Do</app-dropdown-option>
+              <app-dropdown-option value="IN_PROGRESS">In Progress</app-dropdown-option>
+              <app-dropdown-option value="REVIEW">In Review</app-dropdown-option>
+              <app-dropdown-option value="DONE">Done</app-dropdown-option>
+              <app-dropdown-option value="OVERDUE">Overdue</app-dropdown-option>
+              <app-dropdown-option value="CANCELLED">Cancelled</app-dropdown-option>
+            </app-dropdown>
+          </div>
+
+          <div class="form-group" *ngIf="showFormField('due_date')">
+            <label class="form-label">{{fieldLabel('form','due_date','Due Date')}}</label>
+            <div class="datetime-picker-wrapper">
+              <input class="form-control"
+                     [owlDateTime]="dtDue"
+                     [owlDateTimeTrigger]="dtDue"
+                     [(ngModel)]="form.due_date"
+                     placeholder="Select date & time">
+              <span class="picker-trigger-icon" [owlDateTimeTrigger]="dtDue">event</span>
+              <owl-date-time #dtDue pickerMode="dialog"></owl-date-time>
+            </div>
+          </div>
+        </div>
+
+        <!-- Assignee + Parent Task -->
+        <div class="form-grid two">
+          <div class="form-group" *ngIf="showFormField('assigned_to')">
+            <div class="label-with-action">
+              <label class="form-label">{{fieldLabel('form','assigned_to','Assignee')}}</label>
+              <button *ngIf="currentUser"
+                      type="button"
+                      class="inline-link"
+                      (click)="assignToMe()">
+                Assign to me
+              </button>
+            </div>
+            <app-dropdown class="form-control" [(ngModel)]="form.assigned_to" placeholder="— Unassigned —">
+              <app-dropdown-option [ngValue]="null">— Unassigned —</app-dropdown-option>
+              <app-dropdown-option *ngFor="let u of assignees" [value]="u.id" [label]="userName(u)">
+                {{userName(u)}} ({{'@'}}{{u.username}})
+              </app-dropdown-option>
+            </app-dropdown>
+          </div>
+
+          <div class="form-group" *ngIf="showFormField('parent_id')">
+            <label class="form-label">{{fieldLabel('form','parent_id','Parent Task')}}</label>
+            <app-dropdown class="form-control" [(ngModel)]="form.parent_id" placeholder="— None (top-level) —">
+              <app-dropdown-option [ngValue]="null">— None (top-level) —</app-dropdown-option>
+              <app-dropdown-option *ngFor="let t of parentTaskOptions" [value]="t.id">{{t.title}}</app-dropdown-option>
+            </app-dropdown>
+          </div>
+        </div>
+
+        <!-- Time Tracking: Estimated vs Actual Hours -->
+        <div class="hours-card" *ngIf="showFormField('estimated_hours') || showFormField('actual_hours')">
+          <div class="form-grid two">
+            <div class="form-group" *ngIf="showFormField('estimated_hours')">
+              <label class="form-label">{{fieldLabel('form','estimated_hours','Estimated Hours')}}</label>
+              <input type="number" class="form-control" [(ngModel)]="form.estimated_hours" min="0" step="0.5" placeholder="0.0">
+            </div>
+            <div class="form-group" *ngIf="showFormField('actual_hours')">
+              <label class="form-label">{{fieldLabel('form','actual_hours','Actual Hours Logged')}}</label>
+              <input type="number" class="form-control" [(ngModel)]="form.actual_hours" min="0" step="0.5" placeholder="0.0">
+            </div>
+          </div>
+
+          <div class="hours-meter" *ngIf="formHoursProgress.estimated > 0 || formHoursProgress.actual > 0">
+            <div class="meter-head">
+              <span>Effort tracking</span>
+              <span [class.overrun]="formHoursProgress.isOverrun" [class.warn]="formHoursProgress.isWarning">
+                {{formHoursProgress.actual}}h logged
+                <ng-container *ngIf="formHoursProgress.estimated > 0">
+                  / {{formHoursProgress.estimated}}h est.
+                  ({{formHoursProgress.isOverrun ? 'Overrun!' : formHoursProgress.percent + '%'}})
+                </ng-container>
+              </span>
+            </div>
+            <div class="meter-bar">
+              <div class="meter-fill"
+                   [style.width.%]="formHoursProgress.percent"
+                   [class.overrun]="formHoursProgress.isOverrun"
+                   [class.warn]="formHoursProgress.isWarning"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Description -->
+        <div class="form-group" *ngIf="showFormField('description')">
+          <label class="form-label">{{fieldLabel('form','description','Description')}}</label>
+          <textarea class="form-control" rows="4" [(ngModel)]="form.description"
+                    placeholder="Add context, acceptance criteria, or technical notes…"></textarea>
+        </div>
+
+        <!-- Interactive Tags Chips -->
+        <div class="form-group" *ngIf="showFormField('tags')">
+          <label class="form-label">{{fieldLabel('form','tags','Tags')}}</label>
+          <div class="tags-editor">
+            <span *ngFor="let tag of tagsList; let idx = index" class="tag-chip">
+              #{{tag}}
+              <button type="button" (click)="removeTag(idx)" title="Remove tag">&times;</button>
+            </span>
+            <input type="text"
+                   class="tag-input"
+                   [(ngModel)]="tagDraft"
+                   (keydown)="onTagKeydown($event)"
+                   (blur)="commitTagDraft()"
+                   placeholder="Type tag & press Enter…">
+          </div>
+        </div>
+
+        <!-- Interactive Subtasks Checklist (Edit mode) -->
+        <div class="subtasks-panel" *ngIf="task">
+          <div class="subtasks-head">
+            <div class="sub-head-title">
+              <span class="mat-i">account_tree</span>
+              <span>Subtasks</span>
+              <span class="sub-counter">{{doneSubtasksCount}} / {{subtasksList.length}}</span>
+            </div>
+            <div class="sub-progress" *ngIf="subtasksList.length">
+              <div class="sub-progress-fill"
+                   [style.width.%]="(doneSubtasksCount / subtasksList.length) * 100"
+                   [class.complete]="doneSubtasksCount === subtasksList.length"></div>
+            </div>
+          </div>
+
+          <div class="subtasks-list" *ngIf="subtasksList.length">
+            <div *ngFor="let sub of subtasksList; trackBy: trackById"
+                 class="subtask-row"
+                 [class.done]="sub.status === 'DONE'">
+              <button type="button"
+                      class="sub-check-btn"
+                      (click)="toggleSubtask(sub)"
+                      [title]="sub.status === 'DONE' ? 'Mark as To Do' : 'Mark as Done'">
+                <span class="mat-i">
+                  {{sub.status === 'DONE' ? 'check_box' : 'check_box_outline_blank'}}
+                </span>
+              </button>
+              <span class="sub-title">{{sub.title}}</span>
+              <span class="badge" [ngClass]="priorityBadge(sub.priority)">{{sub.priority}}</span>
+              <button type="button"
+                      class="sub-del-btn"
+                      (click)="deleteSubtask(sub)"
+                      title="Delete subtask">
+                <span class="mat-i">close</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="subtask-add-row">
+            <input type="text"
+                   class="form-control"
+                   [(ngModel)]="newSubtaskTitle"
+                   (keydown.enter)="$event.preventDefault(); addSubtask()"
+                   [disabled]="addingSubtask"
+                   placeholder="Add a subtask and press Enter…">
+            <button type="button"
+                    class="btn btn-secondary btn-sm"
+                    (click)="addSubtask()"
+                    [disabled]="addingSubtask || !newSubtaskTitle.trim()">
+              <span class="btn-icon">add</span> Add
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- RIGHT COLUMN: Comments & @Mentions Feed -->
+      <aside class="drawer-activity">
+        <div class="activity-head">
+          <span class="mat-i">forum</span>
+          <h4>Discussion & Mentions</h4>
+          <span class="count-pill" *ngIf="task">{{comments.length}}</span>
+        </div>
+
+        <ng-container *ngIf="task; else createHint">
+          <div class="comments-stream">
+            <div *ngIf="loadingComments" class="comments-loading">
+              <div class="spinner"></div> Loading comments…
+            </div>
+
+            <div *ngIf="!loadingComments && !comments.length" class="comments-empty">
+              <span class="mat-i">chat_bubble_outline</span>
+              <p>No comments yet. Mention teammates with <code>&#64;username</code> to notify them immediately.</p>
+            </div>
+
+            <div *ngFor="let c of comments; trackBy: trackById" class="comment-card">
+              <div class="comment-avatar" [style.background]="avatarColor(c.author)">
+                {{initials(c.author)}}
+              </div>
+              <div class="comment-body">
+                <div class="comment-meta">
+                  <span class="comment-author">{{userName(c.author)}}</span>
+                  <span class="comment-handle" *ngIf="c.author?.username">{{'@'}}{{c.author!.username}}</span>
+                  <span class="comment-time">{{relativeTime(c.created_at)}}</span>
+                  <button *ngIf="canDeleteComment(c)"
+                          type="button"
+                          class="comment-del"
+                          (click)="removeComment(c)"
+                          title="Delete comment">
+                    <span class="mat-i">delete_outline</span>
+                  </button>
+                </div>
+                <p class="comment-text">
+                  <ng-container *ngFor="let seg of commentSegments(c.content)">
+                    <span *ngIf="seg.isMention" class="mention-chip">{{seg.text}}</span>
+                    <ng-container *ngIf="!seg.isMention">{{seg.text}}</ng-container>
+                  </ng-container>
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Composer with @mention autocomplete popup -->
+          <div class="composer">
+            <div class="mention-menu" *ngIf="mentionCandidates.length">
+              <button *ngFor="let u of mentionCandidates; let idx = index"
+                      type="button"
+                      class="mention-option"
+                      [class.active]="idx === mentionIndex"
+                      (mousedown)="$event.preventDefault(); insertMention(u)">
+                <span class="m-avatar" [style.background]="avatarColor(u)">{{initials(u)}}</span>
+                <span class="m-name">{{userName(u)}}</span>
+                <span class="m-handle">{{'@'}}{{u.username}}</span>
+              </button>
+            </div>
+
+            <textarea #commentBox
+                      class="form-control composer-input"
+                      rows="3"
+                      [(ngModel)]="commentText"
+                      (input)="onCommentInput($event)"
+                      (keydown)="onCommentKeydown($event)"
+                      placeholder="Write a comment… type @ to mention a colleague (Ctrl+Enter to send)"></textarea>
+
+            <div class="composer-foot">
+              <span class="composer-hint">Tip: type <code>&#64;</code> to mention · <code>Ctrl+Enter</code> to send</span>
+              <button type="button"
+                      class="btn btn-primary btn-sm"
+                      (click)="postComment()"
+                      [disabled]="postingComment || !commentText.trim()">
+                <span class="btn-icon">send</span> {{postingComment ? 'Sending…' : 'Send'}}
+              </button>
+            </div>
+          </div>
+        </ng-container>
+
+        <ng-template #createHint>
+          <div class="comments-empty create-note">
+            <span class="mat-i">alternate_email</span>
+            <p>Save the task first to unlock interactive subtasks checklist and team <code>&#64;mention</code> comments.</p>
+          </div>
+        </ng-template>
+      </aside>
+    </div>
+
+    <!-- ── Footer ─────────────────────────────────────────────────────────── -->
+    <footer class="drawer-footer">
+      <button type="button" class="btn btn-ghost" (click)="close.emit()">Cancel</button>
+      <button type="button"
+              class="btn btn-primary"
+              (click)="submitForm()"
+              [disabled]="saving || (showFormField('title') && !form.title?.trim())">
+        <span class="btn-icon">{{saving ? 'hourglass_top' : 'save'}}</span>
+        {{saving ? 'Saving…' : (task ? 'Save Changes' : 'Create Task')}}
+      </button>
+    </footer>
+  </aside>
+</div>

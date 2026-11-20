@@ -230,9 +230,30 @@ export interface Shift {
 export type TaskStatus   = 'TODO' | 'IN_PROGRESS' | 'REVIEW' | 'DONE' | 'CANCELLED' | 'OVERDUE';
 export type IntervalType = 'ONCE' | 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
 
+export interface TaskAssignee {
+  id: number;
+  username: string;
+  first_name: string;
+  last_name: string;
+  department?: string;
+  job_title?: string;
+  avatar_url?: string;
+}
+
+export interface TaskComment {
+  id: number;
+  task_id: number;
+  user_id: number;
+  content: string;
+  created_at: string;
+  author?: TaskAssignee;
+}
+
 export interface Task {
   id: number;
-  parent_id?: number;
+  parent_id?: number | null;
+  assigned_to?: number | null;
+  created_by?: number;
   title: string;
   description?: string;
   interval_type: IntervalType;
@@ -244,7 +265,9 @@ export interface Task {
   actual_hours?: number;
   tags?: string[];
   subtasks?: Task[];
-  assignee?: Partial<User>;
+  assignee?: Partial<TaskAssignee> | null;
+  creator?: Partial<TaskAssignee>;
+  comments_count?: number;
   created_at: string;
 }
 

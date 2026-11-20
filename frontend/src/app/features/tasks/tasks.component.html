@@ -1,10 +1,10 @@
 <!-- ==========================================================================
-     tasks.component.html — Recursive Task Manager (Enhanced)
+     tasks.component.html — Full-Width Task Manager (Kanban, List, Swimlanes)
      ========================================================================== -->
 
 <div class="tasks-page fade-in" [class.density-compact]="density==='compact'">
 
-  <!-- ── Toolbar ─────────────────────────────────────────────────────────── -->
+  <!-- ── Primary Toolbar Row: Intervals | View Switcher + Export + Create ─── -->
   <div class="tasks-toolbar">
     <div class="interval-tabs">
       <button *ngFor="let tab of intervals"
@@ -17,80 +17,141 @@
       </button>
     </div>
 
-    <div class="toolbar-right">
-      <div class="search-box">
-        <span class="mat-i">search</span>
-        <input type="text"
-               class="form-control"
-               placeholder="Search tasks, tags…"
-               [(ngModel)]="searchTerm">
-        <button *ngIf="searchTerm" class="clear" type="button"
-                (click)="searchTerm=''" title="Clear search">
-          <span class="mat-i">close</span>
+    <div class="toolbar-primary-actions">
+      <div class="view-switcher" role="group" aria-label="Task view mode">
+        <button type="button" class="view-btn" [class.active]="viewMode==='kanban'" (click)="setViewMode('kanban')">
+          <span class="mat-i">view_kanban</span> Kanban
+        </button>
+        <button type="button" class="view-btn" [class.active]="viewMode==='list'" (click)="setViewMode('list')">
+          <span class="mat-i">table_rows</span> List
+        </button>
+        <button type="button" class="view-btn" [class.active]="viewMode==='swimlanes'" (click)="setViewMode('swimlanes')">
+          <span class="mat-i">view_agenda</span> Swimlanes
         </button>
       </div>
-
-      <app-dropdown class="form-control control-sm" [(ngModel)]="priorityFilter" placeholder="All Priorities">
-        <app-dropdown-option value="">All Priorities</app-dropdown-option>
-        <app-dropdown-option value="CRITICAL">Critical</app-dropdown-option>
-        <app-dropdown-option value="HIGH">High</app-dropdown-option>
-        <app-dropdown-option value="MEDIUM">Medium</app-dropdown-option>
-        <app-dropdown-option value="LOW">Low</app-dropdown-option>
-      </app-dropdown>
-
-      <app-dropdown class="form-control control-sm" [(ngModel)]="statusFilter" (change)="loadTasks()" placeholder="All Status">
-        <app-dropdown-option value="">All Status</app-dropdown-option>
-        <app-dropdown-option value="TODO">To Do</app-dropdown-option>
-        <app-dropdown-option value="IN_PROGRESS">In Progress</app-dropdown-option>
-        <app-dropdown-option value="REVIEW">In Review</app-dropdown-option>
-        <app-dropdown-option value="DONE">Done</app-dropdown-option>
-        <app-dropdown-option value="OVERDUE">Overdue</app-dropdown-option>
-      </app-dropdown>
-
-      <div class="sort-group" role="group" aria-label="Sort tasks">
-        <button *ngFor="let s of [
-                  {k:'due',      l:'Due'},
-                  {k:'priority', l:'Priority'},
-                  {k:'title',    l:'Title'},
-                  {k:'created',  l:'Created'}
-                ]"
-                type="button"
-                class="sort-btn"
-                [class.active]="sortKey===s.k"
-                (click)="setSort(s.k)"
-                [title]="'Sort by ' + s.l">
-          {{s.l}}
-          <span *ngIf="sortKey===s.k" class="mat-i">{{sortAsc ? 'arrow_upward' : 'arrow_downward'}}</span>
-        </button>
-      </div>
-
-      <div class="density-toggle" role="group" aria-label="Density">
-        <button type="button" class="d-btn" [class.active]="density==='comfortable'"
-                (click)="setDensity('comfortable')" title="Comfortable">
-          <span class="mat-i">density_medium</span>
-        </button>
-        <button type="button" class="d-btn" [class.active]="density==='compact'"
-                (click)="setDensity('compact')" title="Compact">
-          <span class="mat-i">density_small</span>
-        </button>
-      </div>
-
-      <button type="button" class="btn btn-ghost btn-sm" (click)="resetColumnWidths()" title="Reset column widths">
-        <span class="btn-icon">view_column</span> Reset
-      </button>
 
       <app-export-menu endpoint="tasks" filename="Tasks"
-                       [params]="{ status: statusFilter, priority: priorityFilter, interval_type: activeInterval, search: searchTerm }"></app-export-menu>
+                       [params]="{
+                         status: statusFilter,
+                         priority: priorityFilter,
+                         interval_type: activeInterval,
+                         assigned_to: assigneeFilter,
+                         search: searchTerm
+                       }"></app-export-menu>
 
-      <button type="button" class="btn btn-primary" (click)="openModal()">
+      <button type="button" class="btn btn-primary" (click)="openDrawerForCreate()" title="New task (N)">
         <span class="btn-icon">add</span> New Task
       </button>
     </div>
   </div>
 
-  <!-- ── Stats Bar ────────────────────────────────────────────────────────── -->
+  <!-- ── Secondary Filter & Controls Strip ────────────────────────────────── -->
+  <div class="filters-strip">
+    <div class="search-box">
+      <span class="mat-i">search</span>
+      <input #searchInput
+             type="text"
+             class="form-control"
+             placeholder="Search tasks, assignee, tags… (/)"
+             [(ngModel)]="searchTerm">
+      <button *ngIf="searchTerm" class="clear" type="button" (click)="searchTerm=''" title="Clear search">
+        <span class="mat-i">close</span>
+      </button>
+    </div>
+
+    <button *ngIf="currentUser"
+            type="button"
+            class="pill-toggle"
+            [class.active]="isMyTasksActive"
+            (click)="toggleMyTasks()">
+      <span class="mat-i">person</span> My Tasks
+    </button>
+
+    <app-dropdown class="form-control control-md"
+                  [(ngModel)]="assigneeFilter"
+                  placeholder="All Assignees">
+      <app-dropdown-option value="">All Assignees</app-dropdown-option>
+      <app-dropdown-option value="unassigned">Unassigned</app-dropdown-option>
+      <app-dropdown-option *ngFor="let u of assignees" [value]="u.id" [label]="userName(u)">
+        {{userName(u)}}
+      </app-dropdown-option>
+    </app-dropdown>
+
+    <app-dropdown class="form-control control-sm" [(ngModel)]="priorityFilter" placeholder="All Priorities">
+      <app-dropdown-option value="">All Priorities</app-dropdown-option>
+      <app-dropdown-option value="CRITICAL">Critical</app-dropdown-option>
+      <app-dropdown-option value="HIGH">High</app-dropdown-option>
+      <app-dropdown-option value="MEDIUM">Medium</app-dropdown-option>
+      <app-dropdown-option value="LOW">Low</app-dropdown-option>
+    </app-dropdown>
+
+    <app-dropdown class="form-control control-sm"
+                  [ngModel]="statusFilter"
+                  (ngModelChange)="onStatusFilterChange($event)"
+                  placeholder="All Status">
+      <app-dropdown-option value="">All Status</app-dropdown-option>
+      <app-dropdown-option value="TODO">To Do</app-dropdown-option>
+      <app-dropdown-option value="IN_PROGRESS">In Progress</app-dropdown-option>
+      <app-dropdown-option value="REVIEW">In Review</app-dropdown-option>
+      <app-dropdown-option value="DONE">Done</app-dropdown-option>
+      <app-dropdown-option value="OVERDUE">Overdue</app-dropdown-option>
+    </app-dropdown>
+
+    <div class="sort-group" role="group" aria-label="Sort tasks">
+      <button *ngFor="let s of sortOptions"
+              type="button"
+              class="sort-btn"
+              [class.active]="sortKey===s.k"
+              (click)="setSort(s.k)"
+              [title]="'Sort by ' + s.l">
+        {{s.l}}
+        <span *ngIf="sortKey===s.k" class="mat-i">{{sortAsc ? 'arrow_upward' : 'arrow_downward'}}</span>
+      </button>
+    </div>
+
+    <div *ngIf="viewMode==='swimlanes'" class="sort-group" role="group" aria-label="Group swimlanes by">
+      <button type="button" class="sort-btn" [class.active]="swimlaneBy==='assignee'" (click)="setSwimlaneBy('assignee')">
+        By Assignee
+      </button>
+      <button type="button" class="sort-btn" [class.active]="swimlaneBy==='priority'" (click)="setSwimlaneBy('priority')">
+        By Priority
+      </button>
+    </div>
+
+    <div *ngIf="viewMode!=='list'" class="density-toggle" role="group" aria-label="Density">
+      <button type="button" class="d-btn" [class.active]="density==='comfortable'"
+              (click)="setDensity('comfortable')" title="Comfortable">
+        <span class="mat-i">density_medium</span>
+      </button>
+      <button type="button" class="d-btn" [class.active]="density==='compact'"
+              (click)="setDensity('compact')" title="Compact">
+        <span class="mat-i">density_small</span>
+      </button>
+    </div>
+
+    <button *ngIf="viewMode==='kanban' && hasCustomWeights"
+            type="button"
+            class="btn btn-ghost btn-sm"
+            (click)="resetColumnWidths()"
+            title="Reset column proportions">
+      <span class="btn-icon">view_column</span> Reset cols
+    </button>
+
+    <button *ngIf="activeFilterCount > 0"
+            type="button"
+            class="btn-clear-filters"
+            (click)="clearFilters()">
+      <span class="mat-i">filter_alt_off</span> Clear ({{activeFilterCount}})
+    </button>
+  </div>
+
+  <!-- ── Interactive KPI Stat Cards ───────────────────────────────────────── -->
   <div class="stats-grid">
-    <div *ngFor="let stat of taskStats" class="stat-card">
+    <button *ngFor="let stat of taskStats"
+            type="button"
+            class="stat-card"
+            [class.selected]="statFilter===stat.key && stat.key!=='all'"
+            (click)="toggleStatFilter(stat.key)">
       <div class="stat-icon" [style.background]="stat.color + '18'" [style.color]="stat.color">
         <span class="mat-i">{{stat.icon}}</span>
       </div>
@@ -99,18 +160,25 @@
         <div class="stat-label">{{stat.label}}</div>
         <div class="stat-sub text-muted">{{stat.sub}}</div>
       </div>
-    </div>
+    </button>
   </div>
 
-  <!-- ── Kanban Board (resizable) ────────────────────────────────────────── -->
-  <div class="kanban-scroll" *ngIf="!loading">
-    <div class="kanban-board">
-      <ng-container *ngFor="let col of columns; let i = index; let last = last">
-        <div class="kanban-col"
-             [style.width.px]="colWidths[i]"
-             [style.min-width.px]="MIN_COL_WIDTH">
+  <!-- ── Loading State ────────────────────────────────────────────────────── -->
+  <div *ngIf="loading" class="loading-wrap">
+    <div class="spinner"></div>
+  </div>
 
-          <!-- Column Header -->
+  <!-- ════════════════════════════════════════════════════════════════════════
+       VIEW 1: FLUID 100%-WIDTH KANBAN BOARD
+       ════════════════════════════════════════════════════════════════════════ -->
+  <div class="kanban-scroll" *ngIf="!loading && viewMode==='kanban'">
+    <div #kanbanBoardEl class="kanban-board">
+      <ng-container *ngFor="let col of columns; let i = index; let last = last">
+        <section class="kanban-col"
+                 [style.flex]="colWeights[i] + ' 1 0%'"
+                 [style.min-width.px]="MIN_COL_PX">
+
+          <!-- Sticky Column Header -->
           <div class="col-header">
             <div class="col-title">
               <span class="col-dot" [style.background]="col.color"></span>
@@ -118,267 +186,259 @@
               <span class="col-label">{{col.label}}</span>
             </div>
             <div class="col-actions">
-              <span class="col-count">{{getTasksByStatus(col.status).length}}</span>
-              <button type="button" class="col-add" title="Add to {{col.label}}"
-                      (click)="openModal(col.status)">
+              <span class="col-hours" *ngIf="colEstHours(col.status) > 0" title="Estimated column hours">
+                {{colEstHours(col.status)}}h
+              </span>
+              <span class="col-count">{{getColumnTasks(col.status).length}}</span>
+              <button type="button" class="col-add" title="Create task in {{col.label}}"
+                      (click)="openDrawerForCreate(col.status)">
                 <span class="mat-i">add</span>
               </button>
             </div>
           </div>
 
-          <!-- Drop zone -->
+          <!-- Scrollable Drop Zone -->
           <div class="col-body"
                cdkDropList
                [id]="'col-' + col.status"
-               [cdkDropListData]="getTasksByStatus(col.status)"
-               [cdkDropListConnectedTo]="connectedTo(col.status)"
+               [cdkDropListData]="getColumnTasks(col.status)"
+               [cdkDropListConnectedTo]="dropListIds"
                (cdkDropListDropped)="onTaskDrop($event, col.status)">
 
-            <div *ngFor="let task of getTasksByStatus(col.status); trackBy: trackById"
-                 class="task-card"
-                 [class.overdue]="isOverdue(task)"
-                 [class.done]="task.status==='DONE'"
-                 cdkDrag
-                 [cdkDragData]="task"
-                 (click)="editTask(task)">
+            <ng-container *ngFor="let task of getColumnTasks(col.status); trackBy: trackById">
+              <ng-container *ngTemplateOutlet="taskCardTpl; context: { $implicit: task }"></ng-container>
+            </ng-container>
 
-              <!-- Ghost placeholder while dragging -->
-              <div class="task-placeholder" *cdkDragPlaceholder></div>
-
-              <!-- Priority stripe -->
-              <div class="priority-stripe" [style.background]="getPriorityColor(task.priority)"></div>
-
-              <!-- Card top: tags -->
-              <div class="card-tags">
-                <span class="tag interval-tag">{{task.interval_type}}</span>
-                <span class="tag priority-tag"
-                      [style.background]="getPriorityColor(task.priority) + '1A'"
-                      [style.color]="getPriorityColor(task.priority)">
-                  <span class="mat-i">flag</span>{{task.priority}}
-                </span>
-                <span *ngFor="let tag of (task.tags || []).slice(0,2)" class="tag">
-                  #{{tag}}
-                </span>
-                <span *ngIf="(task.tags || []).length > 2" class="tag more">
-                  +{{task.tags!.length - 2}}
-                </span>
-              </div>
-
-              <!-- Title / description -->
-              <div class="card-title">{{task.title}}</div>
-              <div class="card-desc" *ngIf="task.description">{{task.description}}</div>
-
-              <!-- Subtasks progress -->
-              <div class="subtasks" *ngIf="task.subtasks?.length">
-                <div class="subtasks-head">
-                  <span><span class="mat-i">account_tree</span> Subtasks</span>
-                  <span>{{getDoneSubtasks(task)}} / {{task.subtasks!.length}}</span>
-                </div>
-                <div class="progress-bar">
-                  <div class="progress-fill"
-                       [style.width.%]="task.subtasks!.length ? (getDoneSubtasks(task)/task.subtasks!.length)*100 : 0"
-                       [style.background]="getDoneSubtasks(task)===task.subtasks!.length ? '#10B981' : 'var(--primary)'">
-                  </div>
-                </div>
-              </div>
-
-              <!-- Footer -->
-              <div class="card-footer">
-                <div class="due-chip"
-                     [class.overdue]="isOverdue(task)"
-                     [class.soon]="!isOverdue(task) && daysUntilDue(task)!==null && daysUntilDue(task)! <= 2 && task.status!=='DONE'">
-                  <span class="mat-i">schedule</span>
-                  <span>{{dueLabel(task)}}</span>
-                </div>
-
-                <div class="footer-meta">
-                  <span *ngIf="task.estimated_hours" class="hours" title="Estimated hours">
-                    <span class="mat-i">timer</span>{{task.estimated_hours}}h
-                  </span>
-                  <div *ngIf="task.assignee" class="avatar"
-                       [style.background]="getAvatarColor(task.assignee)"
-                       [title]="task.assignee.first_name + ' ' + task.assignee.last_name">
-                    {{getInitials(task.assignee)}}
-                  </div>
-                </div>
-              </div>
-
-              <!-- Hover actions -->
-              <div class="task-actions" (click)="$event.stopPropagation()">
-                <button type="button" class="ta-btn" title="Advance status"
-                        (click)="quickStatusChange(task, $event)">
-                  <span class="mat-i">check_circle</span>
-                </button>
-                <button type="button" class="ta-btn" title="Duplicate"
-                        (click)="duplicateTask(task, $event)">
-                  <span class="mat-i">content_copy</span>
-                </button>
-                <button type="button" class="ta-btn danger" title="Delete"
-                        (click)="deleteTask(task, $event)">
-                  <span class="mat-i">delete</span>
-                </button>
-              </div>
-
-              <!-- Drag handle indicator -->
-              <div class="drag-handle" cdkDragHandle title="Drag to move">
-                <span class="mat-i">drag_indicator</span>
-              </div>
-            </div>
-
-            <!-- Empty state -->
-            <div *ngIf="!getTasksByStatus(col.status).length" class="col-empty">
+            <!-- Empty Column Placeholder -->
+            <div *ngIf="!getColumnTasks(col.status).length && quickAddStatus !== col.status" class="col-empty">
               <span class="mat-i">{{col.icon}}</span>
               <p>No tasks here</p>
-              <button type="button" class="btn btn-ghost btn-sm" (click)="openModal(col.status)">
-                <span class="btn-icon">add</span> Add first task
+              <button type="button" class="btn btn-ghost btn-sm" (click)="openQuickAdd(col.status)">
+                <span class="btn-icon">add</span> Quick add
               </button>
             </div>
 
-            <!-- Add button -->
-            <button type="button" class="col-add-inline"
-                    (click)="openModal(col.status)"
-                    *ngIf="getTasksByStatus(col.status).length">
+            <!-- Inline Quick-Add Form -->
+            <div *ngIf="quickAddStatus === col.status" class="quick-add-box" (click)="$event.stopPropagation()">
+              <input #quickAddInput
+                     type="text"
+                     class="form-control quick-input"
+                     [(ngModel)]="quickAddTitle"
+                     (keydown.enter)="$event.preventDefault(); submitQuickAdd(col.status)"
+                     (keydown.escape)="cancelQuickAdd()"
+                     [disabled]="savingQuickAdd"
+                     placeholder="Task title… (Enter to save)">
+              <div class="quick-add-actions">
+                <button type="button"
+                        class="btn btn-primary btn-xs"
+                        (click)="submitQuickAdd(col.status)"
+                        [disabled]="savingQuickAdd || !quickAddTitle.trim()">
+                  {{savingQuickAdd ? 'Adding…' : 'Add'}}
+                </button>
+                <button type="button" class="btn btn-ghost btn-xs" (click)="cancelQuickAdd()">Cancel</button>
+                <button type="button"
+                        class="expand-btn"
+                        (click)="expandQuickAddToDrawer(col.status)"
+                        title="Open full form">
+                  <span class="mat-i">open_in_full</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Inline Quick-Add Trigger -->
+            <button type="button"
+                    class="col-add-inline"
+                    (click)="openQuickAdd(col.status)"
+                    *ngIf="getColumnTasks(col.status).length && quickAddStatus !== col.status">
               <span class="mat-i">add</span> Add task
             </button>
           </div>
-        </div>
+        </section>
 
-        <!-- Resize handle between columns -->
-        <div *ngIf="!last" class="col-resizer" (mousedown)="startResize($event, i)" title="Drag to resize">
+        <!-- Proportional Column Resizer (double-click to reset) -->
+        <div *ngIf="!last"
+             class="col-resizer"
+             (mousedown)="startResize($event, i)"
+             (dblclick)="resetColumnWidths()"
+             title="Drag to resize columns · Double-click to reset">
           <div class="grip"></div>
         </div>
       </ng-container>
     </div>
   </div>
 
-  <!-- Loading -->
-  <div *ngIf="loading" class="loading-wrap">
-    <div class="spinner"></div>
-  </div>
+  <!-- ════════════════════════════════════════════════════════════════════════
+       VIEW 2: FULL-WIDTH LIST / TABLE VIEW WITH BULK ACTIONS
+       ════════════════════════════════════════════════════════════════════════ -->
+  <app-task-list-view
+    *ngIf="!loading && viewMode==='list'"
+    [tasks]="filteredTasks"
+    [assignees]="assignees"
+    [sortKey]="sortKey"
+    [sortAsc]="sortAsc"
+    [busyBulk]="busyBulk"
+    (taskClick)="openDrawerForEdit($event)"
+    (sortChange)="setSort($event)"
+    (inlineUpdate)="onListInlineUpdate($event)"
+    (duplicate)="duplicateTask($event)"
+    (remove)="deleteTask($event)"
+    (bulkAction)="onBulkAction($event)">
+  </app-task-list-view>
 
-</div>
-
-<!-- ── Task Modal ────────────────────────────────────────────────────────────── -->
-<div class="modal-overlay" *ngIf="showModal" (click)="closeModal($event)">
-  <div class="modal task-modal">
-    <div class="modal-header">
-      <h3>
-        <span class="mat-i">{{editingTask ? 'edit' : 'add_task'}}</span>
-        {{editingTask ? 'Edit Task' : 'New Task'}}
-      </h3>
-      <button type="button" class="btn btn-ghost btn-icon-only" (click)="showModal=false" title="Close (Esc)">
-        <span class="btn-icon">close</span>
-      </button>
+  <!-- ════════════════════════════════════════════════════════════════════════
+       VIEW 3: SWIMLANES VIEW (BY ASSIGNEE OR PRIORITY)
+       ════════════════════════════════════════════════════════════════════════ -->
+  <div class="swimlanes-wrap" *ngIf="!loading && viewMode==='swimlanes'" cdkDropListGroup>
+    <div *ngIf="!swimlanes.length" class="swim-empty">
+      <span class="mat-i">view_agenda</span>
+      <p>No tasks match the active filters.</p>
     </div>
 
-    <div class="modal-body">
-      <div class="form-group" *ngIf="showFormField('title')">
-        <label class="form-label">{{fieldLabel('form','title','Title')}} *</label>
-        <input class="form-control" [(ngModel)]="form.title" placeholder="What needs to be done?">
-      </div>
+    <section *ngFor="let lane of swimlanes; trackBy: trackByKey" class="swimlane">
+      <header class="lane-header" (click)="toggleLaneCollapse(lane.key)">
+        <span class="mat-i lane-chevron">
+          {{collapsedLanes.has(lane.key) ? 'chevron_right' : 'expand_more'}}
+        </span>
+        <span *ngIf="lane.initials" class="lane-avatar" [style.background]="lane.color">{{lane.initials}}</span>
+        <span *ngIf="!lane.initials" class="lane-dot" [style.background]="lane.color"></span>
+        <div class="lane-titles">
+          <span class="lane-name">{{lane.label}}</span>
+          <span class="lane-sub" *ngIf="lane.sublabel">{{lane.sublabel}}</span>
+        </div>
+        <span class="lane-meta">
+          <span class="lane-hours" *ngIf="laneEstHours(lane) > 0">{{laneEstHours(lane)}}h est.</span>
+          <span class="lane-count">{{lane.tasks.length}} tasks</span>
+        </span>
+      </header>
 
-      <div class="form-row four">
-        <div class="form-group" *ngIf="showFormField('interval_type')">
-          <label class="form-label">{{fieldLabel('form','interval_type','Interval')}} *</label>
-          <app-dropdown class="form-control" [(ngModel)]="form.interval_type">
-            <app-dropdown-option value="ONCE">One-time</app-dropdown-option>
-            <app-dropdown-option value="DAILY">Daily</app-dropdown-option>
-            <app-dropdown-option value="WEEKLY">Weekly</app-dropdown-option>
-            <app-dropdown-option value="MONTHLY">Monthly</app-dropdown-option>
-            <app-dropdown-option value="YEARLY">Yearly</app-dropdown-option>
-          </app-dropdown>
-        </div>
-        <div class="form-group" *ngIf="showFormField('priority')">
-          <label class="form-label">{{fieldLabel('form','priority','Priority')}}</label>
-          <app-dropdown class="form-control" [(ngModel)]="form.priority">
-            <app-dropdown-option value="LOW">Low</app-dropdown-option>
-            <app-dropdown-option value="MEDIUM">Medium</app-dropdown-option>
-            <app-dropdown-option value="HIGH">High</app-dropdown-option>
-            <app-dropdown-option value="CRITICAL">Critical</app-dropdown-option>
-          </app-dropdown>
-        </div>
-        <div class="form-group" *ngIf="showFormField('status')">
-          <label class="form-label">{{fieldLabel('form','status','Status')}}</label>
-          <app-dropdown class="form-control" [(ngModel)]="form.status">
-            <app-dropdown-option value="TODO">To Do</app-dropdown-option>
-            <app-dropdown-option value="IN_PROGRESS">In Progress</app-dropdown-option>
-            <app-dropdown-option value="REVIEW">In Review</app-dropdown-option>
-            <app-dropdown-option value="DONE">Done</app-dropdown-option>
-          </app-dropdown>
-        </div>
-        <div class="form-group" *ngIf="showFormField('estimated_hours')">
-          <label class="form-label">{{fieldLabel('form','estimated_hours','Est. Hours')}}</label>
-          <input type="number" class="form-control" [(ngModel)]="form.estimated_hours" min="0" step="0.5" placeholder="0">
-        </div>
-      </div>
-
-      <div class="form-row two">
-        <div class="form-group" *ngIf="showFormField('due_date')">
-          <label class="form-label">{{fieldLabel('form','due_date','Due Date')}}</label>
-          <div class="datetime-picker-wrapper">
-            <input class="form-control"
-                   [owlDateTime]="dtDue"
-                   [owlDateTimeTrigger]="dtDue"
-                   [(ngModel)]="form.due_date"
-                   placeholder="Select due date & time">
-            <span class="picker-trigger-icon" [owlDateTimeTrigger]="dtDue">event</span>
-            <owl-date-time #dtDue pickerMode="dialog"></owl-date-time>
+      <div class="lane-grid" *ngIf="!collapsedLanes.has(lane.key)">
+        <div *ngFor="let col of columns"
+             class="lane-col"
+             cdkDropList
+             [cdkDropListData]="getLaneColumnTasks(lane, col.status)"
+             (cdkDropListDropped)="onSwimlaneDrop($event, col.status, lane)">
+          <div class="lane-col-head">
+            <span class="dot" [style.background]="col.color"></span>
+            <span>{{col.label}}</span>
+            <span class="cnt">{{getLaneColumnTasks(lane, col.status).length}}</span>
           </div>
-        </div>
-        <div class="form-group" *ngIf="showFormField('parent_id')">
-          <label class="form-label">{{fieldLabel('form','parent_id','Parent Task')}}</label>
-          <app-dropdown class="form-control" [(ngModel)]="form.parent_id" placeholder="— None (top-level) —">
-            <app-dropdown-option [ngValue]="null">— None (top-level) —</app-dropdown-option>
-            <app-dropdown-option *ngFor="let t of allTasks" [value]="t.id">{{t.title}}</app-dropdown-option>
-          </app-dropdown>
-        </div>
-      </div>
 
-      <div class="form-group" *ngIf="showFormField('description')">
-        <label class="form-label">{{fieldLabel('form','description','Description')}}</label>
-        <textarea class="form-control" rows="3" [(ngModel)]="form.description" placeholder="Describe this task…"></textarea>
-      </div>
-
-      <div class="form-group" *ngIf="showFormField('tags')">
-        <label class="form-label">{{fieldLabel('form','tags','Tags')}} <span class="text-muted" style="font-weight:400">(comma separated)</span></label>
-        <input class="form-control" [(ngModel)]="tagsInput" placeholder="e.g. infra, security, urgent">
-      </div>
-
-      <div *ngIf="editingTask?.subtasks?.length" class="subtasks-panel">
-        <div class="subtasks-panel-head">
-          <label class="form-label" style="margin:0">
-            Subtasks ({{editingTask!.subtasks!.length}})
-          </label>
-          <button type="button" class="btn btn-secondary btn-sm" (click)="addSubtaskToEditing()">
-            <span class="btn-icon">add</span> Add subtask
-          </button>
-        </div>
-        <div class="subtasks-list">
-          <div *ngFor="let sub of editingTask!.subtasks" class="subtask-row">
-            <span class="mat-i" [style.color]="sub.status==='DONE' ? '#10B981' : '#9CA3AF'">
-              {{sub.status==='DONE' ? 'check_circle' : 'radio_button_unchecked'}}
-            </span>
-            <span class="sub-title"
-                  [class.done]="sub.status==='DONE'">{{sub.title}}</span>
-            <span class="badge" [ngClass]="getPriorityBadge(sub.priority)">{{sub.priority}}</span>
+          <div class="lane-cards">
+            <ng-container *ngFor="let task of getLaneColumnTasks(lane, col.status); trackBy: trackById">
+              <ng-container *ngTemplateOutlet="taskCardTpl; context: { $implicit: task }"></ng-container>
+            </ng-container>
           </div>
         </div>
       </div>
-
-      <div *ngIf="editingTask && !editingTask?.subtasks?.length">
-        <button type="button" class="btn btn-ghost btn-sm" (click)="addSubtaskToEditing()">
-          <span class="btn-icon">add</span> Add first subtask
-        </button>
-      </div>
-    </div>
-
-    <div class="modal-footer">
-      <button type="button" class="btn btn-ghost" (click)="showModal=false">Cancel</button>
-      <button type="button" class="btn btn-primary" (click)="saveTask()" [disabled]="saving || (showFormField('title') && !form.title)">
-        <div class="spinner spinner-sm" *ngIf="saving"></div>
-        {{saving ? 'Saving…' : (editingTask ? 'Update Task' : 'Create Task')}}
-      </button>
-    </div>
+    </section>
   </div>
 </div>
 
+<!-- ── Shared Task Card Template ────────────────────────────────────────────── -->
+<ng-template #taskCardTpl let-task>
+  <div class="task-card"
+       [class.overdue]="isOverdue(task)"
+       [class.done]="task.status==='DONE'"
+       cdkDrag
+       [cdkDragData]="task"
+       (click)="openDrawerForEdit(task)">
+
+    <div class="task-placeholder" *cdkDragPlaceholder></div>
+    <div class="priority-stripe" [style.background]="priorityColor(task.priority)"></div>
+
+    <div class="card-tags">
+      <span class="tag interval-tag">{{task.interval_type}}</span>
+      <span class="tag priority-tag"
+            [style.background]="priorityColor(task.priority) + '1A'"
+            [style.color]="priorityColor(task.priority)">
+        <span class="mat-i">flag</span>{{task.priority}}
+      </span>
+      <span *ngIf="task.status === 'OVERDUE'" class="tag overdue-badge">OVERDUE</span>
+      <span *ngFor="let tag of (task.tags || []).slice(0,2)" class="tag">#{{tag}}</span>
+      <span *ngIf="(task.tags || []).length > 2" class="tag more">+{{task.tags!.length - 2}}</span>
+    </div>
+
+    <div class="card-title">{{task.title}}</div>
+    <div class="card-desc" *ngIf="task.description">{{task.description}}</div>
+
+    <!-- Subtasks progress -->
+    <div class="subtasks" *ngIf="task.subtasks?.length">
+      <div class="subtasks-head">
+        <span><span class="mat-i">account_tree</span> Subtasks</span>
+        <span>{{getDoneSubtasks(task)}} / {{task.subtasks!.length}}</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill"
+             [style.width.%]="task.subtasks!.length ? (getDoneSubtasks(task)/task.subtasks!.length)*100 : 0"
+             [style.background]="getDoneSubtasks(task)===task.subtasks!.length ? '#10B981' : 'var(--primary)'">
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="card-footer">
+      <div class="due-chip"
+           [class.overdue]="isOverdue(task)"
+           [class.soon]="!isOverdue(task) && daysUntilDue(task)!==null && daysUntilDue(task)! <= 2 && task.status!=='DONE'">
+        <span class="mat-i">schedule</span>
+        <span>{{dueLabel(task)}}</span>
+      </div>
+
+      <div class="footer-meta">
+        <span *ngIf="task.comments_count" class="meta-chip" title="Comments">
+          <span class="mat-i">chat_bubble_outline</span>{{task.comments_count}}
+        </span>
+        <ng-container *ngIf="hoursProgress(task) as hp">
+          <span *ngIf="hp.estimated > 0 || hp.actual > 0"
+                class="meta-chip"
+                [class.overrun]="hp.isOverrun"
+                title="Actual / Estimated hours">
+            <span class="mat-i">timer</span>
+            {{hp.actual > 0 ? (hp.actual + '/' + (hp.estimated || '—')) : hp.estimated}}h
+          </span>
+        </ng-container>
+        <div *ngIf="task.assignee"
+             class="avatar"
+             [style.background]="getAvatarColor(task.assignee)"
+             [title]="userName(task.assignee)">
+          {{getInitials(task.assignee)}}
+        </div>
+      </div>
+    </div>
+
+    <!-- Hover quick actions -->
+    <div class="task-actions" (click)="$event.stopPropagation()">
+      <button type="button" class="ta-btn" title="Advance status" (click)="quickStatusChange(task, $event)">
+        <span class="mat-i">check_circle</span>
+      </button>
+      <button type="button" class="ta-btn" title="Duplicate" (click)="duplicateTask(task, $event)">
+        <span class="mat-i">content_copy</span>
+      </button>
+      <button type="button" class="ta-btn danger" title="Delete" (click)="deleteTask(task, $event)">
+        <span class="mat-i">delete</span>
+      </button>
+    </div>
+
+    <div class="drag-handle" cdkDragHandle title="Drag to move">
+      <span class="mat-i">drag_indicator</span>
+    </div>
+  </div>
+</ng-template>
+
+<!-- ── Slide-Over Task Detail & @Mentions Drawer ───────────────────────────── -->
+<app-task-detail-drawer
+  [open]="drawerOpen"
+  [task]="editingTask"
+  [defaultStatus]="drawerStatus"
+  [defaultInterval]="activeInterval || 'ONCE'"
+  [defaultTitle]="drawerPreTitle"
+  [assignees]="assignees"
+  [allTasks]="allTasks"
+  [currentUser]="currentUser"
+  [uiPrefs]="uiPrefs"
+  [saving]="saving"
+  (close)="closeDrawer()"
+  (save)="onDrawerSave($event)"
+  (deleteTask)="deleteTask($event)"
+  (taskMutated)="onTaskMutatedFromDrawer($event)">
+</app-task-detail-drawer>

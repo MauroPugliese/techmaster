@@ -1,0 +1,190 @@
+<!-- ==========================================================================
+     task-list-view.component.html — Full-Width Task Table & Bulk Action Bar
+     ========================================================================== -->
+
+<div class="list-view-wrap">
+  <!-- ── Floating Bulk Action Bar ────────────────────────────────────────── -->
+  <div class="bulk-bar" *ngIf="selectedCount > 0">
+    <div class="bulk-left">
+      <span class="bulk-count">{{selectedCount}} selected</span>
+      <button type="button" class="bulk-clear" (click)="clearSelection()" [disabled]="busyBulk">
+        Clear
+      </button>
+    </div>
+
+    <div class="bulk-actions">
+      <select class="bulk-select" (change)="onBulkSelect('status', $event)" [disabled]="busyBulk" aria-label="Bulk status">
+        <option value="">Set status…</option>
+        <option *ngFor="let opt of statusOptions" [value]="opt.value">{{opt.label}}</option>
+      </select>
+
+      <select class="bulk-select" (change)="onBulkSelect('priority', $event)" [disabled]="busyBulk" aria-label="Bulk priority">
+        <option value="">Set priority…</option>
+        <option *ngFor="let opt of priorityOptions" [value]="opt.value">{{opt.label}}</option>
+      </select>
+
+      <select class="bulk-select" (change)="onBulkSelect('assign', $event)" [disabled]="busyBulk" aria-label="Bulk assign">
+        <option value="">Reassign to…</option>
+        <option value="__unassigned__">— Unassigned —</option>
+        <option *ngFor="let u of assignees" [value]="u.id">{{userName(u)}}</option>
+      </select>
+
+      <button type="button" class="btn-bulk-danger" (click)="onBulkDelete()" [disabled]="busyBulk">
+        <span class="mat-i">delete</span> Delete
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Table Container ────────────────────────────────────────────────── -->
+  <div class="table-shell">
+    <table class="tasks-table" *ngIf="tasks.length; else emptyState">
+      <thead>
+        <tr>
+          <th class="col-check">
+            <input type="checkbox"
+                   [checked]="allSelected"
+                   [indeterminate]="someSelected"
+                   (change)="toggleSelectAll($event)"
+                   aria-label="Select all visible tasks">
+          </th>
+          <th class="sortable" (click)="sortChange.emit('title')">
+            <span>Task</span>
+            <span class="mat-i sort-ic" [class.active]="sortKey==='title'">{{sortArrow('title')}}</span>
+          </th>
+          <th>Status</th>
+          <th class="sortable" (click)="sortChange.emit('priority')">
+            <span>Priority</span>
+            <span class="mat-i sort-ic" [class.active]="sortKey==='priority'">{{sortArrow('priority')}}</span>
+          </th>
+          <th>Assignee</th>
+          <th>Subtasks</th>
+          <th>Hours</th>
+          <th class="sortable" (click)="sortChange.emit('due')">
+            <span>Due Date</span>
+            <span class="mat-i sort-ic" [class.active]="sortKey==='due'">{{sortArrow('due')}}</span>
+          </th>
+          <th class="col-act">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let task of tasks; trackBy: trackById"
+            [class.row-selected]="selectedIds.has(task.id)"
+            [class.row-overdue]="isOverdue(task)"
+            [class.row-done]="task.status==='DONE'"
+            (click)="taskClick.emit(task)">
+
+          <td class="col-check" (click)="$event.stopPropagation()">
+            <input type="checkbox"
+                   [checked]="selectedIds.has(task.id)"
+                   (change)="toggleRow(task.id, $event)"
+                   [attr.aria-label]="'Select ' + task.title">
+          </td>
+
+          <td class="col-title-cell">
+            <div class="title-main">
+              <span class="title-text">{{task.title}}</span>
+              <span class="pill-interval">{{task.interval_type}}</span>
+              <span class="pill-comments" *ngIf="task.comments_count" title="Comments">
+                <span class="mat-i">chat_bubble_outline</span>{{task.comments_count}}
+              </span>
+            </div>
+            <div class="title-sub" *ngIf="task.description || task.tags?.length">
+              <span class="sub-desc" *ngIf="task.description">{{task.description}}</span>
+              <span *ngFor="let tag of (task.tags || []).slice(0, 3)" class="sub-tag">#{{tag}}</span>
+            </div>
+          </td>
+
+          <td (click)="$event.stopPropagation()">
+            <select class="cell-select status-pill"
+                    [style.--pill-color]="statusColor(task.status)"
+                    [value]="task.status"
+                    (change)="onInlineStatus(task, $event)"
+                    aria-label="Task status">
+              <option *ngFor="let opt of statusOptions" [value]="opt.value">{{opt.label}}</option>
+            </select>
+          </td>
+
+          <td (click)="$event.stopPropagation()">
+            <select class="cell-select prio-pill"
+                    [style.--pill-color]="priorityColor(task.priority)"
+                    [value]="task.priority"
+                    (change)="onInlinePriority(task, $event)"
+                    aria-label="Task priority">
+              <option *ngFor="let opt of priorityOptions" [value]="opt.value">{{opt.label}}</option>
+            </select>
+          </td>
+
+          <td (click)="$event.stopPropagation()">
+            <div class="assignee-cell">
+              <span *ngIf="task.assignee"
+                    class="mini-avatar"
+                    [style.background]="avatarColor(task.assignee)">
+                {{initials(task.assignee)}}
+              </span>
+              <select class="cell-select assignee-select"
+                      [value]="task.assigned_to ?? task.assignee?.id ?? ''"
+                      (change)="onInlineAssignee(task, $event)"
+                      aria-label="Task assignee">
+                <option value="">Unassigned</option>
+                <option *ngFor="let u of assignees" [value]="u.id">{{userName(u)}}</option>
+              </select>
+            </div>
+          </td>
+
+          <td>
+            <div class="sub-cell" *ngIf="task.subtasks?.length; else noSub">
+              <span class="sub-fraction">{{doneSubtasks(task)}}/{{task.subtasks!.length}}</span>
+              <div class="mini-bar">
+                <div class="mini-fill"
+                     [style.width.%]="(doneSubtasks(task) / task.subtasks!.length) * 100"
+                     [class.complete]="doneSubtasks(task) === task.subtasks!.length"></div>
+              </div>
+            </div>
+            <ng-template #noSub><span class="text-muted">—</span></ng-template>
+          </td>
+
+          <td>
+            <ng-container *ngIf="hoursProgress(task) as hp">
+              <span *ngIf="hp.estimated > 0 || hp.actual > 0; else noHours"
+                    class="hours-badge"
+                    [class.overrun]="hp.isOverrun"
+                    [class.warn]="hp.isWarning">
+                {{hp.actual}}h / {{hp.estimated || '—'}}h
+              </span>
+              <ng-template #noHours><span class="text-muted">—</span></ng-template>
+            </ng-container>
+          </td>
+
+          <td>
+            <span class="due-pill"
+                  [class.overdue]="isOverdue(task)"
+                  [class.soon]="isSoon(task)">
+              {{dueLabel(task)}}
+            </span>
+          </td>
+
+          <td class="col-act" (click)="$event.stopPropagation()">
+            <div class="row-actions">
+              <button type="button" class="icon-btn" title="Open detail" (click)="taskClick.emit(task)">
+                <span class="mat-i">open_in_new</span>
+              </button>
+              <button type="button" class="icon-btn" title="Duplicate" (click)="duplicate.emit(task)">
+                <span class="mat-i">content_copy</span>
+              </button>
+              <button type="button" class="icon-btn danger" title="Delete" (click)="remove.emit(task)">
+                <span class="mat-i">delete</span>
+              </button>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <ng-template #emptyState>
+      <div class="list-empty">
+        <span class="mat-i">checklist_rtl</span>
+        <p>No tasks match the active filters.</p>
+      </div>
+    </ng-template>
+  </div>
+</div>
