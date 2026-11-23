@@ -1,753 +1,203 @@
 // =============================================================================
-// features/admin/admin.component.ts
+// features/admin/admin.component.ts — Modular Admin Settings Console Shell
 // =============================================================================
 import {
-  Component, OnInit, ChangeDetectionStrategy, ChangeDetectorRef
+  Component, OnInit, OnDestroy, ChangeDetectionStrategy, ChangeDetectorRef
 } from '@angular/core';
-import { CommonModule, DatePipe, TitleCasePipe, SlicePipe } from '@angular/common';
-import { FormsModule } from '@angular/forms';
+import { CommonModule } from '@angular/common';
+import { ActivatedRoute, Router } from '@angular/router';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../core/services/services';
-import { ToastService }   from '../../core/services/toast.service';
-import { ConfirmService } from '../../core/services/confirm.service';
-import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
-import { DropdownComponent, DropdownOptionComponent } from '../../shared/components/dropdown/dropdown.component';
-import { SectionAccessManagerComponent } from './section-access/section-access-manager.component';
+import { ToastService } from '../../core/services/toast.service';
+import {
+  ADMIN_NAV_GROUPS,
+  ALL_ADMIN_TABS,
+  AdminTab,
+} from './admin-helpers';
+import { AdminOverviewComponent } from './overview/admin-overview.component';
+import { AdminAuditLogsComponent } from './audit-logs/admin-audit-logs.component';
+import { AdminUsersComponent } from './users/admin-users.component';
+import { AdminRolesComponent } from './roles/admin-roles.component';
+import { AccessTarget, SectionAccessManagerComponent } from './section-access/section-access-manager.component';
+import { AdminCatalogsComponent, CatalogTab } from './catalogs/admin-catalogs.component';
+import { AdminCustomizationComponent } from './customization/admin-customization.component';
 
-type Tab = 'overview' | 'users' | 'section-access' | 'operation-types' | 'shift-types' |
-           'asset-categories' | 'item-categories' | 'wiki-categories' | 'warehouse-locations' |
-           'customization';
+const CATALOG_TABS = new Set<string>([
+  'operation-types',
+  'shift-types',
+  'asset-categories',
+  'item-categories',
+  'wiki-categories',
+  'warehouse-locations',
+]);
 
 @Component({
   selector: 'app-admin',
   standalone: true,
   imports: [
-    CommonModule, FormsModule, DatePipe, TitleCasePipe, SlicePipe,
-    ExportMenuComponent, DropdownComponent, DropdownOptionComponent,
-    SectionAccessManagerComponent
+    CommonModule,
+    AdminOverviewComponent,
+    AdminAuditLogsComponent,
+    AdminUsersComponent,
+    AdminRolesComponent,
+    SectionAccessManagerComponent,
+    AdminCatalogsComponent,
+    AdminCustomizationComponent,
   ],
   templateUrl: './admin.component.html',
-  changeDetection: ChangeDetectionStrategy.OnPush
+  styleUrls: ['./admin.component.scss'],
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class AdminComponent implements OnInit {
+export class AdminComponent implements OnInit, OnDestroy {
+  private destroy$ = new Subject<void>();
 
-  Math = Math;
+  readonly navGroups = ADMIN_NAV_GROUPS;
+  readonly validTabs = new Set<string>(ALL_ADMIN_TABS.map(t => t.id));
 
-  activeTab: Tab = 'overview';
+  activeTab: AdminTab = 'overview';
 
-  // ── Overview ────────────────────────────────────────────────────────────────
+  roles: any[] = [];
   systemInfo: any = null;
+  overviewLoading = false;
+  sidebarCounts: Record<string, number> = {};
 
-  // ── Users ───────────────────────────────────────────────────────────────────
-  users:      any[] = [];
-  roles:      any[] = [];
-  userSearch  = '';
-  userLoading = false;
-  userPage = 1;
-  userPageSize = 20;
-  readonly userPageSizeOptions = [10, 20, 50, 100];
-  userTotal = 0;
-  showUserModal  = false;
-  showResetModal = false;
-  editingUser: any = null;
-  userForm:    any = this.emptyUser();
-  newPassword  = '';
-  saving       = false;
-
-  // ── Generic config list ──────────────────────────────────────────────────────
-  listData:    any[] = [];
-  listLoading  = false;
-  listPage = 1;
-  listPageSize = 20;
-  readonly listPageSizeOptions = [10, 20, 50, 100];
-  showModal    = false;
-  editingItem: any = null;
-  itemForm:    any = {};
-
-  // ── Customization ───────────────────────────────────────────────────────────
-  customizationTables: any[] = [];
-  selectedCustomizationTable = '';
-  customizationColumns: any[] = [];
-  customizationLoading = false;
-  schemaActionLoading  = false;
-  showColumnModal      = false;
-  editingColumn: any   = null;
-  columnForm: any      = this.emptyColumnForm();
-
-  uiSectionCatalog: Record<string, { table: string[]; form: string[] }> = {};
-  uiSections: string[] = [];
-  selectedUiSection = '';
-  selectedUiScope: 'table' | 'form' = 'table';
-  selectedUiRole = 'ALL';
-  uiFieldsEditor: any[] = [];
-  uiPreviewSearch = '';
-  uiPreviewSourceFilter: 'all' | 'role' | 'global' | 'default' = 'all';
-  uiPreviewVisibilityFilter: 'visible' | 'hidden' | 'all' = 'visible';
-  customizationMode: 'db' | 'ui' = 'db';
-
-  readonly tabs: { id: Tab; label: string; icon: string }[] = [
-    { id: 'overview',            label: 'Overview',           icon: 'dashboard'          },
-    { id: 'users',               label: 'Users',              icon: 'group'              },
-    { id: 'section-access',      label: 'Section Access',     icon: 'visibility'         },
-    { id: 'operation-types',     label: 'Operation Types',    icon: 'rocket_launch'      },
-    { id: 'shift-types',         label: 'Shift Types',        icon: 'schedule'           },
-    { id: 'asset-categories',    label: 'Asset Categories',   icon: 'category'           },
-    { id: 'item-categories',     label: 'Item Categories',    icon: 'inventory_2'        },
-    { id: 'wiki-categories',     label: 'Wiki Categories',    icon: 'menu_book'          },
-    { id: 'warehouse-locations', label: 'Locations',          icon: 'warehouse'          },
-    { id: 'customization',       label: 'Customization',      icon: 'tune'               },
-  ];
-
-  // Getter used in template to avoid complex pipe chains
-  get activeTabLabel(): string {
-    return this.tabs.find(t => t.id === this.activeTab)?.label ?? '';
-  }
+  // Cross-tab deep-link state
+  usersInitialRoleFilterId: number | null = null;
+  sectionAccessTarget: AccessTarget | null = null;
+  sectionAccessRole: string | null = null;
+  sectionAccessUserId: number | null = null;
 
   constructor(
     private api: ApiService,
-    private cdr: ChangeDetectorRef,
     private toast: ToastService,
-    private confirm: ConfirmService
+    private route: ActivatedRoute,
+    private router: Router,
+    private cdr: ChangeDetectorRef
   ) {}
 
+  get activeTabLabel(): string {
+    return ALL_ADMIN_TABS.find(t => t.id === this.activeTab)?.label ?? 'Admin Settings';
+  }
+
+  get activeCatalogTab(): CatalogTab | null {
+    return CATALOG_TABS.has(this.activeTab) ? (this.activeTab as CatalogTab) : null;
+  }
+
   ngOnInit(): void {
-    this.loadOverview();
-    this.api.get<any>('/admin/roles').subscribe(r => {
-      this.roles = r.data;
-      this.cdr.markForCheck();
-    });
+    this.route.queryParams
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(params => {
+        const requested = String(params['tab'] || '').trim();
+        if (requested && this.validTabs.has(requested) && requested !== this.activeTab) {
+          this.activeTab = requested as AdminTab;
+          this.cdr.markForCheck();
+        }
+      });
+
+    this.loadRoles();
+    this.loadSystemInfo();
   }
 
-  // ── Navigation ──────────────────────────────────────────────────────────────
-  setTab(tab: Tab): void {
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
+  setTab(tab: AdminTab, preserveDeepLinks = false): void {
     this.activeTab = tab;
-    this.showModal = false;
-    this.showUserModal = false;
-    if (tab === 'overview')   this.loadOverview();
-    else if (tab === 'users') this.loadUsers();
-    else if (tab === 'section-access') {
-      // SectionAccessManagerComponent manages its own lifecycle
+    if (!preserveDeepLinks) {
+      if (tab !== 'users') this.usersInitialRoleFilterId = null;
+      if (tab !== 'section-access') {
+        this.sectionAccessTarget = null;
+        this.sectionAccessRole = null;
+        this.sectionAccessUserId = null;
+      }
     }
-    else if (tab === 'customization') {
-      this.loadCustomizationTables();
-      this.loadUiSectionsCatalog();
-    }
-    else                      this.loadList(tab);
-    this.cdr.markForCheck();
-  }
-
-  setCustomizationMode(mode: 'db' | 'ui'): void {
-    this.customizationMode = mode;
-    if (mode === 'db') {
-      this.loadCustomizationTables();
-    } else {
-      this.loadUiSectionsCatalog();
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { tab },
+      queryParamsHandling: 'merge',
+    });
+    if (tab === 'overview') {
+      this.loadSystemInfo();
     }
     this.cdr.markForCheck();
   }
 
-  // ── Overview ────────────────────────────────────────────────────────────────
-  loadOverview(): void {
+  loadRoles(): void {
+    this.api.get<any>('/admin/roles').subscribe({
+      next: res => {
+        this.roles = res.data || [];
+        this.sidebarCounts = {
+          ...this.sidebarCounts,
+          roles: this.roles.length,
+        };
+        this.cdr.markForCheck();
+      },
+      error: () => {}
+    });
+  }
+
+  loadSystemInfo(): void {
+    this.overviewLoading = true;
     this.api.get<any>('/admin/system').subscribe({
-      next: r => { this.systemInfo = r.data; this.cdr.markForCheck(); },
-      error: ()  => { this.cdr.markForCheck(); }
-    });
-  }
-
-  formatUptime(sec: number): string {
-    const h = Math.floor(sec / 3600);
-    const m = Math.floor((sec % 3600) / 60);
-    return h + 'h ' + m + 'm';
-  }
-
-  get overviewCountCards(): { label: string; val: number; icon: string; color: string }[] {
-    if (!this.systemInfo) return [];
-    const c = this.systemInfo.counts;
-    return [
-      { label: 'Total Users',       val: c.users,           icon: 'group',         color: '#1565C0' },
-      { label: 'Active Users',      val: c.active_users,    icon: 'how_to_reg',    color: '#10B981' },
-      { label: 'Operations',        val: c.operations,      icon: 'rocket_launch', color: '#0288D1' },
-      { label: 'Maintenance',       val: c.maintenance,     icon: 'build_circle',  color: '#F59E0B' },
-      { label: 'Inventory Items',   val: c.inventory_items, icon: 'inventory_2',   color: '#8B5CF6' },
-      { label: 'Shifts',            val: c.shifts,          icon: 'schedule',      color: '#EC4899' },
-      { label: 'Tasks',             val: c.tasks,           icon: 'task_alt',      color: '#EF4444' },
-      { label: 'Wiki Articles',     val: c.wiki_articles,   icon: 'menu_book',     color: '#059669' },
-    ];
-  }
-
-  // ── Users ───────────────────────────────────────────────────────────────────
-  loadUsers(): void {
-    this.userLoading = true;
-    this.api.get<any>('/admin/users', {
-      search: this.userSearch,
-      page: this.userPage,
-      limit: this.userPageSize
-    }).subscribe({
-      next: r => {
-        this.users = r.data?.items || r.data || [];
-        this.userTotal = r.data?.total || this.users.length;
-        this.userLoading = false;
+      next: res => {
+        this.systemInfo = res.data || null;
+        const counts = res.data?.counts || {};
+        const catalogs = res.data?.catalog_counts || {};
+        this.sidebarCounts = {
+          ...this.sidebarCounts,
+          users: Number(counts.users) || 0,
+          roles: this.roles.length || this.sidebarCounts['roles'] || 0,
+          operation_types: Number(catalogs.operation_types) || 0,
+          shift_types: Number(catalogs.shift_types) || 0,
+          asset_categories: Number(catalogs.asset_categories) || 0,
+          item_categories: Number(catalogs.item_categories) || 0,
+          wiki_categories: Number(catalogs.wiki_categories) || 0,
+          warehouse_locations: Number(catalogs.warehouse_locations) || 0,
+        };
+        this.overviewLoading = false;
         this.cdr.markForCheck();
       },
-      error: () => { this.userLoading = false; this.cdr.markForCheck(); }
-    });
-  }
-
-  onUsersSearch(): void {
-    this.userPage = 1;
-    this.loadUsers();
-  }
-
-  get userTotalPages(): number {
-    return Math.max(1, Math.ceil(this.userTotal / this.userPageSize));
-  }
-
-  changeUserPage(page: number): void {
-    if (page < 1 || page > this.userTotalPages) return;
-    this.userPage = page;
-    this.loadUsers();
-  }
-
-  onUserPageSizeChange(): void {
-    this.userPage = 1;
-    this.loadUsers();
-  }
-
-  private emptyUser() {
-    return {
-      role_id: null, username: '', email: '', password: '',
-      first_name: '', last_name: '', department: '',
-      job_title: '', phone: '', is_active: true
-    };
-  }
-
-  openUserModal(user?: any): void {
-    this.editingUser = user ?? null;
-    this.userForm    = user
-      ? { ...user, role_id: user.role?.id ?? user.role_id, password: '' }
-      : this.emptyUser();
-    this.showUserModal = true;
-    this.cdr.markForCheck();
-  }
-
-  saveUser(): void {
-    if (!this.userForm.first_name || !this.userForm.email) {
-      alert('Name and email are required.'); return;
-    }
-    if (!this.editingUser && !this.userForm.password) {
-      alert('Password is required for new users.'); return;
-    }
-    this.saving = true;
-    const payload = { ...this.userForm };
-    if (!payload.password) delete payload.password;
-
-    const req$ = this.editingUser
-      ? this.api.put<any>('/admin/users/' + this.editingUser.id, payload)
-      : this.api.post<any>('/admin/users', payload);
-
-    req$.subscribe({
-      next: () => {
-        this.saving = false; this.showUserModal = false; this.loadUsers();
-        this.toast.success(this.editingUser ? 'User updated.' : 'User created.');
-        this.cdr.markForCheck();
-      },
-      error: (e: any) => {
-        this.saving = false;
-        this.toast.error(e?.error?.message || 'Failed to save user.');
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  toggleUserActive(user: any): void {
-    this.api.patch<any>('/admin/users/' + user.id + '/toggle', {})
-      .subscribe(() => this.loadUsers());
-  }
-
-  async deleteUser(user: any): Promise<void> {
-    const ok = await this.confirm.confirm(
-      `Delete user "${user.username}"? This cannot be undone.`, 'Delete User');
-    if (!ok) return;
-    this.api.delete<any>('/admin/users/' + user.id).subscribe({
-      next: () => { this.loadUsers(); this.toast.success('User deleted.'); },
-      error: (e: any) => this.toast.error(e?.error?.message || 'Failed to delete.')
-    });
-  }
-
-  openResetModal(user: any): void {
-    this.editingUser = user;
-    this.newPassword = '';
-    this.showResetModal = true;
-    this.cdr.markForCheck();
-  }
-
-  resetPassword(): void {
-    if (!this.newPassword || this.newPassword.length < 8) {
-      this.toast.warning('Min 8 characters required.'); return;
-    }
-    this.saving = true;
-    this.api.patch<any>('/admin/users/' + this.editingUser.id + '/reset-password',
-      { new_password: this.newPassword }
-    ).subscribe({
-      next: () => {
-        this.saving = false; this.showResetModal = false;
-        this.toast.success('Password reset successfully.');
-        this.cdr.markForCheck();
-      },
-      error: (e: any) => { this.saving = false; this.toast.error(e?.error?.message || 'Reset failed.'); this.cdr.markForCheck(); }
-    });
-  }
-
-  getRoleBadgeColor(role: string): string {
-    const map: Record<string, string> = {
-      admin: '#9D174D', manager: '#1565C0', tech: '#065F46', viewer: '#374151'
-    };
-    return map[role] || '#374151';
-  }
-
-  // ── Generic config list ──────────────────────────────────────────────────────
-  private apiPath(tab: Tab): string { return '/admin/' + tab; }
-
-  loadList(tab: Tab): void {
-    this.listLoading = true;
-    this.listPage = 1;
-    this.api.get<any>(this.apiPath(tab)).subscribe({
-      next: r => { this.listData = r.data || []; this.listLoading = false; this.cdr.markForCheck(); },
-      error: () => { this.listLoading = false; this.cdr.markForCheck(); }
-    });
-  }
-
-  get paginatedListData(): any[] {
-    const start = (this.listPage - 1) * this.listPageSize;
-    return this.listData.slice(start, start + this.listPageSize);
-  }
-
-  get listTotalPages(): number {
-    return Math.max(1, Math.ceil(this.listData.length / this.listPageSize));
-  }
-
-  changeListPage(page: number): void {
-    if (page < 1 || page > this.listTotalPages) return;
-    this.listPage = page;
-  }
-
-  onListPageSizeChange(): void {
-    this.listPage = 1;
-  }
-
-  openItemModal(item?: any): void {
-    this.editingItem = item ?? null;
-    this.itemForm    = item ? { ...item } : this.defaultForm(this.activeTab);
-    this.showModal   = true;
-    this.cdr.markForCheck();
-  }
-
-  private defaultForm(tab: Tab): any {
-    switch (tab) {
-      case 'operation-types':     return { name: '', color: '#1565C0', icon: 'settings', description: '' };
-      case 'shift-types':         return { name: '', code: '', start_time: '08:00', end_time: '16:00', color: '#1565C0' };
-      case 'asset-categories':    return { name: '', type: 'HARDWARE', description: '' };
-      case 'item-categories':     return { name: '', description: '' };
-      case 'wiki-categories':     return { name: '', icon: 'folder', sort_order: 0 };
-      case 'warehouse-locations': return { name: '', code: '', description: '', is_active: true };
-      default: return {};
-    }
-  }
-
-  saveItem(): void {
-    if (!this.itemForm.name?.trim()) { alert('Name is required.'); return; }
-    this.saving = true;
-
-    const req$ = this.editingItem
-      ? this.api.put<any>(this.apiPath(this.activeTab) + '/' + this.editingItem.id, this.itemForm)
-      : this.api.post<any>(this.apiPath(this.activeTab), this.itemForm);
-
-    req$.subscribe({
-      next: () => {
-        this.saving = false; this.showModal = false; this.loadList(this.activeTab);
-        this.toast.success(this.editingItem ? 'Item updated.' : 'Item created.');
-        this.cdr.markForCheck();
-      },
-      error: (e: any) => {
-        this.saving = false;
-        this.toast.error(e?.error?.message || 'Failed to save.');
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  async deleteItem(item: any): Promise<void> {
-    const ok = await this.confirm.confirm(`Delete "${item.name}"? This cannot be undone.`, 'Delete Item');
-    if (!ok) return;
-    this.api.delete<any>(this.apiPath(this.activeTab) + '/' + item.id).subscribe({
-      next: () => { this.loadList(this.activeTab); this.toast.success('Item deleted.'); },
-      error: (e: any) => this.toast.error(e?.error?.message || 'Cannot delete this item.')
-    });
-  }
-
-  // ── Schema customization ───────────────────────────────────────────────────
-  private emptyColumnForm() {
-    return {
-      name: '',
-      type: 'VARCHAR',
-      length: 100,
-      nullable: true,
-      defaultValue: '',
-      label: ''
-    };
-  }
-
-  loadCustomizationTables(): void {
-    this.customizationLoading = true;
-    this.api.get<any>('/admin/schema/tables').subscribe({
-      next: r => {
-        this.customizationTables = r.data || [];
-        if (!this.selectedCustomizationTable && this.customizationTables.length) {
-          this.selectedCustomizationTable = this.customizationTables[0].table_name;
-        }
-        this.customizationLoading = false;
-        if (this.selectedCustomizationTable) {
-          this.loadTableColumns(this.selectedCustomizationTable);
+      error: (err: any) => {
+        this.overviewLoading = false;
+        if (this.activeTab === 'overview') {
+          this.toast.error(err?.error?.message || 'Failed to load system overview.');
         }
         this.cdr.markForCheck();
-      },
-      error: (e: any) => {
-        this.customizationLoading = false;
-        this.toast.error(e?.error?.message || 'Failed to load customizable tables.');
-        this.cdr.markForCheck();
       }
     });
   }
 
-  loadTableColumns(tableName: string): void {
-    if (!tableName) return;
-    this.customizationLoading = true;
-    this.api.get<any>('/admin/schema/tables/' + tableName + '/columns').subscribe({
-      next: r => {
-        const cols = r.data || [];
-        this.customizationColumns = cols.sort((a: any, b: any) =>
-          Number(a.display_order || a.ordinal_position) - Number(b.display_order || b.ordinal_position)
-        );
-        this.customizationLoading = false;
-        this.cdr.markForCheck();
-      },
-      error: (e: any) => {
-        this.customizationLoading = false;
-        this.toast.error(e?.error?.message || 'Failed to load table columns.');
-        this.cdr.markForCheck();
-      }
-    });
+  onOpenUsersByRoleName(roleName: string): void {
+    const found = this.roles.find(r => String(r.name).toLowerCase() === String(roleName).toLowerCase());
+    this.usersInitialRoleFilterId = found ? found.id : null;
+    this.setTab('users', true);
   }
 
-  onCustomizationTableChange(): void {
-    if (!this.selectedCustomizationTable) return;
-    this.loadTableColumns(this.selectedCustomizationTable);
+  onOpenUsersByRoleId(roleId: number): void {
+    this.usersInitialRoleFilterId = roleId;
+    this.setTab('users', true);
   }
 
-  openColumnModal(column?: any): void {
-    this.editingColumn = column ?? null;
-    this.columnForm = column ? {
-      name: column.column_name,
-      type: this.normalizeColumnType(column.data_type || column.column_type),
-      length: this.extractColumnLength(column.column_type),
-      nullable: column.is_nullable === 'YES',
-      defaultValue: column.column_default ?? '',
-      label: column.label || ''
-    } : this.emptyColumnForm();
-    this.showColumnModal = true;
-    this.cdr.markForCheck();
+  onOpenUserSectionAccess(userId: number): void {
+    this.sectionAccessTarget = 'user';
+    this.sectionAccessUserId = userId;
+    this.sectionAccessRole = null;
+    this.setTab('section-access', true);
   }
 
-  private normalizeColumnType(type: string): string {
-    const t = String(type || '').toUpperCase();
-    if (t.includes('INT')) return 'INT';
-    if (t.includes('VARCHAR')) return 'VARCHAR';
-    if (t.includes('CHAR')) return 'CHAR';
-    if (t.includes('TEXT')) return 'TEXT';
-    if (t.includes('LONGTEXT')) return 'LONGTEXT';
-    if (t.includes('DECIMAL')) return 'DECIMAL';
-    if (t.includes('BIGINT')) return 'BIGINT';
-    if (t.includes('FLOAT')) return 'FLOAT';
-    if (t.includes('DOUBLE')) return 'DOUBLE';
-    if (t.includes('DATETIME')) return 'DATETIME';
-    if (t.includes('TIMESTAMP')) return 'TIMESTAMP';
-    if (t.includes('DATE')) return 'DATE';
-    if (t.includes('JSON')) return 'JSON';
-    if (t.includes('BOOLEAN') || t.includes('TINYINT(1)')) return 'BOOLEAN';
-    return 'VARCHAR';
+  onOpenRoleSectionAccess(roleName: string): void {
+    this.sectionAccessTarget = 'role';
+    this.sectionAccessRole = roleName;
+    this.sectionAccessUserId = null;
+    this.setTab('section-access', true);
   }
 
-  private extractColumnLength(columnType: string): number {
-    const m = String(columnType || '').match(/\((\d+)/);
-    return m ? Number(m[1]) : 100;
-  }
-
-  needsLength(type: string): boolean {
-    const t = String(type || '').toUpperCase();
-    return t === 'VARCHAR' || t === 'CHAR' || t === 'DECIMAL';
-  }
-
-  saveColumn(): void {
-    if (!this.selectedCustomizationTable) {
-      this.toast.warning('Select a table first.');
-      return;
-    }
-    if (!this.columnForm.name?.trim()) {
-      this.toast.warning('Column name is required.');
-      return;
-    }
-
-    this.schemaActionLoading = true;
-
-    const payload = {
-      name: this.columnForm.name,
-      newName: this.columnForm.name,
-      type: this.columnForm.type,
-      length: this.needsLength(this.columnForm.type) ? this.columnForm.length : null,
-      nullable: this.columnForm.nullable,
-      defaultValue: this.columnForm.defaultValue,
-      label: this.columnForm.label,
-    };
-
-    const req$ = this.editingColumn
-      ? this.api.patch<any>(
-          '/admin/schema/tables/' + this.selectedCustomizationTable + '/columns/' + this.editingColumn.column_name,
-          payload
-        )
-      : this.api.post<any>('/admin/schema/tables/' + this.selectedCustomizationTable + '/columns', payload);
-
-    req$.subscribe({
-      next: () => {
-        this.schemaActionLoading = false;
-        this.showColumnModal = false;
-        this.toast.success(this.editingColumn ? 'Column updated.' : 'Column added.');
-        this.loadTableColumns(this.selectedCustomizationTable);
-        this.cdr.markForCheck();
-      },
-      error: (e: any) => {
-        this.schemaActionLoading = false;
-        this.toast.error(e?.error?.message || 'Failed to save column.');
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  async deleteColumn(column: any): Promise<void> {
-    if (column.is_protected) {
-      this.toast.warning('Protected columns cannot be deleted.');
-      return;
-    }
-    const ok = await this.confirm.confirm(
-      'Delete column "' + column.column_name + '" from table "' + this.selectedCustomizationTable + '"? This cannot be undone.',
-      'Delete Column'
-    );
-    if (!ok) return;
-
-    this.schemaActionLoading = true;
-    this.api.delete<any>('/admin/schema/tables/' + this.selectedCustomizationTable + '/columns/' + column.column_name).subscribe({
-      next: () => {
-        this.schemaActionLoading = false;
-        this.toast.success('Column deleted.');
-        this.loadTableColumns(this.selectedCustomizationTable);
-      },
-      error: (e: any) => {
-        this.schemaActionLoading = false;
-        this.toast.error(e?.error?.message || 'Failed to delete column.');
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  moveColumn(column: any, direction: number): void {
-    const idx = this.customizationColumns.findIndex(c => c.column_name === column.column_name);
-    const nextIdx = idx + direction;
-    if (idx < 0 || nextIdx < 0 || nextIdx >= this.customizationColumns.length) return;
-    const clone = [...this.customizationColumns];
-    const current = clone[idx];
-    clone[idx] = clone[nextIdx];
-    clone[nextIdx] = current;
-    this.customizationColumns = clone.map((c, i) => ({ ...c, display_order: i + 1 }));
-    this.cdr.markForCheck();
-  }
-
-  saveColumnPreferences(): void {
-    if (!this.selectedCustomizationTable) return;
-    this.schemaActionLoading = true;
-
-    const payload = {
-      columns: this.customizationColumns.map((c, i) => ({
-        column_name: c.column_name,
-        label: c.label || null,
-        is_visible: c.is_visible !== false,
-        display_order: i + 1,
-        width: c.width || null,
-      }))
-    };
-
-    this.api.put<any>('/admin/schema/tables/' + this.selectedCustomizationTable + '/preferences', payload).subscribe({
-      next: () => {
-        this.schemaActionLoading = false;
-        this.toast.success('Column preferences saved.');
-        this.loadTableColumns(this.selectedCustomizationTable);
-        this.cdr.markForCheck();
-      },
-      error: (e: any) => {
-        this.schemaActionLoading = false;
-        this.toast.error(e?.error?.message || 'Failed to save preferences.');
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  loadUiSectionsCatalog(): void {
-    this.api.get<any>('/admin/ui-sections/catalog').subscribe({
-      next: r => {
-        this.uiSectionCatalog = r.data || {};
-        this.uiSections = Object.keys(this.uiSectionCatalog);
-        if (!this.uiSections.includes(this.selectedUiSection) && this.uiSections.length) {
-          this.selectedUiSection = this.uiSections[0];
-        }
-        this.loadUiSectionPreferences();
-        this.cdr.markForCheck();
-      },
-      error: (e: any) => {
-        this.toast.error(e?.error?.message || 'Failed to load UI section catalog.');
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  onUiSectionChange(): void {
-    this.loadUiSectionPreferences();
-  }
-
-  onUiScopeChange(): void {
-    this.loadUiSectionPreferences();
-  }
-
-  onUiRoleChange(): void {
-    this.loadUiSectionPreferences();
-  }
-
-  clearUiPreviewFilters(): void {
-    this.uiPreviewSearch = '';
-    this.uiPreviewSourceFilter = 'all';
-    this.uiPreviewVisibilityFilter = 'visible';
-    this.cdr.markForCheck();
-  }
-
-  loadUiSectionPreferences(): void {
-    if (!this.selectedUiSection) return;
-    this.customizationLoading = true;
-    this.api.get<any>('/admin/ui-sections/' + this.selectedUiSection + '/preferences', {
-      role: this.selectedUiRole
-    }).subscribe({
-      next: r => {
-        const data = r.data || {};
-        const saved = ((this.selectedUiScope === 'table' ? data.table : data.form) || []) as any[];
-
-        this.uiFieldsEditor = saved.map((s: any, idx: number) => ({
-          field_key: s.field_key,
-          label: s?.label || '',
-          is_visible: !(s?.is_visible === false || s?.is_visible === 0 || s?.is_visible === '0'),
-          display_order: s?.display_order || idx + 1,
-          source: s?.source || 'default'
-        }));
-
-        this.uiFieldsEditor.sort((a, b) => Number(a.display_order) - Number(b.display_order));
-        this.customizationLoading = false;
-        this.cdr.markForCheck();
-      },
-      error: (e: any) => {
-        this.customizationLoading = false;
-        this.toast.error(e?.error?.message || 'Failed to load section preferences.');
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  moveUiField(field: any, direction: number): void {
-    const idx = this.uiFieldsEditor.findIndex(f => f.field_key === field.field_key);
-    const nextIdx = idx + direction;
-    if (idx < 0 || nextIdx < 0 || nextIdx >= this.uiFieldsEditor.length) return;
-    const clone = [...this.uiFieldsEditor];
-    const current = clone[idx];
-    clone[idx] = clone[nextIdx];
-    clone[nextIdx] = current;
-    this.uiFieldsEditor = clone.map((f, i) => ({ ...f, display_order: i + 1 }));
-    this.cdr.markForCheck();
-  }
-
-  saveUiSectionPreferences(): void {
-    if (!this.selectedUiSection) return;
-    this.schemaActionLoading = true;
-    const payload = {
-      scope: this.selectedUiScope,
-      role_name: this.selectedUiRole,
-      fields: this.uiFieldsEditor.map((f, i) => ({
-        field_key: f.field_key,
-        label: f.label || null,
-        is_visible: f.is_visible !== false,
-        display_order: i + 1
-      }))
-    };
-
-    this.api.put<any>('/admin/ui-sections/' + this.selectedUiSection + '/preferences', payload).subscribe({
-      next: () => {
-        this.schemaActionLoading = false;
-        this.toast.success('Section preferences saved.');
-        this.loadUiSectionPreferences();
-      },
-      error: (e: any) => {
-        this.schemaActionLoading = false;
-        this.toast.error(e?.error?.message || 'Failed to save section preferences.');
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  async resetUiSectionPreferences(): Promise<void> {
-    if (!this.selectedUiSection) return;
-    const msg = this.selectedUiRole === 'ALL'
-      ? 'Reset this scope to default for all roles?'
-      : 'Reset this scope for role "' + this.selectedUiRole + '" only?';
-    const ok = await this.confirm.confirm(msg, 'Reset to Default');
-    if (!ok) return;
-
-    this.schemaActionLoading = true;
-    this.api.delete<any>('/admin/ui-sections/' + this.selectedUiSection + '/preferences', {
-      scope: this.selectedUiScope,
-      role: this.selectedUiRole
-    }).subscribe({
-      next: () => {
-        this.schemaActionLoading = false;
-        this.toast.success('Preferences reset to default.');
-        this.loadUiSectionPreferences();
-      },
-      error: (e: any) => {
-        this.schemaActionLoading = false;
-        this.toast.error(e?.error?.message || 'Failed to reset preferences.');
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  get uiPreviewVisibleFields(): any[] {
-    const q = this.uiPreviewSearch.trim().toLowerCase();
-
-    return this.uiFieldsEditor
-      .filter(f => {
-        if (this.uiPreviewVisibilityFilter === 'visible' && f.is_visible === false) return false;
-        if (this.uiPreviewVisibilityFilter === 'hidden' && f.is_visible !== false) return false;
-        return true;
-      })
-      .filter(f => this.uiPreviewSourceFilter === 'all' ? true : (f.source || 'default') === this.uiPreviewSourceFilter)
-      .filter(f => {
-        if (!q) return true;
-        const fieldKey = String(f.field_key || '').toLowerCase();
-        const label = String(f.label || '').toLowerCase();
-        return fieldKey.includes(q) || label.includes(q);
-      })
-      .sort((a, b) => Number(a.display_order) - Number(b.display_order));
+  getItemCount(countKey?: string): number | null {
+    if (!countKey) return null;
+    const val = this.sidebarCounts[countKey];
+    return typeof val === 'number' ? val : null;
   }
 }
-

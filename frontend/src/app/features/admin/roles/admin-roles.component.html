@@ -1,0 +1,83 @@
+<div class="admin-page-head">
+  <div>
+    <h2>Roles &amp; Permissions</h2>
+    <p>Platform role hierarchy, active member distribution, and capability matrix</p>
+  </div>
+  <div class="admin-head-actions">
+    <button type="button" class="btn btn-secondary" [disabled]="loading" (click)="loadRoles()">
+      <span class="btn-icon">refresh</span> Refresh
+    </button>
+  </div>
+</div>
+
+<ng-container *ngIf="!loading; else loadingTpl">
+  <!-- Role Cards -->
+  <div class="roles-grid">
+    <div class="admin-card role-card" *ngFor="let r of roles">
+      <div class="role-card-top">
+        <div class="role-badge-wrap">
+          <span class="role-dot" [style.background]="getRoleColor(r.name)"></span>
+          <h3>{{r.name | titlecase}}</h3>
+        </div>
+        <span class="admin-usage-pill">
+          {{r.active_user_count ?? r.user_count ?? 0}} / {{r.user_count ?? 0}} active
+        </span>
+      </div>
+
+      <p class="role-desc">{{r.description || 'Platform access role'}}</p>
+
+      <div class="perm-tags">
+        <code *ngFor="let p of parsePermissions(r)">{{p}}</code>
+      </div>
+
+      <div class="role-footer-meta">
+        <span class="text-sm text-muted">
+          Section overrides: <strong>{{r.section_overrides_count || 0}}</strong>
+        </span>
+      </div>
+
+      <div class="role-card-actions">
+        <button type="button" class="btn btn-secondary btn-sm" (click)="viewRoleUsers.emit(r.id)">
+          <span class="btn-icon">group</span> View Users
+        </button>
+        <button type="button" class="btn btn-primary btn-sm" (click)="configureSectionAccess.emit(r.name)">
+          <span class="btn-icon">visibility</span> Section Access
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Capability Matrix -->
+  <div class="table-container" *ngIf="roles.length">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Capability</th>
+          <th *ngFor="let r of roles" style="text-align:center">
+            <span class="matrix-role-head" [style.color]="getRoleColor(r.name)">
+              {{r.name | titlecase}}
+            </span>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let cap of capabilities">
+          <td>
+            <div class="font-bold text-sm">{{cap.capability}}</div>
+            <div class="text-sm text-muted">{{cap.description}}</div>
+          </td>
+          <td *ngFor="let r of roles" style="text-align:center">
+            <span class="mat-i cap-icon"
+                  [class.granted]="hasCapability(r, cap)">
+              {{hasCapability(r, cap) ? 'check_circle' : 'remove_circle_outline'}}
+            </span>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</ng-container>
+
+<ng-template #loadingTpl>
+  <div class="loading-box"><div class="spinner"></div></div>
+</ng-template>

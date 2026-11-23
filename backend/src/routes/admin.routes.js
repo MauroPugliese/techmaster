@@ -5,10 +5,17 @@ const router  = require('express').Router();
 const bcrypt  = require('bcryptjs');
 const { Op }  = require('sequelize');
 const {
-  sequelize, User, Role,
+  sequelize, User, Role, AuditLog,
   OperationType, ShiftType,
   AssetCategory, WikiCategory,
 } = require('../models');
+const {
+  validatePasswordStrength,
+  guardSelfOrLastAdminAction,
+  buildAuditLogWhere,
+  formatDbTableRow,
+} = require('../services/admin-helpers.service');
+const { sanitizeShiftTypePayload } = require('../services/shift-schedule.service');
 
 const CUSTOMIZABLE_TABLES = new Set([
   'operations',
@@ -440,38 +447,97 @@ async function getColumnMetadata(tableName) {
   return columns;
 }
 
+async function getActiveAdminCount() {
+  return User.count({
+    where: { is_active: true },
+    include: [{ model: Role, as: 'role', where: { name: 'admin' }, required: true }]
+  });
+}
+
+async function fetchGroupedUsageMap(sql) {
+  try {
+    const [rows] = await sequelize.query(sql);
+    return new Map(rows.map(r => [Number(r.ref_id), Number(r.used_count) || 0]));
+  } catch {
+    return new Map();
+  }
+}
+
 // =============================================================================
 // SYSTEM OVERVIEW
 // =============================================================================
 router.get('/system', async (req, res, next) => {
   try {
+    const t0 = Date.now();
+    const [[dbRow]] = await sequelize.query('SELECT VERSION() as version');
+    const dbLatencyMs = Date.now() - t0;
+
+    const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
     const [
-      userCount, activeUsers,
+      userCount, activeUsers, inactiveUsers, neverLoggedInUsers,
       opCount, maintCount,
       itemCount, shiftCount,
       taskCount, articleCount,
+      audit24h, error24h,
+      opTypeCount, shiftTypeCount, assetCatCount, wikiCatCount,
     ] = await Promise.all([
       User.count(),
       User.count({ where: { is_active: true } }),
+      User.count({ where: { is_active: false } }),
+      User.count({ where: { last_login: null } }),
       sequelize.models.Operation.count(),
       sequelize.models.MaintenanceRecord.count(),
       sequelize.models.InventoryItem.count({ where: { is_active: true } }),
       sequelize.models.Shift.count(),
       sequelize.models.Task.count(),
       sequelize.models.WikiArticle.count({ where: { status: 'PUBLISHED' } }),
+      AuditLog.count({ where: { created_at: { [Op.gte]: since24h } } }).catch(() => 0),
+      AuditLog.count({ where: { created_at: { [Op.gte]: since24h }, status: { [Op.gte]: 400 } } }).catch(() => 0),
+      OperationType.count(),
+      ShiftType.count(),
+      AssetCategory.count(),
+      WikiCategory.count(),
     ]);
 
-    const [[dbRow]] = await sequelize.query('SELECT VERSION() as version');
+    const [[itemCatRows], [locationRows], tableStatsRows, recentLogins, recentAudit, roleBreakdown] = await Promise.all([
+      sequelize.query('SELECT COUNT(*) as c FROM item_categories').catch(() => [[{ c: 0 }]]),
+      sequelize.query('SELECT COUNT(*) as c FROM warehouse_locations').catch(() => [[{ c: 0 }]]),
+      sequelize.query(
+        `SELECT
+           TABLE_NAME as table_name,
+           COALESCE(TABLE_ROWS, 0) as table_rows,
+           (COALESCE(DATA_LENGTH, 0) + COALESCE(INDEX_LENGTH, 0)) as size_bytes
+         FROM INFORMATION_SCHEMA.TABLES
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE'
+         ORDER BY size_bytes DESC`
+      ).catch(() => [[]]),
+      User.findAll({
+        where: { last_login: { [Op.ne]: null } },
+        attributes: ['id', 'first_name', 'last_name', 'username', 'last_login'],
+        include: [{ model: Role, as: 'role', attributes: ['name'] }],
+        order: [['last_login', 'DESC']],
+        limit: 5,
+      }).catch(() => []),
+      AuditLog.findAll({
+        attributes: ['id', 'user_id', 'username', 'method', 'path', 'action', 'status', 'ip', 'created_at'],
+        order: [['created_at', 'DESC']],
+        limit: 6,
+      }).catch(() => []),
+      User.findAll({
+        attributes: [
+          'role_id',
+          [sequelize.fn('COUNT', sequelize.col('User.id')), 'count']
+        ],
+        include: [{ model: Role, as: 'role', attributes: ['name'] }],
+        group: ['role_id', 'role.id'],
+        raw: false,
+      }),
+    ]);
 
-    const roleBreakdown = await User.findAll({
-      attributes: [
-        'role_id',
-        [sequelize.fn('COUNT', sequelize.col('User.id')), 'count']
-      ],
-      include: [{ model: Role, as: 'role', attributes: ['name'] }],
-      group: ['role_id', 'role.id'],
-      raw: false,
-    });
+    const allTables = (tableStatsRows[0] || []).map(formatDbTableRow);
+    const totalSizeMb = Number(allTables.reduce((sum, t) => sum + t.size_mb, 0).toFixed(2));
+    const mem = process.memoryUsage();
 
     res.json({
       success: true,
@@ -479,11 +545,50 @@ router.get('/system', async (req, res, next) => {
         db_version:   dbRow ? dbRow.version : 'unknown',
         uptime:       process.uptime(),
         node_version: process.version,
+        health: {
+          db_status: 'ok',
+          db_latency_ms: dbLatencyMs,
+          platform: process.platform,
+          pid: process.pid,
+          memory: {
+            rss_mb: Number((mem.rss / (1024 * 1024)).toFixed(1)),
+            heap_used_mb: Number((mem.heapUsed / (1024 * 1024)).toFixed(1)),
+            heap_total_mb: Number((mem.heapTotal / (1024 * 1024)).toFixed(1)),
+          }
+        },
+        storage: {
+          total_size_mb: totalSizeMb,
+          table_count: allTables.length,
+          top_tables: allTables.slice(0, 8),
+        },
         counts: {
           users: userCount, active_users: activeUsers,
           operations: opCount, maintenance: maintCount,
           inventory_items: itemCount, shifts: shiftCount,
           tasks: taskCount, wiki_articles: articleCount,
+        },
+        catalog_counts: {
+          operation_types: opTypeCount,
+          shift_types: shiftTypeCount,
+          asset_categories: assetCatCount,
+          item_categories: Number(itemCatRows[0]?.c) || 0,
+          wiki_categories: wikiCatCount,
+          warehouse_locations: Number(locationRows[0]?.c) || 0,
+        },
+        security_summary: {
+          inactive_users: inactiveUsers,
+          never_logged_in_users: neverLoggedInUsers,
+          audit_events_24h: audit24h,
+          error_events_24h: error24h,
+          recent_logins: recentLogins.map(u => ({
+            id: u.id,
+            first_name: u.first_name,
+            last_name: u.last_name,
+            username: u.username,
+            role_name: u.role?.name || 'unknown',
+            last_login: u.last_login,
+          })),
+          recent_audit: recentAudit,
         },
         role_breakdown: roleBreakdown.map(r => ({
           role:  r.role ? r.role.name : 'unknown',
@@ -495,12 +600,99 @@ router.get('/system', async (req, res, next) => {
 });
 
 // =============================================================================
-// ROLES — read only
+// AUDIT LOGS
+// =============================================================================
+router.get('/audit-logs', async (req, res, next) => {
+  try {
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 25));
+    const where = buildAuditLogWhere(req.query, Op);
+    const { status_group, ...whereWithoutStatus } = req.query;
+    const summaryWhere = buildAuditLogWhere(whereWithoutStatus, Op);
+
+    const [
+      { count, rows },
+      summaryTotal,
+      okCount,
+      warn4xx,
+      err5xx,
+      authFailures,
+    ] = await Promise.all([
+      AuditLog.findAndCountAll({
+        where,
+        include: [{
+          model: User,
+          as: 'user',
+          attributes: ['id', 'first_name', 'last_name', 'username'],
+          required: false,
+        }],
+        order: [['created_at', 'DESC'], ['id', 'DESC']],
+        limit,
+        offset: (page - 1) * limit,
+      }),
+      AuditLog.count({ where: summaryWhere }),
+      AuditLog.count({ where: Object.assign({}, summaryWhere, { status: { [Op.between]: [200, 399] } }) }),
+      AuditLog.count({ where: Object.assign({}, summaryWhere, { status: { [Op.between]: [400, 499] } }) }),
+      AuditLog.count({ where: Object.assign({}, summaryWhere, { status: { [Op.gte]: 500 } }) }),
+      AuditLog.count({ where: Object.assign({}, summaryWhere, { status: { [Op.in]: [401, 403] } }) }),
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        items: rows,
+        total: count,
+        page,
+        limit,
+        summary: {
+          total: summaryTotal,
+          ok_count: okCount,
+          warn_4xx: warn4xx,
+          err_5xx: err5xx,
+          auth_failures: authFailures,
+        }
+      }
+    });
+  } catch (err) { next(err); }
+});
+
+// =============================================================================
+// ROLES — read + usage stats
 // =============================================================================
 router.get('/roles', async (req, res, next) => {
   try {
-    const roles = await Role.findAll({ order: [['id', 'ASC']] });
-    res.json({ success: true, data: roles });
+    await ensureSectionAccessPrefsTable();
+    const [roles, userStats, sectionStats] = await Promise.all([
+      Role.findAll({ order: [['id', 'ASC']] }),
+      sequelize.query(
+        `SELECT role_id,
+                COUNT(*) as user_count,
+                SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) as active_user_count
+         FROM users
+         GROUP BY role_id`
+      ).catch(() => [[]]),
+      sequelize.query(
+        `SELECT subject_key as role_name, COUNT(*) as override_count
+         FROM ui_section_access_preferences
+         WHERE subject_type = 'role'
+         GROUP BY subject_key`
+      ).catch(() => [[]]),
+    ]);
+
+    const userMap = new Map((userStats[0] || []).map(r => [Number(r.role_id), r]));
+    const overrideMap = new Map((sectionStats[0] || []).map(r => [String(r.role_name).toLowerCase(), Number(r.override_count) || 0]));
+
+    const enriched = roles.map(r => {
+      const stats = userMap.get(Number(r.id));
+      const plain = r.get({ plain: true });
+      return Object.assign({}, plain, {
+        user_count: Number(stats?.user_count) || 0,
+        active_user_count: Number(stats?.active_user_count) || 0,
+        section_overrides_count: overrideMap.get(String(plain.name || '').toLowerCase()) || 0,
+      });
+    });
+
+    res.json({ success: true, data: enriched });
   } catch (err) { next(err); }
 });
 
@@ -509,32 +701,233 @@ router.get('/roles', async (req, res, next) => {
 // =============================================================================
 router.get('/users', async (req, res, next) => {
   try {
-    const { search, page = 1, limit = 50 } = req.query;
+    const {
+      search,
+      role_id,
+      role,
+      status,
+      department,
+      sort_by = 'name',
+      sort_dir = 'ASC',
+      page = 1,
+      limit = 50,
+    } = req.query;
+
     const where = {};
-    if (search) {
+    if (search && String(search).trim()) {
+      const term = '%' + String(search).trim() + '%';
       where[Op.or] = [
-        { first_name: { [Op.like]: '%' + search + '%' } },
-        { last_name:  { [Op.like]: '%' + search + '%' } },
-        { email:      { [Op.like]: '%' + search + '%' } },
-        { username:   { [Op.like]: '%' + search + '%' } },
+        { first_name: { [Op.like]: term } },
+        { last_name:  { [Op.like]: term } },
+        { email:      { [Op.like]: term } },
+        { username:   { [Op.like]: term } },
+        { department: { [Op.like]: term } },
       ];
     }
-    const { count, rows } = await User.findAndCountAll({
-      where,
+
+    if (role_id !== undefined && role_id !== null && String(role_id).trim() !== '') {
+      const parsedRoleId = Number(role_id);
+      if (Number.isInteger(parsedRoleId) && parsedRoleId > 0) {
+        where.role_id = parsedRoleId;
+      }
+    }
+
+    if (status === 'active') where.is_active = true;
+    else if (status === 'inactive') where.is_active = false;
+
+    if (department && String(department).trim()) {
+      where.department = String(department).trim();
+    }
+
+    const roleInclude = { model: Role, as: 'role' };
+    if (role && String(role).trim()) {
+      roleInclude.where = { name: String(role).trim().toLowerCase() };
+      roleInclude.required = true;
+    }
+
+    const dir = String(sort_dir).toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
+    let order = [['first_name', dir], ['last_name', dir]];
+    if (sort_by === 'last_login') order = [['last_login', dir]];
+    else if (sort_by === 'created_at') order = [['created_at', dir]];
+
+    const pageNum = Math.max(1, Number(page) || 1);
+    const limitNum = Math.min(500, Math.max(1, Number(limit) || 50));
+
+    const [{ count, rows }, [deptRows]] = await Promise.all([
+      User.findAndCountAll({
+        where,
+        attributes: { exclude: ['password_hash'] },
+        include: [roleInclude],
+        order,
+        limit: limitNum,
+        offset: (pageNum - 1) * limitNum,
+      }),
+      sequelize.query(
+        `SELECT DISTINCT department FROM users WHERE department IS NOT NULL AND TRIM(department) <> '' ORDER BY department ASC`
+      ).catch(() => [[]]),
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        items: rows,
+        total: count,
+        departments: (deptRows || []).map(d => d.department),
+      }
+    });
+  } catch (err) { next(err); }
+});
+
+router.patch('/users/bulk', async (req, res, next) => {
+  try {
+    const { user_ids, action, role_id, department } = req.body || {};
+    const ids = Array.isArray(user_ids)
+      ? [...new Set(user_ids.map(Number).filter(id => Number.isInteger(id) && id > 0))]
+      : [];
+
+    if (!ids.length) {
+      return res.status(400).json({ success: false, message: 'Select at least one user' });
+    }
+    if (!['activate', 'deactivate', 'set_role', 'set_department'].includes(action)) {
+      return res.status(400).json({ success: false, message: 'Unsupported bulk action' });
+    }
+
+    let nextRole = null;
+    if (action === 'set_role') {
+      nextRole = await Role.findByPk(role_id);
+      if (!nextRole) {
+        return res.status(400).json({ success: false, message: 'Valid target role is required' });
+      }
+    }
+
+    const users = await User.findAll({
+      where: { id: { [Op.in]: ids } },
+      include: [{ model: Role, as: 'role' }],
+    });
+
+    let activeAdminCount = await getActiveAdminCount();
+    let updatedCount = 0;
+    const skippedReasons = [];
+
+    for (const targetUser of users) {
+      const isCurrentActiveAdmin = targetUser.role?.name === 'admin' && Boolean(targetUser.is_active);
+
+      if (action === 'deactivate' && targetUser.is_active) {
+        const guard = guardSelfOrLastAdminAction({
+          actorId: req.user?.id,
+          targetUser,
+          action: 'deactivate',
+          activeAdminCount,
+        });
+        if (!guard.allowed) {
+          skippedReasons.push(`${targetUser.username}: ${guard.message}`);
+          continue;
+        }
+        await targetUser.update({ is_active: false });
+        if (isCurrentActiveAdmin) activeAdminCount -= 1;
+        updatedCount += 1;
+      } else if (action === 'activate') {
+        if (!targetUser.is_active) {
+          await targetUser.update({ is_active: true });
+          if (targetUser.role?.name === 'admin') activeAdminCount += 1;
+        }
+        updatedCount += 1;
+      } else if (action === 'set_role') {
+        const guard = guardSelfOrLastAdminAction({
+          actorId: req.user?.id,
+          targetUser,
+          action: 'change_role',
+          nextRoleName: nextRole.name,
+          activeAdminCount,
+        });
+        if (!guard.allowed) {
+          skippedReasons.push(`${targetUser.username}: ${guard.message}`);
+          continue;
+        }
+        await targetUser.update({ role_id: nextRole.id });
+        if (isCurrentActiveAdmin && nextRole.name !== 'admin') activeAdminCount -= 1;
+        else if (!isCurrentActiveAdmin && targetUser.is_active && nextRole.name === 'admin') activeAdminCount += 1;
+        updatedCount += 1;
+      } else if (action === 'set_department') {
+        await targetUser.update({ department: department ? String(department).trim() : null });
+        updatedCount += 1;
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        updated_count: updatedCount,
+        skipped_count: skippedReasons.length,
+        skipped_reasons: skippedReasons,
+      }
+    });
+  } catch (err) { next(err); }
+});
+
+router.get('/users/:id/summary', async (req, res, next) => {
+  try {
+    const user = await User.findByPk(req.params.id, {
       attributes: { exclude: ['password_hash'] },
       include: [{ model: Role, as: 'role' }],
-      order: [['first_name', 'ASC']],
-      limit: +limit,
-      offset: (+page - 1) * +limit,
     });
-    res.json({ success: true, data: { items: rows, total: count } });
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+    await ensureSectionAccessPrefsTable();
+
+    const [
+      operationsCount,
+      maintenanceCount,
+      tasksCount,
+      shiftsCount,
+      wikiArticlesCount,
+      [overrideRows],
+      recentAudit,
+    ] = await Promise.all([
+      sequelize.models.Operation.count({ where: { created_by: user.id } }),
+      sequelize.models.MaintenanceRecord.count({ where: { performed_by: user.id } }),
+      sequelize.models.Task.count({ where: { assigned_to: user.id } }),
+      sequelize.models.Shift.count({ where: { user_id: user.id } }),
+      sequelize.models.WikiArticle.count({ where: { author_id: user.id } }),
+      sequelize.query(
+        `SELECT COUNT(*) as c
+         FROM ui_section_access_preferences
+         WHERE subject_type = 'user' AND subject_key = ?`,
+        { replacements: [String(user.id)] }
+      ).catch(() => [[{ c: 0 }]]),
+      AuditLog.findAll({
+        where: { user_id: user.id },
+        attributes: ['id', 'action', 'method', 'path', 'status', 'ip', 'created_at'],
+        order: [['created_at', 'DESC']],
+        limit: 5,
+      }).catch(() => []),
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        user,
+        counts: {
+          operations: operationsCount,
+          maintenance: maintenanceCount,
+          tasks: tasksCount,
+          shifts: shiftsCount,
+          wiki_articles: wikiArticlesCount,
+          section_overrides: Number(overrideRows[0]?.c) || 0,
+        },
+        recent_audit: recentAudit,
+      }
+    });
   } catch (err) { next(err); }
 });
 
 router.post('/users', async (req, res, next) => {
   try {
     const { password } = req.body;
-    if (!password) return res.status(400).json({ success: false, message: 'Password required' });
+    const pwdCheck = validatePasswordStrength(password);
+    if (!pwdCheck.valid) {
+      return res.status(400).json({ success: false, message: pwdCheck.message });
+    }
     const payload = Object.assign({}, req.body);
     delete payload.password;
     payload.password_hash = await bcrypt.hash(password, 12);
@@ -549,13 +942,54 @@ router.post('/users', async (req, res, next) => {
 
 router.put('/users/:id', async (req, res, next) => {
   try {
-    const user = await User.findByPk(req.params.id);
+    const user = await User.findByPk(req.params.id, {
+      include: [{ model: Role, as: 'role' }],
+    });
     if (!user) return res.status(404).json({ success: false, message: 'Not found' });
+
     const updates = Object.assign({}, req.body);
     if (updates.password) {
+      const pwdCheck = validatePasswordStrength(updates.password);
+      if (!pwdCheck.valid) {
+        return res.status(400).json({ success: false, message: pwdCheck.message });
+      }
       updates.password_hash = await bcrypt.hash(updates.password, 12);
     }
     delete updates.password;
+
+    const changingRole = updates.role_id !== undefined && Number(updates.role_id) !== Number(user.role_id);
+    const deactivating = updates.is_active === false && Boolean(user.is_active);
+    if (changingRole || deactivating) {
+      const activeAdminCount = await getActiveAdminCount();
+      if (deactivating) {
+        const guard = guardSelfOrLastAdminAction({
+          actorId: req.user?.id,
+          targetUser: user,
+          action: 'deactivate',
+          activeAdminCount,
+        });
+        if (!guard.allowed) {
+          return res.status(guard.status).json({ success: false, message: guard.message });
+        }
+      }
+      if (changingRole) {
+        const nextRole = await Role.findByPk(updates.role_id);
+        if (!nextRole) {
+          return res.status(400).json({ success: false, message: 'Invalid role selected' });
+        }
+        const guard = guardSelfOrLastAdminAction({
+          actorId: req.user?.id,
+          targetUser: user,
+          action: 'change_role',
+          nextRoleName: nextRole.name,
+          activeAdminCount,
+        });
+        if (!guard.allowed) {
+          return res.status(guard.status).json({ success: false, message: guard.message });
+        }
+      }
+    }
+
     await user.update(updates);
     const updated = await User.findByPk(user.id, {
       attributes: { exclude: ['password_hash'] },
@@ -567,8 +1001,19 @@ router.put('/users/:id', async (req, res, next) => {
 
 router.delete('/users/:id', async (req, res, next) => {
   try {
-    if (+req.params.id === req.user.id) {
-      return res.status(400).json({ success: false, message: 'Cannot delete your own account' });
+    const user = await User.findByPk(req.params.id, {
+      include: [{ model: Role, as: 'role' }],
+    });
+    if (!user) return res.status(404).json({ success: false, message: 'Not found' });
+    const activeAdminCount = await getActiveAdminCount();
+    const guard = guardSelfOrLastAdminAction({
+      actorId: req.user?.id,
+      targetUser: user,
+      action: 'delete',
+      activeAdminCount,
+    });
+    if (!guard.allowed) {
+      return res.status(guard.status).json({ success: false, message: guard.message });
     }
     await User.destroy({ where: { id: req.params.id } });
     res.json({ success: true });
@@ -577,8 +1022,22 @@ router.delete('/users/:id', async (req, res, next) => {
 
 router.patch('/users/:id/toggle', async (req, res, next) => {
   try {
-    const user = await User.findByPk(req.params.id);
+    const user = await User.findByPk(req.params.id, {
+      include: [{ model: Role, as: 'role' }],
+    });
     if (!user) return res.status(404).json({ success: false, message: 'Not found' });
+    if (user.is_active) {
+      const activeAdminCount = await getActiveAdminCount();
+      const guard = guardSelfOrLastAdminAction({
+        actorId: req.user?.id,
+        targetUser: user,
+        action: 'deactivate',
+        activeAdminCount,
+      });
+      if (!guard.allowed) {
+        return res.status(guard.status).json({ success: false, message: guard.message });
+      }
+    }
     await user.update({ is_active: !user.is_active });
     res.json({ success: true, data: { is_active: user.is_active } });
   } catch (err) { next(err); }
@@ -587,8 +1046,9 @@ router.patch('/users/:id/toggle', async (req, res, next) => {
 router.patch('/users/:id/reset-password', async (req, res, next) => {
   try {
     const { new_password } = req.body;
-    if (!new_password || new_password.length < 8) {
-      return res.status(400).json({ success: false, message: 'Password must be at least 8 characters' });
+    const pwdCheck = validatePasswordStrength(new_password);
+    if (!pwdCheck.valid) {
+      return res.status(400).json({ success: false, message: pwdCheck.message });
     }
     const user = await User.findByPk(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: 'Not found' });
@@ -602,8 +1062,14 @@ router.patch('/users/:id/reset-password', async (req, res, next) => {
 // =============================================================================
 router.get('/operation-types', async (req, res, next) => {
   try {
-    const types = await OperationType.findAll({ order: [['name', 'ASC']] });
-    res.json({ success: true, data: types });
+    const [types, usageMap] = await Promise.all([
+      OperationType.findAll({ order: [['name', 'ASC']] }),
+      fetchGroupedUsageMap('SELECT type_id as ref_id, COUNT(*) as used_count FROM operations GROUP BY type_id'),
+    ]);
+    const data = types.map(t => Object.assign({}, t.get({ plain: true }), {
+      used_count: usageMap.get(Number(t.id)) || 0,
+    }));
+    res.json({ success: true, data });
   } catch (err) { next(err); }
 });
 
@@ -639,14 +1105,22 @@ router.delete('/operation-types/:id', async (req, res, next) => {
 // =============================================================================
 router.get('/shift-types', async (req, res, next) => {
   try {
-    const types = await ShiftType.findAll({ order: [['name', 'ASC']] });
-    res.json({ success: true, data: types });
+    const [types, usageMap] = await Promise.all([
+      ShiftType.findAll({ order: [['category', 'ASC'], ['name', 'ASC']] }),
+      fetchGroupedUsageMap('SELECT shift_type_id as ref_id, COUNT(*) as used_count FROM shifts WHERE deleted_at IS NULL GROUP BY shift_type_id'),
+    ]);
+    const data = types.map(t => Object.assign({}, t.get({ plain: true }), {
+      used_count: usageMap.get(Number(t.id)) || 0,
+    }));
+    res.json({ success: true, data });
   } catch (err) { next(err); }
 });
 
 router.post('/shift-types', async (req, res, next) => {
   try {
-    const t = await ShiftType.create(req.body);
+    const { data: sanitized, error } = sanitizeShiftTypePayload(req.body, { isCreate: true });
+    if (error) return res.status(400).json({ success: false, message: error });
+    const t = await ShiftType.create(sanitized);
     res.status(201).json({ success: true, data: t });
   } catch (err) { next(err); }
 });
@@ -655,7 +1129,9 @@ router.put('/shift-types/:id', async (req, res, next) => {
   try {
     const t = await ShiftType.findByPk(req.params.id);
     if (!t) return res.status(404).json({ success: false, message: 'Not found' });
-    await t.update(req.body);
+    const { data: sanitized, error } = sanitizeShiftTypePayload(req.body, { existing: t });
+    if (error) return res.status(400).json({ success: false, message: error });
+    await t.update(sanitized);
     res.json({ success: true, data: t });
   } catch (err) { next(err); }
 });
@@ -676,8 +1152,14 @@ router.delete('/shift-types/:id', async (req, res, next) => {
 // =============================================================================
 router.get('/asset-categories', async (req, res, next) => {
   try {
-    const cats = await AssetCategory.findAll({ order: [['name', 'ASC']] });
-    res.json({ success: true, data: cats });
+    const [cats, usageMap] = await Promise.all([
+      AssetCategory.findAll({ order: [['name', 'ASC']] }),
+      fetchGroupedUsageMap('SELECT category_id as ref_id, COUNT(*) as used_count FROM assets GROUP BY category_id'),
+    ]);
+    const data = cats.map(c => Object.assign({}, c.get({ plain: true }), {
+      used_count: usageMap.get(Number(c.id)) || 0,
+    }));
+    res.json({ success: true, data });
   } catch (err) { next(err); }
 });
 
@@ -713,8 +1195,14 @@ router.delete('/asset-categories/:id', async (req, res, next) => {
 // =============================================================================
 router.get('/item-categories', async (req, res, next) => {
   try {
-    const [rows] = await sequelize.query('SELECT * FROM item_categories ORDER BY name ASC');
-    res.json({ success: true, data: rows });
+    const [[rows], usageMap] = await Promise.all([
+      sequelize.query('SELECT * FROM item_categories ORDER BY name ASC'),
+      fetchGroupedUsageMap('SELECT category_id as ref_id, COUNT(*) as used_count FROM inventory_items WHERE deleted_at IS NULL GROUP BY category_id'),
+    ]);
+    const data = rows.map(r => Object.assign({}, r, {
+      used_count: usageMap.get(Number(r.id)) || 0,
+    }));
+    res.json({ success: true, data });
   } catch (err) { next(err); }
 });
 
@@ -751,7 +1239,7 @@ router.put('/item-categories/:id', async (req, res, next) => {
 router.delete('/item-categories/:id', async (req, res, next) => {
   try {
     const [used] = await sequelize.query(
-      'SELECT COUNT(*) as c FROM inventory_items WHERE category_id = ?',
+      'SELECT COUNT(*) as c FROM inventory_items WHERE category_id = ? AND deleted_at IS NULL',
       { replacements: [req.params.id] }
     );
     if (used[0].c > 0) {
@@ -770,8 +1258,14 @@ router.delete('/item-categories/:id', async (req, res, next) => {
 // =============================================================================
 router.get('/wiki-categories', async (req, res, next) => {
   try {
-    const cats = await WikiCategory.findAll({ order: [['sort_order', 'ASC']] });
-    res.json({ success: true, data: cats });
+    const [cats, usageMap] = await Promise.all([
+      WikiCategory.findAll({ order: [['sort_order', 'ASC'], ['name', 'ASC']] }),
+      fetchGroupedUsageMap('SELECT category_id as ref_id, COUNT(*) as used_count FROM wiki_articles GROUP BY category_id'),
+    ]);
+    const data = cats.map(c => Object.assign({}, c.get({ plain: true }), {
+      used_count: usageMap.get(Number(c.id)) || 0,
+    }));
+    res.json({ success: true, data });
   } catch (err) { next(err); }
 });
 
@@ -812,8 +1306,14 @@ router.delete('/wiki-categories/:id', async (req, res, next) => {
 // =============================================================================
 router.get('/warehouse-locations', async (req, res, next) => {
   try {
-    const [rows] = await sequelize.query('SELECT * FROM warehouse_locations ORDER BY name ASC');
-    res.json({ success: true, data: rows });
+    const [[rows], usageMap] = await Promise.all([
+      sequelize.query('SELECT * FROM warehouse_locations ORDER BY name ASC'),
+      fetchGroupedUsageMap('SELECT location_id as ref_id, COUNT(*) as used_count FROM inventory_items WHERE deleted_at IS NULL GROUP BY location_id'),
+    ]);
+    const data = rows.map(r => Object.assign({}, r, {
+      used_count: usageMap.get(Number(r.id)) || 0,
+    }));
+    res.json({ success: true, data });
   } catch (err) { next(err); }
 });
 
@@ -847,10 +1347,28 @@ router.put('/warehouse-locations/:id', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+router.patch('/warehouse-locations/:id/toggle', async (req, res, next) => {
+  try {
+    const [existing] = await sequelize.query(
+      'SELECT id, is_active FROM warehouse_locations WHERE id = ?',
+      { replacements: [req.params.id] }
+    );
+    if (!existing.length) {
+      return res.status(404).json({ success: false, message: 'Location not found' });
+    }
+    const nextActive = existing[0].is_active ? 0 : 1;
+    await sequelize.query(
+      'UPDATE warehouse_locations SET is_active = ? WHERE id = ?',
+      { replacements: [nextActive, req.params.id] }
+    );
+    res.json({ success: true, data: { is_active: Boolean(nextActive) } });
+  } catch (err) { next(err); }
+});
+
 router.delete('/warehouse-locations/:id', async (req, res, next) => {
   try {
     const [used] = await sequelize.query(
-      'SELECT COUNT(*) as c FROM inventory_items WHERE location_id = ?',
+      'SELECT COUNT(*) as c FROM inventory_items WHERE location_id = ? AND deleted_at IS NULL',
       { replacements: [req.params.id] }
     );
     if (used[0].c > 0) {

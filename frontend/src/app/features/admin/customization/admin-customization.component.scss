@@ -1,0 +1,60 @@
+@import '../_admin-shared';
+
+.mode-pills {
+  display: inline-flex;
+  gap: 6px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.text-xs {
+  font-size: 0.72rem;
+}
+
+.preview-pill-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.preview-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+}
+
+.preview-idx {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--blue-100);
+  color: var(--primary);
+  font-size: 0.68rem;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.preview-lbl {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--blue-950);
+}
+
+.preview-key {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.loading-box {
+  display: flex;
+  justify-content: center;
+  padding: 60px;
+}

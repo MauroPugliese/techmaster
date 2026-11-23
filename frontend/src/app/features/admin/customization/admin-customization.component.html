@@ -1,0 +1,356 @@
+<div class="admin-page-head">
+  <div>
+    <h2>Schema &amp; UI Customization</h2>
+    <p>Manage database schema columns, table visibility, field ordering, and role-specific labels</p>
+  </div>
+  <div class="admin-head-actions">
+    <div class="mode-pills">
+      <button type="button" class="admin-chip" [class.active]="mode === 'db'" (click)="setMode('db')">
+        <span class="mat-i" style="font-size:16px">storage</span> DB Schema
+      </button>
+      <button type="button" class="admin-chip" [class.active]="mode === 'ui'" (click)="setMode('ui')">
+        <span class="mat-i" style="font-size:16px">view_list</span> UI Visibility &amp; Labels
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Unsaved Changes Banner -->
+<div class="admin-dirty-bar" *ngIf="isDirty">
+  <div class="flex items-center gap-2">
+    <span class="mat-i" style="font-size:18px">edit_notifications</span>
+    <span>You have unsaved customization changes in this view.</span>
+  </div>
+  <div class="flex gap-2">
+    <button type="button" class="btn btn-secondary btn-sm" [disabled]="actionLoading" (click)="discardCurrentEdits()">
+      Discard
+    </button>
+    <button type="button" class="btn btn-primary btn-sm" [disabled]="actionLoading"
+            (click)="mode === 'db' ? saveColumnPreferences() : saveUiPreferences()">
+      <span class="btn-icon">save</span> Save Changes
+    </button>
+  </div>
+</div>
+
+<!-- ====================================================================== -->
+<!-- DB SCHEMA MODE                                                         -->
+<!-- ====================================================================== -->
+<ng-container *ngIf="mode === 'db'">
+  <div class="admin-toolbar-card">
+    <div class="admin-filter-row" style="justify-content:space-between">
+      <div class="admin-filter-row" style="flex:1">
+        <div style="width:260px">
+          <app-dropdown class="form-control"
+                        [ngModel]="selectedTable"
+                        (ngModelChange)="onTableChange($event)"
+                        placeholder="— Select table —"
+                        ariaLabel="Select database table">
+            <app-dropdown-option *ngFor="let t of tables" [ngValue]="t.table_name">{{t.table_name}}</app-dropdown-option>
+          </app-dropdown>
+        </div>
+
+        <div class="search-bar" style="flex:1 1 200px;max-width:280px">
+          <span class="search-icon">search</span>
+          <input placeholder="Filter columns…" [(ngModel)]="dbSearch">
+        </div>
+      </div>
+
+      <div class="flex gap-2 flex-wrap">
+        <button type="button" class="btn btn-secondary btn-sm" (click)="setAllDbVisibility(true)" [disabled]="!columns.length">Show All</button>
+        <button type="button" class="btn btn-secondary btn-sm" (click)="setAllDbVisibility(false)" [disabled]="!columns.length">Hide Non-System</button>
+        <button type="button" class="btn btn-secondary btn-sm" (click)="loadTableColumns(selectedTable)" [disabled]="!selectedTable">
+          <span class="btn-icon">refresh</span> Refresh
+        </button>
+        <button type="button" class="btn btn-primary btn-sm" (click)="openColumnModal()" [disabled]="!selectedTable">
+          <span class="btn-icon">add</span> Add Column
+        </button>
+        <button type="button" class="btn btn-primary btn-sm" (click)="saveColumnPreferences()" [disabled]="!selectedTable || actionLoading">
+          <span class="btn-icon">save</span> Save Order &amp; Visibility
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="table-container" *ngIf="!loading; else loadingTpl">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Column</th>
+          <th>Type</th>
+          <th>Nullable</th>
+          <th>Default</th>
+          <th>Visible</th>
+          <th>Label Override</th>
+          <th>Order</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let c of filteredDbColumns; let i = index">
+          <td>
+            <div class="flex items-center gap-2">
+              <strong class="text-sm">{{c.column_name}}</strong>
+              <span class="badge" *ngIf="c.is_system" style="background:var(--blue-100);color:var(--primary)">System</span>
+              <span class="badge" *ngIf="c.is_protected && !c.is_system" style="background:var(--surface-raised);color:var(--text-muted)">Protected</span>
+            </div>
+          </td>
+          <td><code style="font-size:0.78rem">{{c.column_type}}</code></td>
+          <td>
+            <span class="badge"
+                  [style.background]="c.is_nullable === 'YES' ? 'var(--blue-100)' : '#FEE2E2'"
+                  [style.color]="c.is_nullable === 'YES' ? 'var(--primary)' : '#B91C1C'">
+              {{c.is_nullable === 'YES' ? 'Nullable' : 'Required'}}
+            </span>
+          </td>
+          <td class="text-sm text-muted">{{c.column_default ?? 'NULL'}}</td>
+          <td>
+            <label class="admin-switch">
+              <input type="checkbox" [(ngModel)]="c.is_visible" [disabled]="c.is_system">
+              <span class="slider"></span>
+            </label>
+          </td>
+          <td>
+            <input class="form-control" [(ngModel)]="c.label" placeholder="Display label" style="min-width:150px">
+          </td>
+          <td>
+            <div class="flex gap-1">
+              <button type="button" class="btn btn-ghost btn-icon-only btn-sm" [disabled]="i === 0 || !!dbSearch" (click)="moveColumn(c, -1)">
+                <span class="btn-icon" style="font-size:16px">arrow_upward</span>
+              </button>
+              <button type="button" class="btn btn-ghost btn-icon-only btn-sm" [disabled]="i === columns.length - 1 || !!dbSearch" (click)="moveColumn(c, 1)">
+                <span class="btn-icon" style="font-size:16px">arrow_downward</span>
+              </button>
+            </div>
+          </td>
+          <td>
+            <div class="flex gap-1">
+              <button type="button" class="btn btn-ghost btn-icon-only btn-sm" [disabled]="c.is_protected" (click)="openColumnModal(c)" title="Edit column">
+                <span class="btn-icon" style="font-size:16px">edit</span>
+              </button>
+              <button type="button" class="btn btn-ghost btn-icon-only btn-sm" [disabled]="c.is_protected" (click)="deleteColumn(c)" title="Drop column">
+                <span class="btn-icon" style="font-size:16px" [style.color]="c.is_protected ? 'var(--text-subtle)' : '#EF4444'">delete</span>
+              </button>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="empty-state" *ngIf="!filteredDbColumns.length">
+      <span class="empty-icon">table_view</span>
+      <h3>{{selectedTable ? 'No matching columns' : 'Select a table to customize'}}</h3>
+    </div>
+  </div>
+</ng-container>
+
+<!-- ====================================================================== -->
+<!-- UI SECTION VISIBILITY & LABELS MODE                                    -->
+<!-- ====================================================================== -->
+<ng-container *ngIf="mode === 'ui'">
+  <div class="admin-toolbar-card">
+    <div class="admin-filter-row" style="justify-content:space-between">
+      <div class="admin-filter-row" style="flex:1">
+        <div style="width:210px">
+          <app-dropdown class="form-control"
+                        [ngModel]="selectedUiSection"
+                        (ngModelChange)="onUiSelectionChange({ section: $event })"
+                        ariaLabel="UI section">
+            <app-dropdown-option *ngFor="let s of uiSections" [ngValue]="s">{{s | titlecase}}</app-dropdown-option>
+          </app-dropdown>
+        </div>
+        <div style="width:170px">
+          <app-dropdown class="form-control"
+                        [ngModel]="selectedUiScope"
+                        (ngModelChange)="onUiSelectionChange({ scope: $event })"
+                        ariaLabel="UI scope">
+            <app-dropdown-option value="table">Table Columns</app-dropdown-option>
+            <app-dropdown-option value="form">Form Fields</app-dropdown-option>
+          </app-dropdown>
+        </div>
+        <div style="width:190px">
+          <app-dropdown class="form-control"
+                        [ngModel]="selectedUiRole"
+                        (ngModelChange)="onUiSelectionChange({ role: $event })"
+                        ariaLabel="Target role">
+            <app-dropdown-option value="ALL">All Roles (Global)</app-dropdown-option>
+            <app-dropdown-option *ngFor="let r of roles" [ngValue]="r.name">{{r.name | titlecase}}</app-dropdown-option>
+          </app-dropdown>
+        </div>
+        <div class="search-bar" style="flex:1 1 180px;max-width:250px">
+          <span class="search-icon">search</span>
+          <input placeholder="Filter fields…" [(ngModel)]="uiSearch">
+        </div>
+      </div>
+
+      <div class="flex gap-2 flex-wrap">
+        <button type="button" class="btn btn-secondary btn-sm" (click)="setAllUiVisibility(true)" [disabled]="!uiFieldsEditor.length">Show All</button>
+        <button type="button" class="btn btn-secondary btn-sm" (click)="setAllUiVisibility(false)" [disabled]="!uiFieldsEditor.length">Hide All</button>
+        <button type="button" class="btn btn-secondary btn-sm" [disabled]="actionLoading || !selectedUiSection" (click)="resetUiPreferences()">
+          <span class="btn-icon">restart_alt</span> Reset
+        </button>
+        <button type="button" class="btn btn-primary btn-sm" [disabled]="actionLoading || !selectedUiSection" (click)="saveUiPreferences()">
+          <span class="btn-icon">save</span> Save Section Settings
+        </button>
+      </div>
+    </div>
+
+    <div class="admin-filter-row">
+      <span class="text-xs font-bold text-muted" style="text-transform:uppercase">Source Filter:</span>
+      <div class="admin-chip-group">
+        <button type="button" class="admin-chip" [class.active]="uiSourceFilter === 'all'" (click)="uiSourceFilter = 'all'">All</button>
+        <button type="button" class="admin-chip" [class.active]="uiSourceFilter === 'role'" (click)="uiSourceFilter = 'role'">Role Override</button>
+        <button type="button" class="admin-chip" [class.active]="uiSourceFilter === 'global'" (click)="uiSourceFilter = 'global'">Global Override</button>
+        <button type="button" class="admin-chip" [class.active]="uiSourceFilter === 'default'" (click)="uiSourceFilter = 'default'">Default</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="table-container" *ngIf="!loading; else loadingTpl">
+    <table class="data-table" *ngIf="filteredUiFields.length; else emptyUiTpl">
+      <thead>
+        <tr>
+          <th>Field Key</th>
+          <th>Visible</th>
+          <th>Label Override</th>
+          <th>Effective Source</th>
+          <th>Order</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let f of filteredUiFields; let i = index">
+          <td><code>{{f.field_key}}</code></td>
+          <td>
+            <label class="admin-switch">
+              <input type="checkbox" [(ngModel)]="f.is_visible">
+              <span class="slider"></span>
+            </label>
+          </td>
+          <td>
+            <input class="form-control" [(ngModel)]="f.label" placeholder="Default section label" style="max-width:280px">
+          </td>
+          <td>
+            <span class="badge"
+                  [style.background]="f.source === 'role' ? 'var(--blue-100)' : (f.source === 'global' ? '#DCFCE7' : 'var(--surface-raised)')"
+                  [style.color]="f.source === 'role' ? 'var(--primary)' : (f.source === 'global' ? '#166534' : 'var(--text-muted)')">
+              {{f.source || 'default'}}
+            </span>
+          </td>
+          <td>
+            <div class="flex gap-1">
+              <button type="button" class="btn btn-ghost btn-icon-only btn-sm" [disabled]="i === 0 || !!uiSearch" (click)="moveUiField(f, -1)">
+                <span class="btn-icon" style="font-size:16px">arrow_upward</span>
+              </button>
+              <button type="button" class="btn btn-ghost btn-icon-only btn-sm" [disabled]="i === uiFieldsEditor.length - 1 || !!uiSearch" (click)="moveUiField(f, 1)">
+                <span class="btn-icon" style="font-size:16px">arrow_downward</span>
+              </button>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <ng-template #emptyUiTpl>
+      <div class="empty-state">
+        <span class="empty-icon">view_list</span>
+        <h3>No fields configured for this scope</h3>
+      </div>
+    </ng-template>
+  </div>
+
+  <!-- Compact Effective Sequence Preview -->
+  <div class="admin-card" style="margin-top:14px" *ngIf="visibleUiPreviewFields.length">
+    <div class="admin-card-head" style="margin-bottom:10px">
+      <div>
+        <h3>Effective Visible Sequence ({{visibleUiPreviewFields.length}})</h3>
+        <p>Priority: Role Override → Global Override → Section Defaults</p>
+      </div>
+    </div>
+    <div class="preview-pill-flow">
+      <div class="preview-pill" *ngFor="let p of visibleUiPreviewFields; let idx = index">
+        <span class="preview-idx">{{idx + 1}}</span>
+        <span class="preview-lbl">{{p.label || p.field_key}}</span>
+        <code class="preview-key">{{p.field_key}}</code>
+      </div>
+    </div>
+  </div>
+</ng-container>
+
+<ng-template #loadingTpl>
+  <div class="loading-box"><div class="spinner"></div></div>
+</ng-template>
+
+<!-- Add / Edit DB Column Modal -->
+<div class="modal-overlay" *ngIf="showColumnModal" (click)="showColumnModal = false">
+  <div class="modal" style="max-width:520px" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h3>{{editingColumn ? 'Edit Column' : 'Add Column'}} — {{selectedTable}}</h3>
+      <button type="button" class="btn btn-ghost btn-icon-only" (click)="showColumnModal = false">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="admin-inline-error" *ngIf="columnFormError">
+        <span class="mat-i" style="font-size:18px">error</span>
+        <span>{{columnFormError}}</span>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Column Name *</label>
+        <input class="form-control" [(ngModel)]="columnForm.name" [disabled]="editingColumn?.is_protected" placeholder="e.g. inspection_code">
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Type *</label>
+          <app-dropdown class="form-control" [(ngModel)]="columnForm.type" [disabled]="editingColumn?.is_protected">
+            <app-dropdown-option value="VARCHAR">VARCHAR</app-dropdown-option>
+            <app-dropdown-option value="CHAR">CHAR</app-dropdown-option>
+            <app-dropdown-option value="TEXT">TEXT</app-dropdown-option>
+            <app-dropdown-option value="LONGTEXT">LONGTEXT</app-dropdown-option>
+            <app-dropdown-option value="INT">INT</app-dropdown-option>
+            <app-dropdown-option value="BIGINT">BIGINT</app-dropdown-option>
+            <app-dropdown-option value="DECIMAL">DECIMAL</app-dropdown-option>
+            <app-dropdown-option value="FLOAT">FLOAT</app-dropdown-option>
+            <app-dropdown-option value="DOUBLE">DOUBLE</app-dropdown-option>
+            <app-dropdown-option value="DATE">DATE</app-dropdown-option>
+            <app-dropdown-option value="DATETIME">DATETIME</app-dropdown-option>
+            <app-dropdown-option value="TIMESTAMP">TIMESTAMP</app-dropdown-option>
+            <app-dropdown-option value="BOOLEAN">BOOLEAN</app-dropdown-option>
+            <app-dropdown-option value="JSON">JSON</app-dropdown-option>
+          </app-dropdown>
+        </div>
+        <div class="form-group" *ngIf="needsLength(columnForm.type)">
+          <label class="form-label">Length</label>
+          <input type="number" class="form-control" [(ngModel)]="columnForm.length" min="1" [disabled]="editingColumn?.is_protected">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Default Value</label>
+          <input class="form-control" [(ngModel)]="columnForm.defaultValue" [disabled]="editingColumn?.is_protected" placeholder="Blank for NULL">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Display Label</label>
+          <input class="form-control" [(ngModel)]="columnForm.label" placeholder="Label shown in UI">
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <label class="admin-switch">
+          <input type="checkbox" [(ngModel)]="columnForm.nullable" [disabled]="editingColumn?.is_protected">
+          <span class="slider"></span>
+        </label>
+        <span class="font-bold text-sm">Nullable column</span>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button type="button" class="btn btn-ghost" (click)="showColumnModal = false">Cancel</button>
+      <button type="button" class="btn btn-primary" (click)="saveColumn()" [disabled]="actionLoading || editingColumn?.is_protected">
+        {{actionLoading ? 'Saving…' : (editingColumn ? 'Save Changes' : 'Add Column')}}
+      </button>
+    </div>
+  </div>
+</div>

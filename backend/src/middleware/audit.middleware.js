@@ -15,6 +15,7 @@ const AUDIT_PATTERNS = [
   /^POST\s+\/api\/users/,
   /^DELETE\s+\/api\//,
   /^PUT\s+\/api\/admin\//,
+  /^PATCH\s+\/api\/admin\//,
   /^POST\s+\/api\/admin\//,
   /^DELETE\s+\/api\/admin\//,
   /^POST\s+\/api\/tasks\//,
@@ -32,7 +33,10 @@ const shouldAudit = (method, path) => {
 const sanitizeBody = (body) => {
   if (!body) return null;
   const copy = { ...body };
-  const sensitiveKeys = ['password', 'password_confirm', 'token', 'accessToken', 'refreshToken', 'secret'];
+  const sensitiveKeys = [
+    'password', 'new_password', 'password_confirm',
+    'token', 'accessToken', 'refreshToken', 'secret'
+  ];
   sensitiveKeys.forEach(k => {
     if (k in copy) copy[k] = '[REDACTED]';
   });

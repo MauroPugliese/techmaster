@@ -1,0 +1,495 @@
+<div class="admin-page-head">
+  <div>
+    <h2>User Management</h2>
+    <p>Search, filter by role or department, inspect activity footprints, and manage credentials</p>
+  </div>
+  <div class="admin-head-actions">
+    <app-export-menu endpoint="users" filename="Users" label="Export" [includeDateRange]="false"></app-export-menu>
+    <button type="button" class="btn btn-primary" (click)="openUserModal()">
+      <span class="btn-icon">person_add</span> New User
+    </button>
+  </div>
+</div>
+
+<!-- Filters Toolbar -->
+<div class="admin-toolbar-card">
+  <div class="admin-filter-row">
+    <div class="search-bar users-search">
+      <span class="search-icon">search</span>
+      <input placeholder="Search by name, email, username, department…"
+             [(ngModel)]="search"
+             (input)="onSearchInput()">
+    </div>
+
+    <div class="user-ctrl-sm">
+      <app-dropdown class="form-control" [(ngModel)]="roleFilterId" (ngModelChange)="onFilterChange()" ariaLabel="Filter by role">
+        <app-dropdown-option [ngValue]="null">All Roles</app-dropdown-option>
+        <app-dropdown-option *ngFor="let r of roles" [ngValue]="r.id">{{r.name | titlecase}}</app-dropdown-option>
+      </app-dropdown>
+    </div>
+
+    <div class="user-ctrl-sm">
+      <app-dropdown class="form-control" [(ngModel)]="statusFilter" (ngModelChange)="onFilterChange()" ariaLabel="Filter by active status">
+        <app-dropdown-option value="">All Statuses</app-dropdown-option>
+        <app-dropdown-option value="active">Active Only</app-dropdown-option>
+        <app-dropdown-option value="inactive">Inactive Only</app-dropdown-option>
+      </app-dropdown>
+    </div>
+
+    <div class="user-ctrl-md" *ngIf="departments.length">
+      <app-dropdown class="form-control" [(ngModel)]="departmentFilter" (ngModelChange)="onFilterChange()" ariaLabel="Filter by department">
+        <app-dropdown-option value="">All Departments</app-dropdown-option>
+        <app-dropdown-option *ngFor="let d of departments" [value]="d">{{d}}</app-dropdown-option>
+      </app-dropdown>
+    </div>
+
+    <button type="button" class="btn btn-secondary btn-sm" *ngIf="hasActiveFilters" (click)="clearFilters()">
+      <span class="btn-icon">filter_alt_off</span> Clear
+    </button>
+  </div>
+</div>
+
+<!-- Bulk Selection Bar -->
+<div class="admin-bulk-bar" *ngIf="selectedIds.size > 0">
+  <div class="flex items-center gap-3">
+    <strong>{{selectedIds.size}} user(s) selected</strong>
+    <button type="button" class="bulk-clear-btn" (click)="clearSelection()" [disabled]="bulkBusy">Clear</button>
+  </div>
+  <div class="flex items-center gap-2 flex-wrap">
+    <button type="button" class="btn btn-secondary btn-sm" (click)="runBulkAction('activate')" [disabled]="bulkBusy">
+      Activate
+    </button>
+    <button type="button" class="btn btn-danger btn-sm" (click)="runBulkAction('deactivate')" [disabled]="bulkBusy">
+      Deactivate
+    </button>
+    <div class="bulk-role-box">
+      <app-dropdown class="form-control select-compact" [(ngModel)]="bulkRoleId" placeholder="Set role…" ariaLabel="Bulk assign role">
+        <app-dropdown-option [ngValue]="null">Set role…</app-dropdown-option>
+        <app-dropdown-option *ngFor="let r of roles" [ngValue]="r.id">{{r.name | titlecase}}</app-dropdown-option>
+      </app-dropdown>
+      <button type="button" class="btn btn-primary btn-sm" (click)="runBulkAction('set_role')" [disabled]="bulkBusy || !bulkRoleId">
+        Apply Role
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Users Table -->
+<div class="table-container">
+  <ng-container *ngIf="!loading; else loadingTpl">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th class="col-check">
+            <input type="checkbox"
+                   [checked]="allPageSelected"
+                   [disabled]="selectableUsers.length === 0"
+                   (change)="toggleSelectAllPage()"
+                   title="Select page">
+          </th>
+          <th>User</th>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Department</th>
+          <th>Last Login</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let u of users"
+            class="row-clickable"
+            [class.row-selected]="selectedIds.has(u.id)"
+            (click)="openUserDetail(u)">
+          <td class="col-check" (click)="$event.stopPropagation()">
+            <input type="checkbox"
+                   [checked]="selectedIds.has(u.id)"
+                   [disabled]="isSelf(u)"
+                   [title]="isSelf(u) ? 'Current signed-in account' : 'Select user'"
+                   (change)="toggleSelection(u)">
+          </td>
+          <td>
+            <div class="user-cell">
+              <div class="user-avatar-sm">
+                {{(u.first_name || '?')[0]}}{{(u.last_name || '')[0]}}
+              </div>
+              <div>
+                <div class="font-bold text-sm">
+                  {{u.first_name}} {{u.last_name}}
+                  <span class="self-tag" *ngIf="isSelf(u)">You</span>
+                </div>
+                <div class="text-muted text-xs">&#64;{{u.username}}</div>
+              </div>
+            </div>
+          </td>
+          <td class="text-sm">{{u.email}}</td>
+          <td>
+            <span class="badge"
+                  [style.background]="getRoleColor(u.role?.name) + '22'"
+                  [style.color]="getRoleColor(u.role?.name)"
+                  style="text-transform:capitalize">
+              {{u.role?.name}}
+            </span>
+          </td>
+          <td class="text-sm">{{u.department || '—'}}</td>
+          <td class="text-sm">{{u.last_login ? (u.last_login | date:'MMM d, y') : 'Never'}}</td>
+          <td>
+            <span class="badge"
+                  [style.background]="u.is_active ? '#DCFCE7' : '#FEE2E2'"
+                  [style.color]="u.is_active ? '#15803D' : '#B91C1C'">
+              {{u.is_active ? 'Active' : 'Inactive'}}
+            </span>
+          </td>
+          <td (click)="$event.stopPropagation()">
+            <div class="flex gap-1">
+              <button type="button" class="btn btn-ghost btn-icon-only btn-sm" (click)="openUserModal(u)" title="Edit">
+                <span class="btn-icon" style="font-size:16px">edit</span>
+              </button>
+              <button type="button" class="btn btn-ghost btn-icon-only btn-sm" (click)="openResetModal(u)" title="Reset password">
+                <span class="btn-icon" style="font-size:16px;color:#F59E0B">lock_reset</span>
+              </button>
+              <button type="button"
+                      class="btn btn-ghost btn-icon-only btn-sm"
+                      [disabled]="isSelf(u)"
+                      (click)="toggleUserActive(u)"
+                      [title]="isSelf(u) ? 'Cannot deactivate your own account' : (u.is_active ? 'Deactivate' : 'Activate')">
+                <span class="btn-icon" style="font-size:16px"
+                      [style.color]="isSelf(u) ? 'var(--text-subtle)' : (u.is_active ? '#EF4444' : '#10B981')">
+                  {{u.is_active ? 'person_off' : 'how_to_reg'}}
+                </span>
+              </button>
+              <button type="button"
+                      class="btn btn-ghost btn-icon-only btn-sm"
+                      [disabled]="isSelf(u)"
+                      (click)="deleteUser(u)"
+                      [title]="isSelf(u) ? 'Cannot delete your own account' : 'Delete'">
+                <span class="btn-icon" style="font-size:16px"
+                      [style.color]="isSelf(u) ? 'var(--text-subtle)' : '#EF4444'">delete</span>
+              </button>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="empty-state" *ngIf="!users.length">
+      <span class="empty-icon">group</span>
+      <h3>No users found</h3>
+      <p>Adjust search criteria or create a new user account.</p>
+    </div>
+
+    <div class="admin-pagination-bar" *ngIf="total > 0">
+      <div class="table-page-size-control">
+        <span class="text-sm text-muted">
+          Showing {{(page - 1) * pageSize + 1}}–{{Math.min(page * pageSize, total)}} of {{total}}
+        </span>
+        <app-dropdown class="form-control table-page-size-select"
+                      [(ngModel)]="pageSize"
+                      (ngModelChange)="onPageSizeChange()"
+                      ariaLabel="Users per page">
+          <app-dropdown-option *ngFor="let size of pageSizeOptions" [ngValue]="size">{{size}}</app-dropdown-option>
+        </app-dropdown>
+      </div>
+      <div class="flex gap-2 items-center">
+        <button type="button" class="btn btn-secondary btn-sm" [disabled]="page <= 1" (click)="changePage(page - 1)">
+          <span class="btn-icon">chevron_left</span>
+        </button>
+        <span class="page-counter">{{page}} / {{totalPages}}</span>
+        <button type="button" class="btn btn-secondary btn-sm" [disabled]="page >= totalPages" (click)="changePage(page + 1)">
+          <span class="btn-icon">chevron_right</span>
+        </button>
+      </div>
+    </div>
+  </ng-container>
+
+  <ng-template #loadingTpl>
+    <div class="loading-box"><div class="spinner"></div></div>
+  </ng-template>
+</div>
+
+<!-- User Detail Modal -->
+<div class="modal-overlay" *ngIf="detailSummary" (click)="closeDetail()">
+  <div class="modal detail-modal" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <div class="detail-header-title">
+        <h2>{{detailSummary.user.first_name}} {{detailSummary.user.last_name}}</h2>
+        <div class="detail-head-meta">
+          <span class="detail-id-pill">#{{detailSummary.user.id}}</span>
+          <span class="detail-type-chip">&#64;{{detailSummary.user.username}}</span>
+          <span class="badge"
+                [style.background]="getRoleColor(detailSummary.user.role?.name) + '22'"
+                [style.color]="getRoleColor(detailSummary.user.role?.name)">
+            {{detailSummary.user.role?.name}}
+          </span>
+          <span class="badge"
+                [style.background]="detailSummary.user.is_active ? '#DCFCE7' : '#FEE2E2'"
+                [style.color]="detailSummary.user.is_active ? '#15803D' : '#B91C1C'">
+            {{detailSummary.user.is_active ? 'Active' : 'Inactive'}}
+          </span>
+        </div>
+      </div>
+      <button type="button" class="btn btn-ghost btn-icon-only" (click)="closeDetail()">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="detail-grid">
+        <div class="detail-field">
+          <span class="detail-label">Email</span>
+          <span class="detail-value">{{detailSummary.user.email}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Department / Title</span>
+          <span class="detail-value">
+            {{detailSummary.user.department || '—'}}
+            <span class="detail-sub" *ngIf="detailSummary.user.job_title">· {{detailSummary.user.job_title}}</span>
+          </span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Phone</span>
+          <span class="detail-value mono">{{detailSummary.user.phone || '—'}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Last Login</span>
+          <span class="detail-value">
+            {{detailSummary.user.last_login ? (detailSummary.user.last_login | date:'MMM d, y HH:mm') : 'Never'}}
+          </span>
+        </div>
+      </div>
+
+      <div class="detail-section" *ngIf="detailSummary.counts">
+        <span class="detail-section-title">Platform Activity Footprint</span>
+        <div class="footprint-grid">
+          <div class="footprint-box"><strong>{{detailSummary.counts.operations}}</strong><span>Operations</span></div>
+          <div class="footprint-box"><strong>{{detailSummary.counts.maintenance}}</strong><span>Maintenance</span></div>
+          <div class="footprint-box"><strong>{{detailSummary.counts.tasks}}</strong><span>Tasks</span></div>
+          <div class="footprint-box"><strong>{{detailSummary.counts.shifts}}</strong><span>Shifts</span></div>
+          <div class="footprint-box"><strong>{{detailSummary.counts.wiki_articles}}</strong><span>Wiki Docs</span></div>
+          <div class="footprint-box"><strong>{{detailSummary.counts.section_overrides}}</strong><span>Nav Overrides</span></div>
+        </div>
+      </div>
+
+      <div class="detail-section" *ngIf="detailSummary.recent_audit?.length">
+        <span class="detail-section-title">Recent Audit Events</span>
+        <div class="audit-mini-list">
+          <div class="audit-mini-row" *ngFor="let ev of detailSummary.recent_audit">
+            <span class="badge"
+                  [style.background]="getMethodBadgeStyle(ev.method).bg"
+                  [style.color]="getMethodBadgeStyle(ev.method).color">
+              {{ev.method}}
+            </span>
+            <code class="audit-mini-path">{{ev.path}}</code>
+            <span class="badge"
+                  [style.background]="getHttpStatusBadgeStyle(ev.status).bg"
+                  [style.color]="getHttpStatusBadgeStyle(ev.status).color">
+              {{ev.status}}
+            </span>
+            <span class="text-xs text-muted">{{ev.created_at | date:'MMM d, HH:mm'}}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-footer detail-footer">
+      <button type="button" class="btn btn-secondary" (click)="manageSectionAccess.emit(detailSummary.user.id); closeDetail()">
+        <span class="btn-icon">visibility</span> Manage Section Access
+      </button>
+      <div class="detail-footer-actions">
+        <button type="button" class="btn btn-secondary" (click)="openResetModal(detailSummary.user); closeDetail()">
+          <span class="btn-icon">lock_reset</span> Reset Password
+        </button>
+        <button type="button" class="btn btn-primary" (click)="openUserModal(detailSummary.user); closeDetail()">
+          <span class="btn-icon">edit</span> Edit User
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Create / Edit User Modal -->
+<div class="modal-overlay" *ngIf="showUserModal" (click)="showUserModal = false">
+  <div class="modal" style="max-width:580px" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h3>{{editingUser ? 'Edit User' : 'New User'}}</h3>
+      <button type="button" class="btn btn-ghost btn-icon-only" (click)="showUserModal = false">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="admin-inline-error" *ngIf="userFormError">
+        <span class="mat-i" style="font-size:18px">error</span>
+        <span>{{userFormError}}</span>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">First Name *</label>
+          <input class="form-control" [(ngModel)]="userForm.first_name">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Last Name *</label>
+          <input class="form-control" [(ngModel)]="userForm.last_name">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Username *</label>
+          <input class="form-control" [(ngModel)]="userForm.username" [disabled]="!!editingUser">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email *</label>
+          <input type="email" class="form-control" [(ngModel)]="userForm.email">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Role *</label>
+          <app-dropdown class="form-control"
+                        [(ngModel)]="userForm.role_id"
+                        [disabled]="editingUser && isSelf(editingUser)"
+                        placeholder="— Select role —">
+            <app-dropdown-option [ngValue]="null">— Select role —</app-dropdown-option>
+            <app-dropdown-option *ngFor="let r of roles" [ngValue]="r.id">{{r.name | titlecase}}</app-dropdown-option>
+          </app-dropdown>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Department</label>
+          <input class="form-control" [(ngModel)]="userForm.department" placeholder="e.g. Operations">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Job Title</label>
+          <input class="form-control" [(ngModel)]="userForm.job_title" placeholder="e.g. Flight Technician">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Phone</label>
+          <input class="form-control" [(ngModel)]="userForm.phone">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <div class="pwd-label-row">
+          <label class="form-label">Password {{editingUser ? '(leave blank to keep current)' : '*'}}</label>
+          <div class="flex gap-2">
+            <button type="button" class="btn btn-secondary btn-sm" (click)="generateUserPassword()">
+              <span class="btn-icon">auto_awesome</span> Generate
+            </button>
+            <button type="button" class="btn btn-ghost btn-sm" *ngIf="userForm.password" (click)="copyGeneratedPassword(userForm.password)">
+              <span class="btn-icon">content_copy</span> Copy
+            </button>
+          </div>
+        </div>
+        <div class="pwd-input-wrap">
+          <input [type]="showUserPwd ? 'text' : 'password'"
+                 class="form-control"
+                 [(ngModel)]="userForm.password"
+                 [placeholder]="editingUser ? 'Leave blank to keep' : 'Min 8 chars, upper, lower & number'">
+          <button type="button" class="pwd-eye-btn" (click)="showUserPwd = !showUserPwd">
+            <span class="mat-i">{{showUserPwd ? 'visibility_off' : 'visibility'}}</span>
+          </button>
+        </div>
+        <div class="pwd-strength-wrap" *ngIf="userForm.password || !editingUser">
+          <div class="pwd-strength-bars">
+            <span [style.background]="userPasswordStrength.score >= 1 ? userPasswordStrength.color : ''"></span>
+            <span [style.background]="userPasswordStrength.score >= 2 ? userPasswordStrength.color : ''"></span>
+            <span [style.background]="userPasswordStrength.score >= 3 ? userPasswordStrength.color : ''"></span>
+            <span [style.background]="userPasswordStrength.score >= 4 ? userPasswordStrength.color : ''"></span>
+          </div>
+          <div class="pwd-req-list">
+            <span [class.met]="userPasswordStrength.checks.minLength">8+ chars</span>
+            <span [class.met]="userPasswordStrength.checks.hasUpper">Uppercase</span>
+            <span [class.met]="userPasswordStrength.checks.hasLower">Lowercase</span>
+            <span [class.met]="userPasswordStrength.checks.hasNumber">Number</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <label class="admin-switch">
+          <input type="checkbox"
+                 [(ngModel)]="userForm.is_active"
+                 [disabled]="editingUser && isSelf(editingUser)">
+          <span class="slider"></span>
+        </label>
+        <span class="font-bold text-sm">Active account</span>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button type="button" class="btn btn-ghost" (click)="showUserModal = false">Cancel</button>
+      <button type="button" class="btn btn-primary" (click)="saveUser()" [disabled]="saving">
+        {{saving ? 'Saving…' : (editingUser ? 'Save Changes' : 'Create User')}}
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Reset Password Modal -->
+<div class="modal-overlay" *ngIf="showResetModal" (click)="showResetModal = false">
+  <div class="modal" style="max-width:440px" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h3>Reset Password — {{resetTargetUser?.username}}</h3>
+      <button type="button" class="btn btn-ghost btn-icon-only" (click)="showResetModal = false">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="admin-inline-error" *ngIf="resetError">
+        <span class="mat-i" style="font-size:18px">error</span>
+        <span>{{resetError}}</span>
+      </div>
+
+      <div class="form-group">
+        <div class="pwd-label-row">
+          <label class="form-label">New Password *</label>
+          <div class="flex gap-2">
+            <button type="button" class="btn btn-secondary btn-sm" (click)="generateResetPassword()">
+              <span class="btn-icon">auto_awesome</span> Generate
+            </button>
+            <button type="button" class="btn btn-ghost btn-sm" *ngIf="newPassword" (click)="copyGeneratedPassword(newPassword)">
+              <span class="btn-icon">content_copy</span> Copy
+            </button>
+          </div>
+        </div>
+        <div class="pwd-input-wrap">
+          <input [type]="showResetPwd ? 'text' : 'password'"
+                 class="form-control"
+                 [(ngModel)]="newPassword"
+                 placeholder="Min 8 chars, upper, lower & number">
+          <button type="button" class="pwd-eye-btn" (click)="showResetPwd = !showResetPwd">
+            <span class="mat-i">{{showResetPwd ? 'visibility_off' : 'visibility'}}</span>
+          </button>
+        </div>
+
+        <div class="pwd-strength-wrap">
+          <div class="pwd-strength-bars">
+            <span [style.background]="resetPasswordStrength.score >= 1 ? resetPasswordStrength.color : ''"></span>
+            <span [style.background]="resetPasswordStrength.score >= 2 ? resetPasswordStrength.color : ''"></span>
+            <span [style.background]="resetPasswordStrength.score >= 3 ? resetPasswordStrength.color : ''"></span>
+            <span [style.background]="resetPasswordStrength.score >= 4 ? resetPasswordStrength.color : ''"></span>
+          </div>
+          <div class="pwd-req-list">
+            <span [class.met]="resetPasswordStrength.checks.minLength">8+ chars</span>
+            <span [class.met]="resetPasswordStrength.checks.hasUpper">Uppercase</span>
+            <span [class.met]="resetPasswordStrength.checks.hasLower">Lowercase</span>
+            <span [class.met]="resetPasswordStrength.checks.hasNumber">Number</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button type="button" class="btn btn-ghost" (click)="showResetModal = false">Cancel</button>
+      <button type="button" class="btn btn-primary" (click)="resetPassword()" [disabled]="saving">
+        {{saving ? 'Resetting…' : 'Reset Password'}}
+      </button>
+    </div>
+  </div>
+</div>

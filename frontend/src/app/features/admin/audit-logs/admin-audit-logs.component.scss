@@ -1,0 +1,53 @@
+@import '../_admin-shared';
+
+.audit-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.audit-search {
+  flex: 1 1 240px;
+  min-width: 210px;
+}
+
+.audit-ctrl-sm {
+  width: 155px;
+}
+
+.audit-ctrl-md {
+  width: 210px;
+}
+
+.audit-date-ctrl {
+  width: 150px;
+}
+
+.mono-cell {
+  font-family: var(--font-mono);
+  word-break: break-word;
+}
+
+.text-xs {
+  font-size: 0.72rem;
+}
+
+.page-counter {
+  padding: 5px 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.json-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.loading-box {
+  display: flex;
+  justify-content: center;
+  padding: 60px;
+}

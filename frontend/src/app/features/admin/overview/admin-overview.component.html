@@ -1,0 +1,215 @@
+<div class="admin-page-head">
+  <div>
+    <h2>System Overview</h2>
+    <p>Real-time health diagnostics, database storage, platform volume, and security posture</p>
+  </div>
+  <div class="admin-head-actions">
+    <button type="button" class="btn btn-secondary" [disabled]="loading" (click)="refreshRequested.emit()">
+      <span class="btn-icon">refresh</span> Refresh
+    </button>
+    <app-export-menu endpoint="audit" filename="Audit_Logs" label="Audit Logs"></app-export-menu>
+  </div>
+</div>
+
+<ng-container *ngIf="systemInfo; else loadingTpl">
+  <!-- Health Diagnostics Strip -->
+  <div class="health-grid">
+    <div class="admin-card health-card">
+      <div class="health-head">
+        <span class="health-dot ok"></span>
+        <span class="health-label">Database Connection</span>
+        <span class="health-chip">{{systemInfo.health?.db_latency_ms ?? 0}} ms</span>
+      </div>
+      <div class="health-value">MySQL {{systemInfo.db_version}}</div>
+      <div class="health-sub">{{systemInfo.storage?.table_count || 0}} active tables healthy</div>
+    </div>
+
+    <div class="admin-card health-card">
+      <div class="health-head">
+        <span class="mat-i health-icon">memory</span>
+        <span class="health-label">Node.js &amp; Heap</span>
+        <span class="health-chip">{{heapUsagePct}}% heap</span>
+      </div>
+      <div class="health-value">{{systemInfo.node_version}}</div>
+      <div class="health-bar-track">
+        <div class="health-bar-fill" [style.width.%]="heapUsagePct"></div>
+      </div>
+      <div class="health-sub">
+        {{systemInfo.health?.memory?.heap_used_mb || 0}} / {{systemInfo.health?.memory?.heap_total_mb || 0}} MB heap
+        · {{systemInfo.health?.memory?.rss_mb || 0}} MB RSS
+      </div>
+    </div>
+
+    <div class="admin-card health-card">
+      <div class="health-head">
+        <span class="mat-i health-icon">schedule</span>
+        <span class="health-label">API Process Uptime</span>
+      </div>
+      <div class="health-value">{{uptimeLabel}}</div>
+      <div class="health-sub">PID {{systemInfo.health?.pid || '—'}} · {{systemInfo.health?.platform || 'node'}}</div>
+    </div>
+
+    <div class="admin-card health-card">
+      <div class="health-head">
+        <span class="mat-i health-icon">storage</span>
+        <span class="health-label">Database Footprint</span>
+      </div>
+      <div class="health-value">{{(systemInfo.storage?.total_size_mb || 0) | number:'1.1-2'}} MB</div>
+      <div class="health-sub">Data + indexes across schema</div>
+    </div>
+  </div>
+
+  <!-- Interactive Platform KPI Cards -->
+  <div class="admin-kpi-grid">
+    <button type="button"
+            *ngFor="let c of countCards"
+            class="kpi-card admin-kpi-clickable"
+            [style]="'--kpi-color:' + c.color"
+            (click)="onCardClick(c)">
+      <div class="kpi-head-row">
+        <div class="kpi-icon-wrap">{{c.icon}}</div>
+        <span class="mat-i kpi-go">arrow_forward</span>
+      </div>
+      <div>
+        <div class="kpi-value">{{c.val | number}}</div>
+        <div class="kpi-label">{{c.label}}</div>
+      </div>
+    </button>
+  </div>
+
+  <!-- 2-Column Diagnostics & Security Snapshot -->
+  <div class="overview-split">
+    <!-- Left Column: Roles & Top Tables -->
+    <div class="overview-col">
+      <div class="admin-card">
+        <div class="admin-card-head">
+          <div>
+            <h3>Users by Role</h3>
+            <p>Click a role chip to inspect users in that role</p>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" (click)="navigateTab.emit('roles')">
+            Roles Matrix
+          </button>
+        </div>
+        <div class="role-chip-list">
+          <button type="button"
+                  *ngFor="let r of systemInfo.role_breakdown"
+                  class="role-stat-btn"
+                  (click)="openRoleUsers.emit(r.role)">
+            <span class="role-dot" [style.background]="getRoleColor(r.role)"></span>
+            <span class="role-name">{{r.role | titlecase}}</span>
+            <span class="role-count" [style.color]="getRoleColor(r.role)">{{r.count}}</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="admin-card">
+        <div class="admin-card-head">
+          <div>
+            <h3>Largest Database Tables</h3>
+            <p>Estimated row volume and storage allocation</p>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" (click)="navigateTab.emit('customization')">
+            Customize Tables
+          </button>
+        </div>
+        <div class="mini-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Table</th>
+                <th>Rows</th>
+                <th>Size (MB)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let t of systemInfo.storage?.top_tables">
+                <td><code>{{t.table_name}}</code></td>
+                <td class="text-sm">{{t.table_rows | number}}</td>
+                <td class="text-sm font-bold">{{t.size_mb | number:'1.2-2'}}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column: Security & Recent Activity -->
+    <div class="overview-col">
+      <div class="admin-card">
+        <div class="admin-card-head">
+          <div>
+            <h3>Security &amp; Audit Posture</h3>
+            <p>24h API telemetry and dormant account checks</p>
+          </div>
+          <button type="button" class="btn btn-primary btn-sm" (click)="navigateTab.emit('audit-logs')">
+            <span class="btn-icon">history</span> Full Audit Logs
+          </button>
+        </div>
+
+        <div class="security-metrics-grid">
+          <div class="sec-metric">
+            <span class="sec-val">{{systemInfo.security_summary?.audit_events_24h || 0}}</span>
+            <span class="sec-lbl">Audited Events (24h)</span>
+          </div>
+          <div class="sec-metric" [class.alert]="(systemInfo.security_summary?.error_events_24h || 0) > 0">
+            <span class="sec-val">{{systemInfo.security_summary?.error_events_24h || 0}}</span>
+            <span class="sec-lbl">4xx/5xx Rejections (24h)</span>
+          </div>
+          <div class="sec-metric">
+            <span class="sec-val">{{systemInfo.security_summary?.inactive_users || 0}}</span>
+            <span class="sec-lbl">Inactive Users</span>
+          </div>
+          <div class="sec-metric">
+            <span class="sec-val">{{systemInfo.security_summary?.never_logged_in_users || 0}}</span>
+            <span class="sec-lbl">Never Signed In</span>
+          </div>
+        </div>
+
+        <div class="sub-block" *ngIf="systemInfo.security_summary?.recent_logins?.length">
+          <div class="sub-block-title">Recent Sign-Ins</div>
+          <div class="recent-list">
+            <div class="recent-row" *ngFor="let u of systemInfo.security_summary.recent_logins">
+              <div class="recent-primary">
+                <strong>{{u.first_name}} {{u.last_name}}</strong>
+                <span class="recent-handle">&#64;{{u.username}}</span>
+              </div>
+              <span class="badge"
+                    [style.background]="getRoleColor(u.role_name) + '1F'"
+                    [style.color]="getRoleColor(u.role_name)">
+                {{u.role_name | titlecase}}
+              </span>
+              <span class="recent-time">{{u.last_login | date:'MMM d, HH:mm'}}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="sub-block" *ngIf="systemInfo.security_summary?.recent_audit?.length">
+          <div class="sub-block-title">Latest Audited Events</div>
+          <div class="recent-list">
+            <div class="recent-row" *ngFor="let ev of systemInfo.security_summary.recent_audit">
+              <span class="badge"
+                    [style.background]="getMethodBadgeStyle(ev.method).bg"
+                    [style.color]="getMethodBadgeStyle(ev.method).color">
+                {{ev.method}}
+              </span>
+              <code class="recent-path">{{ev.path}}</code>
+              <span class="badge"
+                    [style.background]="getHttpStatusBadgeStyle(ev.status).bg"
+                    [style.color]="getHttpStatusBadgeStyle(ev.status).color">
+                {{ev.status}}
+              </span>
+              <span class="recent-time">{{ev.created_at | date:'HH:mm:ss'}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</ng-container>
+
+<ng-template #loadingTpl>
+  <div class="loading-box">
+    <div class="spinner"></div>
+  </div>
+</ng-template>

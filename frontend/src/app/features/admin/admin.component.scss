@@ -1,0 +1,139 @@
+/* ============================================================================
+   admin.component.scss — Responsive Admin Settings Shell Layout
+   ============================================================================ */
+
+.admin-layout {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.admin-sidebar {
+  padding: 12px;
+  position: sticky;
+  top: 12px;
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.admin-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.admin-nav-heading {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+  padding: 4px 10px 4px;
+}
+
+.admin-nav-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--blue-900);
+  font-family: var(--font-sans);
+  font-size: 0.84rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: var(--transition);
+
+  .admin-nav-ic {
+    font-size: 18px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  .admin-nav-lbl {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .admin-nav-badge {
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    background: var(--surface-raised);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  &:hover:not(.active) {
+    background: var(--blue-50);
+    color: var(--primary);
+
+    .admin-nav-ic {
+      color: var(--primary);
+    }
+  }
+
+  &.active {
+    background: var(--blue-100);
+    color: var(--primary);
+    font-weight: 700;
+
+    .admin-nav-ic {
+      color: var(--primary);
+    }
+
+    .admin-nav-badge {
+      background: var(--surface);
+      color: var(--primary);
+      border-color: var(--blue-200);
+    }
+  }
+}
+
+.admin-main {
+  min-width: 0;
+}
+
+@media (max-width: 960px) {
+  .admin-layout {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .admin-sidebar {
+    position: static;
+    max-height: none;
+    flex-direction: row;
+    overflow-x: auto;
+    gap: 14px;
+    padding: 10px;
+  }
+
+  .admin-nav-group {
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .admin-nav-heading {
+    display: none;
+  }
+
+  .admin-nav-btn {
+    width: auto;
+    white-space: nowrap;
+  }
+}

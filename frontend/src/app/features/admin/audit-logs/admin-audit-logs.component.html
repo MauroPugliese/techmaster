@@ -1,0 +1,275 @@
+<div class="admin-page-head">
+  <div>
+    <h2>Audit Logs</h2>
+    <p>Forensic trail of sensitive mutations, user management actions, and authentication events</p>
+  </div>
+  <div class="admin-head-actions">
+    <button type="button" class="btn btn-secondary" [disabled]="loading" (click)="loadLogs()">
+      <span class="btn-icon">refresh</span> Refresh
+    </button>
+    <app-export-menu endpoint="audit" filename="Audit_Logs" label="Export Audit Logs" [params]="exportParams"></app-export-menu>
+  </div>
+</div>
+
+<!-- Telemetry KPIs -->
+<div class="audit-kpi-grid">
+  <div class="kpi-card" style="--kpi-color:#1565C0">
+    <div class="kpi-icon-wrap">receipt_long</div>
+    <div>
+      <div class="kpi-value">{{summary.total | number}}</div>
+      <div class="kpi-label">Filtered Events</div>
+    </div>
+  </div>
+  <div class="kpi-card" style="--kpi-color:#10B981">
+    <div class="kpi-icon-wrap">check_circle</div>
+    <div>
+      <div class="kpi-value">{{summary.ok_count | number}}</div>
+      <div class="kpi-label">2xx Success</div>
+    </div>
+  </div>
+  <div class="kpi-card" style="--kpi-color:#F59E0B">
+    <div class="kpi-icon-wrap">warning</div>
+    <div>
+      <div class="kpi-value">{{summary.warn_4xx | number}}</div>
+      <div class="kpi-label">4xx Client Warnings</div>
+    </div>
+  </div>
+  <div class="kpi-card" style="--kpi-color:#EF4444">
+    <div class="kpi-icon-wrap">error</div>
+    <div>
+      <div class="kpi-value">{{summary.err_5xx | number}}</div>
+      <div class="kpi-label">5xx Server Faults</div>
+    </div>
+  </div>
+  <div class="kpi-card" style="--kpi-color:#9D174D">
+    <div class="kpi-icon-wrap">gpp_maybe</div>
+    <div>
+      <div class="kpi-value">{{summary.auth_failures | number}}</div>
+      <div class="kpi-label">Auth Denials (401/403)</div>
+    </div>
+  </div>
+</div>
+
+<!-- Filter Toolbar -->
+<div class="admin-toolbar-card">
+  <div class="admin-filter-row">
+    <div class="search-bar audit-search">
+      <span class="search-icon">search</span>
+      <input placeholder="Search path, action, username, IP…"
+             [(ngModel)]="search"
+             (input)="onSearchInput()">
+    </div>
+
+    <div class="audit-ctrl-sm">
+      <app-dropdown class="form-control" [(ngModel)]="method" (ngModelChange)="onFilterChange()" ariaLabel="HTTP method filter">
+        <app-dropdown-option value="">All Methods</app-dropdown-option>
+        <app-dropdown-option value="POST">POST</app-dropdown-option>
+        <app-dropdown-option value="PUT">PUT</app-dropdown-option>
+        <app-dropdown-option value="PATCH">PATCH</app-dropdown-option>
+        <app-dropdown-option value="DELETE">DELETE</app-dropdown-option>
+      </app-dropdown>
+    </div>
+
+    <div class="audit-ctrl-sm">
+      <app-dropdown class="form-control" [(ngModel)]="statusGroup" (ngModelChange)="onFilterChange()" ariaLabel="HTTP status filter">
+        <app-dropdown-option value="">All Statuses</app-dropdown-option>
+        <app-dropdown-option value="2xx">2xx Success</app-dropdown-option>
+        <app-dropdown-option value="4xx">4xx Warnings</app-dropdown-option>
+        <app-dropdown-option value="5xx">5xx Errors</app-dropdown-option>
+        <app-dropdown-option value="errors">All Errors (4xx/5xx)</app-dropdown-option>
+        <app-dropdown-option value="auth">401 / 403 Rejections</app-dropdown-option>
+      </app-dropdown>
+    </div>
+
+    <div class="audit-ctrl-md">
+      <app-dropdown class="form-control" [(ngModel)]="userId" (ngModelChange)="onFilterChange()" placeholder="All Actors" ariaLabel="User actor filter">
+        <app-dropdown-option [ngValue]="null">All Actors</app-dropdown-option>
+        <app-dropdown-option *ngFor="let u of users" [ngValue]="u.id">
+          {{u.first_name}} {{u.last_name}} (&#64;{{u.username}})
+        </app-dropdown-option>
+      </app-dropdown>
+    </div>
+
+    <div class="audit-date-ctrl">
+      <app-datetime-picker class="form-control"
+                           mode="date"
+                           [(ngModel)]="fromDate"
+                           (ngModelChange)="onFilterChange()"
+                           placeholder="From date"
+                           ariaLabel="From date">
+      </app-datetime-picker>
+    </div>
+
+    <div class="audit-date-ctrl">
+      <app-datetime-picker class="form-control"
+                           mode="date"
+                           [(ngModel)]="toDate"
+                           (ngModelChange)="onFilterChange()"
+                           placeholder="To date"
+                           ariaLabel="To date">
+      </app-datetime-picker>
+    </div>
+
+    <button type="button" class="btn btn-secondary btn-sm" *ngIf="hasActiveFilters" (click)="clearFilters()">
+      <span class="btn-icon">filter_alt_off</span> Clear
+    </button>
+  </div>
+</div>
+
+<!-- Audit Table -->
+<div class="table-container">
+  <ng-container *ngIf="!loading; else loadingTpl">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>Actor</th>
+          <th>Method</th>
+          <th>Endpoint / Action</th>
+          <th>Status</th>
+          <th>IP Address</th>
+          <th>Inspect</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let log of logs" class="row-clickable" (click)="openLogDetail(log)">
+          <td class="text-sm mono-cell">{{log.created_at | date:'yyyy-MM-dd HH:mm:ss'}}</td>
+          <td>
+            <div class="font-bold text-sm">
+              {{log.user ? (log.user.first_name + ' ' + log.user.last_name) : (log.username || 'anonymous')}}
+            </div>
+            <div class="text-muted text-xs">&#64;{{log.username || log.user?.username || 'system'}}</div>
+          </td>
+          <td>
+            <span class="badge"
+                  [style.background]="getMethodBadgeStyle(log.method).bg"
+                  [style.color]="getMethodBadgeStyle(log.method).color">
+              {{log.method}}
+            </span>
+          </td>
+          <td>
+            <div class="mono-cell text-sm">{{log.path}}</div>
+            <div class="text-muted text-xs" *ngIf="log.action && log.action !== (log.method + ' ' + log.path)">
+              {{log.action}}
+            </div>
+          </td>
+          <td>
+            <span class="badge"
+                  [style.background]="getHttpStatusBadgeStyle(log.status).bg"
+                  [style.color]="getHttpStatusBadgeStyle(log.status).color">
+              {{log.status}}
+            </span>
+          </td>
+          <td class="mono-cell text-sm text-muted">{{log.ip || '—'}}</td>
+          <td (click)="$event.stopPropagation()">
+            <button type="button" class="btn btn-ghost btn-icon-only btn-sm" (click)="openLogDetail(log)" title="Inspect payload">
+              <span class="btn-icon">visibility</span>
+            </button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="empty-state" *ngIf="!logs.length">
+      <span class="empty-icon">policy</span>
+      <h3>No audit events match your filters</h3>
+      <p>Try widening the date range or clearing active method/status filters.</p>
+    </div>
+
+    <div class="admin-pagination-bar" *ngIf="total > 0">
+      <div class="table-page-size-control">
+        <span class="text-sm text-muted">
+          Showing {{(page - 1) * pageSize + 1}}–{{Math.min(page * pageSize, total)}} of {{total}}
+        </span>
+        <app-dropdown class="form-control table-page-size-select"
+                      [(ngModel)]="pageSize"
+                      (ngModelChange)="onPageSizeChange()"
+                      ariaLabel="Audit rows per page">
+          <app-dropdown-option *ngFor="let size of pageSizeOptions" [ngValue]="size">{{size}}</app-dropdown-option>
+        </app-dropdown>
+      </div>
+      <div class="flex gap-2 items-center">
+        <button type="button" class="btn btn-secondary btn-sm" [disabled]="page <= 1" (click)="changePage(page - 1)">
+          <span class="btn-icon">chevron_left</span>
+        </button>
+        <span class="page-counter">{{page}} / {{totalPages}}</span>
+        <button type="button" class="btn btn-secondary btn-sm" [disabled]="page >= totalPages" (click)="changePage(page + 1)">
+          <span class="btn-icon">chevron_right</span>
+        </button>
+      </div>
+    </div>
+  </ng-container>
+
+  <ng-template #loadingTpl>
+    <div class="loading-box"><div class="spinner"></div></div>
+  </ng-template>
+</div>
+
+<!-- Audit Event Detail Modal -->
+<div class="modal-overlay" *ngIf="selectedLog" (click)="selectedLog = null">
+  <div class="modal detail-modal" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <div class="detail-header-title">
+        <h2>Audit Event Inspection</h2>
+        <div class="detail-head-meta">
+          <span class="detail-id-pill">#{{selectedLog.id}}</span>
+          <span class="badge"
+                [style.background]="getMethodBadgeStyle(selectedLog.method).bg"
+                [style.color]="getMethodBadgeStyle(selectedLog.method).color">
+            {{selectedLog.method}}
+          </span>
+          <span class="badge"
+                [style.background]="getHttpStatusBadgeStyle(selectedLog.status).bg"
+                [style.color]="getHttpStatusBadgeStyle(selectedLog.status).color">
+            HTTP {{selectedLog.status}}
+          </span>
+        </div>
+      </div>
+      <button type="button" class="btn btn-ghost btn-icon-only" (click)="selectedLog = null">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="detail-grid">
+        <div class="detail-field">
+          <span class="detail-label">Timestamp</span>
+          <span class="detail-value mono">{{selectedLog.created_at | date:'yyyy-MM-dd HH:mm:ss'}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Actor</span>
+          <span class="detail-value">
+            {{selectedLog.user ? (selectedLog.user.first_name + ' ' + selectedLog.user.last_name) : (selectedLog.username || 'anonymous')}}
+            (&#64;{{selectedLog.username || selectedLog.user?.username || 'system'}})
+          </span>
+        </div>
+        <div class="detail-field full-span">
+          <span class="detail-label">Endpoint Path</span>
+          <span class="detail-value mono">{{selectedLog.path}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Source IP</span>
+          <span class="detail-value mono">{{selectedLog.ip || '—'}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Action Signature</span>
+          <span class="detail-value mono">{{selectedLog.action || '—'}}</span>
+        </div>
+      </div>
+
+      <div class="detail-section">
+        <div class="json-head-row">
+          <span class="detail-section-title">Sanitized Request Payload &amp; Metadata</span>
+          <button type="button" class="btn btn-secondary btn-sm" (click)="copyDetailsJson(selectedLog)">
+            <span class="btn-icon">content_copy</span> Copy JSON
+          </button>
+        </div>
+        <pre class="audit-json-pre">{{formatDetailsJson(selectedLog)}}</pre>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" (click)="selectedLog = null">Close</button>
+    </div>
+  </div>
+</div>

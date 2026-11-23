@@ -1,0 +1,447 @@
+<div class="admin-page-head">
+  <div>
+    <h2>{{tabLabel}}</h2>
+    <p>Manage lookup values, visual badges, shift definitions, and reference usage across SMaRT</p>
+  </div>
+  <div class="admin-head-actions">
+    <button type="button" class="btn btn-primary" (click)="openItemModal()">
+      <span class="btn-icon">add</span> Add New
+    </button>
+  </div>
+</div>
+
+<!-- Toolbar: Search & Quick Filters -->
+<div class="admin-toolbar-card">
+  <div class="admin-filter-row">
+    <div class="search-bar catalog-search">
+      <span class="search-icon">search</span>
+      <input placeholder="Search by name, code, description…"
+             [(ngModel)]="search"
+             (input)="onSearchChange()">
+    </div>
+
+    <div class="admin-chip-group" *ngIf="filterChips.length">
+      <button type="button"
+              *ngFor="let chip of filterChips"
+              class="admin-chip"
+              [class.active]="categoryFilter === chip.value"
+              (click)="setCategoryFilter(chip.value)">
+        {{chip.label}}
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Catalog Table -->
+<div class="table-container">
+  <ng-container *ngIf="!loading; else loadingTpl">
+    <table class="data-table">
+      <thead>
+        <tr *ngIf="activeTab === 'operation-types'">
+          <th>Type</th><th>Color</th><th>Description</th><th>Usage</th><th>Actions</th>
+        </tr>
+        <tr *ngIf="activeTab === 'shift-types'">
+          <th>Shift Type</th><th>Code</th><th>Category</th><th>Window</th><th>Duration</th><th>Usage</th><th>Actions</th>
+        </tr>
+        <tr *ngIf="activeTab === 'asset-categories'">
+          <th>Name</th><th>Asset Kind</th><th>Description</th><th>Usage</th><th>Actions</th>
+        </tr>
+        <tr *ngIf="activeTab === 'item-categories'">
+          <th>Name</th><th>Description</th><th>Usage</th><th>Actions</th>
+        </tr>
+        <tr *ngIf="activeTab === 'wiki-categories'">
+          <th>Category</th><th>Sort Order</th><th>Slug</th><th>Usage</th><th>Actions</th>
+        </tr>
+        <tr *ngIf="activeTab === 'warehouse-locations'">
+          <th>Location</th><th>Code</th><th>Description</th><th>Status</th><th>Usage</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let item of paginatedItems">
+          <!-- Operation Types -->
+          <ng-container *ngIf="activeTab === 'operation-types'">
+            <td>
+              <div class="cat-badge-preview">
+                <span class="cat-icon-box" [style.background]="(item.color || '#1565C0') + '1A'" [style.color]="item.color || 'var(--primary)'">
+                  <span class="mat-i">{{item.icon || 'settings'}}</span>
+                </span>
+                <span class="font-bold text-sm">{{item.name}}</span>
+              </div>
+            </td>
+            <td>
+              <div class="flex items-center gap-2">
+                <span class="color-dot" [style.background]="item.color || '#1565C0'"></span>
+                <code style="font-size:0.75rem">{{item.color}}</code>
+              </div>
+            </td>
+            <td class="text-sm text-muted truncate" style="max-width:260px">{{item.description || '—'}}</td>
+          </ng-container>
+
+          <!-- Shift Types -->
+          <ng-container *ngIf="activeTab === 'shift-types'">
+            <td>
+              <div class="flex items-center gap-2">
+                <span class="color-dot" [style.background]="item.color || '#1565C0'"></span>
+                <div>
+                  <div class="font-bold text-sm">{{item.name}}</div>
+                  <div class="text-muted text-xs truncate" style="max-width:200px" *ngIf="item.description">{{item.description}}</div>
+                </div>
+              </div>
+            </td>
+            <td><code style="font-size:0.78rem">{{item.code}}</code></td>
+            <td>
+              <span class="badge"
+                    [style.background]="item.category === 'LEAVE' ? '#FEF3C7' : 'var(--blue-100)'"
+                    [style.color]="item.category === 'LEAVE' ? '#B45309' : 'var(--primary)'">
+                {{item.category === 'LEAVE' ? 'Leave / Time Off' : 'Work Shift'}}
+              </span>
+            </td>
+            <td class="text-sm">
+              {{item.category === 'LEAVE' ? 'All Day / Off' : ((item.start_time?.slice(0,5) || '—') + ' – ' + (item.end_time?.slice(0,5) || '—'))}}
+            </td>
+            <td class="text-sm font-bold">
+              {{item.category === 'LEAVE' ? '0h' : formatShiftDuration(item.start_time, item.end_time)}}
+            </td>
+          </ng-container>
+
+          <!-- Asset Categories -->
+          <ng-container *ngIf="activeTab === 'asset-categories'">
+            <td class="font-bold text-sm">{{item.name}}</td>
+            <td><span class="badge badge-in-progress">{{item.type}}</span></td>
+            <td class="text-sm text-muted">{{item.description || '—'}}</td>
+          </ng-container>
+
+          <!-- Item Categories -->
+          <ng-container *ngIf="activeTab === 'item-categories'">
+            <td class="font-bold text-sm">{{item.name}}</td>
+            <td class="text-sm text-muted">{{item.description || '—'}}</td>
+          </ng-container>
+
+          <!-- Wiki Categories -->
+          <ng-container *ngIf="activeTab === 'wiki-categories'">
+            <td>
+              <div class="flex items-center gap-2">
+                <span class="mat-i" style="font-size:19px;color:var(--primary)">{{item.icon || 'folder'}}</span>
+                <span class="font-bold text-sm">{{item.name}}</span>
+              </div>
+            </td>
+            <td class="text-sm">{{item.sort_order}}</td>
+            <td><code style="font-size:0.75rem">{{item.slug}}</code></td>
+          </ng-container>
+
+          <!-- Warehouse Locations -->
+          <ng-container *ngIf="activeTab === 'warehouse-locations'">
+            <td class="font-bold text-sm">{{item.name}}</td>
+            <td><code style="font-size:0.78rem">{{item.code}}</code></td>
+            <td class="text-sm text-muted">{{item.description || '—'}}</td>
+            <td>
+              <div class="flex items-center gap-2">
+                <label class="admin-switch" [title]="item.is_active ? 'Deactivate location' : 'Activate location'">
+                  <input type="checkbox" [checked]="!!item.is_active" (change)="toggleLocationActive(item)">
+                  <span class="slider"></span>
+                </label>
+                <span class="text-xs font-bold" [style.color]="item.is_active ? '#15803D' : 'var(--text-muted)'">
+                  {{item.is_active ? 'Active' : 'Inactive'}}
+                </span>
+              </div>
+            </td>
+          </ng-container>
+
+          <!-- Usage Column -->
+          <td>
+            <span class="admin-usage-pill" [class.unused]="!item.used_count">
+              {{item.used_count ? ('Used by ' + item.used_count) : 'Unused'}}
+            </span>
+          </td>
+
+          <!-- Actions -->
+          <td>
+            <div class="flex gap-1">
+              <button type="button" class="btn btn-ghost btn-icon-only btn-sm" (click)="openItemModal(item)" title="Edit">
+                <span class="btn-icon" style="font-size:16px">edit</span>
+              </button>
+              <button type="button"
+                      class="btn btn-ghost btn-icon-only btn-sm"
+                      [disabled]="(item.used_count || 0) > 0"
+                      [title]="(item.used_count || 0) > 0 ? ('Cannot delete: referenced by ' + item.used_count + ' record(s)') : 'Delete'"
+                      (click)="deleteItem(item)">
+                <span class="btn-icon" style="font-size:16px"
+                      [style.color]="(item.used_count || 0) > 0 ? 'var(--text-subtle)' : '#EF4444'">delete</span>
+              </button>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="empty-state" *ngIf="!filteredItems.length">
+      <span class="empty-icon">category</span>
+      <h3>{{items.length ? 'No matching items' : 'No items yet'}}</h3>
+      <button type="button" class="btn btn-primary" (click)="openItemModal()" *ngIf="!items.length">Add First</button>
+    </div>
+
+    <div class="admin-pagination-bar" *ngIf="filteredItems.length > 0">
+      <div class="table-page-size-control">
+        <span class="text-sm text-muted">
+          Showing {{(page - 1) * pageSize + 1}}–{{Math.min(page * pageSize, filteredItems.length)}} of {{filteredItems.length}}
+        </span>
+        <app-dropdown class="form-control table-page-size-select"
+                      [(ngModel)]="pageSize"
+                      (ngModelChange)="onPageSizeChange()"
+                      ariaLabel="Catalog rows per page">
+          <app-dropdown-option *ngFor="let size of pageSizeOptions" [ngValue]="size">{{size}}</app-dropdown-option>
+        </app-dropdown>
+      </div>
+      <div class="flex gap-2 items-center">
+        <button type="button" class="btn btn-secondary btn-sm" [disabled]="page <= 1" (click)="changePage(page - 1)">
+          <span class="btn-icon">chevron_left</span>
+        </button>
+        <span class="page-counter">{{page}} / {{totalPages}}</span>
+        <button type="button" class="btn btn-secondary btn-sm" [disabled]="page >= totalPages" (click)="changePage(page + 1)">
+          <span class="btn-icon">chevron_right</span>
+        </button>
+      </div>
+    </div>
+  </ng-container>
+
+  <ng-template #loadingTpl>
+    <div class="loading-box"><div class="spinner"></div></div>
+  </ng-template>
+</div>
+
+<!-- Create / Edit Catalog Modal -->
+<div class="modal-overlay" *ngIf="showModal" (click)="showModal = false">
+  <div class="modal" style="max-width:580px" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h3>{{editingItem ? 'Edit' : 'New'}} — {{tabLabel}}</h3>
+      <button type="button" class="btn btn-ghost btn-icon-only" (click)="showModal = false">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="admin-inline-error" *ngIf="formError">
+        <span class="mat-i" style="font-size:18px">error</span>
+        <span>{{formError}}</span>
+      </div>
+
+      <!-- Operation Types Form -->
+      <ng-container *ngIf="activeTab === 'operation-types'">
+        <div class="live-preview-strip">
+          <span class="text-xs font-bold text-muted" style="text-transform:uppercase">Preview</span>
+          <span class="cat-badge-preview">
+            <span class="cat-icon-box" [style.background]="(itemForm.color || '#1565C0') + '1A'" [style.color]="itemForm.color || '#1565C0'">
+              <span class="mat-i">{{itemForm.icon || 'settings'}}</span>
+            </span>
+            <span class="font-bold text-sm">{{itemForm.name || 'Operation Type'}}</span>
+          </span>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Name *</label>
+          <input class="form-control" [(ngModel)]="itemForm.name" placeholder="e.g. Deployment">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Color</label>
+          <div class="color-picker-row">
+            <input type="color" [(ngModel)]="itemForm.color" class="native-color-input">
+            <input class="form-control" [(ngModel)]="itemForm.color" placeholder="#1565C0" style="max-width:140px">
+          </div>
+          <div class="color-swatch-row">
+            <button type="button"
+                    *ngFor="let c of colorSwatches"
+                    class="color-swatch-btn"
+                    [class.active]="itemForm.color === c"
+                    [style.background]="c"
+                    (click)="selectColor(c)">
+            </button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Icon</label>
+          <input class="form-control" [(ngModel)]="itemForm.icon" placeholder="rocket_launch">
+          <div class="icon-picker-grid">
+            <button type="button"
+                    *ngFor="let ic of iconPresets"
+                    class="icon-choice-btn"
+                    [class.active]="itemForm.icon === ic"
+                    [title]="ic"
+                    (click)="selectIcon(ic)">
+              <span class="mat-i">{{ic}}</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label">Description</label>
+          <textarea class="form-control" [(ngModel)]="itemForm.description" style="min-height:72px"></textarea>
+        </div>
+      </ng-container>
+
+      <!-- Shift Types Form -->
+      <ng-container *ngIf="activeTab === 'shift-types'">
+        <div class="form-group">
+          <label class="form-label">Category *</label>
+          <div class="admin-chip-group">
+            <button type="button"
+                    class="admin-chip"
+                    [class.active]="itemForm.category === 'WORK'"
+                    (click)="onShiftCategoryChange('WORK')">
+              Work Shift
+            </button>
+            <button type="button"
+                    class="admin-chip"
+                    [class.active]="itemForm.category === 'LEAVE'"
+                    (click)="onShiftCategoryChange('LEAVE')">
+              Leave / Time Off
+            </button>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Name *</label>
+            <input class="form-control" [(ngModel)]="itemForm.name" placeholder="e.g. Morning Shift">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Code *</label>
+            <input class="form-control" [(ngModel)]="itemForm.code" placeholder="MOR" maxlength="10" style="text-transform:uppercase">
+          </div>
+        </div>
+
+        <div class="form-row" *ngIf="itemForm.category === 'WORK'">
+          <div class="form-group">
+            <label class="form-label">Start Time *</label>
+            <input type="time" class="form-control" [(ngModel)]="itemForm.start_time">
+          </div>
+          <div class="form-group">
+            <label class="form-label">End Time *</label>
+            <input type="time" class="form-control" [(ngModel)]="itemForm.end_time">
+          </div>
+        </div>
+
+        <div class="live-preview-strip">
+          <span class="text-xs font-bold text-muted" style="text-transform:uppercase">Scheduled Duration</span>
+          <strong style="color:var(--primary)">{{liveShiftDuration}}</strong>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Badge Color</label>
+          <div class="color-picker-row">
+            <input type="color" [(ngModel)]="itemForm.color" class="native-color-input">
+            <input class="form-control" [(ngModel)]="itemForm.color" style="max-width:140px">
+          </div>
+          <div class="color-swatch-row">
+            <button type="button"
+                    *ngFor="let c of colorSwatches"
+                    class="color-swatch-btn"
+                    [class.active]="itemForm.color === c"
+                    [style.background]="c"
+                    (click)="selectColor(c)">
+            </button>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label">Description</label>
+          <textarea class="form-control" [(ngModel)]="itemForm.description" style="min-height:68px" placeholder="Optional notes about this shift type"></textarea>
+        </div>
+      </ng-container>
+
+      <!-- Asset Categories Form -->
+      <ng-container *ngIf="activeTab === 'asset-categories'">
+        <div class="form-group">
+          <label class="form-label">Name *</label>
+          <input class="form-control" [(ngModel)]="itemForm.name">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Asset Kind</label>
+          <app-dropdown class="form-control" [(ngModel)]="itemForm.type">
+            <app-dropdown-option value="HARDWARE">Hardware</app-dropdown-option>
+            <app-dropdown-option value="SOFTWARE">Software</app-dropdown-option>
+            <app-dropdown-option value="NETWORK">Network</app-dropdown-option>
+            <app-dropdown-option value="OTHER">Other</app-dropdown-option>
+          </app-dropdown>
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label">Description</label>
+          <textarea class="form-control" [(ngModel)]="itemForm.description" style="min-height:72px"></textarea>
+        </div>
+      </ng-container>
+
+      <!-- Item Categories Form -->
+      <ng-container *ngIf="activeTab === 'item-categories'">
+        <div class="form-group">
+          <label class="form-label">Name *</label>
+          <input class="form-control" [(ngModel)]="itemForm.name" placeholder="e.g. Cables and Connectors">
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label">Description</label>
+          <textarea class="form-control" [(ngModel)]="itemForm.description" style="min-height:72px"></textarea>
+        </div>
+      </ng-container>
+
+      <!-- Wiki Categories Form -->
+      <ng-container *ngIf="activeTab === 'wiki-categories'">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Name *</label>
+            <input class="form-control" [(ngModel)]="itemForm.name" placeholder="e.g. Infrastructure">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Sort Order</label>
+            <input type="number" class="form-control" [(ngModel)]="itemForm.sort_order" min="0">
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label">Icon</label>
+          <input class="form-control" [(ngModel)]="itemForm.icon" placeholder="folder">
+          <div class="icon-picker-grid">
+            <button type="button"
+                    *ngFor="let ic of iconPresets"
+                    class="icon-choice-btn"
+                    [class.active]="itemForm.icon === ic"
+                    [title]="ic"
+                    (click)="selectIcon(ic)">
+              <span class="mat-i">{{ic}}</span>
+            </button>
+          </div>
+        </div>
+      </ng-container>
+
+      <!-- Warehouse Locations Form -->
+      <ng-container *ngIf="activeTab === 'warehouse-locations'">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Name *</label>
+            <input class="form-control" [(ngModel)]="itemForm.name" placeholder="e.g. Main Warehouse">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Code *</label>
+            <input class="form-control" [(ngModel)]="itemForm.code" placeholder="WH-MAIN" maxlength="20">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Description</label>
+          <textarea class="form-control" [(ngModel)]="itemForm.description" style="min-height:72px"></textarea>
+        </div>
+        <div class="flex items-center gap-3">
+          <label class="admin-switch">
+            <input type="checkbox" [(ngModel)]="itemForm.is_active">
+            <span class="slider"></span>
+          </label>
+          <span class="font-bold text-sm">Active location</span>
+        </div>
+      </ng-container>
+    </div>
+
+    <div class="modal-footer">
+      <button type="button" class="btn btn-ghost" (click)="showModal = false">Cancel</button>
+      <button type="button" class="btn btn-primary" (click)="saveItem()" [disabled]="saving">
+        {{saving ? 'Saving…' : (editingItem ? 'Save Changes' : 'Create')}}
+      </button>
+    </div>
+  </div>
+</div>

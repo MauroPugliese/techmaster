@@ -1,5 +1,5 @@
 import {
-  Component, OnInit, Input, ChangeDetectionStrategy, ChangeDetectorRef
+  Component, OnInit, OnChanges, SimpleChanges, Input, ChangeDetectionStrategy, ChangeDetectorRef
 } from '@angular/core';
 import { CommonModule, TitleCasePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -33,8 +33,11 @@ export interface AccessSummaryItem {
   styleUrls: ['./section-access-manager.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class SectionAccessManagerComponent implements OnInit {
+export class SectionAccessManagerComponent implements OnInit, OnChanges {
   @Input() roles: any[] = [];
+  @Input() initialTarget: AccessTarget | null = null;
+  @Input() initialRole: string | null = null;
+  @Input() initialUserId: number | null = null;
 
   target: AccessTarget = 'global';
   selectedRole = 'viewer';
@@ -65,8 +68,36 @@ export class SectionAccessManagerComponent implements OnInit {
     if (this.roles.length && !this.roles.some(r => r.name === this.selectedRole)) {
       this.selectedRole = this.roles[0].name;
     }
+    this.applyInitialInputs(false);
     this.loadCatalog();
     this.loadUsers();
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    const hasDeepLinkChange =
+      changes['initialTarget'] || changes['initialRole'] || changes['initialUserId'];
+    if (hasDeepLinkChange && Object.keys(this.catalog).length > 0) {
+      this.applyInitialInputs(true);
+    }
+  }
+
+  private applyInitialInputs(reloadAfter: boolean): void {
+    let changed = false;
+    if (this.initialTarget) {
+      this.target = this.initialTarget;
+      changed = true;
+    }
+    if (this.initialRole) {
+      this.selectedRole = this.initialRole;
+      changed = true;
+    }
+    if (this.initialUserId !== undefined && this.initialUserId !== null) {
+      this.selectedUserId = this.initialUserId;
+      changed = true;
+    }
+    if (changed && reloadAfter) {
+      this.loadPreferences();
+    }
   }
 
   // ── Catalog & Preferences Loading ─────────────────────────────────────────
