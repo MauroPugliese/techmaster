@@ -1,0 +1,84 @@
+@import '../warehouse-shared';
+
+.wh-modal-wide {
+  max-width: 620px;
+}
+
+.wh-modal-md {
+  max-width: 500px;
+}
+
+.wh-modal-xl {
+  max-width: 860px;
+}
+
+.wh-modal-sub {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.wh-textarea-sm {
+  min-height: 76px;
+}
+
+.wh-footer-split {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.wh-movement-types {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.wh-mtype-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 6px;
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: var(--transition);
+
+  .mat-i { font-size: 18px; }
+
+  &:hover:not(.active) {
+    border-color: var(--mt-color, var(--primary));
+    color: var(--mt-color, var(--primary));
+    background: var(--mt-bg, var(--blue-50));
+  }
+
+  &.active {
+    background: var(--mt-color, var(--primary));
+    border-color: var(--mt-color, var(--primary));
+    color: #fff;
+  }
+}
+
+.wh-transfer-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+@media (max-width: 540px) {
+  .wh-movement-types {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

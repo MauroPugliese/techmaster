@@ -9,8 +9,10 @@ const AUDIT_PATTERNS = [
   /^POST\s+\/api\/auth\/login$/,
   /^POST\s+\/api\/auth\/register$/,
   /^POST\s+\/api\/warehouse\/\d+\/movement$/,
+  /^POST\s+\/api\/warehouse\/\d+\/restock-task$/,
   /^PUT\s+\/api\/warehouse\/\d+$/,
-  /^POST\s+\/api\/warehouse\/$/, // create item
+  /^PATCH\s+\/api\/warehouse\/bulk$/,
+  /^POST\s+\/api\/warehouse\/?$/, // create item
   /^PUT\s+\/api\/users\/\d+/,
   /^POST\s+\/api\/users/,
   /^DELETE\s+\/api\//,

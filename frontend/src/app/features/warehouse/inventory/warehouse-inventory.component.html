@@ -1,0 +1,329 @@
+<!-- ── Single-Row Filter & Search Toolbar ──────────────────────────────── -->
+<div class="wh-toolbar-card">
+  <div class="wh-filter-row">
+    <div class="wh-search-wrap">
+      <div class="search-bar">
+        <span class="search-icon">search</span>
+        <input #searchInput
+               [ngModel]="search"
+               (ngModelChange)="onSearchModelChange($event)"
+               placeholder="Search name, SKU, part no, supplier… ( / )"
+               aria-label="Search inventory">
+        <button *ngIf="search"
+                type="button"
+                class="wh-search-clear"
+                (click)="clearSearch()"
+                title="Clear search">
+          <span class="mat-i" style="font-size:16px">close</span>
+        </button>
+      </div>
+    </div>
+
+    <app-dropdown class="form-control wh-filter-select"
+                  [(ngModel)]="categoryFilter"
+                  (change)="applyFilters()"
+                  placeholder="All Categories">
+      <app-dropdown-option [ngValue]="''">All Categories</app-dropdown-option>
+      <app-dropdown-option *ngFor="let c of categories" [ngValue]="c.id">{{c.name}}</app-dropdown-option>
+    </app-dropdown>
+
+    <app-dropdown class="form-control wh-filter-select"
+                  [(ngModel)]="locationFilter"
+                  (change)="applyFilters()"
+                  placeholder="All Locations">
+      <app-dropdown-option [ngValue]="''">All Locations</app-dropdown-option>
+      <app-dropdown-option [ngValue]="'unassigned'">Unassigned Bin</app-dropdown-option>
+      <app-dropdown-option *ngFor="let loc of locations" [ngValue]="loc.id">{{loc.code}} — {{loc.name}}</app-dropdown-option>
+    </app-dropdown>
+
+    <app-dropdown class="form-control wh-filter-select"
+                  [(ngModel)]="supplierFilter"
+                  (change)="applyFilters()"
+                  placeholder="All Suppliers">
+      <app-dropdown-option [ngValue]="''">All Suppliers</app-dropdown-option>
+      <app-dropdown-option [ngValue]="'__unassigned__'">No Supplier</app-dropdown-option>
+      <app-dropdown-option *ngFor="let s of suppliers" [ngValue]="s">{{s}}</app-dropdown-option>
+    </app-dropdown>
+
+    <app-dropdown class="form-control wh-filter-select"
+                  [(ngModel)]="stockStatusFilter"
+                  (change)="onStatusSelectChange()"
+                  placeholder="All Status">
+      <app-dropdown-option [ngValue]="'all'">All Status</app-dropdown-option>
+      <app-dropdown-option [ngValue]="'healthy'">Healthy</app-dropdown-option>
+      <app-dropdown-option [ngValue]="'low'">Low Stock</app-dropdown-option>
+      <app-dropdown-option [ngValue]="'out'">Out of Stock</app-dropdown-option>
+      <app-dropdown-option [ngValue]="'overstock'">Overstock</app-dropdown-option>
+    </app-dropdown>
+
+    <button *ngIf="hasActiveFilters"
+            type="button"
+            class="btn btn-ghost btn-sm"
+            (click)="resetFilters()"
+            title="Reset all filters">
+      <span class="btn-icon">filter_alt_off</span> Reset
+    </button>
+  </div>
+</div>
+
+<!-- ── Contextual Bulk Action Bar ──────────────────────────────────────── -->
+<div class="wh-bulk-bar" *ngIf="selectedIds.size > 0">
+  <div class="wh-head-actions">
+    <span class="mat-i">checklist</span>
+    <strong>{{selectedIds.size}} item{{selectedIds.size > 1 ? 's' : ''}} selected</strong>
+  </div>
+
+  <div class="wh-bulk-controls">
+    <app-dropdown class="form-control wh-bulk-select"
+                  [(ngModel)]="bulkCategoryId"
+                  placeholder="Move to category…">
+      <app-dropdown-option [ngValue]="null">Move to category…</app-dropdown-option>
+      <app-dropdown-option *ngFor="let c of categories" [ngValue]="c.id">{{c.name}}</app-dropdown-option>
+    </app-dropdown>
+    <button type="button"
+            class="btn btn-secondary btn-sm"
+            [disabled]="!bulkCategoryId || bulkBusy"
+            (click)="applyBulkCategory()">
+      Set Category
+    </button>
+
+    <app-dropdown class="form-control wh-bulk-select"
+                  [(ngModel)]="bulkLocationId"
+                  placeholder="Move to location…">
+      <app-dropdown-option [ngValue]="null">Move to location…</app-dropdown-option>
+      <app-dropdown-option [ngValue]="'unassign'">Unassign Location</app-dropdown-option>
+      <app-dropdown-option *ngFor="let loc of locations" [ngValue]="loc.id">{{loc.code}} — {{loc.name}}</app-dropdown-option>
+    </app-dropdown>
+    <button type="button"
+            class="btn btn-secondary btn-sm"
+            [disabled]="bulkLocationId === null || bulkBusy"
+            (click)="applyBulkLocation()">
+      Set Location
+    </button>
+
+    <button type="button"
+            class="btn btn-danger btn-sm"
+            [disabled]="bulkBusy"
+            (click)="applyBulkDeactivate()">
+      <span class="btn-icon">delete</span> Archive
+    </button>
+
+    <button type="button" class="btn btn-ghost btn-sm" style="color:#fff" (click)="clearSelection()">
+      Clear
+    </button>
+  </div>
+</div>
+
+<!-- ── Consolidated Inventory Table (8 Clean Columns) ──────────────────── -->
+<div class="table-container wh-table-wrap">
+  <table class="data-table wh-table">
+    <thead>
+      <tr>
+        <th style="width:36px">
+          <input type="checkbox"
+                 class="wh-checkbox"
+                 [checked]="allVisibleSelected"
+                 (change)="toggleSelectAll($any($event.target).checked)"
+                 aria-label="Select all items on page">
+        </th>
+
+        <th *ngIf="showTableField('name') || showTableField('sku') || showTableField('part_number') || showTableField('supplier')">
+          <button type="button" class="wh-sort-btn" [class.active]="sortBy === 'name'" (click)="toggleSort('name')">
+            <span>{{fieldLabel('table','name','Item')}}</span>
+            <span class="mat-i">{{sortIcon('name')}}</span>
+          </button>
+        </th>
+
+        <th *ngIf="showTableField('category')">
+          <button type="button" class="wh-sort-btn" [class.active]="sortBy === 'category'" (click)="toggleSort('category')">
+            <span>{{fieldLabel('table','category','Category')}}</span>
+            <span class="mat-i">{{sortIcon('category')}}</span>
+          </button>
+        </th>
+
+        <th *ngIf="showTableField('location')">
+          <button type="button" class="wh-sort-btn" [class.active]="sortBy === 'location'" (click)="toggleSort('location')">
+            <span>{{fieldLabel('table','location','Location')}}</span>
+            <span class="mat-i">{{sortIcon('location')}}</span>
+          </button>
+        </th>
+
+        <th *ngIf="showTableField('quantity') || showTableField('reorder_point')">
+          <button type="button" class="wh-sort-btn" [class.active]="sortBy === 'quantity'" (click)="toggleSort('quantity')">
+            <span>{{fieldLabel('table','quantity','Stock')}}</span>
+            <span class="mat-i">{{sortIcon('quantity')}}</span>
+          </button>
+        </th>
+
+        <th *ngIf="showTableField('stock_status')">{{fieldLabel('table','stock_status','Status')}}</th>
+
+        <th class="wh-col-num" *ngIf="showTableField('unit_cost')">
+          <button type="button" class="wh-sort-btn" [class.active]="sortBy === 'total_value'" (click)="toggleSort('total_value')">
+            <span>Value</span>
+            <span class="mat-i">{{sortIcon('total_value')}}</span>
+          </button>
+        </th>
+
+        <th class="wh-col-actions">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr *ngFor="let item of items; let idx = index"
+          class="row-clickable"
+          (click)="detailRequested.emit(item)">
+        <td (click)="$event.stopPropagation()">
+          <input type="checkbox"
+                 class="wh-checkbox"
+                 [checked]="selectedIds.has(item.id)"
+                 (change)="toggleItemSelection(item, $any($event.target).checked)"
+                 [attr.aria-label]="'Select ' + item.name">
+        </td>
+
+        <td *ngIf="showTableField('name') || showTableField('sku') || showTableField('part_number') || showTableField('supplier')">
+          <div class="wh-item-name" *ngIf="showTableField('name')">{{item.name}}</div>
+          <div class="wh-subtext" *ngIf="itemSubline(item)">{{itemSubline(item)}}</div>
+        </td>
+
+        <td *ngIf="showTableField('category')">
+          <span class="wh-cat-inline" *ngIf="item.category; else noCatCell">
+            <span class="wh-dot" [style.background]="item.category.color || '#1565C0'"></span>
+            <span>{{item.category.name}}</span>
+          </span>
+          <ng-template #noCatCell><span class="text-muted">—</span></ng-template>
+        </td>
+
+        <td *ngIf="showTableField('location')">
+          <span class="wh-loc-text"
+                *ngIf="item.location; else noLocCell"
+                [title]="item.location.code + ' — ' + item.location.name">
+            <span class="wh-loc-code">{{item.location.code}}</span>
+            <span class="truncate">{{item.location.name}}</span>
+          </span>
+          <ng-template #noLocCell><span class="text-muted">Unassigned</span></ng-template>
+        </td>
+
+        <td *ngIf="showTableField('quantity') || showTableField('reorder_point')">
+          <div class="wh-qty-inline" *ngIf="showTableField('quantity')">
+            <span class="wh-qty-val" [style.color]="stockColor(item)">
+              {{item.quantity}} {{item.unit || 'pcs'}}
+            </span>
+            <div class="progress-bar wh-progress">
+              <div class="progress-fill"
+                   [style.width.%]="stockProgress(item)"
+                   [style.background]="stockColor(item)">
+              </div>
+            </div>
+          </div>
+          <div class="wh-subtext" *ngIf="showTableField('reorder_point')">
+            Reorder at {{item.reorder_point}} {{item.unit || 'pcs'}}
+          </div>
+        </td>
+
+        <td *ngIf="showTableField('stock_status')">
+          <span class="badge"
+                [style.background]="stockBadgeBg(item)"
+                [style.color]="stockColor(item)">
+            {{stockStatus(item)}}
+          </span>
+        </td>
+
+        <td class="wh-col-num" *ngIf="showTableField('unit_cost')">
+          <div class="wh-primary-val">{{totalValueText(item)}}</div>
+          <div class="wh-subtext" *ngIf="item.unit_cost != null">
+            {{unitCostText(item)}} / {{item.unit || 'pcs'}}
+          </div>
+        </td>
+
+        <td class="wh-col-actions" (click)="$event.stopPropagation()">
+          <div class="wh-row-actions">
+            <button type="button"
+                    class="btn btn-ghost btn-icon-only btn-sm"
+                    (click)="movementRequested.emit({ item })"
+                    title="Stock Movement / Transfer">
+              <span class="btn-icon text-primary">swap_horiz</span>
+            </button>
+            <button type="button"
+                    class="btn btn-ghost btn-icon-only btn-sm"
+                    (click)="editItemRequested.emit(item)"
+                    title="Edit">
+              <span class="btn-icon">edit</span>
+            </button>
+
+            <div class="wh-menu-wrap">
+              <button type="button"
+                      class="btn btn-ghost btn-icon-only btn-sm"
+                      [attr.aria-expanded]="openMenuItemId === item.id"
+                      (click)="toggleRowMenu(item.id, $event)"
+                      title="More actions">
+                <span class="btn-icon">more_vert</span>
+              </button>
+
+              <div class="wh-row-menu"
+                   *ngIf="openMenuItemId === item.id"
+                   [class.open-up]="items.length > 2 && idx >= items.length - 2"
+                   (click)="$event.stopPropagation()">
+                <button type="button" class="wh-menu-item" (click)="quickIn(item)">
+                  <span class="mat-i" style="color:#16A34A">add_circle_outline</span>
+                  <span>Quick Stock In</span>
+                </button>
+                <button type="button" class="wh-menu-item" [disabled]="item.quantity <= 0" (click)="quickOut(item)">
+                  <span class="mat-i" style="color:#D97706">remove_circle_outline</span>
+                  <span>Quick Stock Out</span>
+                </button>
+                <button type="button" class="wh-menu-item" (click)="closeRowMenu(); historyRequested.emit(item)">
+                  <span class="mat-i text-muted">history</span>
+                  <span>Movement History</span>
+                </button>
+                <button type="button" class="wh-menu-item" (click)="printLabel(item)">
+                  <span class="mat-i text-muted">print</span>
+                  <span>Print Bin Label</span>
+                </button>
+                <div class="wh-menu-divider"></div>
+                <button type="button" class="wh-menu-item danger" (click)="closeRowMenu(); deleteRequested.emit(item)">
+                  <span class="mat-i">delete</span>
+                  <span>Archive Item</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="empty-state" *ngIf="!items.length && !loading">
+    <span class="empty-icon">inventory_2</span>
+    <h3>No matching inventory items</h3>
+    <p *ngIf="hasActiveFilters">Try clearing one or more filters to view your stock catalog.</p>
+    <button *ngIf="!hasActiveFilters" type="button" class="btn btn-primary" (click)="addItemRequested.emit()">
+      Add First Item
+    </button>
+    <button *ngIf="hasActiveFilters" type="button" class="btn btn-secondary" (click)="resetFilters()">
+      Reset Filters
+    </button>
+  </div>
+
+  <div class="wh-pagination-bar" *ngIf="total > 0">
+    <div class="table-page-size-control">
+      <span class="text-sm text-muted wh-num">
+        Showing {{(page - 1) * pageSize + 1}}–{{Math.min(page * pageSize, total)}} of {{total}}
+      </span>
+      <app-dropdown class="form-control table-page-size-select"
+                    [(ngModel)]="pageSize"
+                    (change)="onPageSizeChange()"
+                    ariaLabel="Rows per page">
+        <app-dropdown-option *ngFor="let size of pageSizeOptions" [ngValue]="size">{{size}}</app-dropdown-option>
+      </app-dropdown>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <button type="button" class="btn btn-secondary btn-sm" [disabled]="page <= 1" (click)="changePage(page - 1)">
+        <span class="btn-icon">chevron_left</span>
+      </button>
+      <span class="wh-page-indicator">{{page}} / {{totalPages}}</span>
+      <button type="button" class="btn btn-secondary btn-sm" [disabled]="page >= totalPages" (click)="changePage(page + 1)">
+        <span class="btn-icon">chevron_right</span>
+      </button>
+    </div>
+  </div>
+</div>

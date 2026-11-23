@@ -1,544 +1,160 @@
-<!-- ==========================================================================
-     warehouse.component.html — COMPLETE WITH ALL FIXES
-     • Item create/edit modal fully added
-     • Category select uses [ngValue] (numeric type preserved)
-     • Delete button added in table rows
-     ========================================================================== -->
+<div class="wh-page fade-in">
 
-<div class="warehouse-page fade-in">
+  <!-- ── Page Header ─────────────────────────────────────────────────────── -->
+  <div class="wh-page-head">
+    <div>
+      <h2>Warehouse &amp; Inventory</h2>
+      <p>Stock levels, bin locations, movements ledger, and replenishment priorities.</p>
+    </div>
 
-  <!-- ── KPI Strip ───────────────────────────────────────────────────────── -->
-  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px">
-    <div class="kpi-card" style="--kpi-color:#1565C0">
-      <div class="kpi-icon-wrap">inventory_2</div>
-      <div><div class="kpi-value">{{totalItems}}</div><div class="kpi-label">Total SKUs</div></div>
-    </div>
-    <div class="kpi-card" style="--kpi-color:#10B981">
-      <div class="kpi-icon-wrap">check_circle</div>
-      <div><div class="kpi-value">{{healthyItems}}</div><div class="kpi-label">Healthy Stock</div></div>
-    </div>
-    <div class="kpi-card" style="--kpi-color:#EF4444">
-      <div class="kpi-icon-wrap">warning</div>
-      <div><div class="kpi-value">{{lowItems}}</div><div class="kpi-label">Low Stock</div></div>
-    </div>
-    <div class="kpi-card" style="--kpi-color:#F59E0B">
-      <div class="kpi-icon-wrap">remove_shopping_cart</div>
-      <div><div class="kpi-value">{{outOfStock}}</div><div class="kpi-label">Out of Stock</div></div>
-    </div>
-  </div>
-
-  <!-- ── Toolbar ─────────────────────────────────────────────────────────── -->
-  <div class="flex items-center justify-between mb-6">
-    <div class="flex gap-2">
-      <div class="search-bar" style="width:260px">
-        <span class="search-icon">search</span>
-        <input placeholder="Search items..." [(ngModel)]="search" (input)="applyFilters()">
-      </div>
-      <app-dropdown class="form-control select-w-220" [(ngModel)]="categoryFilter" (change)="applyFilters()" placeholder="All Categories">
-        <app-dropdown-option [ngValue]="''">All Categories</app-dropdown-option>
-        <app-dropdown-option *ngFor="let c of categories" [ngValue]="c.id">{{c.name}}</app-dropdown-option>
-      </app-dropdown>
-      <button class="btn btn-secondary btn-sm"
-              [class.btn-primary]="lowStockOnly"
-              (click)="toggleLowStock()">
-        <span class="btn-icon">warning</span> Low Stock Only
-      </button>
-    </div>
-    <div class="flex gap-2">
-      <app-export-menu endpoint="warehouse" filename="Warehouse_Inventory"
-                       [params]="{ category_id: categoryFilter, low_stock: lowStockOnly ? 'true' : '', search }"></app-export-menu>
-      <button class="btn btn-primary" (click)="openItemModal()">
+    <div class="wh-head-actions">
+      <app-export-menu endpoint="warehouse"
+                       filename="Warehouse_Inventory"
+                       [params]="exportParams"></app-export-menu>
+      <button type="button" class="btn btn-primary" (click)="openAddItem()">
         <span class="btn-icon">add</span> Add Item
       </button>
     </div>
   </div>
 
-  <!-- ── Table ───────────────────────────────────────────────────────────── -->
-  <div class="table-container">
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th *ngIf="showTableField('sku')">{{fieldLabel('table','sku','SKU')}}</th>
-          <th *ngIf="showTableField('part_number')">{{fieldLabel('table','part_number','Part Number')}}</th>
-          <th *ngIf="showTableField('name')">{{fieldLabel('table','name','Item Name')}}</th>
-          <th *ngIf="showTableField('category')">{{fieldLabel('table','category','Category')}}</th>
-          <th *ngIf="showTableField('quantity')">{{fieldLabel('table','quantity','Quantity')}}</th>
-          <th *ngIf="showTableField('stock_status')">{{fieldLabel('table','stock_status','Status')}}</th>
-          <th *ngIf="showTableField('reorder_point')">{{fieldLabel('table','reorder_point','Reorder Point')}}</th>
-          <th *ngIf="showTableField('unit_cost')">{{fieldLabel('table','unit_cost','Unit Cost')}}</th>
-          <th *ngIf="showTableField('supplier')">{{fieldLabel('table','supplier','Supplier')}}</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr *ngFor="let item of items"
-            class="row-clickable"
-            (click)="openDetailModal(item)">
-          <td *ngIf="showTableField('sku')"><code style="font-size:0.8rem">{{item.sku}}</code></td>
-          <td *ngIf="showTableField('part_number')"><code style="font-size:0.8rem">{{item.part_number || '—'}}</code></td>
-          <td *ngIf="showTableField('name')">
-            <div class="font-bold">{{item.name}}</div>
-            <div class="text-sm text-muted">{{item.unit}}</div>
-          </td>
-          <td class="text-sm" *ngIf="showTableField('category')">{{item.category?.name || '—'}}</td>
-          <td *ngIf="showTableField('quantity')">
-            <div style="display:flex;align-items:center;gap:10px">
-              <span [style.color]="getStockColor(item)" style="font-weight:700;font-size:1rem">
-                {{item.quantity}}
-              </span>
-              <div class="progress-bar" style="width:80px">
-                <div class="progress-fill"
-                     [style.width.%]="item.max_stock ? (item.quantity/item.max_stock)*100 : 50"
-                     [style.background]="getStockColor(item)">
-                </div>
-              </div>
-            </div>
-          </td>
-          <td *ngIf="showTableField('stock_status')">
-            <span class="badge"
-                  [style.background]="getStockBadgeBg(item)"
-                  [style.color]="getStockColor(item)">
-              {{getStockStatus(item)}}
-            </span>
-          </td>
-          <td class="text-sm" *ngIf="showTableField('reorder_point')">{{item.reorder_point}} {{item.unit}}</td>
-          <td class="text-sm" *ngIf="showTableField('unit_cost')">${{item.unit_cost | number:'1.2-2'}}</td>
-          <td class="text-sm truncate" style="max-width:120px" *ngIf="showTableField('supplier')">{{item.supplier || '—'}}</td>
-          <td (click)="$event.stopPropagation()">
-            <div class="flex gap-1">
-              <!-- Stock movement -->
-              <button class="btn btn-ghost btn-icon-only btn-sm"
-                      (click)="openMovementModal(item)" title="Stock movement">
-                <span class="btn-icon" style="font-size:17px;color:#1565C0">swap_horiz</span>
-              </button>
-                <button class="btn btn-ghost btn-icon-only btn-sm"
-                    (click)="openHistoryModal(item)" title="Item history">
-                  <span class="btn-icon" style="font-size:17px;color:#6B7280">history</span>
-                </button>
-              <!-- Edit -->
-              <button class="btn btn-ghost btn-icon-only btn-sm"
-                      (click)="editItem(item)" title="Edit">
-                <span class="btn-icon" style="font-size:17px">edit</span>
-              </button>
-              <!-- Delete -->
-              <button class="btn btn-ghost btn-icon-only btn-sm"
-                      (click)="deleteItem(item)" title="Delete">
-                <span class="btn-icon" style="font-size:17px;color:#EF4444">delete</span>
-              </button>
-            </div>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+  <!-- ── Compact Global KPI Strip (Clickable Quick Filters) ──────────────── -->
+  <div class="wh-kpi-grid">
+    <button type="button"
+            class="kpi-card wh-kpi-card wh-kpi-clickable"
+            [class.active]="activeTab === 'inventory' && externalStatusFilter === 'all'"
+            style="--kpi-color:#1565C0"
+            (click)="filterByKpi('all')">
+      <div class="kpi-icon-wrap">inventory_2</div>
+      <div class="wh-kpi-body">
+        <div class="wh-kpi-value">{{summary?.total_skus ?? 0}}</div>
+        <div class="kpi-label">Active SKUs · {{summary?.total_units ?? 0}} units</div>
+      </div>
+    </button>
 
-    <div class="empty-state" *ngIf="!items.length && !loading">
-      <span class="empty-icon">inventory_2</span>
-      <h3>No inventory items</h3>
-      <button class="btn btn-primary" (click)="openItemModal()">Add First Item</button>
-    </div>
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-top:1px solid var(--border)"
-         *ngIf="total > 0">
-      <div class="table-page-size-control">
-        <span class="text-sm text-muted">Showing {{(page-1)*pageSize+1}}–{{Math.min(page*pageSize,total)}} of {{total}}</span>
-        <app-dropdown class="form-control table-page-size-select" [(ngModel)]="pageSize" (change)="onPageSizeChange()" ariaLabel="Rows per page">
-          <app-dropdown-option *ngFor="let size of pageSizeOptions" [ngValue]="size">{{size}}</app-dropdown-option>
-        </app-dropdown>
+    <button type="button"
+            class="kpi-card wh-kpi-card wh-kpi-clickable"
+            style="--kpi-color:#0288D1"
+            (click)="selectTab('inventory')">
+      <div class="kpi-icon-wrap">account_balance_wallet</div>
+      <div class="wh-kpi-body">
+        <div class="wh-kpi-value">{{money(summary?.total_value ?? 0)}}</div>
+        <div class="kpi-label">Valuation · Restock {{money(summary?.estimated_restock_cost ?? 0)}}</div>
       </div>
-      <div class="flex gap-2">
-        <button class="btn btn-secondary btn-sm" [disabled]="page <= 1" (click)="changePage(page-1)">
-          <span class="btn-icon">chevron_left</span>
-        </button>
-        <span style="padding:5px 12px;font-size:0.85rem;font-weight:600">{{page}} / {{totalPages}}</span>
-        <button class="btn btn-secondary btn-sm" [disabled]="page >= totalPages" (click)="changePage(page+1)">
-          <span class="btn-icon">chevron_right</span>
-        </button>
+    </button>
+
+    <button type="button"
+            class="kpi-card wh-kpi-card wh-kpi-clickable"
+            [class.active]="activeTab === 'inventory' && externalStatusFilter === 'healthy'"
+            style="--kpi-color:#16A34A"
+            (click)="filterByKpi('healthy')">
+      <div class="kpi-icon-wrap">check_circle</div>
+      <div class="wh-kpi-body">
+        <div class="wh-kpi-value">{{summary?.healthy_count ?? 0}}</div>
+        <div class="kpi-label">Healthy Stock</div>
       </div>
-    </div>
+    </button>
+
+    <button type="button"
+            class="kpi-card wh-kpi-card wh-kpi-clickable"
+            [class.active]="activeTab === 'inventory' && externalStatusFilter === 'low'"
+            style="--kpi-color:#D97706"
+            (click)="filterByKpi('low')">
+      <div class="kpi-icon-wrap">warning</div>
+      <div class="wh-kpi-body">
+        <div class="wh-kpi-value">{{summary?.low_count ?? 0}}</div>
+        <div class="kpi-label">Low Stock</div>
+      </div>
+    </button>
+
+    <button type="button"
+            class="kpi-card wh-kpi-card wh-kpi-clickable"
+            [class.active]="activeTab === 'inventory' && externalStatusFilter === 'out'"
+            style="--kpi-color:#DC2626"
+            (click)="filterByKpi('out')">
+      <div class="kpi-icon-wrap">remove_shopping_cart</div>
+      <div class="wh-kpi-body">
+        <div class="wh-kpi-value">{{summary?.out_of_stock_count ?? 0}}</div>
+        <div class="kpi-label">Out of Stock</div>
+      </div>
+    </button>
   </div>
+
+  <!-- ── Multi-Tab Switcher ──────────────────────────────────────────────── -->
+  <div class="wh-tab-bar" role="tablist" aria-label="Warehouse sections">
+    <button type="button"
+            role="tab"
+            class="wh-tab-btn"
+            [class.active]="activeTab === 'inventory'"
+            [attr.aria-selected]="activeTab === 'inventory'"
+            (click)="selectTab('inventory')">
+      <span class="mat-i">inventory_2</span>
+      <span>Inventory Catalog</span>
+      <span class="wh-tab-pill">{{summary?.total_skus ?? 0}}</span>
+    </button>
+
+    <button type="button"
+            role="tab"
+            class="wh-tab-btn"
+            [class.active]="activeTab === 'movements'"
+            [attr.aria-selected]="activeTab === 'movements'"
+            (click)="selectTab('movements')">
+      <span class="mat-i">receipt_long</span>
+      <span>Movements Ledger</span>
+      <span class="wh-tab-pill">{{summary?.movements_7d ?? 0}} / 7d</span>
+    </button>
+
+    <button type="button"
+            role="tab"
+            class="wh-tab-btn"
+            [class.active]="activeTab === 'reorder'"
+            [attr.aria-selected]="activeTab === 'reorder'"
+            (click)="selectTab('reorder')">
+      <span class="mat-i">add_shopping_cart</span>
+      <span>Reorder Planner</span>
+      <span class="wh-tab-pill" [class.warn]="reorderBadgeCount > 0">{{reorderBadgeCount}}</span>
+    </button>
+  </div>
+
+  <!-- ── Active Tab Content ──────────────────────────────────────────────── -->
+  <app-warehouse-inventory
+    *ngIf="activeTab === 'inventory'"
+    [categories]="categories"
+    [locations]="locations"
+    [suppliers]="suppliers"
+    [uiPrefs]="uiPrefs"
+    [refreshTick]="refreshTick"
+    [externalSearch]="externalSearch"
+    [externalStatusFilter]="externalStatusFilter"
+    [externalLocationFilter]="externalLocationFilter"
+    (addItemRequested)="openAddItem()"
+    (editItemRequested)="openEditItem($event)"
+    (detailRequested)="openDetail($event)"
+    (movementRequested)="openMovement($event)"
+    (historyRequested)="openHistory($event)"
+    (deleteRequested)="deleteItem($event)"
+    (statusFilterChanged)="onStatusFilterFromChild($event)"
+    (exportParamsChange)="exportParams = $event"
+    (mutated)="onMutated()">
+  </app-warehouse-inventory>
+
+  <app-warehouse-movements
+    *ngIf="activeTab === 'movements'"
+    [refreshTick]="refreshTick">
+  </app-warehouse-movements>
+
+  <app-warehouse-reorder
+    *ngIf="activeTab === 'reorder'"
+    [refreshTick]="refreshTick"
+    (quickRestockRequested)="openQuickRestock($event)"
+    (detailRequested)="openDetail($event)">
+  </app-warehouse-reorder>
+
 </div>
 
-<!-- =====================================================================
-     ITEM CREATE / EDIT MODAL
-     ===================================================================== -->
-<div class="modal-overlay" *ngIf="showItemModal" (click)="closeItemModal($event)">
-  <div class="modal" style="max-width:560px" (click)="$event.stopPropagation()">
-
-    <div class="modal-header">
-      <h3>{{editingItem ? 'Edit Item' : 'Add New Item'}}</h3>
-      <button class="btn btn-ghost btn-icon-only" (click)="showItemModal=false">
-        <span class="btn-icon">close</span>
-      </button>
-    </div>
-
-    <div class="modal-body">
-
-      <!-- Category — [ngValue] preserves numeric ID -->
-      <div class="form-group" *ngIf="showFormField('category_id')">
-        <label class="form-label">{{fieldLabel('form','category_id','Category')}} *</label>
-        <app-dropdown class="form-control" [(ngModel)]="itemForm.category_id" placeholder="— Select category —">
-          <app-dropdown-option [ngValue]="null">— Select category —</app-dropdown-option>
-          <app-dropdown-option *ngFor="let c of categories" [ngValue]="c.id">{{c.name}}</app-dropdown-option>
-        </app-dropdown>
-        <div *ngIf="categories.length === 0"
-             style="font-size:0.75rem;color:#F59E0B;margin-top:4px">
-          ⚠ No categories found — check the database seed data.
-        </div>
-      </div>
-
-      <!-- SKU + Part Number + Name -->
-      <div class="form-row">
-        <div class="form-group" *ngIf="showFormField('sku')">
-          <label class="form-label">{{fieldLabel('form','sku','SKU')}} *</label>
-          <input class="form-control" [(ngModel)]="itemForm.sku"
-                 placeholder="e.g. BOLT-M8-50"
-                 [disabled]="!!editingItem">
-        </div>
-        <div class="form-group" *ngIf="showFormField('part_number')">
-          <label class="form-label">{{fieldLabel('form','part_number','Part Number')}}</label>
-          <input class="form-control" [(ngModel)]="itemForm.part_number"
-                 placeholder="e.g. PN-445-REV2">
-        </div>
-        <div class="form-group" style="flex:2" *ngIf="showFormField('name')">
-          <label class="form-label">{{fieldLabel('form','name','Item Name')}} *</label>
-          <input class="form-control" [(ngModel)]="itemForm.name"
-                 placeholder="e.g. Hex Bolt M8×50">
-        </div>
-      </div>
-
-      <!-- Unit + Initial Quantity -->
-      <div class="form-row">
-        <div class="form-group" *ngIf="showFormField('unit')">
-          <label class="form-label">{{fieldLabel('form','unit','Unit')}}</label>
-          <input class="form-control" [(ngModel)]="itemForm.unit" placeholder="pcs">
-        </div>
-        <div class="form-group" *ngIf="showFormField('quantity')">
-          <label class="form-label">
-            {{fieldLabel('form','quantity','Initial Qty')}}
-            <span *ngIf="editingItem"
-                  style="font-weight:400;color:#9CA3AF;font-size:0.72rem">
-              (use Stock Movement to change)
-            </span>
-          </label>
-          <input type="number" class="form-control" [(ngModel)]="itemForm.quantity"
-                 min="0" [disabled]="!!editingItem">
-        </div>
-      </div>
-
-      <!-- Min / Reorder / Max -->
-      <div class="form-row">
-        <div class="form-group" *ngIf="showFormField('min_stock')">
-          <label class="form-label">{{fieldLabel('form','min_stock','Min Stock')}}</label>
-          <input type="number" class="form-control" [(ngModel)]="itemForm.min_stock" min="0">
-        </div>
-        <div class="form-group" *ngIf="showFormField('reorder_point')">
-          <label class="form-label">{{fieldLabel('form','reorder_point','Reorder Point')}}</label>
-          <input type="number" class="form-control" [(ngModel)]="itemForm.reorder_point" min="0">
-        </div>
-        <div class="form-group" *ngIf="showFormField('max_stock')">
-          <label class="form-label">{{fieldLabel('form','max_stock','Max Stock')}}</label>
-          <input type="number" class="form-control" [(ngModel)]="itemForm.max_stock"
-                 min="0" placeholder="optional">
-        </div>
-      </div>
-
-      <!-- Unit Cost + Supplier -->
-      <div class="form-row">
-        <div class="form-group" *ngIf="showFormField('unit_cost')">
-          <label class="form-label">{{fieldLabel('form','unit_cost','Unit Cost ($)')}}</label>
-          <input type="number" class="form-control" [(ngModel)]="itemForm.unit_cost"
-                 min="0" step="0.01" placeholder="0.00">
-        </div>
-        <div class="form-group" style="flex:2" *ngIf="showFormField('supplier')">
-          <label class="form-label">{{fieldLabel('form','supplier','Supplier')}}</label>
-          <input class="form-control" [(ngModel)]="itemForm.supplier"
-                 placeholder="e.g. Acme Corp">
-        </div>
-      </div>
-
-      <!-- Description -->
-      <div class="form-group" *ngIf="showFormField('description')">
-        <label class="form-label">{{fieldLabel('form','description','Description')}}</label>
-        <textarea class="form-control" [(ngModel)]="itemForm.description"
-                  style="min-height:72px" placeholder="Optional notes…"></textarea>
-      </div>
-
-    </div>
-
-    <div class="modal-footer">
-      <!-- Delete (edit mode only) -->
-      <button *ngIf="editingItem" class="btn btn-ghost"
-              style="color:#EF4444;margin-right:auto"
-              (click)="deleteItem(editingItem!); showItemModal=false">
-        <span class="btn-icon" style="font-size:17px">delete</span> Delete
-      </button>
-
-      <button class="btn btn-ghost" (click)="showItemModal=false">Cancel</button>
-      <button class="btn btn-primary" (click)="saveItem()" [disabled]="saving">
-        <div class="spinner" *ngIf="saving"
-             style="width:16px;height:16px;border-width:2px;border-top-color:#fff;margin-right:6px">
-        </div>
-        {{saving ? 'Saving…' : (editingItem ? 'Save Changes' : 'Create Item')}}
-      </button>
-    </div>
-
-  </div>
-</div>
-
-<!-- =====================================================================
-     ITEM HISTORY MODAL
-     ===================================================================== -->
-<div class="modal-overlay" *ngIf="showHistoryModal" (click)="closeHistoryModal($event)">
-  <div class="modal" style="max-width:820px" (click)="$event.stopPropagation()">
-    <div class="modal-header">
-      <h3>Item History — {{historyItem?.name}}</h3>
-      <button class="btn btn-ghost btn-icon-only" (click)="showHistoryModal=false">
-        <span class="btn-icon">close</span>
-      </button>
-    </div>
-
-    <div class="modal-body">
-      <div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:14px;font-size:0.85rem">
-        <div><strong>SKU:</strong> {{historyItem?.sku}}</div>
-        <div><strong>Part Number:</strong> {{historyItem?.part_number || '—'}}</div>
-        <div><strong>Current Stock:</strong> {{historyItem?.quantity}} {{historyItem?.unit}}</div>
-      </div>
-
-      <div *ngIf="historyLoading" class="text-muted" style="padding:10px 0">Loading history...</div>
-
-      <div class="table-container" *ngIf="!historyLoading" style="max-height:420px;overflow:auto">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Type</th>
-              <th>Qty</th>
-              <th>Before</th>
-              <th>After</th>
-              <th>Delta</th>
-              <th>Reference</th>
-              <th>Reason</th>
-              <th>User</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr *ngFor="let m of pagedItemHistory">
-              <td class="text-sm">{{m.movement_date | date:'short'}}</td>
-              <td>
-                <span class="badge" [style.background]="movementTypeColor(m.type) + '1A'" [style.color]="movementTypeColor(m.type)">
-                  {{movementTypeLabel(m.type)}}
-                </span>
-              </td>
-              <td class="font-bold">{{m.quantity}}</td>
-              <td class="text-sm">{{m.quantity_before}}</td>
-              <td class="text-sm">{{m.quantity_after}}</td>
-              <td class="font-bold" [style.color]="(m.quantity_after - m.quantity_before) < 0 ? '#EF4444' : '#10B981'">
-                {{movementDelta(m)}}
-              </td>
-              <td class="text-sm">{{m.reference || '—'}}</td>
-              <td class="text-sm text-muted" style="max-width:220px">{{m.reason || '—'}}</td>
-              <td class="text-sm">{{movementUserName(m)}}</td>
-            </tr>
-          </tbody>
-        </table>
-        <div class="empty-state" *ngIf="itemHistory.length === 0">
-          <span class="empty-icon">history</span>
-          <h3>No history available</h3>
-        </div>
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0"
-             *ngIf="itemHistory.length > 0">
-          <div class="table-page-size-control">
-            <span class="text-sm text-muted">Page {{historyPage}} of {{historyTotalPages}}</span>
-            <app-dropdown class="form-control table-page-size-select" [(ngModel)]="historyPageSize" (change)="onHistoryPageSizeChange()" ariaLabel="History rows per page">
-              <app-dropdown-option *ngFor="let size of historyPageSizeOptions" [ngValue]="size">{{size}}</app-dropdown-option>
-            </app-dropdown>
-          </div>
-          <div class="flex gap-2">
-            <button class="btn btn-secondary btn-sm" [disabled]="historyPage <= 1" (click)="changeHistoryPage(historyPage-1)">
-              <span class="btn-icon">chevron_left</span>
-            </button>
-            <button class="btn btn-secondary btn-sm" [disabled]="historyPage >= historyTotalPages" (click)="changeHistoryPage(historyPage+1)">
-              <span class="btn-icon">chevron_right</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="modal-footer">
-      <button class="btn btn-ghost" (click)="showHistoryModal=false">Close</button>
-    </div>
-  </div>
-</div>
-
-<!-- =====================================================================
-     STOCK MOVEMENT MODAL
-     ===================================================================== -->
-<div class="modal-overlay" *ngIf="showMovementModal" (click)="closeMovementModal($event)">
-  <div class="modal" style="max-width:440px" (click)="$event.stopPropagation()">
-
-    <div class="modal-header">
-      <h3>Stock Movement — {{movementItem?.name}}</h3>
-      <button class="btn btn-ghost btn-icon-only" (click)="showMovementModal=false">
-        <span class="btn-icon">close</span>
-      </button>
-    </div>
-
-    <div class="modal-body">
-      <!-- Type buttons -->
-      <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap">
-        <button *ngFor="let t of movementTypes" class="btn btn-sm"
-                [style.background]="movementForm.type===t.value ? t.color : 'var(--blue-50)'"
-                [style.color]="movementForm.type===t.value ? '#fff' : '#6B7280'"
-                [style.border-color]="movementForm.type===t.value ? t.color : 'var(--border)'"
-                style="border:1px solid"
-                (click)="movementForm.type=t.value">
-          {{t.label}}
-        </button>
-      </div>
-
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Quantity *</label>
-          <input type="number" class="form-control" [(ngModel)]="movementForm.quantity" min="1">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Reference</label>
-          <input class="form-control" [(ngModel)]="movementForm.reference" placeholder="PO-1234">
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Reason / Note</label>
-        <textarea class="form-control" [(ngModel)]="movementForm.reason" style="min-height:80px"></textarea>
-      </div>
-
-      <!-- Stock preview -->
-      <div style="background:var(--blue-50);border-radius:var(--radius-md);padding:12px;font-size:0.875rem">
-        <div class="flex items-center justify-between">
-          <span class="text-muted">Current stock:</span>
-          <span class="font-bold">{{movementItem?.quantity}} {{movementItem?.unit}}</span>
-        </div>
-        <div class="flex items-center justify-between mt-2">
-          <span class="text-muted">After movement:</span>
-          <span class="font-bold" [style.color]="getProjectedColor()">
-            {{getProjectedQty()}} {{movementItem?.unit}}
-          </span>
-        </div>
-      </div>
-    </div>
-
-    <div class="modal-footer">
-      <button class="btn btn-ghost" (click)="showMovementModal=false">Cancel</button>
-      <button class="btn btn-primary" (click)="submitMovement()" [disabled]="saving">
-        {{saving ? 'Processing…' : 'Submit Movement'}}
-      </button>
-    </div>
-
-  </div>
-</div>
-
-<!-- Inventory Item Detail Info Modal -->
-<div class="modal-overlay" *ngIf="detailItem" (click)="closeDetailModal($event)">
-  <div class="modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="wh-detail-title" (click)="$event.stopPropagation()">
-    <div class="modal-header">
-      <div class="detail-header-title">
-        <div class="detail-head-meta">
-          <span class="detail-id-pill">#{{detailItem.id}}</span>
-          <span class="detail-type-chip" *ngIf="detailItem.category">{{detailItem.category.name}}</span>
-          <span class="badge" [ngClass]="detailItem.is_active ? 'badge-success' : 'badge-gray'">
-            {{detailItem.is_active ? 'Active' : 'Inactive'}}
-          </span>
-        </div>
-        <h2 id="wh-detail-title">{{detailItem.name}}</h2>
-      </div>
-      <button type="button" class="btn btn-ghost btn-icon-only" (click)="detailItem = null" title="Close">
-        <span class="btn-icon">close</span>
-      </button>
-    </div>
-
-    <div class="modal-body">
-      <div class="detail-stock-banner">
-        <div class="detail-stock-banner-main">
-          <span class="detail-label">Current Stock</span>
-          <span class="detail-stock-banner-qty" [style.color]="getStockColor(detailItem)">
-            {{detailItem.quantity}} {{detailItem.unit}}
-          </span>
-        </div>
-        <span class="badge"
-              [style.background]="getStockBadgeBg(detailItem)"
-              [style.color]="getStockColor(detailItem)">
-          {{getStockStatus(detailItem)}}
-        </span>
-      </div>
-
-      <div class="detail-grid">
-        <div class="detail-field">
-          <span class="detail-label">SKU</span>
-          <span class="detail-value mono">{{detailItem.sku || '—'}}</span>
-        </div>
-        <div class="detail-field">
-          <span class="detail-label">Part Number</span>
-          <span class="detail-value mono">{{detailItem.part_number || '—'}}</span>
-        </div>
-        <div class="detail-field">
-          <span class="detail-label">Category</span>
-          <span class="detail-value">{{detailItem.category?.name || '—'}}</span>
-        </div>
-        <div class="detail-field">
-          <span class="detail-label">Supplier</span>
-          <span class="detail-value">{{detailItem.supplier || '—'}}</span>
-        </div>
-        <div class="detail-field">
-          <span class="detail-label">Minimum Stock</span>
-          <span class="detail-value">{{detailItem.min_stock}} {{detailItem.unit}}</span>
-        </div>
-        <div class="detail-field">
-          <span class="detail-label">Reorder Point</span>
-          <span class="detail-value">{{detailItem.reorder_point}} {{detailItem.unit}}</span>
-        </div>
-        <div class="detail-field">
-          <span class="detail-label">Max Stock</span>
-          <span class="detail-value">{{detailItem.max_stock != null ? (detailItem.max_stock + ' ' + detailItem.unit) : '—'}}</span>
-        </div>
-        <div class="detail-field">
-          <span class="detail-label">Unit Cost</span>
-          <span class="detail-value">{{detailItem.unit_cost != null ? ('$' + (detailItem.unit_cost | number:'1.2-2')) : '—'}}</span>
-        </div>
-        <div class="detail-field full-span">
-          <span class="detail-label">Total Stock Value</span>
-          <span class="detail-value">{{getTotalValue(detailItem) != null ? ('$' + (getTotalValue(detailItem) | number:'1.2-2')) : '—'}}</span>
-        </div>
-      </div>
-
-      <div class="detail-section">
-        <span class="detail-section-title">Description</span>
-        <div class="detail-text-box" [style.color]="detailItem.description ? 'var(--text)' : 'var(--text-muted)'">
-          {{detailItem.description || 'No description provided.'}}
-        </div>
-      </div>
-    </div>
-
-    <div class="modal-footer detail-footer">
-      <button type="button" class="btn btn-ghost detail-delete-btn" (click)="deleteFromDetail()">
-        <span class="btn-icon">delete</span>
-        Delete
-      </button>
-      <div class="detail-footer-actions">
-        <button type="button" class="btn btn-secondary" (click)="detailItem = null">Close</button>
-        <button type="button" class="btn btn-secondary" (click)="historyFromDetail()">
-          <span class="btn-icon">history</span>
-          History
-        </button>
-        <button type="button" class="btn btn-secondary" (click)="movementFromDetail()">
-          <span class="btn-icon" style="color:#1565C0">swap_horiz</span>
-          Movement
-        </button>
-        <button type="button" class="btn btn-primary" (click)="editFromDetail()">
-          <span class="btn-icon">edit</span>
-          Edit
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-
+<!-- ── Warehouse Modals ──────────────────────────────────────────────────── -->
+<app-warehouse-modals
+  [categories]="categories"
+  [locations]="locations"
+  [uiPrefs]="uiPrefs"
+  (mutated)="onMutated()">
+</app-warehouse-modals>

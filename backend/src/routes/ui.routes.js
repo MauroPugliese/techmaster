@@ -13,8 +13,8 @@ const UI_SECTION_CATALOG = {
     form: ['title', 'asset_id', 'type', 'priority', 'status', 'scheduled_date', 'downtime_hours', 'cost', 'description', 'findings']
   },
   warehouse: {
-    table: ['sku', 'part_number', 'name', 'category', 'quantity', 'stock_status', 'reorder_point', 'unit_cost', 'supplier'],
-    form: ['category_id', 'sku', 'part_number', 'name', 'unit', 'quantity', 'min_stock', 'reorder_point', 'max_stock', 'unit_cost', 'supplier', 'description']
+    table: ['sku', 'part_number', 'name', 'category', 'location', 'quantity', 'stock_status', 'reorder_point', 'unit_cost', 'supplier'],
+    form: ['category_id', 'location_id', 'sku', 'part_number', 'name', 'unit', 'quantity', 'min_stock', 'reorder_point', 'max_stock', 'unit_cost', 'supplier', 'description']
   },
   wiki: {
     table: ['title', 'category', 'status', 'author', 'views', 'updated_at'],

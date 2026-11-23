@@ -1,0 +1,13 @@
+@import '../warehouse-shared';
+
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.wh-delta-inline {
+  margin-left: 4px;
+  font-weight: 700;
+  font-size: 0.82rem;
+}

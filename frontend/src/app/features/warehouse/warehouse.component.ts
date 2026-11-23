@@ -1,382 +1,208 @@
-// =============================================================================
-// warehouse.component.ts — updated: ToastService + ConfirmService
-// =============================================================================
-import { Component, OnInit, OnDestroy, HostListener, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
-import { CommonModule, DecimalPipe } from '@angular/common';
-import { FormsModule } from '@angular/forms';
+import {
+  ChangeDetectionStrategy,
+  ChangeDetectorRef,
+  Component,
+  OnDestroy,
+  OnInit,
+  ViewChild
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { ActivatedRoute, Router } from '@angular/router';
 import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
-import { ApiService }       from '../../core/services/api.service';
-import { DateFilterService } from '../../core/services/date-filter.service';
+import { ApiService } from '../../core/services/api.service';
 import { UiCustomizationService, UiSectionPreferences } from '../../core/services/ui-customization.service';
-import { ToastService }     from '../../core/services/toast.service';
-import { ConfirmService }   from '../../core/services/confirm.service';
-import { InventoryItem, MovementType, StockMovement } from '../../core/models/interfaces';
+import {
+  InventoryItem,
+  WarehouseLocation,
+  WarehouseStockStatus,
+  WarehouseSummary
+} from '../../core/models/interfaces';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
-import { DropdownComponent, DropdownOptionComponent } from '../../shared/components/dropdown/dropdown.component';
+import { WarehouseInventoryComponent } from './inventory/warehouse-inventory.component';
+import { WarehouseMovementsComponent } from './movements/warehouse-movements.component';
+import { WarehouseReorderComponent } from './reorder/warehouse-reorder.component';
+import { MovementPreset, WarehouseModalsComponent } from './modals/warehouse-modals.component';
+import { formatMoney } from './warehouse-helpers';
+
+export type WarehouseTab = 'inventory' | 'movements' | 'reorder';
 
 @Component({
   selector: 'app-warehouse',
   standalone: true,
-  imports: [CommonModule, FormsModule, DecimalPipe, ExportMenuComponent, DropdownComponent, DropdownOptionComponent],
+  imports: [
+    CommonModule,
+    ExportMenuComponent,
+    WarehouseInventoryComponent,
+    WarehouseMovementsComponent,
+    WarehouseReorderComponent,
+    WarehouseModalsComponent
+  ],
   templateUrl: './warehouse.component.html',
+  styleUrls: ['./warehouse.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class WarehouseComponent implements OnInit, OnDestroy {
+  @ViewChild(WarehouseModalsComponent) modals?: WarehouseModalsComponent;
+
   private destroy$ = new Subject<void>();
-  Math = Math;
 
-  items:      InventoryItem[] = [];
-  categories: any[]           = [];
-  loading  = true;
-  saving   = false;
-  total    = 0;
-  page     = 1;
-  pageSize = 20;
-  readonly pageSizeOptions = [10, 20, 50, 100];
-  search   = '';
-  lowStockOnly = false;
-  categoryFilter: number | '' = '';
+  activeTab: WarehouseTab = 'inventory';
+  refreshTick = 0;
 
-  showItemModal  = false;
-  editingItem:   InventoryItem | null = null;
-  itemForm:      any = this.emptyItemForm();
-
-  showMovementModal = false;
-  movementItem: InventoryItem | null = null;
-  movementForm: { type: MovementType; quantity: number; reference: string; reason: string } = {
-    type: 'IN', quantity: 1, reference: '', reason: ''
-  };
-
-  showHistoryModal = false;
-  historyLoading = false;
-  historyItem: InventoryItem | null = null;
-  detailItem: InventoryItem | null = null;
-  itemHistory: StockMovement[] = [];
+  categories: any[] = [];
+  locations: WarehouseLocation[] = [];
+  suppliers: string[] = [];
   uiPrefs: UiSectionPreferences | null = null;
-  historyPage = 1;
-  historyPageSize = 10;
-  readonly historyPageSizeOptions = [10, 20, 50, 100];
+  summary: WarehouseSummary | null = null;
 
-  movementTypes = [
-    { value: 'IN'         as MovementType, label: 'Stock In',  color: '#10B981' },
-    { value: 'OUT'        as MovementType, label: 'Stock Out', color: '#EF4444' },
-    { value: 'TRANSFER'   as MovementType, label: 'Transfer',  color: '#0288D1' },
-    { value: 'ADJUSTMENT' as MovementType, label: 'Adjust',    color: '#F59E0B' },
-    { value: 'RETURN'     as MovementType, label: 'Return',    color: '#8B5CF6' },
-  ];
-
-  get totalItems():   number { return this.items.length; }
-  get healthyItems(): number { return this.items.filter(i => i.quantity > i.reorder_point).length; }
-  get lowItems():     number { return this.items.filter(i => i.quantity > 0 && i.quantity <= i.reorder_point).length; }
-  get outOfStock():   number { return this.items.filter(i => i.quantity === 0).length; }
+  externalSearch = '';
+  externalStatusFilter: 'all' | WarehouseStockStatus = 'all';
+  externalLocationFilter: string | number = '';
+  exportParams: Record<string, any> = {};
 
   constructor(
-    private api:     ApiService,
-    private dateFilter: DateFilterService,
+    private api: ApiService,
     private uiCustomization: UiCustomizationService,
-    private toast:   ToastService,
-    private confirm: ConfirmService,
-    private cdr:     ChangeDetectorRef
+    private route: ActivatedRoute,
+    private router: Router,
+    private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
-    this.uiCustomization.load('warehouse').subscribe(p => {
+    this.uiCustomization.load('warehouse').pipe(takeUntil(this.destroy$)).subscribe(p => {
       this.uiPrefs = p;
       this.cdr.markForCheck();
     });
+
+    this.route.queryParams.pipe(takeUntil(this.destroy$)).subscribe(qp => {
+      const tab = qp['tab'];
+      if (tab === 'inventory' || tab === 'movements' || tab === 'reorder') {
+        this.activeTab = tab;
+      }
+
+      if (qp['search'] !== undefined) {
+        this.externalSearch = String(qp['search'] || '');
+        if (!tab && this.externalSearch) {
+          this.activeTab = 'inventory';
+        }
+      }
+
+      const st = qp['status'];
+      if (st === 'all' || st === 'healthy' || st === 'low' || st === 'out' || st === 'overstock') {
+        this.externalStatusFilter = st;
+      }
+
+      if (qp['location_id'] !== undefined) {
+        const rawLoc = qp['location_id'];
+        this.externalLocationFilter = rawLoc === 'unassigned' ? 'unassigned' : (Number(rawLoc) || '');
+      }
+
+      this.cdr.markForCheck();
+    });
+
+    this.loadReferenceData();
+    this.loadSummary();
+  }
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
+  loadReferenceData(): void {
     this.api.get<any>('/warehouse/categories').subscribe({
       next: r => { this.categories = r?.data || []; this.cdr.markForCheck(); }
     });
-    this.dateFilter.range$.pipe(takeUntil(this.destroy$)).subscribe(() => this.loadItems());
+    this.api.get<any>('/warehouse/locations').subscribe({
+      next: r => { this.locations = r?.data || []; this.cdr.markForCheck(); }
+    });
+    this.api.get<any>('/warehouse/suppliers').subscribe({
+      next: r => { this.suppliers = r?.data || []; this.cdr.markForCheck(); }
+    });
   }
 
-  ngOnDestroy(): void { this.destroy$.next(); this.destroy$.complete(); }
-
-  loadItems(): void {
-    this.loading = true;
-    this.api.get<any>('/warehouse', {
-      search: this.search,
-      low_stock: this.lowStockOnly ? 'true' : '',
-      category_id: this.categoryFilter || '',
-      page: this.page,
-      limit: this.pageSize
-    }).subscribe({
+  loadSummary(): void {
+    this.api.get<any>('/warehouse/summary').subscribe({
       next: r => {
-        this.items = r?.data?.items || r?.data || [];
-        this.total = r?.data?.total || this.items.length;
-        this.loading = false;
+        this.summary = r?.data || null;
         this.cdr.markForCheck();
-      },
-      error: () => { this.loading = false; this.cdr.markForCheck(); }
+      }
     });
   }
 
-  applyFilters(): void {
-    this.page = 1;
-    this.loadItems();
+  selectTab(tab: WarehouseTab): void {
+    if (this.activeTab === tab) return;
+    this.activeTab = tab;
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { tab },
+      queryParamsHandling: 'merge'
+    });
   }
 
-  toggleLowStock(): void { this.lowStockOnly = !this.lowStockOnly; this.applyFilters(); }
-
-  get totalPages(): number {
-    return Math.max(1, Math.ceil(this.total / this.pageSize));
-  }
-
-  changePage(page: number): void {
-    if (page < 1 || page > this.totalPages) return;
-    this.page = page;
-    this.loadItems();
-  }
-
-  onPageSizeChange(): void {
-    this.page = 1;
-    this.loadItems();
-  }
-
-  private emptyItemForm() {
-    return { category_id: null, sku:'', part_number:'', name:'', description:'', unit:'pcs',
-             quantity:0, min_stock:0, max_stock:null, reorder_point:0, unit_cost:null, supplier:'' };
-  }
-
-  openItemModal(item?: InventoryItem): void {
-    if (item) {
-      this.editingItem = item;
-      this.itemForm = {
-        category_id:   (item as any).category_id ?? null,
-        sku: item.sku,
-        part_number: item.part_number ?? '',
-        name: item.name,
-        description: item.description ?? '',
-        unit: item.unit, quantity: item.quantity, min_stock: item.min_stock,
-        max_stock: item.max_stock ?? null, reorder_point: item.reorder_point,
-        unit_cost: item.unit_cost ?? null, supplier: item.supplier ?? '',
-      };
-    } else {
-      this.editingItem = null; this.itemForm = this.emptyItemForm();
+  filterByKpi(targetStatus: 'all' | WarehouseStockStatus): void {
+    const next = targetStatus !== 'all' && this.externalStatusFilter === targetStatus
+      ? 'all'
+      : targetStatus;
+    this.externalStatusFilter = next;
+    if (this.activeTab !== 'inventory') {
+      this.selectTab('inventory');
     }
-    this.showItemModal = true; this.cdr.markForCheck();
-  }
-
-  editItem(item: InventoryItem): void { this.openItemModal(item); }
-
-  closeItemModal(e: MouseEvent): void {
-    if ((e.target as HTMLElement).classList.contains('modal-overlay')) this.showItemModal = false;
-  }
-
-  saveItem(): void {
-    if (this.showFormField('name') && !this.itemForm.name?.trim())  { this.toast.warning('Item name is required.'); return; }
-    if (this.showFormField('sku') && !this.itemForm.sku?.trim())   { this.toast.warning('SKU is required.'); return; }
-    if (!this.editingItem && this.showFormField('category_id') && !this.itemForm.category_id) { this.toast.warning('Please select a category.'); return; }
-
-    this.saving = true;
-    const isEdit = !!this.editingItem;
-    const req$   = isEdit
-      ? this.api.put<any>(`/warehouse/${this.editingItem!.id}`, this.itemForm)
-      : this.api.post<any>('/warehouse', this.itemForm);
-
-    req$.subscribe({
-      next: () => {
-        this.saving = false; this.showItemModal = false; this.loadItems();
-        this.toast.success(isEdit ? 'Item updated.' : 'Item created.');
-        this.cdr.markForCheck();
-      },
-      error: (e: any) => {
-        this.saving = false;
-        this.toast.error(e?.error?.message || 'Failed to save item.');
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  async deleteItem(item: InventoryItem): Promise<void> {
-    const ok = await this.confirm.confirm(`Delete "${item.name}"? This cannot be undone.`, 'Delete Item');
-    if (!ok) return;
-    this.api.put<any>(`/warehouse/${item.id}`, { is_active: false }).subscribe({
-      next: () => { this.loadItems(); this.toast.success('Item deleted.'); },
-      error: (e: any) => this.toast.error(e?.error?.message || 'Failed to delete.')
-    });
-  }
-
-  openMovementModal(item: InventoryItem): void {
-    this.movementItem = item;
-    this.movementForm = { type:'IN', quantity:1, reference:'', reason:'' };
-    this.showMovementModal = true; this.cdr.markForCheck();
-  }
-
-  closeMovementModal(e: MouseEvent): void {
-    if ((e.target as HTMLElement).classList.contains('modal-overlay')) this.showMovementModal = false;
-  }
-
-  getProjectedQty(): number {
-    if (!this.movementItem) return 0;
-    const q = this.movementForm.quantity || 0;
-    switch (this.movementForm.type) {
-      case 'IN': case 'RETURN':    return this.movementItem.quantity + q;
-      case 'OUT': case 'TRANSFER': return this.movementItem.quantity - q;
-      case 'ADJUSTMENT':           return q;
-      default:                     return this.movementItem.quantity;
-    }
-  }
-
-  getProjectedColor(): string { return this.getProjectedQty() < 0 ? '#EF4444' : '#10B981'; }
-
-  submitMovement(): void {
-    if (!this.movementItem || !this.movementForm.quantity) return;
-    this.saving = true;
-    this.api.post<any>(`/warehouse/${this.movementItem.id}/movement`, this.movementForm).subscribe({
-      next: () => {
-        this.saving = false; this.showMovementModal = false; this.loadItems();
-        this.toast.success('Stock movement recorded.');
-        this.cdr.markForCheck();
-      },
-      error: (e: any) => {
-        this.saving = false;
-        this.toast.error(e?.error?.message || 'Failed to record movement.');
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  openHistoryModal(item: InventoryItem): void {
-    this.historyItem = item;
-    this.itemHistory = [];
-    this.historyPage = 1;
-    this.showHistoryModal = true;
-    this.historyLoading = true;
-    this.cdr.markForCheck();
-
-    this.api.get<any>(`/warehouse/${item.id}/movements`).subscribe({
-      next: (r) => {
-        this.itemHistory = r?.data || [];
-        this.historyLoading = false;
-        this.cdr.markForCheck();
-      },
-      error: () => {
-        this.historyLoading = false;
-        this.toast.error('Failed to load item history.');
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  openDetailModal(item: InventoryItem): void {
-    this.detailItem = item;
     this.cdr.markForCheck();
   }
-  closeDetailModal(e: MouseEvent): void {
-    if ((e.target as HTMLElement).classList.contains('modal-overlay')) {
-      this.detailItem = null;
-    }
-  }
-  editFromDetail(): void {
-    if (!this.detailItem) return;
-    const item = this.detailItem;
-    this.detailItem = null;
-    this.editItem(item);
-  }
-  movementFromDetail(): void {
-    if (!this.detailItem) return;
-    const item = this.detailItem;
-    this.detailItem = null;
-    this.openMovementModal(item);
-  }
-  historyFromDetail(): void {
-    if (!this.detailItem) return;
-    const item = this.detailItem;
-    this.detailItem = null;
-    this.openHistoryModal(item);
-  }
-  deleteFromDetail(): void {
-    if (!this.detailItem) return;
-    const item = this.detailItem;
-    this.detailItem = null;
-    this.deleteItem(item);
-  }
-  getTotalValue(item: InventoryItem): number | null {
-    if (item.unit_cost == null || (item.unit_cost as unknown) === '') return null;
-    const cost = Number(item.unit_cost);
-    return Number.isFinite(cost) ? item.quantity * cost : null;
+
+  onStatusFilterFromChild(status: 'all' | WarehouseStockStatus): void {
+    this.externalStatusFilter = status;
   }
 
-  @HostListener('document:keydown.escape')
-  onEsc(): void {
-    if (this.detailItem) {
-      this.detailItem = null;
-      this.cdr.markForCheck();
-    }
+  get reorderBadgeCount(): number {
+    if (!this.summary) return 0;
+    return (this.summary.low_count || 0) + (this.summary.out_of_stock_count || 0);
   }
 
-  closeHistoryModal(e: MouseEvent): void {
-    if ((e.target as HTMLElement).classList.contains('modal-overlay')) this.showHistoryModal = false;
+  money(val: number | null | undefined): string {
+    return formatMoney(val);
   }
 
-  movementTypeLabel(type: MovementType): string {
-    return this.movementTypes.find(t => t.value === type)?.label || type;
+  // ── Modal Delegation ───────────────────────────────────────────────────────
+  openAddItem(): void {
+    this.modals?.openItemModal();
   }
 
-  movementTypeColor(type: MovementType): string {
-    return this.movementTypes.find(t => t.value === type)?.color || '#6B7280';
+  openEditItem(item: InventoryItem): void {
+    this.modals?.openItemModal(item);
   }
 
-  get pagedItemHistory(): StockMovement[] {
-    const start = (this.historyPage - 1) * this.historyPageSize;
-    return this.itemHistory.slice(start, start + this.historyPageSize);
+  openDetail(item: InventoryItem): void {
+    this.modals?.openDetailModal(item);
   }
 
-  get historyTotalPages(): number {
-    return Math.max(1, Math.ceil(this.itemHistory.length / this.historyPageSize));
+  openMovement(evt: { item: InventoryItem; preset?: MovementPreset }): void {
+    this.modals?.openMovementModal(evt.item, evt.preset);
   }
 
-  changeHistoryPage(page: number): void {
-    if (page < 1 || page > this.historyTotalPages) return;
-    this.historyPage = page;
+  openQuickRestock(evt: { item: InventoryItem; quantity: number }): void {
+    this.modals?.openMovementModal(evt.item, {
+      type: 'IN',
+      quantity: evt.quantity,
+      reference: 'RESTOCK',
+      reason: 'Replenishment from Reorder Planner'
+    });
   }
 
-  onHistoryPageSizeChange(): void {
-    this.historyPage = 1;
+  openHistory(item: InventoryItem): void {
+    this.modals?.openHistoryModal(item);
   }
 
-  movementDelta(m: StockMovement): string {
-    const delta = m.quantity_after - m.quantity_before;
-    const sign = delta > 0 ? '+' : '';
-    return `${sign}${delta}`;
+  deleteItem(item: InventoryItem): void {
+    this.modals?.deleteItem(item);
   }
 
-  movementUserName(m: StockMovement): string {
-    const first = m.user?.first_name || '';
-    const last = m.user?.last_name || '';
-    const fullName = `${first} ${last}`.trim();
-    return fullName || 'System';
-  }
-
-  getStockColor(i: InventoryItem): string {
-    if (i.quantity === 0) return '#EF4444';
-    if (i.quantity <= i.reorder_point) return '#F59E0B';
-    return '#10B981';
-  }
-  getStockStatus(i: InventoryItem): string {
-    if (i.quantity === 0) return 'Out of Stock';
-    if (i.quantity <= i.reorder_point) return 'Low Stock';
-    return 'In Stock';
-  }
-  getStockBadgeBg(i: InventoryItem): string {
-    if (i.quantity === 0) return '#FEE2E2';
-    if (i.quantity <= i.reorder_point) return '#FEF3C7';
-    return '#DCFCE7';
-  }
-
-  showTableField(fieldKey: string): boolean {
-    return this.uiCustomization.isVisible(this.uiPrefs, 'table', fieldKey, true);
-  }
-
-  showFormField(fieldKey: string): boolean {
-    return this.uiCustomization.isVisible(this.uiPrefs, 'form', fieldKey, true);
-  }
-
-  fieldLabel(scope: 'table' | 'form', fieldKey: string, fallback: string): string {
-    return this.uiCustomization.getLabel(this.uiPrefs, scope, fieldKey, fallback);
+  onMutated(): void {
+    this.refreshTick += 1;
+    this.loadSummary();
+    this.loadReferenceData();
+    this.cdr.markForCheck();
   }
 }
-
-

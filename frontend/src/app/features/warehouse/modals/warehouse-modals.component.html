@@ -1,0 +1,531 @@
+<!-- ==========================================================================
+     CREATE / EDIT ITEM MODAL
+     ========================================================================== -->
+<div class="modal-overlay" *ngIf="showItemModal" (click)="closeItemModal($event)">
+  <div class="modal wh-modal-wide" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h3>{{editingItem ? 'Edit Item' : 'Add New Item'}}</h3>
+      <button type="button" class="btn btn-ghost btn-icon-only" (click)="showItemModal = false">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="wh-inline-error" *ngIf="itemError">
+        <span class="mat-i">error_outline</span>
+        <span>{{itemError}}</span>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group" *ngIf="showFormField('category_id')">
+          <label class="form-label">{{fieldLabel('form','category_id','Category')}} *</label>
+          <app-dropdown class="form-control" [(ngModel)]="itemForm.category_id" placeholder="— Select category —">
+            <app-dropdown-option [ngValue]="null">— Select category —</app-dropdown-option>
+            <app-dropdown-option *ngFor="let c of categories" [ngValue]="c.id">{{c.name}}</app-dropdown-option>
+          </app-dropdown>
+        </div>
+
+        <div class="form-group" *ngIf="showFormField('location_id')">
+          <label class="form-label">{{fieldLabel('form','location_id','Location')}}</label>
+          <app-dropdown class="form-control" [(ngModel)]="itemForm.location_id" placeholder="— Unassigned —">
+            <app-dropdown-option [ngValue]="null">— Unassigned —</app-dropdown-option>
+            <app-dropdown-option *ngFor="let loc of locations" [ngValue]="loc.id">{{loc.code}} — {{loc.name}}</app-dropdown-option>
+          </app-dropdown>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group" *ngIf="showFormField('sku')">
+          <label class="form-label">{{fieldLabel('form','sku','SKU')}} *</label>
+          <div class="wh-input-with-btn">
+            <input class="form-control" [(ngModel)]="itemForm.sku" placeholder="e.g. BOLT-M8-50" [disabled]="!!editingItem">
+            <button *ngIf="!editingItem" type="button" class="btn btn-secondary btn-sm" (click)="autoFillSku()" title="Generate SKU">
+              Auto
+            </button>
+          </div>
+        </div>
+
+        <div class="form-group" *ngIf="showFormField('part_number')">
+          <label class="form-label">{{fieldLabel('form','part_number','Part Number')}}</label>
+          <input class="form-control" [(ngModel)]="itemForm.part_number" placeholder="e.g. PN-445-REV2">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group" *ngIf="showFormField('name')">
+          <label class="form-label">{{fieldLabel('form','name','Item Name')}} *</label>
+          <input class="form-control" [(ngModel)]="itemForm.name" placeholder="e.g. Hex Bolt M8×50">
+        </div>
+
+        <div class="form-group" *ngIf="showFormField('unit')">
+          <label class="form-label">{{fieldLabel('form','unit','Unit')}}</label>
+          <input class="form-control" [(ngModel)]="itemForm.unit" placeholder="pcs">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group" *ngIf="showFormField('quantity')">
+          <label class="form-label">
+            {{fieldLabel('form','quantity','Quantity')}}
+            <span *ngIf="editingItem" class="wh-field-hint">(use Stock Movement)</span>
+          </label>
+          <input type="number" class="form-control" [(ngModel)]="itemForm.quantity" min="0" [disabled]="!!editingItem">
+        </div>
+
+        <div class="form-group" *ngIf="showFormField('unit_cost')">
+          <label class="form-label">
+            {{fieldLabel('form','unit_cost','Unit Cost ($)')}}
+            <span class="wh-field-hint">· Value: {{itemPreviewValue}}</span>
+          </label>
+          <input type="number" class="form-control" [(ngModel)]="itemForm.unit_cost" min="0" step="0.01" placeholder="0.00">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group" *ngIf="showFormField('min_stock')">
+          <label class="form-label">{{fieldLabel('form','min_stock','Min Stock')}}</label>
+          <input type="number" class="form-control" [(ngModel)]="itemForm.min_stock" min="0">
+        </div>
+
+        <div class="form-group" *ngIf="showFormField('reorder_point')">
+          <label class="form-label">{{fieldLabel('form','reorder_point','Reorder Point')}}</label>
+          <input type="number" class="form-control" [(ngModel)]="itemForm.reorder_point" min="0">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group" *ngIf="showFormField('max_stock')">
+          <label class="form-label">{{fieldLabel('form','max_stock','Max Stock')}}</label>
+          <input type="number" class="form-control" [(ngModel)]="itemForm.max_stock" min="0" placeholder="Optional ceiling">
+          <div class="wh-field-warn" *ngIf="itemThresholdWarning">{{itemThresholdWarning}}</div>
+        </div>
+
+        <div class="form-group" *ngIf="showFormField('supplier')">
+          <label class="form-label">{{fieldLabel('form','supplier','Supplier')}}</label>
+          <input class="form-control" [(ngModel)]="itemForm.supplier" placeholder="e.g. Acme Corp">
+        </div>
+      </div>
+
+      <div class="form-group" *ngIf="showFormField('description')">
+        <label class="form-label">{{fieldLabel('form','description','Description')}}</label>
+        <textarea class="form-control wh-textarea-sm" [(ngModel)]="itemForm.description" placeholder="Optional technical specifications or bin notes…"></textarea>
+      </div>
+    </div>
+
+    <div class="modal-footer wh-footer-split">
+      <button *ngIf="editingItem" type="button" class="btn btn-danger btn-sm" (click)="deleteItem(editingItem!)">
+        <span class="btn-icon">delete</span> Archive
+      </button>
+      <span *ngIf="!editingItem"></span>
+      <div class="wh-head-actions">
+        <button type="button" class="btn btn-ghost" (click)="showItemModal = false">Cancel</button>
+        <button type="button" class="btn btn-primary" (click)="saveItem()" [disabled]="saving">
+          {{saving ? 'Saving…' : (editingItem ? 'Save Changes' : 'Create Item')}}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==========================================================================
+     STOCK MOVEMENT MODAL
+     ========================================================================== -->
+<div class="modal-overlay" *ngIf="showMovementModal && movementItem" (click)="closeMovementModal($event)">
+  <div class="modal wh-modal-md" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <div>
+        <h3>Stock Movement</h3>
+        <div class="wh-modal-sub">
+          <span class="font-bold">{{movementItem.sku}}</span>
+          <span>· {{movementItem.name}}</span>
+          <span class="wh-location-pill" *ngIf="movementItem.location">
+            <span class="wh-loc-code">{{movementItem.location.code}}</span>
+            <span>{{movementItem.location.name}}</span>
+          </span>
+        </div>
+      </div>
+      <button type="button" class="btn btn-ghost btn-icon-only" (click)="showMovementModal = false">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="wh-inline-error" *ngIf="movementError">
+        <span class="mat-i">error_outline</span>
+        <span>{{movementError}}</span>
+      </div>
+
+      <div class="wh-movement-types">
+        <button *ngFor="let t of movementTypes"
+                type="button"
+                class="wh-mtype-btn"
+                [class.active]="movementForm.type === t.value"
+                [style.--mt-color]="t.color"
+                [style.--mt-bg]="t.bg"
+                (click)="selectMovementType(t.value)">
+          <span class="mat-i">{{t.icon}}</span>
+          <span>{{t.label}}</span>
+        </button>
+      </div>
+
+      <div class="wh-transfer-switch" *ngIf="movementForm.type === 'TRANSFER'">
+        <button type="button"
+                class="wh-chip"
+                [class.active]="transferMode === 'relocate'"
+                [disabled]="availableTransferLocations.length === 0"
+                (click)="setTransferMode('relocate')">
+          <span class="mat-i">location_on</span> Relocate Bin
+        </button>
+        <button type="button"
+                class="wh-chip"
+                [class.active]="transferMode === 'external'"
+                (click)="setTransferMode('external')">
+          <span class="mat-i">local_shipping</span> Transfer Out
+        </button>
+      </div>
+
+      <div *ngIf="isInternalRelocation" class="form-row">
+        <div class="form-group">
+          <label class="form-label">Destination Warehouse Location *</label>
+          <app-dropdown class="form-control" [(ngModel)]="movementForm.to_location_id" placeholder="— Choose location —">
+            <app-dropdown-option [ngValue]="null">— Choose location —</app-dropdown-option>
+            <app-dropdown-option *ngFor="let loc of availableTransferLocations" [ngValue]="loc.id">
+              {{loc.code}} — {{loc.name}}
+            </app-dropdown-option>
+          </app-dropdown>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Reference</label>
+          <input class="form-control" [(ngModel)]="movementForm.reference" placeholder="e.g. MOVE-104">
+        </div>
+      </div>
+
+      <ng-container *ngIf="!isInternalRelocation">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">
+              {{movementForm.type === 'ADJUSTMENT' ? 'New Stock Count *' : 'Quantity *'}}
+            </label>
+            <input type="number"
+                   class="form-control"
+                   [(ngModel)]="movementForm.quantity"
+                   [min]="movementForm.type === 'ADJUSTMENT' ? 0 : 1">
+            <div class="wh-quick-presets" *ngIf="movementPresets.length > 0">
+              <button *ngFor="let p of movementPresets"
+                      type="button"
+                      class="wh-preset-btn"
+                      (click)="applyMovementPreset(p.value)">
+                {{p.label}}
+              </button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Reference / PO</label>
+            <input class="form-control" [(ngModel)]="movementForm.reference" placeholder="e.g. PO-1234">
+          </div>
+        </div>
+
+        <div class="form-group" *ngIf="movementForm.type === 'TRANSFER' && transferMode === 'external'">
+          <label class="form-label">External Destination</label>
+          <input class="form-control" [(ngModel)]="movementForm.destination" placeholder="e.g. Field Unit Bravo / Lab 3">
+        </div>
+      </ng-container>
+
+      <div class="form-group">
+        <label class="form-label">Reason / Note</label>
+        <textarea class="form-control wh-textarea-sm" [(ngModel)]="movementForm.reason" placeholder="Audit note for ledger…"></textarea>
+      </div>
+
+      <div class="wh-preview-box">
+        <div class="wh-preview-row">
+          <span class="text-muted">Current {{isInternalRelocation ? 'location' : 'stock'}}</span>
+          <strong *ngIf="!isInternalRelocation" class="wh-num">{{movementItem.quantity}} {{movementItem.unit}}</strong>
+          <strong *ngIf="isInternalRelocation">
+            {{movementItem.location ? (movementItem.location.code + ' — ' + movementItem.location.name) : 'Unassigned'}}
+          </strong>
+        </div>
+
+        <div class="wh-preview-row">
+          <span class="text-muted">{{isInternalRelocation ? 'New location' : 'Projected stock'}}</span>
+          <div *ngIf="!isInternalRelocation" class="wh-head-actions">
+            <span class="wh-num font-bold" [style.color]="getProjectedQty() < 0 ? '#DC2626' : stockColor(getProjectedStatusItem())">
+              {{getProjectedQty()}} {{movementItem.unit}}
+            </span>
+            <span class="badge"
+                  *ngIf="getProjectedQty() >= 0"
+                  [style.background]="stockBadgeBg(getProjectedStatusItem())"
+                  [style.color]="stockColor(getProjectedStatusItem())">
+              {{stockStatus(getProjectedStatusItem())}}
+            </span>
+          </div>
+          <strong *ngIf="isInternalRelocation" class="text-primary">
+            {{selectedDestinationLocationName}} ({{movementItem.quantity}} {{movementItem.unit}})
+          </strong>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button type="button" class="btn btn-ghost" (click)="showMovementModal = false">Cancel</button>
+      <button type="button" class="btn btn-primary" (click)="submitMovement()" [disabled]="saving">
+        {{saving ? 'Processing…' : (isInternalRelocation ? 'Confirm Relocation' : 'Submit Movement')}}
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ==========================================================================
+     ITEM DETAIL MODAL
+     ========================================================================== -->
+<div class="modal-overlay" *ngIf="detailItem" (click)="closeDetailModal($event)">
+  <div class="modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="wh-detail-title" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <div class="detail-header-title">
+        <div class="detail-head-meta">
+          <span class="detail-id-pill">#{{detailItem.id}}</span>
+          <span class="detail-type-chip" *ngIf="detailItem.category">
+            <span class="detail-type-dot" [style.background]="detailItem.category.color || '#1565C0'"></span>
+            {{detailItem.category.name}}
+          </span>
+          <span class="wh-location-pill">
+            <span class="mat-i" style="font-size:14px">location_on</span>
+            <ng-container *ngIf="detailItem.location; else unassignedLocDetail">
+              <span class="wh-loc-code">{{detailItem.location.code}}</span>
+              <span>{{detailItem.location.name}}</span>
+            </ng-container>
+            <ng-template #unassignedLocDetail><span>Unassigned</span></ng-template>
+          </span>
+        </div>
+        <h2 id="wh-detail-title">{{detailItem.name}}</h2>
+      </div>
+
+      <div class="wh-head-actions">
+        <button type="button" class="btn btn-secondary btn-sm" (click)="printLabel()" title="Print Bin Label">
+          <span class="btn-icon">print</span> Label
+        </button>
+        <button type="button" class="btn btn-ghost btn-icon-only" (click)="detailItem = null" title="Close">
+          <span class="btn-icon">close</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="modal-body">
+      <div class="detail-stock-banner">
+        <div class="detail-stock-banner-main">
+          <span class="detail-label">Current Stock</span>
+          <div class="wh-qty-inline">
+            <span class="detail-stock-banner-qty wh-num" [style.color]="stockColor(detailItem)">
+              {{detailItem.quantity}} {{detailItem.unit}}
+            </span>
+            <div class="progress-bar wh-progress" style="width:110px">
+              <div class="progress-fill"
+                   [style.width.%]="stockProgress(detailItem)"
+                   [style.background]="stockColor(detailItem)">
+              </div>
+            </div>
+          </div>
+        </div>
+        <span class="badge"
+              [style.background]="stockBadgeBg(detailItem)"
+              [style.color]="stockColor(detailItem)">
+          {{stockStatus(detailItem)}}
+        </span>
+      </div>
+
+      <div class="detail-grid">
+        <div class="detail-field">
+          <div class="wh-preview-row">
+            <span class="detail-label">SKU</span>
+            <button type="button" class="wh-copy-btn" (click)="copyText('SKU', detailItem.sku)">
+              <span class="mat-i">{{copiedKey === 'SKU' ? 'check' : 'content_copy'}}</span>
+              {{copiedKey === 'SKU' ? 'Copied' : 'Copy'}}
+            </button>
+          </div>
+          <span class="detail-value wh-num">{{detailItem.sku || '—'}}</span>
+        </div>
+
+        <div class="detail-field">
+          <div class="wh-preview-row">
+            <span class="detail-label">Part Number</span>
+            <button *ngIf="detailItem.part_number" type="button" class="wh-copy-btn" (click)="copyText('Part No', detailItem.part_number)">
+              <span class="mat-i">{{copiedKey === 'Part No' ? 'check' : 'content_copy'}}</span>
+              {{copiedKey === 'Part No' ? 'Copied' : 'Copy'}}
+            </button>
+          </div>
+          <span class="detail-value wh-num">{{detailItem.part_number || '—'}}</span>
+        </div>
+
+        <div class="detail-field">
+          <span class="detail-label">Supplier</span>
+          <span class="detail-value">{{detailItem.supplier || '—'}}</span>
+        </div>
+
+        <div class="detail-field">
+          <span class="detail-label">Thresholds (Min / Reorder / Max)</span>
+          <span class="detail-value wh-num">
+            {{detailItem.min_stock}} / {{detailItem.reorder_point}} / {{detailItem.max_stock != null ? detailItem.max_stock : '—'}}
+          </span>
+        </div>
+
+        <div class="detail-field">
+          <span class="detail-label">Unit Cost</span>
+          <span class="detail-value wh-num">{{money(detailItem.unit_cost)}}</span>
+        </div>
+
+        <div class="detail-field">
+          <span class="detail-label">Total Valuation</span>
+          <span class="detail-value wh-num">{{totalValue(detailItem)}}</span>
+        </div>
+      </div>
+
+      <div class="detail-section">
+        <span class="detail-section-title">Description</span>
+        <div class="detail-text-box" [style.color]="detailItem.description ? 'var(--text)' : 'var(--text-muted)'">
+          {{detailItem.description || 'No description provided.'}}
+        </div>
+      </div>
+
+      <div class="detail-section mt-4">
+        <div class="wh-preview-row">
+          <span class="detail-section-title">Recent Stock Activity</span>
+          <button type="button" class="wh-copy-btn" (click)="historyFromDetail()">
+            <span class="mat-i">history</span> Full History
+          </button>
+        </div>
+
+        <div *ngIf="recentLoading" class="text-sm text-muted">Loading recent movements…</div>
+        <div *ngIf="!recentLoading && !recentMovements.length" class="text-sm text-muted">No stock movements recorded yet.</div>
+
+        <div class="wh-recent-list" *ngIf="!recentLoading && recentMovements.length > 0">
+          <div class="wh-recent-row" *ngFor="let m of recentMovements">
+            <div class="wh-head-actions">
+              <span class="badge"
+                    [style.background]="movementMeta(m.type).bg"
+                    [style.color]="movementMeta(m.type).color">
+                {{movementMeta(m.type).label}}
+              </span>
+              <span class="wh-num font-bold" [style.color]="(m.quantity_after - m.quantity_before) < 0 ? '#DC2626' : '#16A34A'">
+                {{movementDelta(m)}}
+              </span>
+              <span class="text-muted wh-num">{{m.quantity_before}} &rarr; {{m.quantity_after}}</span>
+            </div>
+            <div class="text-muted">
+              {{movementUser(m)}} · {{m.movement_date | date:'short'}}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-footer detail-footer">
+      <button type="button" class="btn btn-ghost detail-delete-btn" (click)="deleteFromDetail()">
+        <span class="btn-icon">delete</span> Archive
+      </button>
+      <div class="detail-footer-actions">
+        <button type="button" class="btn btn-secondary" (click)="detailItem = null">Close</button>
+        <button type="button" class="btn btn-secondary" (click)="movementFromDetail()">
+          <span class="btn-icon text-primary">swap_horiz</span> Movement
+        </button>
+        <button type="button" class="btn btn-primary" (click)="editFromDetail()">
+          <span class="btn-icon">edit</span> Edit
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==========================================================================
+     ITEM HISTORY MODAL
+     ========================================================================== -->
+<div class="modal-overlay" *ngIf="showHistoryModal && historyItem" (click)="closeHistoryModal($event)">
+  <div class="modal wh-modal-xl" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <div>
+        <h3>Item History — {{historyItem.name}}</h3>
+        <div class="wh-modal-sub">
+          <span class="font-bold">{{historyItem.sku}}</span>
+          <span *ngIf="historyItem.part_number">· PN {{historyItem.part_number}}</span>
+          <span>· Stock: <strong class="wh-num">{{historyItem.quantity}} {{historyItem.unit}}</strong></span>
+        </div>
+      </div>
+      <button type="button" class="btn btn-ghost btn-icon-only" (click)="showHistoryModal = false">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div *ngIf="historyLoading" class="text-sm text-muted">Loading movement history…</div>
+
+      <div class="table-container wh-table-wrap" *ngIf="!historyLoading">
+        <table class="data-table wh-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Type</th>
+              <th>Change</th>
+              <th>Reference / Details</th>
+              <th>User</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let m of pagedItemHistory">
+              <td class="text-sm wh-num" style="white-space:nowrap">{{m.movement_date | date:'short'}}</td>
+              <td>
+                <span class="badge"
+                      [style.background]="movementMeta(m.type).bg"
+                      [style.color]="movementMeta(m.type).color">
+                  {{movementMeta(m.type).label}}
+                </span>
+              </td>
+              <td class="wh-num" style="white-space:nowrap">
+                <span class="font-bold">{{m.quantity_before}} &rarr; {{m.quantity_after}}</span>
+                <span style="margin-left:4px;font-weight:700"
+                      [style.color]="(m.quantity_after - m.quantity_before) < 0 ? '#DC2626' : '#16A34A'">
+                  ({{movementDelta(m)}})
+                </span>
+              </td>
+              <td style="max-width:260px">
+                <div class="font-bold text-sm" *ngIf="m.reference">Ref: {{m.reference}}</div>
+                <div class="wh-subtext truncate" [title]="m.reason || m.destination || '—'">
+                  {{m.reason || m.destination || '—'}}
+                </div>
+              </td>
+              <td class="text-sm">{{movementUser(m)}}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="empty-state" *ngIf="itemHistory.length === 0">
+          <span class="empty-icon">history</span>
+          <h3>No movement history</h3>
+        </div>
+
+        <div class="wh-pagination-bar" *ngIf="itemHistory.length > 0">
+          <div class="table-page-size-control">
+            <span class="text-sm text-muted wh-num">Page {{historyPage}} of {{historyTotalPages}}</span>
+            <app-dropdown class="form-control table-page-size-select"
+                          [(ngModel)]="historyPageSize"
+                          (change)="onHistoryPageSizeChange()"
+                          ariaLabel="History rows per page">
+              <app-dropdown-option *ngFor="let size of historyPageSizeOptions" [ngValue]="size">{{size}}</app-dropdown-option>
+            </app-dropdown>
+          </div>
+          <div class="flex gap-2">
+            <button type="button" class="btn btn-secondary btn-sm" [disabled]="historyPage <= 1" (click)="changeHistoryPage(historyPage - 1)">
+              <span class="btn-icon">chevron_left</span>
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" [disabled]="historyPage >= historyTotalPages" (click)="changeHistoryPage(historyPage + 1)">
+              <span class="btn-icon">chevron_right</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button type="button" class="btn btn-ghost" (click)="showHistoryModal = false">Close</button>
+    </div>
+  </div>
+</div>

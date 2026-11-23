@@ -171,9 +171,20 @@ export interface CalendarIndicators {
 }
 
 // ── Inventory ─────────────────────────────────────────────────────────────────
+export type WarehouseStockStatus = 'out' | 'low' | 'healthy' | 'overstock';
+
+export interface WarehouseLocation {
+  id: number;
+  name: string;
+  code: string;
+  description?: string | null;
+  is_active?: boolean;
+}
+
 export interface InventoryItem {
   id: number;
   category_id: number;
+  location_id?: number | null;
   sku: string;
   part_number?: string;
   name: string;
@@ -181,16 +192,63 @@ export interface InventoryItem {
   unit: string;
   quantity: number;
   min_stock: number;
-  max_stock?: number;
+  max_stock?: number | null;
   reorder_point: number;
-  unit_cost?: number;
+  unit_cost?: number | null;
   supplier?: string;
   is_active: boolean;
   is_low_stock?: boolean;
-  category?: { id: number; name: string };
+  updated_at?: string;
+  category?: { id: number; name: string; color?: string };
+  location?: WarehouseLocation | null;
+}
+
+export interface WarehouseBreakdownEntry {
+  id: number | null;
+  code?: string | null;
+  name: string;
+  color?: string;
+  items_count: number;
+  units: number;
+  total_value: number;
+}
+
+export interface WarehouseSummary {
+  total_skus: number;
+  total_units: number;
+  healthy_count: number;
+  low_count: number;
+  out_of_stock_count: number;
+  overstock_count: number;
+  total_value: number;
+  estimated_restock_cost: number;
+  movements_7d: number;
+  category_breakdown: WarehouseBreakdownEntry[];
+  location_breakdown: WarehouseBreakdownEntry[];
+}
+
+export interface WarehouseReorderMetrics {
+  threshold: number;
+  target_qty: number;
+  deficit: number;
+  estimated_cost: number | null;
+  urgency: 'CRITICAL' | 'HIGH' | 'MEDIUM';
+}
+
+export interface WarehouseReorderItem extends InventoryItem {
+  reorder_metrics: WarehouseReorderMetrics;
 }
 
 export type MovementType = 'IN' | 'OUT' | 'TRANSFER' | 'ADJUSTMENT' | 'RETURN';
+
+export interface WarehouseMovementTypeCounts {
+  ALL: number;
+  IN: number;
+  OUT: number;
+  TRANSFER: number;
+  ADJUSTMENT: number;
+  RETURN: number;
+}
 
 export interface StockMovement {
   id: number;
@@ -201,6 +259,7 @@ export interface StockMovement {
   quantity_after: number;
   reference?: string;
   reason?: string;
+  destination?: string | null;
   movement_date: string;
   user?: Partial<User>;
   item?: Partial<InventoryItem>;

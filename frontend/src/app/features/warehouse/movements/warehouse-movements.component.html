@@ -1,0 +1,113 @@
+<div class="wh-toolbar-card">
+  <div class="wh-filter-row">
+    <div class="wh-search-wrap">
+      <div class="search-bar">
+        <span class="search-icon">search</span>
+        <input [ngModel]="search"
+               (ngModelChange)="onSearchModelChange($event)"
+               placeholder="Search SKU, item, PO / reference, reason…">
+        <button *ngIf="search"
+                type="button"
+                class="wh-search-clear"
+                (click)="clearSearch()"
+                title="Clear search">
+          <span class="mat-i" style="font-size:16px">close</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="wh-chip-group">
+      <button type="button" class="wh-chip" [class.active]="typeFilter === 'ALL'" (click)="setTypeFilter('ALL')">
+        <span>All</span>
+        <span class="wh-chip-count">{{getTypeCount('ALL')}}</span>
+      </button>
+
+      <button *ngFor="let t of movementTypes"
+              type="button"
+              class="wh-chip"
+              [class.active]="typeFilter === t.value"
+              (click)="setTypeFilter(t.value)">
+        <span class="wh-dot" [style.background]="t.color"></span>
+        <span>{{t.label}}</span>
+        <span class="wh-chip-count">{{getTypeCount(t.value)}}</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Consolidated Movements Table (6 Clean Columns) ──────────────────── -->
+<div class="table-container wh-table-wrap">
+  <table class="data-table wh-table">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Item</th>
+        <th>Type</th>
+        <th>Stock Change</th>
+        <th>Details</th>
+        <th>Operator</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr *ngFor="let m of movements">
+        <td class="text-sm wh-num" style="white-space:nowrap">{{m.movement_date | date:'MMM d, y, HH:mm'}}</td>
+        <td>
+          <div class="wh-item-name">{{m.item?.name || ('Item #' + m.item_id)}}</div>
+          <div class="wh-subtext" *ngIf="m.item?.sku">{{m.item?.sku}}</div>
+        </td>
+        <td>
+          <span class="badge"
+                [style.background]="movementMeta(m.type).bg"
+                [style.color]="movementMeta(m.type).color">
+            {{movementMeta(m.type).label}}
+          </span>
+        </td>
+        <td class="wh-num" style="white-space:nowrap">
+          <span class="font-bold">{{m.quantity_before}} &rarr; {{m.quantity_after}}</span>
+          <span class="wh-delta-inline"
+                [style.color]="(m.quantity_after - m.quantity_before) < 0 ? '#DC2626' : (m.quantity_after - m.quantity_before) > 0 ? '#16A34A' : 'var(--text-muted)'">
+            ({{movementDelta(m)}})
+          </span>
+          <div class="wh-subtext" *ngIf="m.item?.unit">{{m.item?.unit}}</div>
+        </td>
+        <td style="max-width:260px">
+          <div class="font-bold text-sm" *ngIf="m.reference">Ref: {{m.reference}}</div>
+          <div class="wh-subtext truncate" [title]="m.reason || m.destination || '—'">
+            {{m.reason || m.destination || '—'}}
+          </div>
+        </td>
+        <td class="text-sm">{{movementUser(m)}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="empty-state" *ngIf="!movements.length && !loading">
+    <span class="empty-icon">receipt_long</span>
+    <h3>No stock movements recorded</h3>
+    <p>Movements logged across inventory items or matching your filters appear here.</p>
+  </div>
+
+  <div class="wh-pagination-bar" *ngIf="total > 0">
+    <div class="table-page-size-control">
+      <span class="text-sm text-muted wh-num">
+        Showing {{(page - 1) * pageSize + 1}}–{{Math.min(page * pageSize, total)}} of {{total}}
+      </span>
+      <app-dropdown class="form-control table-page-size-select"
+                    [(ngModel)]="pageSize"
+                    (change)="onPageSizeChange()"
+                    ariaLabel="Movements rows per page">
+        <app-dropdown-option *ngFor="let size of pageSizeOptions" [ngValue]="size">{{size}}</app-dropdown-option>
+      </app-dropdown>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <button type="button" class="btn btn-secondary btn-sm" [disabled]="page <= 1" (click)="changePage(page - 1)">
+        <span class="btn-icon">chevron_left</span>
+      </button>
+      <span class="wh-page-indicator">{{page}} / {{totalPages}}</span>
+      <button type="button" class="btn btn-secondary btn-sm" [disabled]="page >= totalPages" (click)="changePage(page + 1)">
+        <span class="btn-icon">chevron_right</span>
+      </button>
+    </div>
+  </div>
+</div>

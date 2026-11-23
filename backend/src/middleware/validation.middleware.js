@@ -99,6 +99,10 @@ const validateInventoryItem = [
   body('category_id')
     .isInt({ min: 1 })
     .withMessage('Valid category_id required'),
+  body('location_id')
+    .optional({ nullable: true, checkFalsy: true })
+    .isInt({ min: 1 })
+    .withMessage('location_id must be positive integer'),
   body('sku')
     .trim()
     .isLength({ min: 1, max: 80 })
@@ -106,25 +110,38 @@ const validateInventoryItem = [
   body('part_number')
     .trim()
     .isLength({ max: 120 })
-    .optional({ checkFalsy: true })
+    .optional({ nullable: true, checkFalsy: true })
     .withMessage('Part number max 120 chars'),
   body('name')
     .trim()
     .isLength({ min: 1, max: 200 })
     .withMessage('Name required (max 200 chars)'),
-  body('description').trim().isLength({ max: 1000 }).optional(),
-  body('unit').trim().isLength({ min: 1, max: 30 }).optional({ checkFalsy: true }),
+  body('description').trim().isLength({ max: 1000 }).optional({ nullable: true }),
+  body('unit').trim().isLength({ min: 1, max: 30 }).optional({ nullable: true, checkFalsy: true }),
   body('quantity')
     .isInt({ min: 0 })
     .withMessage('Quantity must be non-negative integer'),
   body('min_stock')
     .isInt({ min: 0 })
-    .optional({ checkFalsy: true })
+    .optional({ nullable: true, checkFalsy: true })
     .withMessage('Min stock must be non-negative integer'),
+  body('reorder_point')
+    .isInt({ min: 0 })
+    .optional({ nullable: true, checkFalsy: true })
+    .withMessage('Reorder point must be non-negative integer'),
+  body('max_stock')
+    .isInt({ min: 0 })
+    .optional({ nullable: true, checkFalsy: true })
+    .withMessage('Max stock must be non-negative integer'),
   body('unit_cost')
-    .isDecimal({ decimal_digits: '1,2' })
-    .optional({ checkFalsy: true })
-    .withMessage('Unit cost format invalid'),
+    .isFloat({ min: 0 })
+    .optional({ nullable: true, checkFalsy: true })
+    .withMessage('Unit cost must be a non-negative number'),
+  body('supplier')
+    .trim()
+    .isLength({ max: 200 })
+    .optional({ nullable: true, checkFalsy: true })
+    .withMessage('Supplier max 200 chars'),
   handleValidationErrors
 ];
 
@@ -134,10 +151,27 @@ const validateStockMovement = [
     .isIn(['IN', 'OUT', 'TRANSFER', 'ADJUSTMENT', 'RETURN'])
     .withMessage('Invalid movement type'),
   body('quantity')
+    .custom((value, { req }) => {
+      const n = Number(value);
+      const isAdjustment = req.body?.type === 'ADJUSTMENT';
+      const isInternalRelocation = req.body?.type === 'TRANSFER' && req.body?.to_location_id !== null && req.body?.to_location_id !== undefined && req.body?.to_location_id !== '';
+      if (!Number.isInteger(n)) {
+        throw new Error('Quantity must be an integer');
+      }
+      if (isAdjustment || isInternalRelocation) {
+        if (n < 0) throw new Error('Quantity must be a non-negative integer');
+      } else if (n < 1) {
+        throw new Error('Quantity must be positive integer');
+      }
+      return true;
+    }),
+  body('to_location_id')
+    .optional({ nullable: true, checkFalsy: true })
     .isInt({ min: 1 })
-    .withMessage('Quantity must be positive integer'),
-  body('reason').trim().isLength({ max: 500 }).optional(),
-  body('reference').trim().isLength({ max: 100 }).optional(),
+    .withMessage('Destination location must be positive integer'),
+  body('destination').trim().isLength({ max: 200 }).optional({ nullable: true }),
+  body('reason').trim().isLength({ max: 500 }).optional({ nullable: true }),
+  body('reference').trim().isLength({ max: 100 }).optional({ nullable: true }),
   handleValidationErrors
 ];
 

@@ -1,0 +1,190 @@
+<!-- ── Reorder Planner Summary & Controls ──────────────────────────────── -->
+<div class="wh-toolbar-card">
+  <div class="wh-reorder-summary">
+    <div class="wh-reorder-stat">
+      <span class="wh-reorder-label">Items Below Threshold</span>
+      <strong class="wh-num">{{totals.items_count}}</strong>
+    </div>
+    <div class="wh-reorder-stat">
+      <span class="wh-reorder-label">Critical (Out of Stock)</span>
+      <strong class="wh-num" style="color:#DC2626">{{totals.critical_count}}</strong>
+    </div>
+    <div class="wh-reorder-stat">
+      <span class="wh-reorder-label">Total Deficit Units</span>
+      <strong class="wh-num">{{totals.total_deficit_units}}</strong>
+    </div>
+    <div class="wh-reorder-stat">
+      <span class="wh-reorder-label">Est. Replenishment Cost</span>
+      <strong class="wh-num text-primary">{{money(totals.total_estimated_cost)}}</strong>
+    </div>
+    <div class="wh-reorder-stat">
+      <span class="wh-reorder-label">Suppliers</span>
+      <strong class="wh-num">{{totals.suppliers_count}}</strong>
+    </div>
+  </div>
+
+  <div class="wh-filter-row" style="justify-content:space-between">
+    <div class="wh-search-wrap">
+      <div class="search-bar">
+        <span class="search-icon">search</span>
+        <input [(ngModel)]="search" placeholder="Filter queue by item, SKU, supplier, location…">
+        <button *ngIf="search" type="button" class="wh-search-clear" (click)="search = ''" title="Clear">
+          <span class="mat-i" style="font-size:16px">close</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="wh-chip-group">
+      <button type="button" class="wh-chip" [class.active]="viewMode === 'urgency'" (click)="viewMode = 'urgency'">
+        <span class="mat-i" style="font-size:15px">priority_high</span> Urgency Queue
+      </button>
+      <button type="button" class="wh-chip" [class.active]="viewMode === 'supplier'" (click)="viewMode = 'supplier'">
+        <span class="mat-i" style="font-size:15px">local_shipping</span> Group by Supplier
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Urgency Flat Table View (6 Clean Columns) ───────────────────────── -->
+<div class="table-container wh-table-wrap" *ngIf="viewMode === 'urgency'">
+  <table class="data-table wh-table">
+    <thead>
+      <tr>
+        <th>Urgency</th>
+        <th>Item</th>
+        <th>Stock</th>
+        <th>To Order</th>
+        <th class="wh-col-num">Est. Cost</th>
+        <th class="wh-col-actions" style="width:170px">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr *ngFor="let item of filteredItems" class="row-clickable" (click)="detailRequested.emit(item)">
+        <td>
+          <span class="badge"
+                [style.background]="urgencyBg(item.reorder_metrics.urgency)"
+                [style.color]="urgencyColor(item.reorder_metrics.urgency)">
+            {{item.reorder_metrics.urgency}}
+          </span>
+        </td>
+        <td>
+          <div class="wh-item-name">{{item.name}}</div>
+          <div class="wh-subtext">
+            {{item.sku}}
+            <ng-container *ngIf="item.location"> · {{item.location.code}} ({{item.location.name}})</ng-container>
+            <ng-container *ngIf="item.supplier"> · {{item.supplier}}</ng-container>
+          </div>
+        </td>
+        <td class="wh-num" style="white-space:nowrap">
+          <span class="font-bold" [style.color]="item.quantity <= 0 ? '#DC2626' : '#D97706'">{{item.quantity}}</span>
+          <span class="text-muted"> / {{item.reorder_metrics.target_qty}} {{item.unit}}</span>
+        </td>
+        <td class="wh-num font-bold text-primary" style="white-space:nowrap">
+          +{{item.reorder_metrics.deficit}} {{item.unit}}
+        </td>
+        <td class="wh-col-num wh-primary-val">{{money(item.reorder_metrics.estimated_cost)}}</td>
+        <td class="wh-col-actions" (click)="$event.stopPropagation()">
+          <div class="wh-row-actions">
+            <button type="button" class="btn btn-primary btn-sm" (click)="quickRestock(item)">
+              <span class="btn-icon">add_shopping_cart</span> Restock
+            </button>
+            <button type="button"
+                    class="btn btn-secondary btn-sm"
+                    [disabled]="creatingTaskIds.has(item.id)"
+                    (click)="createRestockTask(item)">
+              <span class="btn-icon">{{createdTaskIds.has(item.id) ? 'task_alt' : 'assignment_add'}}</span>
+              {{createdTaskIds.has(item.id) ? 'Created' : 'Task'}}
+            </button>
+          </div>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="empty-state" *ngIf="!filteredItems.length && !loading">
+    <span class="empty-icon">check_circle</span>
+    <h3>All inventory items are above reorder thresholds</h3>
+    <p>Items whose stock reaches their min stock or reorder point appear here automatically.</p>
+  </div>
+</div>
+
+<!-- ── Grouped by Supplier View (6 Clean Columns) ──────────────────────── -->
+<ng-container *ngIf="viewMode === 'supplier'">
+  <div class="wh-supplier-card" *ngFor="let group of supplierGroups">
+    <div class="wh-supplier-head">
+      <h4>
+        <span class="mat-i text-primary">local_shipping</span>
+        <span>{{group.supplier}}</span>
+        <span class="wh-tab-pill">{{group.items.length}} SKUs</span>
+      </h4>
+      <div class="wh-head-actions text-sm">
+        <span class="text-muted">Total Deficit:</span>
+        <strong class="wh-num">{{group.totalDeficit}} units</strong>
+        <span class="text-muted">· Est. Spend:</span>
+        <strong class="wh-num text-primary">{{money(group.totalEstimatedCost)}}</strong>
+      </div>
+    </div>
+
+    <div class="wh-table-wrap">
+      <table class="data-table wh-table">
+        <thead>
+          <tr>
+            <th>Urgency</th>
+            <th>Item</th>
+            <th>Stock</th>
+            <th>To Order</th>
+            <th class="wh-col-num">Est. Cost</th>
+            <th class="wh-col-actions" style="width:170px">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let item of group.items" class="row-clickable" (click)="detailRequested.emit(item)">
+            <td>
+              <span class="badge"
+                    [style.background]="urgencyBg(item.reorder_metrics.urgency)"
+                    [style.color]="urgencyColor(item.reorder_metrics.urgency)">
+                {{item.reorder_metrics.urgency}}
+              </span>
+            </td>
+            <td>
+              <div class="wh-item-name">{{item.name}}</div>
+              <div class="wh-subtext">
+                {{item.sku}}
+                <ng-container *ngIf="item.location"> · {{item.location.code}} ({{item.location.name}})</ng-container>
+              </div>
+            </td>
+            <td class="wh-num" style="white-space:nowrap">
+              <span class="font-bold">{{item.quantity}}</span>
+              <span class="text-muted"> / {{item.reorder_metrics.target_qty}} {{item.unit}}</span>
+            </td>
+            <td class="wh-num font-bold text-primary" style="white-space:nowrap">
+              +{{item.reorder_metrics.deficit}} {{item.unit}}
+            </td>
+            <td class="wh-col-num wh-primary-val">{{money(item.reorder_metrics.estimated_cost)}}</td>
+            <td class="wh-col-actions" (click)="$event.stopPropagation()">
+              <div class="wh-row-actions">
+                <button type="button" class="btn btn-primary btn-sm" (click)="quickRestock(item)">
+                  <span class="btn-icon">add_shopping_cart</span> Restock
+                </button>
+                <button type="button"
+                        class="btn btn-secondary btn-sm"
+                        [disabled]="creatingTaskIds.has(item.id)"
+                        (click)="createRestockTask(item)">
+                  <span class="btn-icon">{{createdTaskIds.has(item.id) ? 'task_alt' : 'assignment_add'}}</span>
+                  {{createdTaskIds.has(item.id) ? 'Created' : 'Task'}}
+                </button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="table-container" *ngIf="!supplierGroups.length && !loading">
+    <div class="empty-state">
+      <span class="empty-icon">check_circle</span>
+      <h3>All inventory items are above reorder thresholds</h3>
+    </div>
+  </div>
+</ng-container>

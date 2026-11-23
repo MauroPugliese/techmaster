@@ -1,0 +1,34 @@
+@import '../warehouse-shared';
+
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.wh-reorder-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.wh-reorder-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+
+  strong {
+    font-size: 1.15rem;
+    color: var(--blue-950);
+  }
+}
+
+.wh-reorder-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}

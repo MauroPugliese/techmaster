@@ -142,7 +142,15 @@ const PlannedMaintenanceTaskInstance = sequelize.define('PlannedMaintenanceTaskI
   indexes: [{ unique: true, name: 'uniq_pmti_task_date', fields: ['planned_task_id', 'occurrence_date'] }]
 });
 
-// ── Inventory Categories ─────────────────────────────────────────────────────
+// ── Warehouse Locations & Inventory Categories ──────────────────────────────
+const WarehouseLocation = sequelize.define('WarehouseLocation', {
+  id:          { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
+  name:        { type: DataTypes.STRING(100), allowNull: false },
+  code:        { type: DataTypes.STRING(20), allowNull: false, unique: true },
+  description: { type: DataTypes.TEXT },
+  is_active:   { type: DataTypes.BOOLEAN, defaultValue: true }
+}, { tableName: 'warehouse_locations', timestamps: false });
+
 const ItemCategory = sequelize.define('ItemCategory', {
   id:          { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
   name:        { type: DataTypes.STRING(100), allowNull: false, unique: true },
@@ -180,6 +188,7 @@ const StockMovement = sequelize.define('StockMovement', {
   quantity_after:  { type: DataTypes.INTEGER, allowNull: false },
   reference:       { type: DataTypes.STRING(100) },
   reason:          { type: DataTypes.TEXT },
+  destination:     { type: DataTypes.STRING(200) },
   movement_date:   { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
 }, { tableName: 'stock_movements', timestamps: false });
 
@@ -353,12 +362,14 @@ AuditLog.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 
 ItemCategory.hasMany(InventoryItem, { foreignKey: 'category_id', as: 'items' });
 InventoryItem.belongsTo(ItemCategory, { foreignKey: 'category_id', as: 'category' });
+WarehouseLocation.hasMany(InventoryItem, { foreignKey: 'location_id', as: 'items' });
+InventoryItem.belongsTo(WarehouseLocation, { foreignKey: 'location_id', as: 'location' });
 
 module.exports = {
   sequelize, User, Role, Operation, OperationType,
   Asset, AssetCategory, MaintenanceRecord,
   PlannedMaintenanceTask, PlannedMaintenanceTaskInstance,
-  ItemCategory, InventoryItem, StockMovement,
+  WarehouseLocation, ItemCategory, InventoryItem, StockMovement,
   Shift, ShiftType,
   Task, TaskComment,
   WikiArticle, WikiCategory,
