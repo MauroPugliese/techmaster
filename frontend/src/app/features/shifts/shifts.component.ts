@@ -1,393 +1,692 @@
 // =============================================================================
-// shifts.component.ts — updated: ToastService + ConfirmService (inline template)
+// shifts.component.ts — Weekly Roster Grid, List, KPIs & Modals Orchestrator
 // =============================================================================
-import { Component, OnInit, OnDestroy, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  ChangeDetectorRef,
+  Component,
+  HostListener,
+  OnDestroy,
+  OnInit,
+} from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
-import { ApiService }       from '../../core/services/api.service';
-import { DateFilterService } from '../../core/services/date-filter.service';
+
+import { ApiService } from '../../core/services/api.service';
+import { AuthService } from '../../core/services/auth.service';
 import { UiCustomizationService, UiSectionPreferences } from '../../core/services/ui-customization.service';
-import { ToastService }     from '../../core/services/toast.service';
-import { ConfirmService }   from '../../core/services/confirm.service';
-import { Shift, ShiftType } from '../../core/models/interfaces';
+import { ToastService } from '../../core/services/toast.service';
+import { ConfirmService } from '../../core/services/confirm.service';
+import {
+  Shift,
+  ShiftEmployee,
+  ShiftStatus,
+  ShiftType,
+} from '../../core/models/interfaces';
 import { DateTimePickerComponent } from '../../shared/components/datetime-picker/datetime-picker.component';
 import { formatLocalYmd } from '../../shared/components/datetime-picker/datetime-picker.utils';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
 import { DropdownComponent, DropdownOptionComponent } from '../../shared/components/dropdown/dropdown.component';
+import { ShiftDetailModalComponent } from './shift-detail-modal/shift-detail-modal.component';
+import { ShiftFormModalComponent, ShiftFormMode } from './shift-form-modal/shift-form-modal.component';
+import { ShiftTypesModalComponent } from './shift-types-modal/shift-types-modal.component';
+import {
+  addDays,
+  buildWeekDays,
+  computeDayCoverage,
+  computeEmployeeSummaries,
+  computeWeekKpis,
+  DayCoverageSummary,
+  EmployeeWeekSummary,
+  emptyShiftKpis,
+  formatHours,
+  formatTimeShort,
+  getLeaveMeta,
+  getMondayOfWeek,
+  getShiftEffectiveInfo,
+  getStatusMeta,
+  LeaveTypeMeta,
+  ShiftEffectiveInfo,
+  ShiftStatusMeta,
+  ShiftWeekKpis,
+} from './shift-helpers';
+
+export type ShiftViewMode = 'grid' | 'list';
 
 @Component({
   selector: 'app-shifts',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, DateTimePickerComponent, ExportMenuComponent, DropdownComponent, DropdownOptionComponent],
-  template: `
-<div class="shifts-page fade-in">
-
-  <!-- Header -->
-  <div class="flex items-center justify-between mb-6">
-    <div class="flex items-center gap-2">
-      <button class="btn btn-secondary btn-sm" (click)="prevWeek()">
-        <span class="btn-icon">chevron_left</span>
-      </button>
-      <button class="btn btn-secondary btn-sm" (click)="nextWeek()">
-        <span class="btn-icon">chevron_right</span>
-      </button>
-      <div style="width:1px;height:24px;background:var(--border);margin:0 8px"></div>
-      <h3 style="font-size:1rem;font-weight:700">
-        Week of {{weekStart | date:'MMM d'}} – {{weekEnd | date:'MMM d, y'}}
-      </h3>
-      <div style="width:1px;height:24px;background:var(--border);margin:0 8px"></div>
-      <button class="btn btn-ghost btn-sm" (click)="goToday()">Today</button>
-    </div>
-    <div class="flex gap-2">
-      <app-export-menu endpoint="shifts" filename="Shifts" [includeDateRange]="false"
-                       [params]="{ from: (weekStart | date:'yyyy-MM-dd'), to: (weekEnd | date:'yyyy-MM-dd') }"></app-export-menu>
-      <button class="btn btn-primary" (click)="openModal()">
-        <span class="btn-icon">add</span> Schedule Shift
-      </button>
-    </div>
-  </div>
-
-  <!-- Legend -->
-  <div class="flex gap-3 mb-6" style="flex-wrap:wrap">
-    <div *ngFor="let st of shiftTypes"
-         class="flex items-center gap-2"
-         style="background:var(--surface);border:1px solid var(--border);
-                border-radius:20px;padding:4px 12px 4px 8px">
-      <div style="width:10px;height:10px;border-radius:50%" [style.background]="st.color"></div>
-      <span style="font-size:0.8rem;font-weight:600">{{st.name}}</span>
-      <span style="font-size:0.75rem;color:#9CA3AF">
-        ({{st.start_time.slice(0,5)}} – {{st.end_time.slice(0,5)}})
-      </span>
-    </div>
-  </div>
-
-  <!-- Calendar -->
-  <div class="table-container" style="margin-top:8px">
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th style="width:160px" *ngIf="showTableField('employee')">{{fieldLabel('table','employee','Employee')}}</th>
-          <th *ngFor="let day of weekDays" style="text-align:center;min-width:110px" [style.display]="showTableField(dayFieldKey(day)) ? '' : 'none'">
-            <div [style.color]="isToday(day) ? 'var(--primary)' : ''"
-                 [style.font-weight]="isToday(day) ? '800' : '600'">
-              {{day | date:'EEE'}}
-            </div>
-            <div style="font-size:0.75rem;color:#9CA3AF">{{day | date:'MMM d'}}</div>
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr *ngFor="let emp of employees">
-          <td *ngIf="showTableField('employee')">
-            <div class="flex items-center gap-2">
-              <div style="width:30px;height:30px;border-radius:50%;background:var(--blue-200);
-                          display:flex;align-items:center;justify-content:center;
-                          font-size:0.7rem;font-weight:700;color:var(--primary)">
-                {{emp.first_name[0]}}{{emp.last_name[0]}}
-              </div>
-              <div>
-                <div style="font-weight:600;font-size:0.85rem">{{emp.first_name}} {{emp.last_name}}</div>
-                <div style="font-size:0.72rem;color:#9CA3AF">{{emp.department}}</div>
-              </div>
-            </div>
-          </td>
-          <td *ngFor="let day of weekDays" style="text-align:center;padding:8px 6px" [style.display]="showTableField(dayFieldKey(day)) ? '' : 'none'">
-            <ng-container *ngIf="getShift(emp.id, day) as shift; else emptyCell">
-              <div style="border-radius:6px;padding:4px 8px;font-size:0.72rem;font-weight:700;cursor:pointer"
-                   [style.background]="getShiftTypeColor(shift.shift_type_id) + '22'"
-                   [style.color]="getShiftTypeColor(shift.shift_type_id)"
-                   [style.border]="'1px solid ' + getShiftTypeColor(shift.shift_type_id) + '44'"
-                   (click)="editShift(shift)">
-                {{getShiftTypeName(shift.shift_type_id)}}
-                <div *ngIf="shift.status==='ABSENT'" style="font-weight:400;opacity:0.8;margin-top:1px">Absent</div>
-              </div>
-            </ng-container>
-            <ng-template #emptyCell>
-              <button (click)="openModal(emp.id, day)"
-                      style="width:100%;border:1.5px dashed var(--border);border-radius:6px;
-                             background:none;cursor:pointer;padding:6px;color:#D1D5DB;font-size:0.7rem">
-                +
-              </button>
-            </ng-template>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-    <div class="flex items-center justify-between mt-4" *ngIf="employeeTotal > 0">
-      <div class="flex items-center gap-3">
-        <div class="text-sm text-muted">Page {{employeePage}} of {{pageCount()}}</div>
-        <app-dropdown class="form-control select-compact ml-2" [(ngModel)]="employeeLimit" (change)="onEmployeeLimitChange()" ariaLabel="Employees per page">
-          <app-dropdown-option *ngFor="let size of employeeLimitOptions" [ngValue]="size">{{size}}</app-dropdown-option>
-        </app-dropdown>
-      </div>
-      <div class="flex gap-2">
-        <button class="btn btn-ghost btn-sm" type="button" (click)="prevPage()" [disabled]="employeePage === 1">Previous</button>
-        <button class="btn btn-ghost btn-sm" type="button" (click)="nextPage()" [disabled]="employeePage === pageCount()">Next</button>
-      </div>
-    </div>
-    <div class="empty-state" *ngIf="!employees.length && !loading">
-      <span class="empty-icon">group</span><h3>No employees found</h3>
-    </div>
-  </div>
-</div>
-
-<!-- Shift Modal -->
-<div class="modal-overlay" *ngIf="showModal" (click)="closeModal($event)">
-  <div class="modal" style="max-width:540px" (click)="$event.stopPropagation()">
-    <div class="modal-header">
-      <h3>{{editingShift ? 'Edit Shift' : 'Schedule Shift'}}</h3>
-      <button class="btn btn-ghost btn-icon-only" (click)="showModal=false">
-        <span class="btn-icon">close</span>
-      </button>
-    </div>
-    <div class="modal-body">
-      <div class="form-group" *ngIf="showFormField('user_id')">
-        <label class="form-label">{{fieldLabel('form','user_id','Employee')}} *</label>
-        <app-dropdown class="form-control" [(ngModel)]="shiftForm.user_id" placeholder="— Select employee —">
-          <app-dropdown-option [ngValue]="null">— Select employee —</app-dropdown-option>
-          <app-dropdown-option *ngFor="let e of employees" [ngValue]="e.id">
-            {{e.first_name}} {{e.last_name}}
-          </app-dropdown-option>
-        </app-dropdown>
-      </div>
-      <div class="form-row">
-        <div class="form-group" *ngIf="showFormField('shift_type_id')">
-          <label class="form-label">{{fieldLabel('form','shift_type_id','Shift Type')}} *</label>
-          <app-dropdown class="form-control" [(ngModel)]="shiftForm.shift_type_id" placeholder="— Select type —">
-            <app-dropdown-option [ngValue]="null">— Select type —</app-dropdown-option>
-            <app-dropdown-option *ngFor="let st of shiftTypes" [ngValue]="st.id">{{st.name}} ({{st.code}})</app-dropdown-option>
-          </app-dropdown>
-        </div>
-        <div class="form-group" *ngIf="showFormField('date')">
-          <label class="form-label">{{fieldLabel('form','date','Date')}} *</label>
-          <app-datetime-picker
-            class="form-control"
-            mode="date"
-            [(ngModel)]="shiftForm.date"
-            placeholder="Select shift date">
-          </app-datetime-picker>
-        </div>
-      </div>
-      <div class="form-group" *ngIf="showFormField('status')">
-        <label class="form-label">{{fieldLabel('form','status','Status')}}</label>
-        <app-dropdown class="form-control" [(ngModel)]="shiftForm.status">
-          <app-dropdown-option value="SCHEDULED">Scheduled</app-dropdown-option>
-          <app-dropdown-option value="CONFIRMED">Confirmed</app-dropdown-option>
-          <app-dropdown-option value="IN_PROGRESS">In Progress</app-dropdown-option>
-          <app-dropdown-option value="COMPLETED">Completed</app-dropdown-option>
-          <app-dropdown-option value="ABSENT">Absent</app-dropdown-option>
-          <app-dropdown-option value="SWAPPED">Swapped</app-dropdown-option>
-        </app-dropdown>
-      </div>
-      <div class="form-group" *ngIf="showFormField('notes')">
-        <label class="form-label">{{fieldLabel('form','notes','Notes')}}</label>
-        <textarea class="form-control" [(ngModel)]="shiftForm.notes" style="min-height:72px"></textarea>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button *ngIf="editingShift" class="btn btn-ghost"
-              style="color:#EF4444;margin-right:auto" (click)="deleteShift()">
-        <span class="btn-icon" style="font-size:17px">delete</span> Delete
-      </button>
-      <button class="btn btn-ghost" (click)="showModal=false">Cancel</button>
-      <button class="btn btn-primary" (click)="saveShift()" [disabled]="saving">
-        {{saving ? 'Saving…' : (editingShift ? 'Update' : 'Schedule')}}
-      </button>
-    </div>
-  </div>
-</div>
-  `,
-  changeDetection: ChangeDetectionStrategy.OnPush
+  imports: [
+    CommonModule,
+    FormsModule,
+    DatePipe,
+    DateTimePickerComponent,
+    ExportMenuComponent,
+    DropdownComponent,
+    DropdownOptionComponent,
+    ShiftDetailModalComponent,
+    ShiftFormModalComponent,
+    ShiftTypesModalComponent,
+  ],
+  templateUrl: './shifts.component.html',
+  styleUrl: './shifts.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ShiftsComponent implements OnInit, OnDestroy {
-  private destroy$ = new Subject<void>();
-  shifts:     Shift[]     = [];
+  private readonly destroy$ = new Subject<void>();
+
+  // Core datasets
+  shifts: Shift[] = [];
   shiftTypes: ShiftType[] = [];
-  employees:  any[]       = [];
-  loading        = true;
-  saving         = false;
-  weekOffset     = 0;
-  employeePage   = 1;
-  employeeLimit  = 20;
-  readonly employeeLimitOptions = [10, 20, 50, 100];
-  employeeTotal  = 0;
+  allEmployees: ShiftEmployee[] = [];
+  departments: string[] = [];
+
+  // UI & Loading flags
+  loading = true;
+  copyingWeek = false;
+  checkingId: number | null = null;
+  viewMode: ShiftViewMode = 'grid';
   uiPrefs: UiSectionPreferences | null = null;
 
-  showModal      = false;
-  editingShift: Shift | null = null;
-  shiftForm: { user_id: number|null; shift_type_id: number|null; date: string | Date | null; status: string; notes: string; }
-    = this.emptyShiftForm();
+  // Week navigation
+  referenceDate: Date = new Date();
+  weekOffset = 0;
+  weekStart: Date = getMondayOfWeek(new Date(), 0);
+  weekEnd: Date = addDays(this.weekStart, 6);
+  weekDays: Date[] = buildWeekDays(this.weekStart);
+  jumpPickerDate: Date | null = new Date(this.weekStart);
+  exportParams: Record<string, string> = {};
 
-  get weekStart(): Date {
-    const d = new Date();
-    d.setDate(d.getDate() - d.getDay() + 1 + this.weekOffset * 7);
-    d.setHours(0, 0, 0, 0); return d;
-  }
-  get weekEnd(): Date { const d = new Date(this.weekStart); d.setDate(d.getDate() + 6); return d; }
-  get weekDays(): Date[] {
-    return Array.from({ length: 7 }, (_, i) => { const d = new Date(this.weekStart); d.setDate(d.getDate() + i); return d; });
-  }
+  // Filters & Pagination
+  searchTerm = '';
+  selectedDepartment = '';
+  selectedStatus = '';
+  selectedEntryKind = '';
+  selectedShiftTypeId: number | null = null;
+
+  employeePage = 1;
+  employeeLimit = 20;
+  listPage = 1;
+  listPageSize = 20;
+  readonly pageSizeOptions = [10, 20, 50, 100];
+
+  // Derived view models
+  filteredEmployees: ShiftEmployee[] = [];
+  pagedEmployees: ShiftEmployee[] = [];
+  filteredShiftsList: Shift[] = [];
+  pagedShiftsList: Shift[] = [];
+  shiftLookup = new Map<string, Shift>();
+  employeeSummaries = new Map<number, EmployeeWeekSummary>();
+  dayCoverages: DayCoverageSummary[] = [];
+  kpis: ShiftWeekKpis = emptyShiftKpis();
+
+  // Child modal states
+  detailShift: Shift | null = null;
+  showFormModal = false;
+  editingShift: Shift | null = null;
+  formDefaultUserId: number | undefined;
+  formDefaultDate: Date | undefined;
+  formDefaultMode: ShiftFormMode = 'WORK';
+
+  showCopyWeekModal = false;
+  copyIncludeLeave = false;
+  copyOverwrite = false;
+  showShiftTypesModal = false;
 
   constructor(
-    private api:     ApiService,
-    private dateFilter: DateFilterService,
-    private uiCustomization: UiCustomizationService,
-    private toast:   ToastService,
-    private confirm: ConfirmService,
-    private cdr:     ChangeDetectorRef
-  ) {}
+    private readonly api: ApiService,
+    private readonly auth: AuthService,
+    private readonly uiCustomization: UiCustomizationService,
+    private readonly toast: ToastService,
+    private readonly confirm: ConfirmService,
+    private readonly cdr: ChangeDetectorRef
+  ) {
+    this.rebuildWeekState();
+  }
+
+  get canManageShiftTypes(): boolean {
+    return this.auth.hasRole('admin', 'manager');
+  }
+
+  get workShiftTypes(): ShiftType[] {
+    return this.shiftTypes.filter(st => st.category !== 'LEAVE');
+  }
+
+  get leaveShiftTypes(): ShiftType[] {
+    return this.shiftTypes.filter(st => st.category === 'LEAVE');
+  }
+
+  get hasActiveFilters(): boolean {
+    return Boolean(
+      this.searchTerm.trim() ||
+      this.selectedDepartment ||
+      this.selectedStatus ||
+      this.selectedEntryKind ||
+      this.selectedShiftTypeId !== null
+    );
+  }
+
+  get hasCellHighlightFilter(): boolean {
+    return Boolean(this.selectedStatus || this.selectedEntryKind || this.selectedShiftTypeId !== null);
+  }
+
+  get prevWeekStart(): Date {
+    return addDays(this.weekStart, -7);
+  }
+
+  get prevWeekEnd(): Date {
+    return addDays(this.weekEnd, -7);
+  }
+
+  get employeeStartIndex(): number {
+    return this.filteredEmployees.length === 0 ? 0 : (this.employeePage - 1) * this.employeeLimit + 1;
+  }
+
+  get employeeEndIndex(): number {
+    return Math.min(this.employeePage * this.employeeLimit, this.filteredEmployees.length);
+  }
+
+  get listStartIndex(): number {
+    return this.filteredShiftsList.length === 0 ? 0 : (this.listPage - 1) * this.listPageSize + 1;
+  }
+
+  get listEndIndex(): number {
+    return Math.min(this.listPage * this.listPageSize, this.filteredShiftsList.length);
+  }
 
   ngOnInit(): void {
-    this.uiCustomization.load('shifts').subscribe(p => {
-      this.uiPrefs = p;
-      this.cdr.markForCheck();
-    });
-    this.api.get<any>('/shifts/types').subscribe(r => { this.shiftTypes = r?.data || []; this.cdr.markForCheck(); });
+    this.uiCustomization
+      .load('shifts')
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(prefs => {
+        this.uiPrefs = prefs;
+        this.cdr.markForCheck();
+      });
+
+    this.loadShiftTypes();
     this.loadEmployees();
   }
 
-  private loadEmployees(): void {
-    this.loading = true;
-    this.api.get<any>('/users', { page: this.employeePage, limit: this.employeeLimit }).subscribe({
-      next: r => {
-        this.employees = r?.data?.items || r?.data || [];
-        this.employeeTotal = r?.data?.total || 0;
-        this.loadShifts();
-        this.cdr.markForCheck();
-      },
-      error: () => {
-        this.loading = false;
-        this.cdr.markForCheck();
-      }
-    });
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
   }
-  ngOnDestroy(): void { this.destroy$.next(); this.destroy$.complete(); }
+
+  @HostListener('document:keydown.escape')
+  onEsc(): void {
+    if (this.showShiftTypesModal) {
+      this.showShiftTypesModal = false;
+    } else if (this.showCopyWeekModal) {
+      this.showCopyWeekModal = false;
+    } else if (this.showFormModal) {
+      this.showFormModal = false;
+    } else if (this.detailShift) {
+      this.detailShift = null;
+    }
+    this.cdr.markForCheck();
+  }
+
+  // ── Data Loading ──────────────────────────────────────────────────────────
+  loadShiftTypes(): void {
+    this.api
+      .get<any>('/shifts/types')
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: r => {
+          this.shiftTypes = r?.data || [];
+          this.recomputeViewState();
+          this.cdr.markForCheck();
+        },
+      });
+  }
+
+  loadEmployees(): void {
+    this.loading = true;
+    this.api
+      .get<any>('/shifts/employees', { limit: 200 })
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: r => {
+          this.allEmployees = r?.data?.items || r?.data || [];
+          const deptSet = new Set<string>();
+          for (const emp of this.allEmployees) {
+            if (emp.department && emp.department.trim()) deptSet.add(emp.department.trim());
+          }
+          this.departments = Array.from(deptSet).sort();
+          this.loadShifts();
+        },
+        error: () => {
+          this.loading = false;
+          this.toast.error('Failed to load employees.');
+          this.cdr.markForCheck();
+        },
+      });
+  }
 
   loadShifts(): void {
     const from = formatLocalYmd(this.weekStart);
-    const to   = formatLocalYmd(this.weekEnd);
-    this.api.get<any>('/shifts', { from, to, limit: this.employeeLimit }).subscribe({
-      next: r => {
-        this.shifts = r?.data?.items || r?.data || [];
-        this.loading = false;
-        this.cdr.markForCheck();
-      },
-      error: () => { this.loading = false; this.cdr.markForCheck(); }
-    });
+    const to = formatLocalYmd(this.weekEnd);
+    this.loading = true;
+
+    this.api
+      .get<any>('/shifts', { from, to, limit: 1000 })
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: r => {
+          this.shifts = r?.data?.items || r?.data || [];
+          this.loading = false;
+          this.recomputeViewState();
+          this.cdr.markForCheck();
+        },
+        error: () => {
+          this.loading = false;
+          this.toast.error('Failed to load weekly shifts.');
+          this.cdr.markForCheck();
+        },
+      });
   }
 
-  prevWeek(): void { this.weekOffset--; this.loadShifts(); }
-  nextWeek(): void { this.weekOffset++; this.loadShifts(); }
-  goToday():  void { this.weekOffset = 0; this.loadShifts(); }
+  onShiftTypesUpdated(): void {
+    this.loadShiftTypes();
+    this.loadShifts();
+  }
+
+  onShiftSaved(): void {
+    this.showFormModal = false;
+    this.loadShifts();
+  }
+
+  // ── Week Navigation ───────────────────────────────────────────────────────
+  prevWeek(): void {
+    this.weekOffset -= 1;
+    this.rebuildWeekState();
+    this.loadShifts();
+  }
+
+  nextWeek(): void {
+    this.weekOffset += 1;
+    this.rebuildWeekState();
+    this.loadShifts();
+  }
+
+  goToday(): void {
+    this.referenceDate = new Date();
+    this.weekOffset = 0;
+    this.rebuildWeekState();
+    this.loadShifts();
+  }
+
+  onJumpDatePicked(picked: Date | null): void {
+    if (!picked) return;
+    this.referenceDate = new Date(picked.getFullYear(), picked.getMonth(), picked.getDate());
+    this.weekOffset = 0;
+    this.rebuildWeekState();
+    this.loadShifts();
+  }
+
+  private rebuildWeekState(): void {
+    this.weekStart = getMondayOfWeek(this.referenceDate, this.weekOffset);
+    this.weekEnd = addDays(this.weekStart, 6);
+    this.weekDays = buildWeekDays(this.weekStart);
+    this.jumpPickerDate = new Date(this.weekStart);
+    this.exportParams = {
+      from: formatLocalYmd(this.weekStart),
+      to: formatLocalYmd(this.weekEnd),
+    };
+  }
+
+  // ── Filtering & Pagination ────────────────────────────────────────────────
+  onFilterChanged(): void {
+    this.employeePage = 1;
+    this.listPage = 1;
+    this.recomputeViewState();
+    this.cdr.markForCheck();
+  }
+
+  toggleLegendTypeFilter(typeId: number): void {
+    this.selectedShiftTypeId = this.selectedShiftTypeId === typeId ? null : typeId;
+    this.listPage = 1;
+    this.recomputeViewState();
+    this.cdr.markForCheck();
+  }
+
+  clearFilters(): void {
+    this.searchTerm = '';
+    this.selectedDepartment = '';
+    this.selectedStatus = '';
+    this.selectedEntryKind = '';
+    this.selectedShiftTypeId = null;
+    this.employeePage = 1;
+    this.listPage = 1;
+    this.recomputeViewState();
+    this.cdr.markForCheck();
+  }
 
   prevPage(): void {
     if (this.employeePage > 1) {
-      this.employeePage--;
-      this.loadEmployees();
+      this.employeePage -= 1;
+      this.updatePagedEmployees();
+      this.cdr.markForCheck();
     }
   }
 
   nextPage(): void {
-    if (this.employeePage * this.employeeLimit < this.employeeTotal) {
-      this.employeePage++;
-      this.loadEmployees();
+    if (this.employeePage < this.pageCount()) {
+      this.employeePage += 1;
+      this.updatePagedEmployees();
+      this.cdr.markForCheck();
     }
   }
 
   pageCount(): number {
-    return Math.max(1, Math.ceil(this.employeeTotal / this.employeeLimit));
+    return Math.max(1, Math.ceil(this.filteredEmployees.length / this.employeeLimit));
   }
 
   onEmployeeLimitChange(): void {
     this.employeePage = 1;
-    this.loadEmployees();
+    this.updatePagedEmployees();
+    this.cdr.markForCheck();
+  }
+
+  prevListPage(): void {
+    if (this.listPage > 1) {
+      this.listPage -= 1;
+      this.updatePagedShiftsList();
+      this.cdr.markForCheck();
+    }
+  }
+
+  nextListPage(): void {
+    if (this.listPage < this.listPageCount()) {
+      this.listPage += 1;
+      this.updatePagedShiftsList();
+      this.cdr.markForCheck();
+    }
+  }
+
+  listPageCount(): number {
+    return Math.max(1, Math.ceil(this.filteredShiftsList.length / this.listPageSize));
+  }
+
+  onListPageSizeChange(): void {
+    this.listPage = 1;
+    this.updatePagedShiftsList();
+    this.cdr.markForCheck();
+  }
+
+  private updatePagedEmployees(): void {
+    const start = (this.employeePage - 1) * this.employeeLimit;
+    this.pagedEmployees = this.filteredEmployees.slice(start, start + this.employeeLimit);
+  }
+
+  private updatePagedShiftsList(): void {
+    const start = (this.listPage - 1) * this.listPageSize;
+    this.pagedShiftsList = this.filteredShiftsList.slice(start, start + this.listPageSize);
+  }
+
+  private recomputeViewState(): void {
+    const term = this.searchTerm.trim().toLowerCase();
+    const dept = this.selectedDepartment;
+
+    this.filteredEmployees = this.allEmployees.filter(emp => {
+      if (dept && (emp.department || '').trim() !== dept) return false;
+      if (!term) return true;
+      const full = `${emp.first_name} ${emp.last_name}`.toLowerCase();
+      return (
+        full.includes(term) ||
+        (emp.department || '').toLowerCase().includes(term) ||
+        (emp.job_title || '').toLowerCase().includes(term)
+      );
+    });
+
+    if (this.employeePage > this.pageCount()) {
+      this.employeePage = 1;
+    }
+    this.updatePagedEmployees();
+
+    const lookup = new Map<string, Shift>();
+    for (const shift of this.shifts) {
+      lookup.set(`${shift.user_id}_${shift.date}`, shift);
+    }
+    this.shiftLookup = lookup;
+
+    const visibleUserIds = new Set(this.filteredEmployees.map(e => e.id));
+    const weekShiftsInScope = this.shifts.filter(s => visibleUserIds.has(s.user_id));
+
+    this.filteredShiftsList = weekShiftsInScope.filter(s => this.shiftMatchesAttributeFilters(s));
+    if (this.listPage > this.listPageCount()) {
+      this.listPage = 1;
+    }
+    this.updatePagedShiftsList();
+
+    this.kpis = computeWeekKpis(weekShiftsInScope, this.shiftTypes);
+    this.employeeSummaries = computeEmployeeSummaries(this.filteredEmployees, this.weekDays, lookup, this.shiftTypes);
+    this.dayCoverages = this.weekDays.map(day => computeDayCoverage(day, this.filteredEmployees, lookup, this.shiftTypes));
+  }
+
+  private shiftMatchesAttributeFilters(shift: Shift): boolean {
+    if (this.selectedShiftTypeId !== null && shift.shift_type_id !== this.selectedShiftTypeId) return false;
+    if (this.selectedStatus && shift.status !== this.selectedStatus) return false;
+    if (this.selectedEntryKind) {
+      const info = this.getShiftInfo(shift);
+      if (info.entryKind !== this.selectedEntryKind) return false;
+    }
+    return true;
+  }
+
+  // ── Template Helpers ──────────────────────────────────────────────────────
+  getShift(userId: number, day: Date): Shift | undefined {
+    return this.shiftLookup.get(`${userId}_${formatLocalYmd(day)}`);
+  }
+
+  getShiftInfo(shift: Shift): ShiftEffectiveInfo {
+    return getShiftEffectiveInfo(shift, this.shiftTypes);
+  }
+
+  getStatusInfo(status: ShiftStatus): ShiftStatusMeta {
+    return getStatusMeta(status);
+  }
+
+  getLeaveInfo(shift: Shift): LeaveTypeMeta {
+    const type = shift.shiftType || this.shiftTypes.find(st => st.id === shift.shift_type_id);
+    return getLeaveMeta(shift.leave_type, type);
+  }
+
+  getEmployeeSummary(userId: number): EmployeeWeekSummary {
+    return this.employeeSummaries.get(userId) || { workedHours: 0, shiftCount: 0, overtimeHours: 0, leaveDays: 0 };
+  }
+
+  isCellDimmed(shift: Shift): boolean {
+    return this.hasCellHighlightFilter && !this.shiftMatchesAttributeFilters(shift);
   }
 
   isToday(day: Date): boolean {
     const t = new Date();
     return day.getDate() === t.getDate() && day.getMonth() === t.getMonth() && day.getFullYear() === t.getFullYear();
   }
-  getShift(userId: number, day: Date): Shift | undefined {
-    const key = formatLocalYmd(day);
-    return this.shifts.find(s => s.user_id === userId && s.date === key);
-  }
-  getShiftTypeColor(id: number): string { return this.shiftTypes.find(st => st.id === id)?.color || '#1565C0'; }
-  getShiftTypeName(id: number):  string { return this.shiftTypes.find(st => st.id === id)?.code  || '?'; }
 
-  private emptyShiftForm() {
-    return { user_id: null as number|null, shift_type_id: null as number|null, date: null, status:'SCHEDULED', notes:'' };
+  isWeekend(day: Date): boolean {
+    const dow = day.getDay();
+    return dow === 0 || dow === 6;
   }
 
-  openModal(userId?: number, date?: Date): void {
+  formatHours(hours: number): string {
+    return formatHours(hours, { zeroLabel: '0h' });
+  }
+
+  formatSignedHours(hours: number): string {
+    return formatHours(hours, { signed: true });
+  }
+
+  formatTime(value?: string | null): string {
+    return formatTimeShort(value) || '—';
+  }
+
+  getPersonName(person?: { first_name?: string; last_name?: string } | null): string {
+    if (!person) return '—';
+    return `${person.first_name || ''} ${person.last_name || ''}`.trim() || '—';
+  }
+
+  getInitials(person?: { first_name?: string; last_name?: string } | null): string {
+    const f = person?.first_name?.[0] || '';
+    const l = person?.last_name?.[0] || '';
+    return `${f}${l}`.toUpperCase() || '?';
+  }
+
+  // ── Modal Launchers & Row Actions ─────────────────────────────────────────
+  openModal(userId?: number, date?: Date, defaultMode: ShiftFormMode = 'WORK'): void {
     this.editingShift = null;
-    this.shiftForm = { user_id: userId ?? null, shift_type_id: this.shiftTypes[0]?.id ?? null,
-                       date: date ? date : null, status:'SCHEDULED', notes:'' };
-    this.showModal = true; this.cdr.markForCheck();
+    this.formDefaultUserId = userId;
+    this.formDefaultDate = date;
+    this.formDefaultMode = defaultMode;
+    this.showFormModal = true;
+    this.cdr.markForCheck();
   }
+
   editShift(shift: Shift): void {
+    this.detailShift = null;
     this.editingShift = shift;
-    this.shiftForm = { user_id: shift.user_id, shift_type_id: shift.shift_type_id,
-                       date: shift.date ? new Date(shift.date + 'T00:00:00') : null,
-                       status: shift.status, notes: (shift as any).notes ?? '' };
-    this.showModal = true; this.cdr.markForCheck();
-  }
-  closeModal(e: MouseEvent): void {
-    if ((e.target as HTMLElement).classList.contains('modal-overlay')) this.showModal = false;
+    this.formDefaultUserId = undefined;
+    this.formDefaultDate = undefined;
+    this.showFormModal = true;
+    this.cdr.markForCheck();
   }
 
-  saveShift(): void {
-    if (this.showFormField('user_id') && !this.shiftForm.user_id)       { this.toast.warning('Please select an employee.'); return; }
-    if (this.showFormField('shift_type_id') && !this.shiftForm.shift_type_id) { this.toast.warning('Please select a shift type.'); return; }
-    if (this.showFormField('date') && !this.shiftForm.date)          { this.toast.warning('Please select a date.'); return; }
+  openDetailModal(shift: Shift): void {
+    this.detailShift = shift;
+    this.cdr.markForCheck();
+  }
 
-    const selectedDate = this.shiftForm.date instanceof Date
-      ? formatLocalYmd(this.shiftForm.date)
-      : String(this.shiftForm.date || '').slice(0, 10);
+  canCheckIn(shift: Shift): boolean {
+    const info = this.getShiftInfo(shift);
+    return !info.isLeave && (shift.status === 'SCHEDULED' || shift.status === 'CONFIRMED');
+  }
 
-    if (!this.editingShift && this.shiftForm.user_id && selectedDate) {
-      const existing = this.getShift(this.shiftForm.user_id, new Date(selectedDate + 'T00:00:00'));
-      if (existing) { this.toast.warning('This employee already has a shift that day.'); return; }
+  canCheckOut(shift: Shift): boolean {
+    const info = this.getShiftInfo(shift);
+    return !info.isLeave && shift.status === 'IN_PROGRESS';
+  }
+
+  checkInShift(shift: Shift): void {
+    this.checkingId = shift.id;
+    this.api
+      .post<any>(`/shifts/${shift.id}/checkin`, {})
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: res => {
+          this.checkingId = null;
+          this.toast.success('Clocked in cleanly.');
+          if (this.detailShift?.id === shift.id && res?.data) {
+            this.detailShift = res.data;
+          }
+          this.loadShifts();
+        },
+        error: err => {
+          this.checkingId = null;
+          this.toast.error(err?.error?.message || 'Check-in failed.');
+          this.cdr.markForCheck();
+        },
+      });
+  }
+
+  checkOutShift(shift: Shift): void {
+    this.checkingId = shift.id;
+    this.api
+      .post<any>(`/shifts/${shift.id}/checkout`, {})
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: res => {
+          this.checkingId = null;
+          this.toast.success('Clocked out — shift completed.');
+          if (this.detailShift?.id === shift.id && res?.data) {
+            this.detailShift = res.data;
+          }
+          this.loadShifts();
+        },
+        error: err => {
+          this.checkingId = null;
+          this.toast.error(err?.error?.message || 'Check-out failed.');
+          this.cdr.markForCheck();
+        },
+      });
+  }
+
+  async deleteShiftRecord(shift: Shift): Promise<void> {
+    const confirmed = await this.confirm.confirm(
+      `Remove this entry for ${this.getPersonName(shift.employee)} on ${shift.date}?`,
+      'Delete Shift Entry'
+    );
+    if (!confirmed) return;
+
+    this.api
+      .delete<any>(`/shifts/${shift.id}`)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: () => {
+          this.showFormModal = false;
+          if (this.detailShift?.id === shift.id) this.detailShift = null;
+          this.loadShifts();
+          this.toast.success('Shift entry deleted.');
+        },
+        error: err => {
+          this.toast.error(err?.error?.message || 'Failed to delete shift.');
+        },
+      });
+  }
+
+  // ── Copy Previous Week ────────────────────────────────────────────────────
+  openCopyWeekModal(): void {
+    this.copyIncludeLeave = false;
+    this.copyOverwrite = false;
+    this.showCopyWeekModal = true;
+    this.cdr.markForCheck();
+  }
+
+  closeCopyWeekModal(event: MouseEvent): void {
+    if ((event.target as HTMLElement).classList.contains('modal-overlay')) {
+      this.showCopyWeekModal = false;
     }
-
-    this.saving = true;
-    const payload = { ...this.shiftForm, date: selectedDate };
-    const isEdit = !!this.editingShift;
-    const req$   = isEdit
-      ? this.api.put<any>(`/shifts/${this.editingShift!.id}`, payload)
-      : this.api.post<any>('/shifts', payload);
-
-    req$.subscribe({
-      next: () => {
-        this.saving = false; this.showModal = false; this.loadShifts();
-        this.toast.success(isEdit ? 'Shift updated.' : 'Shift scheduled.');
-        this.cdr.markForCheck();
-      },
-      error: (e: any) => {
-        this.saving = false;
-        this.toast.error(e?.error?.message || 'Failed to save shift.');
-        this.cdr.markForCheck();
-      }
-    });
   }
 
-  async deleteShift(): Promise<void> {
-    if (!this.editingShift) return;
-    const ok = await this.confirm.confirm('Delete this shift? This cannot be undone.', 'Delete Shift');
-    if (!ok) return;
-    this.api.delete<any>(`/shifts/${this.editingShift.id}`).subscribe({
-      next: () => { this.showModal = false; this.loadShifts(); this.toast.success('Shift deleted.'); },
-      error: (e: any) => this.toast.error(e?.error?.message || 'Failed to delete.')
-    });
+  submitCopyPrevWeek(): void {
+    this.copyingWeek = true;
+    const visibleUserIds = this.selectedDepartment || this.searchTerm.trim()
+      ? this.filteredEmployees.map(e => e.id)
+      : undefined;
+
+    this.api
+      .post<any>('/shifts/copy-week', {
+        source_from: formatLocalYmd(this.prevWeekStart),
+        source_to: formatLocalYmd(this.prevWeekEnd),
+        target_from: formatLocalYmd(this.weekStart),
+        include_leave: this.copyIncludeLeave,
+        overwrite: this.copyOverwrite,
+        user_ids: visibleUserIds,
+      })
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: res => {
+          this.copyingWeek = false;
+          this.showCopyWeekModal = false;
+          this.loadShifts();
+          const d = res?.data || {};
+          this.toast.success(
+            `Copied week: ${d.createdCount || 0} created, ${d.updatedCount || 0} updated, ${d.skippedCount || 0} skipped.`
+          );
+        },
+        error: err => {
+          this.copyingWeek = false;
+          this.toast.error(err?.error?.message || 'Failed to copy previous week.');
+          this.cdr.markForCheck();
+        },
+      });
   }
 
+  // ── UI Customization Hooks ────────────────────────────────────────────────
   showTableField(fieldKey: string): boolean {
     return this.uiCustomization.isVisible(this.uiPrefs, 'table', fieldKey, true);
-  }
-
-  showFormField(fieldKey: string): boolean {
-    return this.uiCustomization.isVisible(this.uiPrefs, 'form', fieldKey, true);
   }
 
   fieldLabel(scope: 'table' | 'form', fieldKey: string, fallback: string): string {
@@ -399,4 +698,3 @@ export class ShiftsComponent implements OnInit, OnDestroy {
     return dayMap[day.getDay()] || 'sunday';
   }
 }
-

@@ -191,21 +191,27 @@ const ShiftType = sequelize.define('ShiftType', {
   start_time:  { type: DataTypes.TIME, allowNull: false },
   end_time:    { type: DataTypes.TIME, allowNull: false },
   color:       { type: DataTypes.STRING(7), defaultValue: '#1565C0' },
+  category:    { type: DataTypes.ENUM('WORK', 'LEAVE'), allowNull: false, defaultValue: 'WORK' },
   description: { type: DataTypes.TEXT }
 }, { tableName: 'shift_types', timestamps: false });
 
 const Shift = sequelize.define('Shift', {
-  id:             { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
-  shift_type_id:  { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
-  user_id:        { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
-  supervisor_id:  { type: DataTypes.INTEGER.UNSIGNED },
-  date:           { type: DataTypes.DATEONLY, allowNull: false },
-  status:         { type: DataTypes.ENUM('SCHEDULED','CONFIRMED','IN_PROGRESS','COMPLETED','ABSENT','SWAPPED'), defaultValue: 'SCHEDULED' },
-  check_in:       { type: DataTypes.DATE },
-  check_out:      { type: DataTypes.DATE },
-  notes:          { type: DataTypes.TEXT },
-  overtime_hours: { type: DataTypes.DECIMAL(5,2), defaultValue: 0 },
-  deleted_at:     { type: DataTypes.DATE }
+  id:                { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
+  shift_type_id:     { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+  user_id:           { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+  supervisor_id:     { type: DataTypes.INTEGER.UNSIGNED },
+  date:              { type: DataTypes.DATEONLY, allowNull: false },
+  entry_kind:        { type: DataTypes.ENUM('WORK', 'CUSTOM', 'LEAVE'), allowNull: false, defaultValue: 'WORK' },
+  leave_type:        { type: DataTypes.STRING(40), allowNull: true },
+  custom_start_time: { type: DataTypes.TIME, allowNull: true },
+  custom_end_time:   { type: DataTypes.TIME, allowNull: true },
+  status:            { type: DataTypes.ENUM('SCHEDULED','CONFIRMED','IN_PROGRESS','COMPLETED','ABSENT','SWAPPED','ON_LEAVE'), defaultValue: 'SCHEDULED' },
+  check_in:          { type: DataTypes.DATE },
+  check_out:         { type: DataTypes.DATE },
+  notes:             { type: DataTypes.TEXT },
+  overtime_hours:    { type: DataTypes.DECIMAL(5,2), defaultValue: 0 },
+  adjustment_reason: { type: DataTypes.STRING(120), allowNull: true },
+  deleted_at:        { type: DataTypes.DATE }
 }, { tableName: 'shifts', paranoid: true, deletedAt: 'deleted_at' });
 
 // ── Tasks ────────────────────────────────────────────────────────────────────

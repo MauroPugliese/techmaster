@@ -184,6 +184,61 @@ const MIGRATIONS = [
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
       `);
     }
+  },
+  {
+    name: '005_enhance_shifts_custom_and_leave',
+    description: 'Add shift type categories, custom shift timings, and leave tracking fields to shifts',
+    up: async (queryInterface) => {
+      const tables = await queryInterface.showAllTables();
+      const tableNames = Array.isArray(tables)
+        ? tables.map(t => (typeof t === 'string' ? t : t.tableName || Object.values(t)[0]).toLowerCase())
+        : [];
+
+      if (tableNames.includes('shift_types')) {
+        const typeCols = await queryInterface.describeTable('shift_types').catch(() => ({}));
+        if (typeCols && !typeCols.category) {
+          logger.info('Adding category column to shift_types...');
+          await queryInterface.addColumn('shift_types', 'category', {
+            type: Sequelize.ENUM('WORK', 'LEAVE'),
+            allowNull: false,
+            defaultValue: 'WORK'
+          });
+        }
+
+        await sequelize.query(`
+          INSERT IGNORE INTO shift_types (name, code, start_time, end_time, color, category, description) VALUES
+          ('Custom Shift',   'CST', '08:00:00', '16:00:00', '#7C3AED', 'WORK',  'Custom schedule for overtime, early leave, or flexible hours'),
+          ('Sick Leave',     'SCK', '00:00:00', '00:00:00', '#EF4444', 'LEAVE', 'Medical or sick leave'),
+          ('Vacation',       'VAC', '00:00:00', '00:00:00', '#10B981', 'LEAVE', 'Planned annual vacation'),
+          ('Public Holiday', 'HOL', '00:00:00', '00:00:00', '#F59E0B', 'LEAVE', 'National or company holiday'),
+          ('Personal Leave', 'PRM', '00:00:00', '00:00:00', '#8B5CF6', 'LEAVE', 'Personal time off or permit');
+        `);
+      }
+
+      if (tableNames.includes('shifts')) {
+        const shiftCols = await queryInterface.describeTable('shifts').catch(() => ({}));
+        const columnsToAdd = [
+          ['entry_kind', { type: Sequelize.ENUM('WORK', 'CUSTOM', 'LEAVE'), allowNull: false, defaultValue: 'WORK' }],
+          ['leave_type', { type: Sequelize.STRING(40), allowNull: true }],
+          ['custom_start_time', { type: Sequelize.TIME, allowNull: true }],
+          ['custom_end_time', { type: Sequelize.TIME, allowNull: true }],
+          ['adjustment_reason', { type: Sequelize.STRING(120), allowNull: true }]
+        ];
+
+        for (const [colName, definition] of columnsToAdd) {
+          if (shiftCols && !shiftCols[colName]) {
+            logger.info(`Adding ${colName} column to shifts...`);
+            await queryInterface.addColumn('shifts', colName, definition);
+          }
+        }
+
+        await sequelize.query(`
+          ALTER TABLE shifts
+          MODIFY COLUMN status ENUM('SCHEDULED','CONFIRMED','IN_PROGRESS','COMPLETED','ABSENT','SWAPPED','ON_LEAVE')
+          DEFAULT 'SCHEDULED';
+        `);
+      }
+    }
   }
 ];
 

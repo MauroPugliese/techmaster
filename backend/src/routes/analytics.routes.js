@@ -179,6 +179,7 @@ router.get('/kpis', parseDateFilter, async (req, res, next) => {
     const [shiftKpis] = await sequelize.query(`
       SELECT 
         COUNT(*) as totalShifts,
+        SUM(CASE WHEN status != 'ON_LEAVE' THEN 1 ELSE 0 END) as workShifts,
         SUM(CASE WHEN status = 'ABSENT' THEN 1 ELSE 0 END) as totalAbsences
       FROM shifts WHERE deleted_at IS NULL ${dateCond('date')}`, { replacements });
 
@@ -192,7 +193,7 @@ router.get('/kpis', parseDateFilter, async (req, res, next) => {
     const opsComp = Number(ops.completedOps) || 0;
     const tasksTotal = Number(task.totalTasks) || 0;
     const tasksComp = Number(task.completedTasks) || 0;
-    const shiftsTotal = Number(shift.totalShifts) || 0;
+    const shiftsTotal = Number(shift.workShifts ?? shift.totalShifts) || 0;
     const shiftsAbs = Number(shift.totalAbsences) || 0;
 
     res.json({
@@ -370,7 +371,7 @@ router.get('/shift-coverage', parseDateFilter, async (req, res, next) => {
         SUM(CASE WHEN s.status = 'ABSENT' THEN 1 ELSE 0 END) as absences
       FROM shifts s 
       JOIN shift_types st ON s.shift_type_id = st.id
-      WHERE s.deleted_at IS NULL`;
+      WHERE s.deleted_at IS NULL AND s.status != 'ON_LEAVE' AND COALESCE(st.category, 'WORK') = 'WORK'`;
     const replacements = {};
     
     if (from) {

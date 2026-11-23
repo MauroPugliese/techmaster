@@ -318,21 +318,27 @@ CREATE TABLE IF NOT EXISTS shift_types (
     start_time  TIME         NOT NULL,
     end_time    TIME         NOT NULL,
     color       VARCHAR(7)   DEFAULT '#1565C0',
+    category    ENUM('WORK','LEAVE') NOT NULL DEFAULT 'WORK',
     description TEXT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS shifts (
-    id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    shift_type_id   INT UNSIGNED NOT NULL,
-    user_id         INT UNSIGNED NOT NULL,
-    supervisor_id   INT UNSIGNED,
-    date            DATE         NOT NULL,
-    status          ENUM('SCHEDULED','CONFIRMED','IN_PROGRESS','COMPLETED','ABSENT','SWAPPED') DEFAULT 'SCHEDULED',
-    check_in        DATETIME,
-    check_out       DATETIME,
-    notes           TEXT,
-    overtime_hours  DECIMAL(5,2) DEFAULT 0,
-    deleted_at      DATETIME NULL,
+    id                INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    shift_type_id     INT UNSIGNED NOT NULL,
+    user_id           INT UNSIGNED NOT NULL,
+    supervisor_id     INT UNSIGNED,
+    date              DATE         NOT NULL,
+    entry_kind        ENUM('WORK','CUSTOM','LEAVE') NOT NULL DEFAULT 'WORK',
+    leave_type        VARCHAR(40)  NULL,
+    custom_start_time TIME         NULL,
+    custom_end_time   TIME         NULL,
+    status            ENUM('SCHEDULED','CONFIRMED','IN_PROGRESS','COMPLETED','ABSENT','SWAPPED','ON_LEAVE') DEFAULT 'SCHEDULED',
+    check_in          DATETIME,
+    check_out         DATETIME,
+    notes             TEXT,
+    overtime_hours    DECIMAL(5,2) DEFAULT 0,
+    adjustment_reason VARCHAR(120) NULL,
+    deleted_at        DATETIME NULL,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_shift_user_date (user_id, date),
@@ -572,11 +578,16 @@ INSERT IGNORE INTO operation_types (id, name, color, icon, description) VALUES
 (5, 'Audit',       '#4A148C', 'fact_check',  'Security or compliance audit');
 
 -- Shift types
-INSERT IGNORE INTO shift_types (id, name, code, start_time, end_time, color) VALUES
-(1, 'Morning',   'MOR', '06:00:00', '14:00:00', '#1565C0'),
-(2, 'Afternoon', 'AFT', '14:00:00', '22:00:00', '#0288D1'),
-(3, 'Night',     'NGT', '22:00:00', '06:00:00', '#01579B'),
-(4, 'On-Call',   'ONC', '00:00:00', '23:59:59', '#37474F');
+INSERT IGNORE INTO shift_types (id, name, code, start_time, end_time, color, category, description) VALUES
+(1, 'Morning',        'MOR', '06:00:00', '14:00:00', '#1565C0', 'WORK',  'Standard morning shift'),
+(2, 'Afternoon',      'AFT', '14:00:00', '22:00:00', '#0288D1', 'WORK',  'Standard afternoon shift'),
+(3, 'Night',          'NGT', '22:00:00', '06:00:00', '#01579B', 'WORK',  'Overnight shift'),
+(4, 'On-Call',        'ONC', '00:00:00', '23:59:59', '#37474F', 'WORK',  '24h on-call coverage'),
+(5, 'Custom Shift',   'CST', '08:00:00', '16:00:00', '#7C3AED', 'WORK',  'Custom schedule for overtime, early leave, or flexible hours'),
+(6, 'Sick Leave',     'SCK', '00:00:00', '00:00:00', '#EF4444', 'LEAVE', 'Medical or sick leave'),
+(7, 'Vacation',       'VAC', '00:00:00', '00:00:00', '#10B981', 'LEAVE', 'Planned annual vacation'),
+(8, 'Public Holiday', 'HOL', '00:00:00', '00:00:00', '#F59E0B', 'LEAVE', 'National or company holiday'),
+(9, 'Personal Leave', 'PRM', '00:00:00', '00:00:00', '#8B5CF6', 'LEAVE', 'Personal time off or permit');
 
 -- Warehouse locations
 INSERT IGNORE INTO warehouse_locations (id, name, code, description) VALUES

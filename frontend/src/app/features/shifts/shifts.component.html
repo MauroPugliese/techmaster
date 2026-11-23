@@ -1,0 +1,591 @@
+<div class="shifts-page fade-in">
+
+  <!-- ── Weekly KPI Strip ─────────────────────────────────────────────────── -->
+  <div class="kpi-grid shifts-kpi-grid">
+    <div class="kpi-card" style="--kpi-color:#1565C0">
+      <div class="kpi-icon-wrap">event_note</div>
+      <div>
+        <div class="kpi-value">{{kpis.workShiftsCount}}</div>
+        <div class="kpi-label">Shifts Planned · {{formatHours(kpis.totalPlannedHours)}}</div>
+      </div>
+    </div>
+
+    <div class="kpi-card" style="--kpi-color:#10B981">
+      <div class="kpi-icon-wrap">check_circle</div>
+      <div>
+        <div class="kpi-value">{{kpis.inProgressCount + kpis.confirmedOrDoneCount}}</div>
+        <div class="kpi-label">
+          Active / Verified
+          <span *ngIf="kpis.inProgressCount > 0"> ({{kpis.inProgressCount}} live)</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="kpi-card" style="--kpi-color:#F59E0B">
+      <div class="kpi-icon-wrap">beach_access</div>
+      <div>
+        <div class="kpi-value">{{kpis.leaveAndAbsentCount}}</div>
+        <div class="kpi-label">
+          Leave &amp; Absences
+          <span class="kpi-sub-break">
+            ({{kpis.vacationCount}} vac · {{kpis.sickCount}} sick · {{kpis.absentCount}} abs)
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="kpi-card" style="--kpi-color:#7C3AED">
+      <div class="kpi-icon-wrap">more_time</div>
+      <div>
+        <div class="kpi-value">{{formatHours(kpis.totalOvertimeHours)}}</div>
+        <div class="kpi-label">Overtime · {{kpis.customAdjustedCount}} custom</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Top Toolbar (Filters & Primary Actions) ──────────────────────────── -->
+  <div class="shifts-toolbar">
+    <div class="shifts-filters-group">
+      <div class="search-bar shifts-search">
+        <span class="search-icon">search</span>
+        <input type="text"
+               [(ngModel)]="searchTerm"
+               (ngModelChange)="onFilterChanged()"
+               placeholder="Search employee or dept…">
+      </div>
+
+      <app-dropdown class="form-control filter-dropdown"
+                    [(ngModel)]="selectedDepartment"
+                    (ngModelChange)="onFilterChanged()"
+                    ariaLabel="Filter by department">
+        <app-dropdown-option value="">All Departments</app-dropdown-option>
+        <app-dropdown-option *ngFor="let dept of departments" [value]="dept">{{dept}}</app-dropdown-option>
+      </app-dropdown>
+
+      <app-dropdown class="form-control filter-dropdown"
+                    [(ngModel)]="selectedEntryKind"
+                    (ngModelChange)="onFilterChanged()"
+                    ariaLabel="Filter by entry type">
+        <app-dropdown-option value="">All Types</app-dropdown-option>
+        <app-dropdown-option value="WORK">Standard Shifts</app-dropdown-option>
+        <app-dropdown-option value="CUSTOM">Custom / Overtime</app-dropdown-option>
+        <app-dropdown-option value="LEAVE">Leave &amp; Time Off</app-dropdown-option>
+      </app-dropdown>
+
+      <app-dropdown class="form-control filter-dropdown"
+                    [(ngModel)]="selectedStatus"
+                    (ngModelChange)="onFilterChanged()"
+                    ariaLabel="Filter by status">
+        <app-dropdown-option value="">All Statuses</app-dropdown-option>
+        <app-dropdown-option value="SCHEDULED">Scheduled</app-dropdown-option>
+        <app-dropdown-option value="CONFIRMED">Confirmed</app-dropdown-option>
+        <app-dropdown-option value="IN_PROGRESS">In Progress</app-dropdown-option>
+        <app-dropdown-option value="COMPLETED">Completed</app-dropdown-option>
+        <app-dropdown-option value="ON_LEAVE">On Leave</app-dropdown-option>
+        <app-dropdown-option value="ABSENT">Absent</app-dropdown-option>
+        <app-dropdown-option value="SWAPPED">Swapped</app-dropdown-option>
+      </app-dropdown>
+
+      <button *ngIf="hasActiveFilters" type="button" class="btn btn-ghost btn-sm" (click)="clearFilters()">
+        <span class="btn-icon">filter_alt_off</span>
+        Clear
+      </button>
+    </div>
+
+    <div class="shifts-actions-group">
+      <button type="button" class="btn btn-secondary btn-sm" (click)="openCopyWeekModal()" title="Copy previous week roster">
+        <span class="btn-icon">content_copy</span>
+        Copy Week
+      </button>
+
+      <button *ngIf="canManageShiftTypes"
+              type="button"
+              class="btn btn-secondary btn-sm"
+              (click)="showShiftTypesModal = true"
+              title="Manage shift and leave types">
+        <span class="btn-icon">tune</span>
+        Shift Types
+      </button>
+
+      <app-export-menu endpoint="shifts"
+                       filename="Shifts"
+                       [includeDateRange]="false"
+                       [params]="exportParams">
+      </app-export-menu>
+
+      <button type="button" class="btn btn-secondary btn-sm" (click)="openModal(undefined, undefined, 'LEAVE')">
+        <span class="btn-icon">beach_access</span>
+        Log Leave
+      </button>
+
+      <button type="button" class="btn btn-primary" (click)="openModal()">
+        <span class="btn-icon">add</span>
+        Schedule Shift
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Unified Roster Table Container ───────────────────────────────────── -->
+  <div class="table-container">
+    <!-- Week Header & View Mode Switch -->
+    <div class="shifts-card-header">
+      <div class="shifts-week-controls">
+        <button type="button" class="btn btn-secondary btn-sm" (click)="prevWeek()" title="Previous week">
+          <span class="btn-icon">chevron_left</span>
+        </button>
+        <button type="button" class="btn btn-secondary btn-sm" (click)="nextWeek()" title="Next week">
+          <span class="btn-icon">chevron_right</span>
+        </button>
+        <button type="button" class="btn btn-ghost btn-sm" (click)="goToday()">Today</button>
+        <div class="header-divider"></div>
+        <h3 class="shifts-week-title">
+          Week of {{weekStart | date:'MMM d'}} – {{weekEnd | date:'MMM d, y'}}
+        </h3>
+        <div class="jump-picker-wrap">
+          <app-datetime-picker
+            class="form-control"
+            mode="date"
+            [clearable]="false"
+            [ngModel]="jumpPickerDate"
+            (valueChange)="onJumpDatePicked($event)"
+            placeholder="Jump to date"
+            ariaLabel="Jump to week containing date">
+          </app-datetime-picker>
+        </div>
+      </div>
+
+      <div class="shifts-card-meta">
+        <span class="text-sm text-muted">
+          {{filteredEmployees.length}} employees · {{filteredShiftsList.length}} entries
+        </span>
+        <div class="view-toggle">
+          <button type="button"
+                  class="view-toggle-btn"
+                  [class.active]="viewMode === 'grid'"
+                  (click)="viewMode = 'grid'">
+            <span class="btn-icon">calendar_view_week</span>
+            Grid
+          </button>
+          <button type="button"
+                  class="view-toggle-btn"
+                  [class.active]="viewMode === 'list'"
+                  (click)="viewMode = 'list'">
+            <span class="btn-icon">view_list</span>
+            List
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Interactive Legend Strip -->
+    <div class="shifts-legend-strip" *ngIf="shiftTypes.length">
+      <div class="legend-group">
+        <span class="legend-group-label">Shifts</span>
+        <button *ngFor="let st of workShiftTypes"
+                type="button"
+                class="legend-pill"
+                [class.active]="selectedShiftTypeId === st.id"
+                [style.--pill-color]="st.color"
+                (click)="toggleLegendTypeFilter(st.id)">
+          <span class="legend-dot" [style.background]="st.color"></span>
+          <span class="legend-name">{{st.name}}</span>
+          <span class="legend-hours">{{formatTime(st.start_time)}}–{{formatTime(st.end_time)}}</span>
+        </button>
+      </div>
+
+      <div class="legend-divider" *ngIf="workShiftTypes.length && leaveShiftTypes.length"></div>
+
+      <div class="legend-group" *ngIf="leaveShiftTypes.length">
+        <span class="legend-group-label">Time Off</span>
+        <button *ngFor="let st of leaveShiftTypes"
+                type="button"
+                class="legend-pill"
+                [class.active]="selectedShiftTypeId === st.id"
+                [style.--pill-color]="st.color"
+                (click)="toggleLegendTypeFilter(st.id)">
+          <span class="legend-dot" [style.background]="st.color"></span>
+          <span class="legend-name">{{st.name}}</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- ── Grid View ──────────────────────────────────────────────────────── -->
+    <ng-container *ngIf="viewMode === 'grid'">
+      <div class="shifts-grid-scroll">
+        <table class="data-table shifts-grid-table">
+          <thead>
+            <tr>
+              <th class="sticky-emp-col" *ngIf="showTableField('employee')">
+                {{fieldLabel('table','employee','Employee')}}
+              </th>
+              <th *ngFor="let day of weekDays"
+                  class="day-col-th"
+                  [class.col-today]="isToday(day)"
+                  [class.col-weekend]="isWeekend(day)"
+                  [style.display]="showTableField(dayFieldKey(day)) ? '' : 'none'">
+                <div class="day-name">{{day | date:'EEE'}}</div>
+                <div class="day-date">{{day | date:'MMM d'}}</div>
+              </th>
+              <th class="summary-col-th" *ngIf="showTableField('summary')">
+                {{fieldLabel('table','summary','Week Total')}}
+              </th>
+            </tr>
+          </thead>
+
+          <tbody>
+            <tr *ngFor="let emp of pagedEmployees">
+              <td class="sticky-emp-col emp-cell" *ngIf="showTableField('employee')">
+                <div class="emp-cell-inner">
+                  <div class="emp-avatar">{{getInitials(emp)}}</div>
+                  <div class="emp-meta">
+                    <div class="emp-name">{{emp.first_name}} {{emp.last_name}}</div>
+                    <div class="emp-dept">{{emp.department || emp.job_title || 'Unassigned'}}</div>
+                  </div>
+                </div>
+              </td>
+
+              <td *ngFor="let day of weekDays"
+                  class="shift-day-cell"
+                  [class.col-today]="isToday(day)"
+                  [class.col-weekend]="isWeekend(day)"
+                  [style.display]="showTableField(dayFieldKey(day)) ? '' : 'none'">
+                <ng-container *ngIf="getShift(emp.id, day) as shift; else emptyCell">
+                  <ng-container *ngIf="getShiftInfo(shift) as info">
+                    <button type="button"
+                            class="shift-pill"
+                            [class.is-custom]="info.isCustom"
+                            [class.is-leave]="info.isLeave"
+                            [class.is-absent]="shift.status === 'ABSENT'"
+                            [class.is-in-progress]="shift.status === 'IN_PROGRESS'"
+                            [class.is-dimmed]="isCellDimmed(shift)"
+                            [style.--shift-color]="info.color"
+                            (click)="openDetailModal(shift)">
+                      <div class="shift-pill-top">
+                        <span class="shift-pill-code">
+                          <span *ngIf="info.isLeave" class="mat-i shift-pill-icon">{{getLeaveInfo(shift).icon}}</span>
+                          {{info.isLeave ? getLeaveInfo(shift).shortLabel : info.code}}
+                        </span>
+                        <span *ngIf="info.isCustom" class="shift-tag-custom" title="Custom hours">
+                          {{info.deltaHours !== 0 ? formatSignedHours(info.deltaHours) : 'CST'}}
+                        </span>
+                        <span *ngIf="!info.isCustom && shift.overtime_hours > 0" class="shift-tag-custom">
+                          {{formatSignedHours(shift.overtime_hours)}}
+                        </span>
+                      </div>
+
+                      <div class="shift-pill-time" *ngIf="!info.isLeave">
+                        {{info.start}}–{{info.end}}
+                      </div>
+
+                      <div class="shift-pill-footer" *ngIf="shift.status !== 'SCHEDULED' || shift.notes">
+                        <span *ngIf="shift.status === 'IN_PROGRESS'" class="status-chip-mini live">LIVE</span>
+                        <span *ngIf="shift.status === 'COMPLETED'" class="status-chip-mini done">Done</span>
+                        <span *ngIf="shift.status === 'CONFIRMED'" class="status-chip-mini confirmed">Conf</span>
+                        <span *ngIf="shift.status === 'ABSENT'" class="status-chip-mini absent">Absent</span>
+                        <span *ngIf="shift.status === 'SWAPPED'" class="status-chip-mini swapped">Swap</span>
+                        <span *ngIf="shift.notes" class="mat-i note-dot" title="Has notes">sticky_note_2</span>
+                      </div>
+                    </button>
+                  </ng-container>
+                </ng-container>
+
+                <ng-template #emptyCell>
+                  <button type="button"
+                          class="shift-add-btn"
+                          (click)="openModal(emp.id, day)"
+                          title="Schedule shift or leave for {{emp.first_name}} {{emp.last_name}}">
+                    +
+                  </button>
+                </ng-template>
+              </td>
+
+              <td class="summary-cell" *ngIf="showTableField('summary')">
+                <ng-container *ngIf="getEmployeeSummary(emp.id) as sum">
+                  <div class="summary-hours">{{formatHours(sum.workedHours)}}</div>
+                  <div class="summary-meta">
+                    <span>{{sum.shiftCount}}d</span>
+                    <span *ngIf="sum.overtimeHours > 0" class="summary-ot">{{formatSignedHours(sum.overtimeHours)}} OT</span>
+                    <span *ngIf="sum.leaveDays > 0" class="summary-leave">{{sum.leaveDays}}d off</span>
+                  </div>
+                </ng-container>
+              </td>
+            </tr>
+          </tbody>
+
+          <tfoot *ngIf="pagedEmployees.length">
+            <tr class="coverage-row">
+              <td class="sticky-emp-col coverage-label" *ngIf="showTableField('employee')">
+                Daily Coverage
+              </td>
+              <td *ngFor="let day of weekDays; let i = index"
+                  class="coverage-cell"
+                  [class.col-today]="isToday(day)"
+                  [class.col-weekend]="isWeekend(day)"
+                  [style.display]="showTableField(dayFieldKey(day)) ? '' : 'none'">
+                <ng-container *ngIf="dayCoverages[i] as cov">
+                  <div class="cov-total">{{cov.onDutyCount}} on duty</div>
+                  <div class="cov-chips" *ngIf="cov.codeCounts.length">
+                    <span *ngFor="let c of cov.codeCounts"
+                          class="cov-chip"
+                          [style.color]="c.color"
+                          [style.background]="c.color + '18'">
+                      {{c.code}} {{c.count}}
+                    </span>
+                  </div>
+                  <div class="cov-off" *ngIf="cov.leaveCount > 0 || cov.absentCount > 0">
+                    <span *ngIf="cov.leaveCount > 0">{{cov.leaveCount}} off</span>
+                    <span *ngIf="cov.leaveCount > 0 && cov.absentCount > 0"> · </span>
+                    <span *ngIf="cov.absentCount > 0" style="color:#EF4444">{{cov.absentCount}} abs</span>
+                  </div>
+                </ng-container>
+              </td>
+              <td class="summary-cell" *ngIf="showTableField('summary')">
+                <div class="summary-hours">{{formatHours(kpis.totalPlannedHours)}}</div>
+                <div class="summary-meta">{{kpis.workShiftsCount}} shifts</div>
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <div class="empty-state" *ngIf="!pagedEmployees.length && !loading">
+        <span class="empty-icon">group</span>
+        <h3>No matching employees</h3>
+        <p *ngIf="hasActiveFilters">Try clearing or adjusting your active search and filters.</p>
+        <button *ngIf="hasActiveFilters" type="button" class="btn btn-secondary mt-3" (click)="clearFilters()">Clear Filters</button>
+      </div>
+
+      <!-- Standard App Paginator (matches Warehouse / Maintenance) -->
+      <div class="table-pagination-bar" *ngIf="filteredEmployees.length > 0">
+        <div class="table-page-size-control">
+          <span class="text-sm text-muted">
+            Showing {{employeeStartIndex}}–{{employeeEndIndex}} of {{filteredEmployees.length}}
+          </span>
+          <app-dropdown class="form-control table-page-size-select"
+                        [(ngModel)]="employeeLimit"
+                        (ngModelChange)="onEmployeeLimitChange()"
+                        ariaLabel="Employees per page">
+            <app-dropdown-option *ngFor="let size of pageSizeOptions" [ngValue]="size">{{size}}</app-dropdown-option>
+          </app-dropdown>
+        </div>
+        <div class="flex items-center gap-2">
+          <button class="btn btn-secondary btn-sm" type="button" [disabled]="employeePage <= 1" (click)="prevPage()">
+            <span class="btn-icon">chevron_left</span>
+          </button>
+          <span class="page-counter">{{employeePage}} / {{pageCount()}}</span>
+          <button class="btn btn-secondary btn-sm" type="button" [disabled]="employeePage >= pageCount()" (click)="nextPage()">
+            <span class="btn-icon">chevron_right</span>
+          </button>
+        </div>
+      </div>
+    </ng-container>
+
+    <!-- ── List View ──────────────────────────────────────────────────────── -->
+    <ng-container *ngIf="viewMode === 'list'">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Employee</th>
+            <th>Pattern / Type</th>
+            <th>Hours</th>
+            <th>Status</th>
+            <th>OT / Reason</th>
+            <th>Check-In / Out</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let s of pagedShiftsList"
+              class="row-clickable"
+              (click)="openDetailModal(s)">
+            <td class="text-sm font-bold">{{s.date | date:'EEE, MMM d'}}</td>
+            <td>
+              <div style="font-weight:600">{{getPersonName(s.employee)}}</div>
+              <div class="text-sm text-muted">{{s.employee?.department || '—'}}</div>
+            </td>
+            <td>
+              <ng-container *ngIf="getShiftInfo(s) as info">
+                <span class="detail-type-chip">
+                  <span class="detail-type-dot" [style.background]="info.color"></span>
+                  {{info.name}}
+                  <span *ngIf="info.isCustom" class="list-custom-tag">Custom</span>
+                </span>
+              </ng-container>
+            </td>
+            <td class="text-sm">
+              <ng-container *ngIf="getShiftInfo(s) as info">
+                <span *ngIf="!info.isLeave">{{info.start}}–{{info.end}} ({{formatHours(info.effectiveHours)}})</span>
+                <span *ngIf="info.isLeave" class="text-muted">Full day leave</span>
+              </ng-container>
+            </td>
+            <td>
+              <span class="badge" [ngClass]="getStatusInfo(s.status).badgeClass">
+                {{getStatusInfo(s.status).label}}
+              </span>
+            </td>
+            <td class="text-sm">
+              <span *ngIf="s.overtime_hours > 0" style="font-weight:700;color:#6D28D9">{{formatSignedHours(s.overtime_hours)}}</span>
+              <span *ngIf="s.overtime_hours > 0 && s.adjustment_reason"> · </span>
+              <span *ngIf="s.adjustment_reason">{{s.adjustment_reason}}</span>
+              <span *ngIf="!s.overtime_hours && !s.adjustment_reason" class="text-muted">—</span>
+            </td>
+            <td class="text-sm">
+              <span *ngIf="s.check_in || s.check_out">
+                {{s.check_in ? (s.check_in | date:'HH:mm') : '--:--'}} → {{s.check_out ? (s.check_out | date:'HH:mm') : '--:--'}}
+              </span>
+              <span *ngIf="!s.check_in && !s.check_out" class="text-muted">—</span>
+            </td>
+            <td (click)="$event.stopPropagation()">
+              <div class="flex gap-1">
+                <button *ngIf="canCheckIn(s)"
+                        type="button"
+                        class="btn btn-ghost btn-icon-only btn-sm"
+                        [disabled]="checkingId === s.id"
+                        (click)="checkInShift(s)"
+                        title="Check In">
+                  <span class="btn-icon" style="font-size:17px;color:#0284C7">login</span>
+                </button>
+                <button *ngIf="canCheckOut(s)"
+                        type="button"
+                        class="btn btn-ghost btn-icon-only btn-sm"
+                        [disabled]="checkingId === s.id"
+                        (click)="checkOutShift(s)"
+                        title="Check Out">
+                  <span class="btn-icon" style="font-size:17px;color:#15803D">logout</span>
+                </button>
+                <button type="button"
+                        class="btn btn-ghost btn-icon-only btn-sm"
+                        (click)="editShift(s)"
+                        title="Edit">
+                  <span class="btn-icon" style="font-size:17px">edit</span>
+                </button>
+                <button type="button"
+                        class="btn btn-ghost btn-icon-only btn-sm"
+                        (click)="deleteShiftRecord(s)"
+                        title="Delete">
+                  <span class="btn-icon" style="font-size:17px;color:#EF4444">delete</span>
+                </button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="empty-state" *ngIf="!filteredShiftsList.length && !loading">
+        <span class="empty-icon">event_available</span>
+        <h3>No shifts scheduled</h3>
+        <p>No shift or leave records match the current week and filters.</p>
+      </div>
+
+      <div class="table-pagination-bar" *ngIf="filteredShiftsList.length > 0">
+        <div class="table-page-size-control">
+          <span class="text-sm text-muted">
+            Showing {{listStartIndex}}–{{listEndIndex}} of {{filteredShiftsList.length}}
+          </span>
+          <app-dropdown class="form-control table-page-size-select"
+                        [(ngModel)]="listPageSize"
+                        (ngModelChange)="onListPageSizeChange()"
+                        ariaLabel="Rows per page">
+            <app-dropdown-option *ngFor="let size of pageSizeOptions" [ngValue]="size">{{size}}</app-dropdown-option>
+          </app-dropdown>
+        </div>
+        <div class="flex items-center gap-2">
+          <button class="btn btn-secondary btn-sm" type="button" [disabled]="listPage <= 1" (click)="prevListPage()">
+            <span class="btn-icon">chevron_left</span>
+          </button>
+          <span class="page-counter">{{listPage}} / {{listPageCount()}}</span>
+          <button class="btn btn-secondary btn-sm" type="button" [disabled]="listPage >= listPageCount()" (click)="nextListPage()">
+            <span class="btn-icon">chevron_right</span>
+          </button>
+        </div>
+      </div>
+    </ng-container>
+  </div>
+</div>
+
+<!-- ── Child Modals ───────────────────────────────────────────────────────── -->
+<app-shift-detail-modal
+  [shift]="detailShift"
+  [shiftTypes]="shiftTypes"
+  [checkingId]="checkingId"
+  (close)="detailShift = null"
+  (checkIn)="checkInShift($event)"
+  (checkOut)="checkOutShift($event)"
+  (edit)="editShift($event)"
+  (remove)="deleteShiftRecord($event)">
+</app-shift-detail-modal>
+
+<app-shift-form-modal
+  [open]="showFormModal"
+  [editingShift]="editingShift"
+  [defaultUserId]="formDefaultUserId"
+  [defaultDate]="formDefaultDate"
+  [defaultMode]="formDefaultMode"
+  [weekStart]="weekStart"
+  [weekEnd]="weekEnd"
+  [weekDays]="weekDays"
+  [allEmployees]="allEmployees"
+  [shiftTypes]="shiftTypes"
+  [loadedShifts]="shifts"
+  [uiPrefs]="uiPrefs"
+  (close)="showFormModal = false"
+  (saved)="onShiftSaved()"
+  (deleted)="deleteShiftRecord($event)">
+</app-shift-form-modal>
+
+<!-- ── Copy Previous Week Modal ───────────────────────────────────────────── -->
+<div class="modal-overlay" *ngIf="showCopyWeekModal" (click)="closeCopyWeekModal($event)">
+  <div class="modal" style="max-width:480px" (click)="$event.stopPropagation()" role="dialog" aria-modal="true" aria-labelledby="copy-week-title">
+    <div class="modal-header">
+      <h3 id="copy-week-title">Copy Previous Week Roster</h3>
+      <button type="button" class="btn btn-ghost btn-icon-only" (click)="showCopyWeekModal = false">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body" style="display:flex;flex-direction:column;gap:14px">
+      <div class="copy-week-summary">
+        <div>
+          <span class="detail-label">Source Week</span>
+          <div class="font-bold">{{prevWeekStart | date:'MMM d'}} – {{prevWeekEnd | date:'MMM d, y'}}</div>
+        </div>
+        <span class="btn-icon" style="color:var(--primary)">arrow_forward</span>
+        <div>
+          <span class="detail-label">Target Week</span>
+          <div class="font-bold">{{weekStart | date:'MMM d'}} – {{weekEnd | date:'MMM d, y'}}</div>
+        </div>
+      </div>
+
+      <label class="checkbox-inline">
+        <input type="checkbox" [(ngModel)]="copyIncludeLeave">
+        <span>Also copy Leave / Time Off entries (vacation, sick, holiday)</span>
+      </label>
+
+      <label class="checkbox-inline">
+        <input type="checkbox" [(ngModel)]="copyOverwrite">
+        <span>Overwrite shifts already scheduled in target week</span>
+      </label>
+
+      <p class="text-sm text-muted" style="margin:0">
+        Copied shifts automatically start as <strong>Scheduled</strong> (custom times preserved) and remain subject to the 11-hour rest rule.
+      </p>
+    </div>
+
+    <div class="modal-footer">
+      <button type="button" class="btn btn-ghost" (click)="showCopyWeekModal = false">Cancel</button>
+      <button type="button" class="btn btn-primary" (click)="submitCopyPrevWeek()" [disabled]="copyingWeek">
+        <span class="btn-icon">content_copy</span>
+        {{copyingWeek ? 'Copying…' : 'Copy Roster'}}
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Shift Types Management Modal ───────────────────────────────────────── -->
+<app-shift-types-modal
+  [open]="showShiftTypesModal"
+  [shiftTypes]="shiftTypes"
+  (close)="showShiftTypesModal = false"
+  (changed)="onShiftTypesUpdated()">
+</app-shift-types-modal>

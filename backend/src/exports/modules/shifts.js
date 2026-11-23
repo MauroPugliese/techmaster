@@ -19,6 +19,7 @@ const STATUS_TONE = {
   IN_PROGRESS: 'info',
   SCHEDULED:   'neutral',
   SWAPPED:     'purple',
+  ON_LEAVE:    'teal',
   ABSENT:      'danger'
 };
 
@@ -28,6 +29,7 @@ const STATUS_COLORS = {
   IN_PROGRESS: COLORS.accent,
   SCHEDULED:   COLORS.muted,
   SWAPPED:     COLORS.amber,
+  ON_LEAVE:    COLORS.teal,
   ABSENT:      COLORS.coral
 };
 
@@ -98,11 +100,17 @@ module.exports = {
     let totalOvertime = 0;
     let presentOrCompleted = 0;
     let checkedInCount = 0;
+    let workTotal = 0;
+    let onLeaveCount = 0;
 
     const rosterRows = shifts.map((s) => {
       byStatus[s.status] = (byStatus[s.status] || 0) + 1;
+      const isLeave = s.status === 'ON_LEAVE' || s.entry_kind === 'LEAVE' || s.shiftType?.category === 'LEAVE';
       const typeName = s.shiftType?.name || 'Standard';
-      const typeLabel = s.shiftType?.code ? `${s.shiftType.code} (${typeName})` : typeName;
+      const customWindow = (s.custom_start_time || s.custom_end_time)
+        ? ` [${String(s.custom_start_time || s.shiftType?.start_time || '').slice(0, 5)}-${String(s.custom_end_time || s.shiftType?.end_time || '').slice(0, 5)}*]`
+        : '';
+      const typeLabel = (s.shiftType?.code ? `${s.shiftType.code} (${typeName})` : typeName) + customWindow;
       byType[typeName] = (byType[typeName] || 0) + 1;
 
       const dept = s.employee?.department && String(s.employee.department).trim()
@@ -113,21 +121,32 @@ module.exports = {
       const ot = toNumber(s.overtime_hours, 0);
       totalOvertime += ot;
 
-      if (s.status !== 'ABSENT') presentOrCompleted += 1;
+      if (isLeave) {
+        onLeaveCount += 1;
+      } else {
+        workTotal += 1;
+        if (s.status !== 'ABSENT') presentOrCompleted += 1;
+      }
       if (s.check_in || s.status === 'COMPLETED' || s.status === 'IN_PROGRESS') checkedInCount += 1;
 
-      if (!deptStats[dept]) deptStats[dept] = { total: 0, present: 0, absent: 0, overtime: 0 };
+      if (!deptStats[dept]) deptStats[dept] = { total: 0, workTotal: 0, present: 0, absent: 0, overtime: 0 };
       deptStats[dept].total += 1;
-      if (s.status === 'ABSENT') deptStats[dept].absent += 1;
-      else deptStats[dept].present += 1;
+      if (!isLeave) {
+        deptStats[dept].workTotal += 1;
+        if (s.status === 'ABSENT') deptStats[dept].absent += 1;
+        else deptStats[dept].present += 1;
+      }
       deptStats[dept].overtime += ot;
 
       if (!empStats[empId]) {
-        empStats[empId] = { name: empName, dept, total: 0, completed: 0, absent: 0, overtime: 0 };
+        empStats[empId] = { name: empName, dept, total: 0, workTotal: 0, completed: 0, absent: 0, overtime: 0 };
       }
       empStats[empId].total += 1;
-      if (s.status === 'COMPLETED' || s.status === 'CONFIRMED') empStats[empId].completed += 1;
-      if (s.status === 'ABSENT') empStats[empId].absent += 1;
+      if (!isLeave) {
+        empStats[empId].workTotal += 1;
+        if (s.status === 'COMPLETED' || s.status === 'CONFIRMED') empStats[empId].completed += 1;
+        if (s.status === 'ABSENT') empStats[empId].absent += 1;
+      }
       empStats[empId].overtime += ot;
 
       const checkWindow = (s.check_in || s.check_out)
@@ -139,31 +158,32 @@ module.exports = {
         employee: empName,
         department: dept,
         shift_type: typeLabel,
-        shift_type_tone: 'info',
+        shift_type_tone: isLeave ? 'teal' : 'info',
         status: s.status,
         status_tone: STATUS_TONE[s.status] || 'neutral',
         overtime_hours: ot,
         check_window: checkWindow,
         supervisor: fullName(s.supervisor),
-        notes: cleanText(s.notes, 48),
+        notes: cleanText([s.adjustment_reason, s.notes].filter(Boolean).join(' · '), 48),
         _flag: s.status === 'ABSENT' ? 'danger' : (ot >= 4 ? 'warning' : null)
       };
     });
 
     const uniqueEmployees = Object.keys(empStats).length;
     const absences = byStatus.ABSENT || 0;
-    const attendanceRate = total ? pct(presentOrCompleted, total) : 100;
-    const checkInRate = total ? pct(checkedInCount, total) : 100;
-    const standardHoursRate = total ? pct(total - rosterRows.filter((r) => r.overtime_hours > 0).length, total) : 100;
+    const attendanceRate = workTotal ? pct(presentOrCompleted, workTotal) : 100;
+    const checkInRate = workTotal ? pct(checkedInCount, workTotal) : 100;
+    const standardHoursRate = workTotal ? pct(workTotal - rosterRows.filter((r) => r.overtime_hours > 0).length, workTotal) : 100;
 
     const deptScoreItems = Object.entries(deptStats)
       .sort((a, b) => b[1].total - a[1].total)
       .slice(0, 7)
       .map(([dept, st]) => {
-        const rate = pct(st.present, st.total);
+        const denom = st.workTotal || st.total;
+        const rate = denom ? pct(st.present, denom) : 100;
         return {
           label: dept,
-          valueLabel: `${fmtPercent(rate, 1)} (${st.present}/${st.total})`,
+          valueLabel: `${fmtPercent(rate, 1)} (${st.present}/${denom})`,
           percent: rate,
           tone: rate >= 92 ? 'success' : (rate >= 80 ? 'warning' : 'danger'),
           detail: `${fmtNumber(st.absent)} absent · ${fmtHours(st.overtime)} overtime logged`
@@ -179,7 +199,7 @@ module.exports = {
         completed: e.completed,
         absent: e.absent,
         overtime_hours: e.overtime,
-        attendance_pct: pct(e.total - e.absent, e.total),
+        attendance_pct: e.workTotal ? pct(e.workTotal - e.absent, e.workTotal) : 100,
         _flag: e.absent > 0 ? 'warning' : null
       }));
 
@@ -236,7 +256,7 @@ module.exports = {
           {
             type: 'gaugeBand',
             items: [
-              { label: 'Attendance Rate', valueLabel: fmtPercent(attendanceRate, 1), percent: attendanceRate, sublabel: `${fmtNumber(absences)} absence(s)`, tone: attendanceRate >= 95 ? 'success' : 'warning' },
+              { label: 'Attendance Rate', valueLabel: fmtPercent(attendanceRate, 1), percent: attendanceRate, sublabel: `${fmtNumber(absences)} absence(s)${onLeaveCount ? ` · ${fmtNumber(onLeaveCount)} on leave` : ''}`, tone: attendanceRate >= 95 ? 'success' : 'warning' },
               { label: 'Clock-In Verification', valueLabel: fmtPercent(checkInRate, 1), percent: checkInRate, sublabel: `${fmtNumber(checkedInCount)} verified shifts`, tone: 'info' },
               { label: 'Within Standard Hours', valueLabel: fmtPercent(standardHoursRate, 1), percent: standardHoursRate, sublabel: `${fmtHours(totalOvertime)} overtime`, tone: totalOvertime > 24 ? 'warning' : 'success' }
             ]

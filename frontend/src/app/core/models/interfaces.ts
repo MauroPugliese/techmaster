@@ -207,23 +207,58 @@ export interface StockMovement {
 }
 
 // ── Shifts ────────────────────────────────────────────────────────────────────
-export type ShiftStatus = 'SCHEDULED' | 'CONFIRMED' | 'IN_PROGRESS' | 'COMPLETED' | 'ABSENT' | 'SWAPPED';
+export type ShiftStatus =
+  | 'SCHEDULED'
+  | 'CONFIRMED'
+  | 'IN_PROGRESS'
+  | 'COMPLETED'
+  | 'ABSENT'
+  | 'SWAPPED'
+  | 'ON_LEAVE';
+
+export type ShiftTypeCategory = 'WORK' | 'LEAVE';
+export type ShiftEntryKind = 'WORK' | 'CUSTOM' | 'LEAVE';
+export type ShiftLeaveType = 'SICK' | 'VACATION' | 'HOLIDAY' | 'PERSONAL' | 'OTHER';
 
 export interface ShiftType {
-  id: number; name: string; code: string; start_time: string; end_time: string; color: string;
+  id: number;
+  name: string;
+  code: string;
+  start_time: string;
+  end_time: string;
+  color: string;
+  category?: ShiftTypeCategory;
+  description?: string | null;
+}
+
+export interface ShiftEmployee {
+  id: number;
+  first_name: string;
+  last_name: string;
+  department?: string | null;
+  job_title?: string | null;
+  avatar_url?: string | null;
 }
 
 export interface Shift {
   id: number;
   shift_type_id: number;
   user_id: number;
+  supervisor_id?: number | null;
   date: string;
+  entry_kind?: ShiftEntryKind;
+  leave_type?: ShiftLeaveType | null;
+  custom_start_time?: string | null;
+  custom_end_time?: string | null;
   status: ShiftStatus;
   check_in?: string;
   check_out?: string;
+  notes?: string | null;
   overtime_hours: number;
+  adjustment_reason?: string | null;
   shiftType?: ShiftType;
   employee?: Partial<User>;
+  supervisor?: Partial<User>;
 }
 
 // ── Tasks ─────────────────────────────────────────────────────────────────────

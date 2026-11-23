@@ -21,8 +21,8 @@ const UI_SECTION_CATALOG = {
     form: ['status', 'title', 'category_id', 'tags', 'excerpt', 'content']
   },
   shifts: {
-    table: ['employee', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
-    form: ['user_id', 'shift_type_id', 'date', 'status', 'notes']
+    table: ['employee', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'summary'],
+    form: ['user_id', 'entry_kind', 'shift_type_id', 'custom_hours', 'date', 'supervisor_id', 'overtime_hours', 'adjustment_reason', 'status', 'notes']
   },
   tasks: {
     table: ['kanban'],

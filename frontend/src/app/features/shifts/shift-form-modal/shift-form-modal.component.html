@@ -1,0 +1,361 @@
+<div class="modal-overlay" *ngIf="open" (click)="onBackdropClick($event)">
+  <div class="modal shifts-form-modal" (click)="$event.stopPropagation()" role="dialog" aria-modal="true" aria-labelledby="shift-form-title">
+    <div class="modal-header">
+      <h3 id="shift-form-title">
+        {{editingShift ? 'Edit Schedule Entry' : (formMode === 'LEAVE' ? 'Schedule Leave / Time Off' : 'Schedule Shift')}}
+      </h3>
+      <button type="button" class="btn btn-ghost btn-icon-only" (click)="close.emit()" title="Close">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <!-- Entry Mode Switch -->
+      <div class="mode-tabs" *ngIf="showFormField('entry_kind')">
+        <button type="button" class="mode-tab" [class.active]="formMode === 'WORK'" (click)="setFormMode('WORK')">
+          <span class="btn-icon">schedule</span>
+          Work Shift
+        </button>
+        <button type="button" class="mode-tab" [class.active]="formMode === 'CUSTOM'" (click)="setFormMode('CUSTOM')">
+          <span class="btn-icon">more_time</span>
+          Custom / Overtime
+        </button>
+        <button type="button" class="mode-tab" [class.active]="formMode === 'LEAVE'" (click)="setFormMode('LEAVE')">
+          <span class="btn-icon">beach_access</span>
+          Leave / Sick / Holiday
+        </button>
+      </div>
+
+      <!-- Employee & Supervisor -->
+      <div class="form-row">
+        <div class="form-group" *ngIf="showFormField('user_id')">
+          <label class="form-label">{{fieldLabel('user_id','Employee')}} *</label>
+          <app-dropdown class="form-control"
+                        [(ngModel)]="form.user_id"
+                        (ngModelChange)="refreshLaborLawAdvisory()"
+                        placeholder="— Select employee —">
+            <app-dropdown-option [ngValue]="null">— Select employee —</app-dropdown-option>
+            <app-dropdown-option *ngFor="let e of allEmployees" [ngValue]="e.id">
+              {{e.first_name}} {{e.last_name}}
+            </app-dropdown-option>
+          </app-dropdown>
+        </div>
+
+        <div class="form-group" *ngIf="showFormField('supervisor_id')">
+          <label class="form-label">{{fieldLabel('supervisor_id','Supervisor')}}</label>
+          <app-dropdown class="form-control"
+                        [(ngModel)]="form.supervisor_id"
+                        placeholder="— Optional —">
+            <app-dropdown-option [ngValue]="null">— Optional —</app-dropdown-option>
+            <app-dropdown-option *ngFor="let e of allEmployees" [ngValue]="e.id">
+              {{e.first_name}} {{e.last_name}}
+            </app-dropdown-option>
+          </app-dropdown>
+        </div>
+      </div>
+
+      <!-- Shift Pattern Dropdown OR Leave Cards -->
+      <div class="form-group" *ngIf="showFormField('shift_type_id') && formMode !== 'LEAVE'">
+        <label class="form-label">{{fieldLabel('shift_type_id','Shift Pattern')}} *</label>
+        <app-dropdown class="form-control"
+                      [(ngModel)]="form.shift_type_id"
+                      (ngModelChange)="selectShiftType($event)"
+                      placeholder="— Select pattern —">
+          <app-dropdown-option *ngFor="let st of workShiftTypes" [ngValue]="st.id">
+            {{st.name}} ({{st.code}} · {{formatTime(st.start_time)}}–{{formatTime(st.end_time)}})
+          </app-dropdown-option>
+        </app-dropdown>
+      </div>
+
+      <div class="form-group" *ngIf="showFormField('shift_type_id') && formMode === 'LEAVE'">
+        <label class="form-label">{{fieldLabel('shift_type_id','Leave Type')}} *</label>
+        <div class="leave-picker-grid">
+          <button *ngFor="let st of leaveShiftTypes"
+                  type="button"
+                  class="leave-card-btn"
+                  [class.selected]="form.shift_type_id === st.id"
+                  [style.--leave-color]="st.color"
+                  (click)="selectShiftType(st.id)">
+            <span class="btn-icon">{{getLeaveIcon(st)}}</span>
+            <span>{{st.name}}</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Custom Hours, Overtime & Early Leave Controls -->
+      <div class="custom-time-box" *ngIf="formMode === 'CUSTOM' && showFormField('custom_hours')">
+        <div class="custom-time-box-head">
+          <span class="custom-time-title">Custom Hours / Overtime / Early Leave</span>
+          <span class="custom-delta-badge"
+                [class.positive]="previewEffectiveTiming.deltaHours > 0"
+                [class.negative]="previewEffectiveTiming.deltaHours < 0">
+            Effective {{formatHrs(previewEffectiveTiming.effectiveHours)}}
+            <ng-container *ngIf="previewEffectiveTiming.deltaHours > 0">
+              ({{formatSignedHrs(previewEffectiveTiming.deltaHours)}} OT)
+            </ng-container>
+            <ng-container *ngIf="previewEffectiveTiming.deltaHours < 0">
+              ({{formatSignedHrs(previewEffectiveTiming.deltaHours)}} Early)
+            </ng-container>
+          </span>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group" style="margin-bottom:10px">
+            <label class="form-label">Start Time *</label>
+            <input type="time"
+                   class="form-control"
+                   [(ngModel)]="form.custom_start_time"
+                   (ngModelChange)="onCustomTimeChanged()">
+          </div>
+          <div class="form-group" style="margin-bottom:10px">
+            <label class="form-label">End Time *</label>
+            <input type="time"
+                   class="form-control"
+                   [(ngModel)]="form.custom_end_time"
+                   (ngModelChange)="onCustomTimeChanged()">
+          </div>
+        </div>
+
+        <div class="quick-delta-chips">
+          <span class="chips-label">Quick adjust:</span>
+          <button type="button" class="delta-chip ot" (click)="applyQuickAdjustment(15)">+15 min</button>
+          <button type="button" class="delta-chip ot" (click)="applyQuickAdjustment(30)">+30 min</button>
+          <button type="button" class="delta-chip ot" (click)="applyQuickAdjustment(60)">+1h</button>
+          <button type="button" class="delta-chip ot" (click)="applyQuickAdjustment(120)">+2h</button>
+          <button type="button" class="delta-chip early" (click)="applyQuickAdjustment(-15)">-15 min</button>
+          <button type="button" class="delta-chip early" (click)="applyQuickAdjustment(-30)">-30 min</button>
+          <button type="button" class="delta-chip early" (click)="applyQuickAdjustment(-60)">-1h</button>
+          <button type="button" class="delta-chip early" (click)="applyQuickAdjustment(-120)">-2h</button>
+          <button type="button" class="delta-chip reset" (click)="applyQuickAdjustment(0)">Reset</button>
+        </div>
+
+        <div class="form-row mt-3">
+          <div class="form-group" style="margin-bottom:0" *ngIf="showFormField('overtime_hours')">
+            <label class="form-label">Overtime Duration</label>
+            <div class="hm-input-pair">
+              <div class="hm-unit-box">
+                <input type="number"
+                       class="form-control hm-input"
+                       [(ngModel)]="form.ot_hours_part"
+                       (ngModelChange)="onOvertimePartsChange()"
+                       min="0"
+                       max="24"
+                       aria-label="Overtime hours">
+                <span class="hm-unit">h</span>
+              </div>
+              <div class="hm-unit-box">
+                <input type="number"
+                       class="form-control hm-input"
+                       [(ngModel)]="form.ot_minutes_part"
+                       (ngModelChange)="onOvertimePartsChange()"
+                       min="0"
+                       max="59"
+                       step="5"
+                       aria-label="Overtime minutes">
+                <span class="hm-unit">min</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom:0" *ngIf="showFormField('adjustment_reason')">
+            <label class="form-label">Adjustment Reason</label>
+            <input type="text"
+                   class="form-control"
+                   [(ngModel)]="form.adjustment_reason"
+                   placeholder="e.g. Overtime, Early Leave, Coverage"
+                   maxlength="120">
+          </div>
+        </div>
+
+        <div class="quick-delta-chips mt-2" *ngIf="showFormField('adjustment_reason')">
+          <span class="chips-label">Reason preset:</span>
+          <button *ngFor="let r of reasonPresets"
+                  type="button"
+                  class="delta-chip"
+                  [class.active]="form.adjustment_reason === r"
+                  (click)="form.adjustment_reason = r">
+            {{r}}
+          </button>
+        </div>
+      </div>
+
+      <!-- Date(s) Selection -->
+      <div class="form-group" *ngIf="showFormField('date')">
+        <div class="date-header-row" *ngIf="!editingShift">
+          <label class="form-label" style="margin-bottom:0">
+            {{dateSelectionMode === 'single' ? fieldLabel('date','Date') : 'Dates / Period'}} *
+          </label>
+          <div class="date-scope-tabs">
+            <button type="button"
+                    class="scope-pill"
+                    [class.active]="dateSelectionMode === 'single'"
+                    (click)="dateSelectionMode = 'single'; refreshLaborLawAdvisory()">
+              Single Day
+            </button>
+            <button *ngIf="formMode !== 'LEAVE'"
+                    type="button"
+                    class="scope-pill"
+                    [class.active]="dateSelectionMode === 'weekdays'"
+                    (click)="dateSelectionMode = 'weekdays'; refreshLaborLawAdvisory()">
+              Weekdays
+            </button>
+            <button type="button"
+                    class="scope-pill"
+                    [class.active]="dateSelectionMode === 'range'"
+                    (click)="dateSelectionMode = 'range'; refreshLaborLawAdvisory()">
+              Date Range
+            </button>
+          </div>
+        </div>
+        <label class="form-label" *ngIf="editingShift">{{fieldLabel('date','Date')}} *</label>
+
+        <app-datetime-picker
+          *ngIf="editingShift || dateSelectionMode === 'single'"
+          class="form-control"
+          mode="date"
+          [(ngModel)]="form.date"
+          (valueChange)="refreshLaborLawAdvisory()"
+          placeholder="Select date">
+        </app-datetime-picker>
+
+        <div class="weekdays-selector-box" *ngIf="!editingShift && dateSelectionMode === 'weekdays'">
+          <div class="weekday-chips">
+            <button *ngFor="let day of weekDays"
+                    type="button"
+                    class="weekday-chip"
+                    [class.selected]="isWeekdaySelected(day)"
+                    (click)="toggleWeekdayChip(day)">
+              <span class="wd-name">{{day | date:'EEE'}}</span>
+              <span class="wd-num">{{day | date:'d'}}</span>
+            </button>
+          </div>
+          <div class="weekdays-footer">
+            <div class="flex gap-2">
+              <button type="button" class="delta-chip" (click)="selectWeekdaysPreset('mon-fri')">Mon–Fri</button>
+              <button type="button" class="delta-chip" (click)="selectWeekdaysPreset('all')">Full Week</button>
+            </div>
+            <span class="text-sm text-muted">{{selectedWeekdays.length}} day(s) selected</span>
+          </div>
+        </div>
+
+        <div class="range-selector-box" *ngIf="!editingShift && dateSelectionMode === 'range'">
+          <div class="form-row">
+            <div class="form-group" style="margin-bottom:8px">
+              <label class="form-label">From *</label>
+              <app-datetime-picker
+                class="form-control"
+                mode="date"
+                [(ngModel)]="rangeStartDate"
+                (valueChange)="refreshLaborLawAdvisory()"
+                placeholder="Start date">
+              </app-datetime-picker>
+            </div>
+            <div class="form-group" style="margin-bottom:8px">
+              <label class="form-label">To *</label>
+              <app-datetime-picker
+                class="form-control"
+                mode="date"
+                [(ngModel)]="rangeEndDate"
+                (valueChange)="refreshLaborLawAdvisory()"
+                placeholder="End date">
+              </app-datetime-picker>
+            </div>
+          </div>
+          <div class="range-footer">
+            <label class="checkbox-inline">
+              <input type="checkbox" [(ngModel)]="skipWeekends" (ngModelChange)="refreshLaborLawAdvisory()">
+              <span>Skip Saturday &amp; Sunday</span>
+            </label>
+            <span class="text-sm text-muted">{{resolvedTargetDatesPreview.length}} day(s) matched</span>
+          </div>
+        </div>
+
+        <label class="checkbox-inline mt-2" *ngIf="!editingShift && dateSelectionMode !== 'single'">
+          <input type="checkbox" [(ngModel)]="overwriteOnConflict">
+          <span>Replace existing shifts on conflicting days</span>
+        </label>
+      </div>
+
+      <!-- Status / Overtime / Leave Reason -->
+      <div class="form-row">
+        <div class="form-group" *ngIf="formMode !== 'LEAVE' && showFormField('status')">
+          <label class="form-label">{{fieldLabel('status','Status')}}</label>
+          <app-dropdown class="form-control" [(ngModel)]="form.status">
+            <app-dropdown-option value="SCHEDULED">Scheduled</app-dropdown-option>
+            <app-dropdown-option value="CONFIRMED">Confirmed</app-dropdown-option>
+            <app-dropdown-option value="IN_PROGRESS">In Progress</app-dropdown-option>
+            <app-dropdown-option value="COMPLETED">Completed</app-dropdown-option>
+            <app-dropdown-option value="ABSENT">Absent</app-dropdown-option>
+            <app-dropdown-option value="SWAPPED">Swapped</app-dropdown-option>
+          </app-dropdown>
+        </div>
+
+        <div class="form-group" *ngIf="formMode === 'LEAVE' && showFormField('adjustment_reason')" style="grid-column:1/-1">
+          <label class="form-label">Leave Reason / Reference</label>
+          <input type="text"
+                 class="form-control"
+                 [(ngModel)]="form.adjustment_reason"
+                 placeholder="e.g. Annual Leave, Medical Certificate"
+                 maxlength="120">
+        </div>
+
+        <div class="form-group" *ngIf="formMode === 'WORK' && showFormField('overtime_hours')">
+          <label class="form-label">Overtime (Optional)</label>
+          <div class="hm-input-pair">
+            <div class="hm-unit-box">
+              <input type="number"
+                     class="form-control hm-input"
+                     [(ngModel)]="form.ot_hours_part"
+                     (ngModelChange)="onOvertimePartsChange()"
+                     min="0"
+                     max="24"
+                     aria-label="Overtime hours">
+              <span class="hm-unit">h</span>
+            </div>
+            <div class="hm-unit-box">
+              <input type="number"
+                     class="form-control hm-input"
+                     [(ngModel)]="form.ot_minutes_part"
+                     (ngModelChange)="onOvertimePartsChange()"
+                     min="0"
+                     max="59"
+                     step="5"
+                     aria-label="Overtime minutes">
+              <span class="hm-unit">min</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Notes -->
+      <div class="form-group" style="margin-bottom:0" *ngIf="showFormField('notes')">
+        <label class="form-label">{{fieldLabel('notes','Notes')}}</label>
+        <textarea class="form-control"
+                  [(ngModel)]="form.notes"
+                  placeholder="Optional operational instructions, handover details, or leave notes…"
+                  style="min-height:68px"></textarea>
+      </div>
+
+      <!-- Live Labor-Law Advisory -->
+      <div class="labor-law-banner" *ngIf="laborLawAdvisory">
+        <span class="btn-icon">warning</span>
+        <span>{{laborLawAdvisory}}</span>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button *ngIf="editingShift"
+              type="button"
+              class="btn btn-ghost detail-delete-btn"
+              style="margin-right:auto"
+              (click)="deleted.emit(editingShift)">
+        <span class="btn-icon">delete</span>
+        Delete
+      </button>
+      <button type="button" class="btn btn-ghost" (click)="close.emit()">Cancel</button>
+      <button type="button" class="btn btn-primary" (click)="saveShift()" [disabled]="saving">
+        {{saving ? 'Saving…' : (editingShift ? 'Update Entry' : (resolvedTargetDatesPreview.length > 1 ? ('Schedule ' + resolvedTargetDatesPreview.length + ' Days') : 'Schedule'))}}
+      </button>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,366 @@
+/* ============================================================================
+   shift-form-modal.component.scss — Unified SMaRT Design Tokens & Typography
+   ============================================================================ */
+
+.shifts-form-modal {
+  max-width: 620px;
+  width: min(620px, calc(100vw - 24px));
+}
+
+.mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 4px;
+  margin-bottom: 18px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.mode-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: calc(var(--radius-md) - 2px);
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #6B7280;
+  cursor: pointer;
+  transition: var(--transition);
+  min-width: 0;
+
+  .btn-icon {
+    font-size: 17px;
+  }
+
+  &:hover:not(.active) {
+    color: var(--blue-900);
+    background: var(--blue-50);
+  }
+
+  &.active {
+    background: var(--surface);
+    color: var(--primary);
+    box-shadow: var(--shadow-sm);
+  }
+}
+
+.leave-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.leave-card-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--blue-900);
+  cursor: pointer;
+  transition: var(--transition);
+  text-align: left;
+  min-width: 0;
+
+  .btn-icon {
+    font-size: 19px;
+    color: var(--leave-color, var(--primary));
+    flex-shrink: 0;
+  }
+
+  &:hover:not(.selected) {
+    border-color: var(--blue-300);
+    background: var(--blue-50);
+  }
+
+  &.selected {
+    border-color: var(--leave-color, var(--primary));
+    background: color-mix(in srgb, var(--leave-color, var(--primary)) 12%, var(--surface));
+    color: var(--leave-color, var(--primary));
+  }
+}
+
+.custom-time-box {
+  padding: 14px 16px;
+  margin-bottom: 18px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+}
+
+.custom-time-box-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.custom-time-title {
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--blue-950);
+}
+
+.custom-delta-badge {
+  font-family: var(--font-sans);
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--blue-900);
+
+  &.positive {
+    background: #EDE9FE;
+    border-color: #C4B5FD;
+    color: #5B21B6;
+  }
+
+  &.negative {
+    background: #FEF3C7;
+    border-color: #FDE68A;
+    color: #B45309;
+  }
+}
+
+.quick-delta-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.chips-label {
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #6B7280;
+}
+
+.delta-chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-family: var(--font-sans);
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--blue-900);
+  cursor: pointer;
+  transition: var(--transition);
+
+  &:hover {
+    border-color: var(--primary);
+    background: var(--blue-50);
+  }
+
+  &.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #FFFFFF;
+  }
+
+  &.ot {
+    color: #6D28D9;
+  }
+
+  &.early {
+    color: #B45309;
+  }
+
+  &.reset {
+    color: #6B7280;
+  }
+}
+
+.hm-input-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.hm-unit-box {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.hm-input {
+  text-align: center;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.hm-unit {
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #6B7280;
+  flex-shrink: 0;
+}
+
+.date-header-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.date-scope-tabs {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.scope-pill {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #6B7280;
+  cursor: pointer;
+  transition: var(--transition);
+
+  &:hover:not(.active) {
+    border-color: var(--blue-300);
+    color: var(--blue-900);
+  }
+
+  &.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #FFFFFF;
+  }
+}
+
+.weekdays-selector-box,
+.range-selector-box {
+  padding: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+}
+
+.weekdays-footer,
+.range-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.weekday-chips {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.weekday-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-family: var(--font-sans);
+  color: var(--blue-900);
+  cursor: pointer;
+  transition: var(--transition);
+
+  .wd-name {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .wd-num {
+    font-size: 0.84rem;
+    font-weight: 700;
+  }
+
+  &:hover:not(.selected) {
+    border-color: var(--blue-300);
+    background: var(--blue-50);
+  }
+
+  &.selected {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #FFFFFF;
+  }
+}
+
+.checkbox-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--blue-900);
+  cursor: pointer;
+
+  input[type="checkbox"] {
+    accent-color: var(--primary);
+    width: 15px;
+    height: 15px;
+    cursor: pointer;
+  }
+}
+
+.labor-law-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: #FFFBEB;
+  border: 1px solid #FDE68A;
+  font-family: var(--font-sans);
+  color: #92400E;
+  font-size: 0.82rem;
+  line-height: 1.45;
+
+  .btn-icon {
+    font-size: 18px;
+    color: #D97706;
+    flex-shrink: 0;
+  }
+}
+
+@media (max-width: 600px) {
+  .mode-tabs,
+  .leave-picker-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .weekday-chips {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
