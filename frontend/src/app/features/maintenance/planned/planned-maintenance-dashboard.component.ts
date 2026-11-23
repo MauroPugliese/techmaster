@@ -1,7 +1,7 @@
 // =============================================================================
 // planned-maintenance-dashboard.component.ts — Full CRUD with real API
 // =============================================================================
-import { Component, OnInit, OnDestroy, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, HostListener, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject } from 'rxjs';
@@ -53,6 +53,8 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
 
   // Modal
   showModal = false;
+  detailTask: PlannedMaintenanceTask | null = null;
+  detailIsDayEvent = false;
   editing = false;
   editingScope: 'series' | 'occurrence' = 'series';
   saving = false;
@@ -178,6 +180,68 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
       optional: task.optional || false
     };
     this.showModal = true;
+  }
+
+  openDetailModal(task: PlannedMaintenanceTask, fromDayList = false): void {
+    this.detailTask = task;
+    this.detailIsDayEvent = fromDayList || Boolean(task.isOccurrence);
+    this.cdr.markForCheck();
+  }
+
+  closeDetailModal(event: MouseEvent): void {
+    if ((event.target as HTMLElement).classList.contains('modal-overlay')) {
+      this.detailTask = null;
+      this.detailIsDayEvent = false;
+    }
+  }
+
+  editFromDetail(): void {
+    if (!this.detailTask) return;
+    const task = this.detailTask;
+    const isDayEvent = this.detailIsDayEvent;
+    this.detailTask = null;
+    this.detailIsDayEvent = false;
+    if (isDayEvent) {
+      this.openOccurrenceModal(task);
+    } else {
+      this.openModal(task);
+    }
+  }
+
+  toggleStatusFromDetail(): void {
+    if (!this.detailTask) return;
+    const task = this.detailTask;
+    this.detailTask = null;
+    this.detailIsDayEvent = false;
+    this.toggleStatus(task);
+  }
+
+  deleteFromDetail(): void {
+    if (!this.detailTask) return;
+    const task = this.detailTask;
+    const isDayEvent = this.detailIsDayEvent;
+    this.detailTask = null;
+    this.detailIsDayEvent = false;
+    if (isDayEvent) {
+      this.deleteOccurrence(task);
+    } else {
+      this.deleteTask(task);
+    }
+  }
+
+  getDetailProp(task: PlannedMaintenanceTask | null, camelKey: string, snakeKey: string): any {
+    if (!task) return null;
+    const raw = task as unknown as Record<string, unknown>;
+    return raw[snakeKey] ?? raw[camelKey] ?? null;
+  }
+
+  @HostListener('document:keydown.escape')
+  onEsc(): void {
+    if (this.detailTask) {
+      this.detailTask = null;
+      this.detailIsDayEvent = false;
+      this.cdr.markForCheck();
+    }
   }
 
   closeModal(event: MouseEvent): void {
@@ -402,6 +466,23 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
   formatDate(iso: string): string {
     if (!iso) return '—';
     return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+
+  formatDateTime(value: unknown): string {
+    if (typeof value !== 'string' || !value.trim()) return '—';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
+      return this.formatDate(`${value.trim()}T12:00:00`);
+    }
+    const parsed = new Date(value);
+    if (isNaN(parsed.getTime())) return value;
+    return parsed.toLocaleString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
   }
 
   private formatDateStr(d: Date): string {

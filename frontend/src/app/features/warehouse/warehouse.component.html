@@ -71,7 +71,9 @@
         </tr>
       </thead>
       <tbody>
-        <tr *ngFor="let item of items">
+        <tr *ngFor="let item of items"
+            class="row-clickable"
+            (click)="openDetailModal(item)">
           <td *ngIf="showTableField('sku')"><code style="font-size:0.8rem">{{item.sku}}</code></td>
           <td *ngIf="showTableField('part_number')"><code style="font-size:0.8rem">{{item.part_number || '—'}}</code></td>
           <td *ngIf="showTableField('name')">
@@ -102,7 +104,7 @@
           <td class="text-sm" *ngIf="showTableField('reorder_point')">{{item.reorder_point}} {{item.unit}}</td>
           <td class="text-sm" *ngIf="showTableField('unit_cost')">${{item.unit_cost | number:'1.2-2'}}</td>
           <td class="text-sm truncate" style="max-width:120px" *ngIf="showTableField('supplier')">{{item.supplier || '—'}}</td>
-          <td>
+          <td (click)="$event.stopPropagation()">
             <div class="flex gap-1">
               <!-- Stock movement -->
               <button class="btn btn-ghost btn-icon-only btn-sm"
@@ -432,6 +434,111 @@
       </button>
     </div>
 
+  </div>
+</div>
+
+<!-- Inventory Item Detail Info Modal -->
+<div class="modal-overlay" *ngIf="detailItem" (click)="closeDetailModal($event)">
+  <div class="modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="wh-detail-title" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <div class="detail-header-title">
+        <div class="detail-head-meta">
+          <span class="detail-id-pill">#{{detailItem.id}}</span>
+          <span class="detail-type-chip" *ngIf="detailItem.category">{{detailItem.category.name}}</span>
+          <span class="badge" [ngClass]="detailItem.is_active ? 'badge-success' : 'badge-gray'">
+            {{detailItem.is_active ? 'Active' : 'Inactive'}}
+          </span>
+        </div>
+        <h2 id="wh-detail-title">{{detailItem.name}}</h2>
+      </div>
+      <button type="button" class="btn btn-ghost btn-icon-only" (click)="detailItem = null" title="Close">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="detail-stock-banner">
+        <div class="detail-stock-banner-main">
+          <span class="detail-label">Current Stock</span>
+          <span class="detail-stock-banner-qty" [style.color]="getStockColor(detailItem)">
+            {{detailItem.quantity}} {{detailItem.unit}}
+          </span>
+        </div>
+        <span class="badge"
+              [style.background]="getStockBadgeBg(detailItem)"
+              [style.color]="getStockColor(detailItem)">
+          {{getStockStatus(detailItem)}}
+        </span>
+      </div>
+
+      <div class="detail-grid">
+        <div class="detail-field">
+          <span class="detail-label">SKU</span>
+          <span class="detail-value mono">{{detailItem.sku || '—'}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Part Number</span>
+          <span class="detail-value mono">{{detailItem.part_number || '—'}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Category</span>
+          <span class="detail-value">{{detailItem.category?.name || '—'}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Supplier</span>
+          <span class="detail-value">{{detailItem.supplier || '—'}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Minimum Stock</span>
+          <span class="detail-value">{{detailItem.min_stock}} {{detailItem.unit}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Reorder Point</span>
+          <span class="detail-value">{{detailItem.reorder_point}} {{detailItem.unit}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Max Stock</span>
+          <span class="detail-value">{{detailItem.max_stock != null ? (detailItem.max_stock + ' ' + detailItem.unit) : '—'}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Unit Cost</span>
+          <span class="detail-value">{{detailItem.unit_cost != null ? ('$' + (detailItem.unit_cost | number:'1.2-2')) : '—'}}</span>
+        </div>
+        <div class="detail-field full-span">
+          <span class="detail-label">Total Stock Value</span>
+          <span class="detail-value">{{getTotalValue(detailItem) != null ? ('$' + (getTotalValue(detailItem) | number:'1.2-2')) : '—'}}</span>
+        </div>
+      </div>
+
+      <div class="detail-section">
+        <span class="detail-section-title">Description</span>
+        <div class="detail-text-box" [style.color]="detailItem.description ? 'var(--text)' : 'var(--text-muted)'">
+          {{detailItem.description || 'No description provided.'}}
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-footer detail-footer">
+      <button type="button" class="btn btn-ghost detail-delete-btn" (click)="deleteFromDetail()">
+        <span class="btn-icon">delete</span>
+        Delete
+      </button>
+      <div class="detail-footer-actions">
+        <button type="button" class="btn btn-secondary" (click)="detailItem = null">Close</button>
+        <button type="button" class="btn btn-secondary" (click)="historyFromDetail()">
+          <span class="btn-icon">history</span>
+          History
+        </button>
+        <button type="button" class="btn btn-secondary" (click)="movementFromDetail()">
+          <span class="btn-icon" style="color:#1565C0">swap_horiz</span>
+          Movement
+        </button>
+        <button type="button" class="btn btn-primary" (click)="editFromDetail()">
+          <span class="btn-icon">edit</span>
+          Edit
+        </button>
+      </div>
+    </div>
   </div>
 </div>
 

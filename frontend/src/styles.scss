@@ -979,3 +979,4 @@ textarea.form-control { resize: vertical; min-height: 100px; }
 
 /* ── Global Wiki Prose & TipTap Surface Typography ─────────────────────────── */
 @import './app/features/wiki/styles/wiki-prose';
+@import './app/shared/styles/entity-detail-modal';

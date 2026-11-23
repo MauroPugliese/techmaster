@@ -1,7 +1,7 @@
 // =============================================================================
 // maintenance.component.ts — updated: ToastService + ConfirmService
 // =============================================================================
-import { Component, OnInit, OnDestroy, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, HostListener, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule, DatePipe, TitleCasePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -40,6 +40,7 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
   priorityFilter = '';
   showModal = false;
   editing:  MaintenanceRecord | null = null;
+  detailRecord: MaintenanceRecord | null = null;
   form:     any = this.emptyForm();
   uiPrefs: UiSectionPreferences | null = null;
 
@@ -133,6 +134,45 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
     };
     this.showModal = true; this.cdr.markForCheck();
   }
+  openDetailModal(record: MaintenanceRecord): void {
+    this.detailRecord = record;
+    this.cdr.markForCheck();
+  }
+  closeDetailModal(e: MouseEvent): void {
+    if ((e.target as HTMLElement).classList.contains('modal-overlay')) {
+      this.detailRecord = null;
+    }
+  }
+  editFromDetail(): void {
+    if (!this.detailRecord) return;
+    const record = this.detailRecord;
+    this.detailRecord = null;
+    this.editRecord(record);
+  }
+  completeFromDetail(): void {
+    if (!this.detailRecord) return;
+    const record = this.detailRecord;
+    this.detailRecord = null;
+    this.completeRecord(record);
+  }
+  deleteFromDetail(): void {
+    if (!this.detailRecord) return;
+    const record = this.detailRecord;
+    this.detailRecord = null;
+    this.deleteRecord(record);
+  }
+  formatLabel(value?: string | null): string {
+    return (value || '').replace(/_/g, ' ');
+  }
+
+  @HostListener('document:keydown.escape')
+  onEsc(): void {
+    if (this.detailRecord) {
+      this.detailRecord = null;
+      this.cdr.markForCheck();
+    }
+  }
+
   closeModal(e: MouseEvent): void {
     if ((e.target as HTMLElement).classList.contains('modal-overlay')) this.showModal = false;
   }

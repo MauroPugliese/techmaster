@@ -81,7 +81,9 @@
         </tr>
       </thead>
       <tbody>
-        <tr *ngFor="let r of records">
+        <tr *ngFor="let r of records"
+            class="row-clickable"
+            (click)="openDetailModal(r)">
           <td *ngIf="showTableField('title')">
             <div class="font-bold">{{r.title}}</div>
             <div class="text-sm text-muted truncate" style="max-width:180px">{{r.description}}</div>
@@ -96,7 +98,7 @@
           <td class="text-sm" *ngIf="showTableField('scheduled_date')">{{r.scheduled_date | date:'MMM d, y'}}</td>
           <td class="text-sm" *ngIf="showTableField('technician')">{{r.technician?.first_name}} {{r.technician?.last_name}}</td>
           <td class="text-sm" *ngIf="showTableField('cost')">{{r.cost ? ('$' + r.cost) : '—'}}</td>
-          <td>
+          <td (click)="$event.stopPropagation()">
             <div class="flex gap-1">
               <!-- Edit -->
               <button class="btn btn-ghost btn-icon-only btn-sm" (click)="editRecord(r)" title="Edit">
@@ -260,6 +262,111 @@
       </button>
     </div>
 
+  </div>
+</div>
+
+<!-- Maintenance Detail Info Modal -->
+<div class="modal-overlay" *ngIf="detailRecord" (click)="closeDetailModal($event)">
+  <div class="modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="maint-detail-title" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <div class="detail-header-title">
+        <div class="detail-head-meta">
+          <span class="detail-id-pill">#{{detailRecord.id}}</span>
+          <span class="detail-type-chip" *ngIf="detailRecord.type">{{formatLabel(detailRecord.type) | titlecase}}</span>
+        </div>
+        <h2 id="maint-detail-title">{{detailRecord.title}}</h2>
+      </div>
+      <button type="button" class="btn btn-ghost btn-icon-only" (click)="detailRecord = null" title="Close">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="detail-badges">
+        <span class="badge" [ngClass]="getStatusBadge(detailRecord.status)">
+          {{formatLabel(detailRecord.status) | titlecase}}
+        </span>
+        <span class="badge" [ngClass]="getPriorityBadge(detailRecord.priority)">
+          Priority: {{detailRecord.priority | titlecase}}
+        </span>
+      </div>
+
+      <div class="detail-grid">
+        <div class="detail-field">
+          <span class="detail-label">Asset</span>
+          <span class="detail-value">{{detailRecord.asset?.name || '—'}}</span>
+          <span class="detail-sub" *ngIf="detailRecord.asset?.category?.name || detailRecord.asset?.serial_number || detailRecord.asset?.location">
+            {{detailRecord.asset?.category?.name}}<span *ngIf="detailRecord.asset?.category?.name && detailRecord.asset?.serial_number"> · </span><span *ngIf="detailRecord.asset?.serial_number">S/N {{detailRecord.asset?.serial_number}}</span><span *ngIf="(detailRecord.asset?.category?.name || detailRecord.asset?.serial_number) && detailRecord.asset?.location"> · </span>{{detailRecord.asset?.location}}
+          </span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Technician</span>
+          <span class="detail-value">
+            {{(detailRecord.technician?.first_name || detailRecord.technician?.last_name) ? ((detailRecord.technician?.first_name || '') + ' ' + (detailRecord.technician?.last_name || '')).trim() : (detailRecord.technician?.username || 'Unassigned')}}
+          </span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Scheduled Date &amp; Time</span>
+          <span class="detail-value">{{detailRecord.scheduled_date ? (detailRecord.scheduled_date | date:'dd MMM yyyy, HH:mm') : '—'}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Completed Date &amp; Time</span>
+          <span class="detail-value">{{detailRecord.completed_date ? (detailRecord.completed_date | date:'dd MMM yyyy, HH:mm') : '—'}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Downtime</span>
+          <span class="detail-value">{{detailRecord.downtime_hours != null ? (detailRecord.downtime_hours + ' hrs') : '—'}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Cost</span>
+          <span class="detail-value">{{detailRecord.cost != null ? ('$' + (detailRecord.cost | number:'1.2-2')) : '—'}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Maintenance Type</span>
+          <span class="detail-value">{{detailRecord.type ? (formatLabel(detailRecord.type) | titlecase) : '—'}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Created At</span>
+          <span class="detail-value">{{detailRecord.created_at ? (detailRecord.created_at | date:'dd MMM yyyy, HH:mm') : '—'}}</span>
+        </div>
+      </div>
+
+      <div class="detail-section" *ngIf="detailRecord.description">
+        <span class="detail-section-title">Description</span>
+        <div class="detail-text-box">{{detailRecord.description}}</div>
+      </div>
+
+      <div class="detail-section" *ngIf="detailRecord.findings">
+        <span class="detail-section-title">Findings &amp; Resolution</span>
+        <div class="detail-text-box">{{detailRecord.findings}}</div>
+      </div>
+
+      <div class="detail-section" *ngIf="!detailRecord.description && !detailRecord.findings">
+        <span class="detail-section-title">Description &amp; Findings</span>
+        <div class="detail-text-box" style="color:var(--text-muted)">No description or findings recorded.</div>
+      </div>
+    </div>
+
+    <div class="modal-footer detail-footer">
+      <button type="button" class="btn btn-ghost detail-delete-btn" (click)="deleteFromDetail()">
+        <span class="btn-icon">delete</span>
+        Delete
+      </button>
+      <div class="detail-footer-actions">
+        <button type="button" class="btn btn-secondary" (click)="detailRecord = null">Close</button>
+        <button type="button"
+                class="btn btn-secondary"
+                *ngIf="detailRecord.status !== 'completed' && detailRecord.status !== 'cancelled'"
+                (click)="completeFromDetail()">
+          <span class="btn-icon" style="color:#10B981">check_circle</span>
+          Mark Complete
+        </button>
+        <button type="button" class="btn btn-primary" (click)="editFromDetail()">
+          <span class="btn-icon">edit</span>
+          Edit
+        </button>
+      </div>
+    </div>
   </div>
 </div>
 

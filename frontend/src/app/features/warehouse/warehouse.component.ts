@@ -1,7 +1,7 @@
 // =============================================================================
 // warehouse.component.ts — updated: ToastService + ConfirmService
 // =============================================================================
-import { Component, OnInit, OnDestroy, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, HostListener, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject } from 'rxjs';
@@ -51,6 +51,7 @@ export class WarehouseComponent implements OnInit, OnDestroy {
   showHistoryModal = false;
   historyLoading = false;
   historyItem: InventoryItem | null = null;
+  detailItem: InventoryItem | null = null;
   itemHistory: StockMovement[] = [];
   uiPrefs: UiSectionPreferences | null = null;
   historyPage = 1;
@@ -257,6 +258,53 @@ export class WarehouseComponent implements OnInit, OnDestroy {
         this.cdr.markForCheck();
       }
     });
+  }
+
+  openDetailModal(item: InventoryItem): void {
+    this.detailItem = item;
+    this.cdr.markForCheck();
+  }
+  closeDetailModal(e: MouseEvent): void {
+    if ((e.target as HTMLElement).classList.contains('modal-overlay')) {
+      this.detailItem = null;
+    }
+  }
+  editFromDetail(): void {
+    if (!this.detailItem) return;
+    const item = this.detailItem;
+    this.detailItem = null;
+    this.editItem(item);
+  }
+  movementFromDetail(): void {
+    if (!this.detailItem) return;
+    const item = this.detailItem;
+    this.detailItem = null;
+    this.openMovementModal(item);
+  }
+  historyFromDetail(): void {
+    if (!this.detailItem) return;
+    const item = this.detailItem;
+    this.detailItem = null;
+    this.openHistoryModal(item);
+  }
+  deleteFromDetail(): void {
+    if (!this.detailItem) return;
+    const item = this.detailItem;
+    this.detailItem = null;
+    this.deleteItem(item);
+  }
+  getTotalValue(item: InventoryItem): number | null {
+    if (item.unit_cost == null || (item.unit_cost as unknown) === '') return null;
+    const cost = Number(item.unit_cost);
+    return Number.isFinite(cost) ? item.quantity * cost : null;
+  }
+
+  @HostListener('document:keydown.escape')
+  onEsc(): void {
+    if (this.detailItem) {
+      this.detailItem = null;
+      this.cdr.markForCheck();
+    }
   }
 
   closeHistoryModal(e: MouseEvent): void {

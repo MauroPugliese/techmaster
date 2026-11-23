@@ -33,7 +33,9 @@
         </tr>
       </thead>
       <tbody>
-        <tr *ngFor="let t of tasks">
+        <tr *ngFor="let t of tasks"
+            class="row-clickable"
+            (click)="openDetailModal(t)">
           <td class="font-bold text-sm" *ngIf="showTableField('system')">{{ t.system }}</td>
           <td class="text-sm" *ngIf="showTableField('subsystem')">{{ t.subsystem }}</td>
           <td *ngIf="showTableField('task')">
@@ -53,7 +55,7 @@
               {{ t.status }}
             </span>
           </td>
-          <td>
+          <td (click)="$event.stopPropagation()">
             <div class="flex gap-1">
               <button class="btn btn-ghost btn-icon-only btn-sm"
                       (click)="toggleStatus(t)" [title]="t.status === 'DONE' ? 'Mark TODO' : 'Mark DONE'">
@@ -166,7 +168,10 @@
       </div>
 
       <div class="event-list">
-        <div class="event-item" *ngFor="let t of dayTasks">
+        <div class="event-item"
+             style="cursor:pointer"
+             *ngFor="let t of dayTasks"
+             (click)="openDetailModal(t, true)">
           <div class="event-color" [style.background]="getTypeColor(t.repeat_task_type || t.repeatTaskType)"></div>
           <div class="event-info">
             <div class="event-title">{{ t.task }}</div>
@@ -180,7 +185,7 @@
             {{ t.status }}
           </span>
           <span class="badge" *ngIf="t.isOccurrence" style="background:#E0F2FE;color:#075985">Occurrence</span>
-          <div class="flex gap-1" style="margin-left:auto">
+          <div class="flex gap-1" style="margin-left:auto" (click)="$event.stopPropagation()">
             <button class="btn btn-ghost btn-icon-only btn-sm" (click)="openOccurrenceModal(t)" title="Edit occurrence">
               <span class="btn-icon" style="font-size:17px">event_repeat</span>
             </button>
@@ -320,5 +325,113 @@
       </button>
     </div>
 
+  </div>
+</div>
+
+<!-- ── Planned Maintenance Detail Info Modal ──────────────────────────────── -->
+<div class="modal-overlay" *ngIf="detailTask" (click)="closeDetailModal($event)">
+  <div class="modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="planned-detail-title" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <div class="detail-header-title">
+        <div class="detail-head-meta">
+          <span class="detail-id-pill">#{{detailTask.masterId || detailTask.id}}</span>
+          <span class="badge" *ngIf="detailIsDayEvent || detailTask.isOccurrence" style="background:#E0F2FE;color:#075985">
+            Calendar Occurrence
+          </span>
+          <span class="detail-type-chip" *ngIf="detailTask.system">
+            {{detailTask.system}}<span *ngIf="detailTask.subsystem"> / {{detailTask.subsystem}}</span>
+          </span>
+        </div>
+        <h2 id="planned-detail-title">{{detailTask.task}}</h2>
+      </div>
+      <button type="button" class="btn btn-ghost btn-icon-only" (click)="detailTask = null; detailIsDayEvent = false" title="Close">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="detail-badges">
+        <span class="badge" [ngClass]="getStatusBadgeClass(detailTask.status)">
+          {{detailTask.status}}
+        </span>
+        <span class="badge" [ngClass]="getRepeatBadgeClass(getDetailProp(detailTask, 'repeatTaskType', 'repeat_task_type'))">
+          Every {{getDetailProp(detailTask, 'repeatTaskNumber', 'repeat_task_number') || 1}}
+          {{getDetailProp(detailTask, 'repeatTaskType', 'repeat_task_type') || 'N/A'}}
+        </span>
+        <span class="badge badge-gray" *ngIf="detailTask.optional">Optional</span>
+      </div>
+
+      <div class="detail-grid">
+        <div class="detail-field">
+          <span class="detail-label">System</span>
+          <span class="detail-value">{{detailTask.system || '—'}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Subsystem</span>
+          <span class="detail-value">{{detailTask.subsystem || '—'}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Reference</span>
+          <span class="detail-value mono">{{detailTask.reference || '—'}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Optional Task</span>
+          <span class="detail-value">{{detailTask.optional ? 'Yes' : 'No'}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Start Date &amp; Time</span>
+          <span class="detail-value">{{formatDateTime(getDetailProp(detailTask, 'operationDateStart', 'operation_date_start'))}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">End Date &amp; Time</span>
+          <span class="detail-value">{{formatDateTime(getDetailProp(detailTask, 'operationDateEnd', 'operation_date_end'))}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Repeat Schedule</span>
+          <span class="detail-value">
+            Every {{getDetailProp(detailTask, 'repeatTaskNumber', 'repeat_task_number') || 1}}
+            {{getDetailProp(detailTask, 'repeatTaskType', 'repeat_task_type') || '—'}}
+          </span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Repeat Until</span>
+          <span class="detail-value">{{formatDateTime(getDetailProp(detailTask, 'recurrenceEndDate', 'recurrence_end_date'))}}</span>
+        </div>
+        <div class="detail-field full-span" *ngIf="detailIsDayEvent || detailTask.occurrenceDate">
+          <span class="detail-label">Occurrence Date</span>
+          <span class="detail-value">{{formatDateTime(detailTask.occurrenceDate || selectedDate)}}</span>
+        </div>
+      </div>
+
+      <div class="detail-section">
+        <span class="detail-section-title">Task Description</span>
+        <div class="detail-text-box">{{detailTask.task || '—'}}</div>
+      </div>
+
+      <div class="detail-section" *ngIf="getDetailProp(detailTask, 'reportTemplate', 'report_template')">
+        <span class="detail-section-title">Report Template</span>
+        <div class="detail-text-box">{{getDetailProp(detailTask, 'reportTemplate', 'report_template')}}</div>
+      </div>
+    </div>
+
+    <div class="modal-footer detail-footer">
+      <button type="button" class="btn btn-ghost detail-delete-btn" (click)="deleteFromDetail()">
+        <span class="btn-icon">delete</span>
+        {{detailIsDayEvent ? 'Delete Occurrence' : 'Delete'}}
+      </button>
+      <div class="detail-footer-actions">
+        <button type="button" class="btn btn-secondary" (click)="detailTask = null; detailIsDayEvent = false">Close</button>
+        <button type="button" class="btn btn-secondary" (click)="toggleStatusFromDetail()">
+          <span class="btn-icon" [style.color]="detailTask.status === 'DONE' ? '#6B7280' : '#10B981'">
+            {{detailTask.status === 'DONE' ? 'undo' : 'check_circle'}}
+          </span>
+          {{detailTask.status === 'DONE' ? 'Mark TODO' : 'Mark DONE'}}
+        </button>
+        <button type="button" class="btn btn-primary" (click)="editFromDetail()">
+          <span class="btn-icon">edit</span>
+          {{detailIsDayEvent ? 'Edit Occurrence' : 'Edit'}}
+        </button>
+      </div>
+    </div>
   </div>
 </div>

@@ -1,7 +1,7 @@
 // =============================================================================
 // operations.component.ts — updated: ToastService + ConfirmService
 // =============================================================================
-import { Component, OnInit, OnDestroy, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, HostListener, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule, DatePipe, TitleCasePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject } from 'rxjs';
@@ -43,6 +43,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
 
   showModal  = false;
   editingOp: Operation | null = null;
+  detailOp:  Operation | null = null;
   form:      any = this.emptyForm();
   uiPrefs: UiSectionPreferences | null = null;
   Math = Math;
@@ -107,6 +108,36 @@ export class OperationsComponent implements OnInit, OnDestroy {
     } : this.emptyForm();
     this.showModal = true;
   }
+  openDetailModal(op: Operation): void {
+    this.detailOp = op;
+    this.cdr.markForCheck();
+  }
+  closeDetailModal(e: MouseEvent): void {
+    if ((e.target as HTMLElement).classList.contains('modal-overlay')) {
+      this.detailOp = null;
+    }
+  }
+  editFromDetail(): void {
+    if (!this.detailOp) return;
+    const op = this.detailOp;
+    this.detailOp = null;
+    this.openModal(op);
+  }
+  deleteFromDetail(): void {
+    if (!this.detailOp) return;
+    const op = this.detailOp;
+    this.detailOp = null;
+    this.deleteOperation(op);
+  }
+
+  @HostListener('document:keydown.escape')
+  onEsc(): void {
+    if (this.detailOp) {
+      this.detailOp = null;
+      this.cdr.markForCheck();
+    }
+  }
+
   editOperation(op: Operation): void { this.openModal(op); }
   closeModal(e: MouseEvent): void {
     if ((e.target as HTMLElement).classList.contains('modal-overlay')) this.showModal = false;

@@ -80,7 +80,9 @@
         </tr>
       </thead>
       <tbody>
-        <tr *ngFor="let op of operations; let i = index">
+        <tr *ngFor="let op of operations; let i = index"
+            class="row-clickable"
+            (click)="openDetailModal(op)">
           <td class="text-muted text-sm" *ngIf="showTableField('id')">{{op.id}}</td>
           <td *ngIf="showTableField('title')">
             <div class="font-bold">{{op.title}}</div>
@@ -106,7 +108,7 @@
               <span class="text-sm">{{op.creator?.first_name}}</span>
             </div>
           </td>
-          <td>
+          <td (click)="$event.stopPropagation()">
             <div class="flex gap-2">
               <button class="btn btn-ghost btn-icon-only btn-sm" (click)="editOperation(op)" title="Edit">
                 <span class="btn-icon" style="font-size:17px">edit</span>
@@ -126,7 +128,7 @@
            style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);
                   padding:18px;transition:var(--transition);cursor:pointer;
                   border-left:4px solid {{op.type?.color || 'var(--primary)'}}"
-           (click)="editOperation(op)"
+           (click)="openDetailModal(op)"
            [style.border-left-color]="op.type?.color">
         <div class="flex items-center justify-between mb-4">
           <span class="badge" [ngClass]="getStatusBadge(op.status)">{{op.status}}</span>
@@ -259,6 +261,97 @@
         <div class="spinner" *ngIf="saving" style="width:16px;height:16px;border-width:2px;border-top-color:#fff"></div>
         {{saving ? 'Saving...' : (editingOp ? 'Update' : 'Create')}}
       </button>
+    </div>
+  </div>
+</div>
+
+<!-- Operation Detail Info Modal -->
+<div class="modal-overlay" *ngIf="detailOp" (click)="closeDetailModal($event)">
+  <div class="modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="op-detail-title" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <div class="detail-header-title">
+        <div class="detail-head-meta">
+          <span class="detail-id-pill">#{{detailOp.id}}</span>
+          <span class="detail-type-chip" *ngIf="detailOp.type">
+            <span class="detail-type-dot" [style.background]="detailOp.type.color || 'var(--primary)'"></span>
+            {{detailOp.type.name}}
+          </span>
+        </div>
+        <h2 id="op-detail-title">{{detailOp.title}}</h2>
+      </div>
+      <button type="button" class="btn btn-ghost btn-icon-only" (click)="detailOp = null" title="Close">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="detail-badges">
+        <span class="badge" [ngClass]="getStatusBadge(detailOp.status)">
+          {{detailOp.status | titlecase}}
+        </span>
+        <span class="badge" [ngClass]="getPriorityBadge(detailOp.priority)">
+          Priority: {{detailOp.priority | titlecase}}
+        </span>
+      </div>
+
+      <div class="detail-grid">
+        <div class="detail-field">
+          <span class="detail-label">Start Date &amp; Time</span>
+          <span class="detail-value">{{detailOp.start_date ? (detailOp.start_date | date:'dd MMM yyyy, HH:mm') : '—'}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">End Date &amp; Time</span>
+          <span class="detail-value">{{detailOp.end_date ? (detailOp.end_date | date:'dd MMM yyyy, HH:mm') : '—'}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Location</span>
+          <span class="detail-value">{{detailOp.location || '—'}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Operation Type</span>
+          <span class="detail-value">{{detailOp.type?.name || '—'}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Created By</span>
+          <span class="detail-value">
+            {{(detailOp.creator?.first_name || detailOp.creator?.last_name) ? ((detailOp.creator?.first_name || '') + ' ' + (detailOp.creator?.last_name || '')).trim() : (detailOp.creator?.username || '—')}}
+          </span>
+          <span class="detail-sub" *ngIf="detailOp.creator?.email">{{detailOp.creator?.email}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Created At</span>
+          <span class="detail-value">{{detailOp.created_at ? (detailOp.created_at | date:'dd MMM yyyy, HH:mm') : '—'}}</span>
+        </div>
+      </div>
+
+      <div class="detail-section" *ngIf="detailOp.description">
+        <span class="detail-section-title">Description</span>
+        <div class="detail-text-box">{{detailOp.description}}</div>
+      </div>
+
+      <div class="detail-section" *ngIf="detailOp.notes">
+        <span class="detail-section-title">Notes</span>
+        <div class="detail-text-box">{{detailOp.notes}}</div>
+      </div>
+
+      <div class="detail-section" *ngIf="!detailOp.description && !detailOp.notes">
+        <span class="detail-section-title">Description &amp; Notes</span>
+        <div class="detail-text-box" style="color:var(--text-muted)">No description or notes provided.</div>
+      </div>
+    </div>
+
+    <div class="modal-footer detail-footer">
+      <button type="button" class="btn btn-ghost detail-delete-btn" (click)="deleteFromDetail()">
+        <span class="btn-icon">delete</span>
+        Delete
+      </button>
+      <div class="detail-footer-actions">
+        <button type="button" class="btn btn-secondary" (click)="detailOp = null">Close</button>
+        <button type="button" class="btn btn-primary" (click)="editFromDetail()">
+          <span class="btn-icon">edit</span>
+          Edit
+        </button>
+      </div>
     </div>
   </div>
 </div>
