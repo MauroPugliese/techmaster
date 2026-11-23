@@ -1,6 +1,6 @@
 /* =============================================================================
    styles.scss — SMaRT Global Styles
-   Blue & White Professional Theme | Azuro Typeface family
+   Blue & White Professional Theme | Plus Jakarta Sans & JetBrains Mono
    ============================================================================= */
 
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -30,9 +30,19 @@
   --accent:         #00B0FF;
   --surface:        #FFFFFF;
   --surface-raised: #F8FBFF;
+  --surface-2:      var(--surface-raised);
+  --surface-hover:  var(--blue-50);
   --background:     #F0F4F8;
   --border:         #E1EAF5;
+  --border-strong:  #CBD5E1;
   --border-focus:   var(--blue-500);
+
+  /* Semantic Text Colors */
+  --text:           var(--blue-950);
+  --text-primary:   var(--blue-950);
+  --text-secondary: var(--blue-900);
+  --text-muted:     #6B7280;
+  --text-subtle:    #9CA3AF;
 
   /* Status Colors */
   --status-planned:     #5C6BC0;
@@ -51,6 +61,8 @@
   /* Typography */
   --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
+  --mdc-typography-font-family: var(--font-sans);
+  --mat-typography-font-family: var(--font-sans);
 
   /* Spacing */
   --radius-sm:  6px;
@@ -91,6 +103,20 @@ body {
   overflow-x: hidden;
 }
 
+button,
+input,
+select,
+textarea,
+optgroup {
+  font-family: var(--font-sans);
+}
+
+.mat-typography,
+.cdk-overlay-container,
+.cdk-overlay-pane {
+  font-family: var(--font-sans);
+}
+
 /* ── Typography ─────────────────────────────────────────────────────────────── */
 h1, h2, h3, h4, h5, h6 {
   font-weight: 700;
@@ -107,7 +133,7 @@ h5 { font-size: 1rem; }
 
 p { line-height: 1.7; }
 
-code, pre {
+code, pre, kbd, samp {
   font-family: var(--font-mono);
   background: var(--blue-50);
   border: 1px solid var(--border);
@@ -335,7 +361,7 @@ pre     { padding: 16px; overflow-x: auto; }
 .header-title {
   flex: 1;
   h2 { font-size: 1.1rem; font-weight: 700; }
-  p  { font-size: 0.8rem; color: #6B7280; margin-top: -2px; }
+  p  { font-size: 0.8rem; color: var(--text-muted); margin-top: -2px; }
 }
 
 /* ── Date Range Picker (Global Filter) ──────────────────────────────────────── */
@@ -368,11 +394,12 @@ pre     { padding: 16px; overflow-x: auto; }
     border-radius: 20px;
     border: 1px solid var(--border);
     background: var(--surface);
+    font-family: var(--font-sans);
     font-size: 0.75rem;
     font-weight: 600;
     cursor: pointer;
     transition: var(--transition);
-    color: #6B7280;
+    color: var(--text-muted);
 
     &:hover, &.active {
       background: var(--primary);
@@ -406,7 +433,7 @@ pre     { padding: 16px; overflow-x: auto; }
   margin-bottom: 20px;
 
   h3 { font-size: 1rem; font-weight: 700; }
-  p  { font-size: 0.8rem; color: #6B7280; margin-top: 2px; }
+  p  { font-size: 0.8rem; color: var(--text-muted); margin-top: 2px; }
 }
 
 /* ── KPI Cards ──────────────────────────────────────────────────────────────── */
@@ -464,7 +491,7 @@ pre     { padding: 16px; overflow-x: auto; }
   .kpi-label {
     font-size: 0.8rem;
     font-weight: 500;
-    color: #6B7280;
+    color: var(--text-muted);
   }
 
   .kpi-change {
@@ -480,6 +507,22 @@ pre     { padding: 16px; overflow-x: auto; }
 }
 
 /* ── Buttons ────────────────────────────────────────────────────────────────── */
+.material-icons-round {
+  font-family: 'Material Icons Round';
+  font-style: normal;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: normal !important;
+  text-transform: none !important;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  font-feature-settings: 'liga';
+  -webkit-font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
 .btn-icon,
 .mat-i {
   font-family: 'Material Icons Round';
@@ -543,7 +586,7 @@ pre     { padding: 16px; overflow-x: auto; }
 
 .btn-ghost {
   background: transparent;
-  color: #6B7280;
+  color: var(--text-muted);
   &:hover:not(:disabled) { background: var(--background); color: var(--blue-950); }
 }
 
@@ -599,7 +642,7 @@ pre     { padding: 16px; overflow-x: auto; }
     box-shadow: 0 0 0 3px rgba(33,150,243,0.12);
   }
 
-  &::placeholder { color: #9CA3AF; }
+  &::placeholder { color: var(--text-subtle); }
   &:disabled     { background: var(--background); cursor: not-allowed; }
 }
 
@@ -638,7 +681,7 @@ select.form-control option:checked {
 }
 
 select.form-control option[disabled] {
-  color: #9CA3AF;
+  color: var(--text-subtle);
 }
 
 /* Reusable select sizing helpers */
@@ -702,7 +745,7 @@ textarea.form-control { resize: vertical; min-height: 100px; }
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: #6B7280;
+    color: var(--text-muted);
     white-space: nowrap;
   }
 
@@ -816,7 +859,7 @@ textarea.form-control { resize: vertical; min-height: 100px; }
 
   &:focus-within { border-color: var(--border-focus); box-shadow: 0 0 0 3px rgba(33,150,243,0.12); }
 
-  .search-icon { font-family: 'Material Icons Round'; font-style: normal; font-size: 20px; color: #9CA3AF; }
+  .search-icon { font-family: 'Material Icons Round'; font-style: normal; font-size: 20px; color: var(--text-subtle); }
 
   input {
     border: none;
@@ -826,7 +869,7 @@ textarea.form-control { resize: vertical; min-height: 100px; }
     background: transparent;
     flex: 1;
     color: var(--blue-950);
-    &::placeholder { color: #9CA3AF; }
+    &::placeholder { color: var(--text-subtle); }
   }
 }
 
@@ -905,7 +948,7 @@ textarea.form-control { resize: vertical; min-height: 100px; }
   }
 
   h3 { color: var(--blue-900); font-size: 1.1rem; }
-  p  { color: #9CA3AF; font-size: 0.875rem; max-width: 300px; }
+  p  { color: var(--text-subtle); font-size: 0.875rem; max-width: 300px; }
 }
 
 /* ── Loader ─────────────────────────────────────────────────────────────────── */
@@ -953,7 +996,7 @@ textarea.form-control { resize: vertical; min-height: 100px; }
 .mb-4        { margin-bottom: 16px; }
 .mb-6        { margin-bottom: 24px; }
 .text-sm     { font-size: 0.85rem; }
-.text-muted  { color: #9CA3AF; }
+.text-muted  { color: var(--text-muted); }
 .text-primary { color: var(--primary); }
 .font-bold   { font-weight: 700; }
 .truncate    { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -970,6 +1013,7 @@ textarea.form-control { resize: vertical; min-height: 100px; }
   border: none;
   text-align: left;
   cursor: pointer;
+  font-family: var(--font-sans);
   font-size: 0.9rem;
   font-weight: 500;
   transition: var(--transition);

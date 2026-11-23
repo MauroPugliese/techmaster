@@ -33,14 +33,14 @@ import { ToastService, Toast } from '../../../core/services/toast.service';
 
     <!-- Text -->
     <div style="flex:1;min-width:0">
-      <div style="font-weight:700;font-size:0.875rem;color:#1F2937;margin-bottom:2px">{{t.title}}</div>
-      <div style="font-size:0.8rem;color:#4B5563;line-height:1.4">{{t.message}}</div>
+      <div style="font-weight:700;font-size:0.875rem;color:var(--blue-950);margin-bottom:2px">{{t.title}}</div>
+      <div style="font-size:0.8rem;color:var(--blue-900);line-height:1.4">{{t.message}}</div>
     </div>
 
     <!-- Dismiss -->
     <button (click)="toast.dismiss(t.id)"
             style="background:none;border:none;cursor:pointer;padding:2px;
-                   color:#9CA3AF;font-family:'Material Icons Round';
+                   color:var(--text-subtle);font-family:'Material Icons Round';
                    font-style:normal;font-size:18px;flex-shrink:0;line-height:1">
       close
     </button>

@@ -199,7 +199,7 @@ export class DropdownOptionComponent {
     }
 
     .dropdown-value.placeholder {
-      color: #9CA3AF;
+      color: var(--text-subtle);
     }
 
     .dropdown-icon,
@@ -249,7 +249,9 @@ export class DropdownOptionComponent {
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      font: inherit;
+      font-family: var(--font-sans);
+      font-size: 0.9rem;
+      line-height: 1.3;
       padding: 10px 12px;
       text-align: left;
       transition: var(--transition);
@@ -268,7 +270,7 @@ export class DropdownOptionComponent {
     }
 
     .dropdown-item:disabled {
-      color: #9CA3AF;
+      color: var(--text-subtle);
       cursor: not-allowed;
     }
 

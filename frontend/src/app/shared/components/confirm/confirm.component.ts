@@ -19,7 +19,7 @@ import { ConfirmService, ConfirmRequest } from '../../../core/services/confirm.s
     <div class="modal-header">
       <div style="display:flex;align-items:center;gap:10px">
         <span style="font-family:'Material Icons Round';font-style:normal;font-size:22px"
-              [style.color]="current.danger ? '#EF4444' : '#1565C0'">
+              [style.color]="current.danger ? '#EF4444' : 'var(--primary)'">
           {{current.danger ? 'warning' : 'help_outline'}}
         </span>
         <h3 style="margin:0">{{current.title}}</h3>
@@ -30,7 +30,7 @@ import { ConfirmService, ConfirmRequest } from '../../../core/services/confirm.s
     </div>
 
     <div class="modal-body">
-      <p style="margin:0;color:#374151;line-height:1.6">{{current.message}}</p>
+      <p style="margin:0;color:var(--blue-900);line-height:1.6">{{current.message}}</p>
     </div>
 
     <div class="modal-footer">

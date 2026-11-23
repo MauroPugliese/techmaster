@@ -16,8 +16,14 @@ import { DateFilterService } from '../../core/services/services';
 import { UiCustomizationService, UiSectionPreferences } from '../../core/services/services';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
 import { DropdownComponent, DropdownOptionComponent } from '../../shared/components/dropdown/dropdown.component';
+import {
+  applySmartChartDefaults,
+  SMART_CHART_FONT_FAMILY,
+  SMART_CHART_GRID_COLOR
+} from '../../shared/utils/chart-theme';
 
 Chart.register(...registerables, zoomPlugin);
+applySmartChartDefaults(Chart);
 
 export interface AnalyticsKpis {
   totalOperations: number;
@@ -157,7 +163,7 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private getBaseFont(): { family: string; size: number } {
-    return { family: 'Plus Jakarta Sans, sans-serif', size: 11 };
+    return { family: SMART_CHART_FONT_FAMILY, size: 11 };
   }
 
   // ── 1) Operations by Category (Bar Chart) ──────────────────────────────────
@@ -652,7 +658,7 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
     try {
       const canvas = await html2canvas(dashboard, {
         scale: 2,
-        backgroundColor: '#F8FAFC',
+        backgroundColor: '#F0F4F8',
         useCORS: true
       });
       const imgData = canvas.toDataURL('image/png');

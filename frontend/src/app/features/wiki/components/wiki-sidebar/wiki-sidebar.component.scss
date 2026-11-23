@@ -34,7 +34,8 @@
 .rail-head-actions { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
 
 .rail-icon-btn {
-  border: 0; background: transparent; color: #64748b; padding: 5px;
+  border: 0; background: transparent; color: var(--text-muted); padding: 5px;
+  font-family: var(--font-sans);
   border-radius: 7px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
   .mat-i { font-size: 19px; }
   &:hover { background: var(--blue-100); color: var(--primary); }
@@ -48,16 +49,17 @@
 
 .cat-row {
   width: 100%; border: 0; background: transparent; text-align: left;
+  font-family: var(--font-sans);
   display: flex; align-items: center; gap: 7px;
   padding: 7px 8px; border-radius: var(--radius-md); cursor: pointer;
   color: var(--blue-900); font-size: 0.85rem; font-weight: 600;
   border-left: 3px solid transparent; transition: background .14s, color .14s;
 
   &.all-row { padding-left: 10px; margin-bottom: 4px; }
-  .cat-ic { font-size: 18px; color: #64748b; flex-shrink: 0; }
+  .cat-ic { font-size: 18px; color: var(--text-muted); flex-shrink: 0; }
   .cat-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cat-count {
-    font-size: 0.7rem; font-weight: 700; color: #64748b; background: var(--blue-50);
+    font-size: 0.7rem; font-weight: 700; color: var(--text-muted); background: var(--blue-50);
     padding: 1px 7px; border-radius: 999px; flex-shrink: 0;
   }
 
@@ -76,7 +78,8 @@
 }
 
 .expand-toggle {
-  border: 0; background: transparent; color: #64748b; padding: 1px;
+  border: 0; background: transparent; color: var(--text-muted); padding: 1px;
+  font-family: var(--font-sans);
   border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center;
   .mat-i { font-size: 17px; }
   &:hover { background: rgba(21, 101, 192, 0.12); color: var(--primary); }
@@ -92,7 +95,8 @@
 .child-row { padding: 6px 8px; font-size: 0.81rem; font-weight: 500; }
 
 .tool-btn {
-  border: 0; background: transparent; color: #64748b; padding: 2px;
+  border: 0; background: transparent; color: var(--text-muted); padding: 2px;
+  font-family: var(--font-sans);
   border-radius: 4px; cursor: pointer; display: inline-flex;
   .mat-i { font-size: 15px; }
   &:hover { background: rgba(21, 101, 192, 0.14); color: var(--primary); }
@@ -107,11 +111,12 @@
 .pinned-heading {
   padding: 2px 8px 6px;
   font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.06em; color: #64748b;
+  letter-spacing: 0.06em; color: var(--text-muted);
 }
 
 .pin-item {
   width: 100%; border: 0; background: transparent; text-align: left;
+  font-family: var(--font-sans);
   display: flex; align-items: center; gap: 7px; padding: 6px 8px;
   border-radius: var(--radius-sm); cursor: pointer; color: var(--blue-900); font-size: 0.81rem;
   .mat-i { font-size: 15px; color: #f59e0b; flex-shrink: 0; }
@@ -127,7 +132,8 @@
 
 .collapsed-btn {
   width: 38px; height: 38px; border: 0; background: transparent;
-  border-radius: var(--radius-md); color: #64748b; cursor: pointer;
+  font-family: var(--font-sans);
+  border-radius: var(--radius-md); color: var(--text-muted); cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   .mat-i { font-size: 20px; }
   &:hover { background: var(--blue-50); color: var(--primary); }
@@ -143,7 +149,8 @@
 
 .icon-choice {
   height: 38px; border: 1px solid var(--border); background: var(--surface);
-  border-radius: var(--radius-sm); cursor: pointer; color: #475569;
+  font-family: var(--font-sans);
+  border-radius: var(--radius-sm); cursor: pointer; color: var(--blue-900);
   display: flex; align-items: center; justify-content: center;
   .mat-i { font-size: 20px; }
   &:hover { border-color: var(--primary); color: var(--primary); background: var(--blue-50); }

@@ -48,7 +48,8 @@
   border-radius: var(--radius-md); overflow: hidden; background: var(--surface);
 
   .vt-btn {
-    border: 0; background: transparent; color: #64748b; padding: 6px 10px;
+    border: 0; background: transparent; color: var(--text-muted); padding: 6px 10px;
+    font-family: var(--font-sans);
     cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
     .mat-i { font-size: 18px; }
     & + .vt-btn { border-left: 1px solid var(--border); }
@@ -101,7 +102,7 @@
   border-radius: var(--radius-md);
   background: var(--surface-raised);
   color: var(--blue-900);
-  font-family: inherit;
+  font-family: var(--font-sans);
   font-size: 0.82rem;
   font-weight: 700;
   display: inline-flex;
@@ -110,7 +111,7 @@
   cursor: pointer;
   transition: var(--transition);
 
-  .mat-i { font-size: 16px; color: #64748b; }
+  .mat-i { font-size: 16px; color: var(--text-muted); }
   .trigger-count {
     font-size: 0.72rem;
     font-weight: 700;
@@ -164,21 +165,21 @@
   border-bottom: 1px solid var(--border);
   background: var(--surface-raised);
 
-  .mat-i { font-size: 17px; color: #94a3b8; flex-shrink: 0; }
+  .mat-i { font-size: 17px; color: var(--text-subtle); flex-shrink: 0; }
   input {
     flex: 1;
     min-width: 0;
     border: 0;
     outline: none;
     background: transparent;
-    font-family: inherit;
+    font-family: var(--font-sans);
     font-size: 0.84rem;
     color: var(--blue-950);
   }
   .picker-clear {
     border: 0;
     background: transparent;
-    color: #94a3b8;
+    color: var(--text-subtle);
     padding: 2px;
     border-radius: 4px;
     cursor: pointer;
@@ -201,7 +202,7 @@
   width: 100%;
   border: 0;
   background: transparent;
-  font-family: inherit;
+  font-family: var(--font-sans);
   font-size: 0.84rem;
   font-weight: 500;
   color: var(--blue-950);
@@ -271,7 +272,7 @@
   border: 0;
   background: transparent;
   color: #dc2626;
-  font-family: inherit;
+  font-family: var(--font-sans);
   font-size: 0.78rem;
   font-weight: 700;
   padding: 6px 8px;
@@ -294,7 +295,7 @@
   border: 1px solid var(--border);
   background: var(--surface-raised);
   color: var(--blue-900);
-  font-family: inherit;
+  font-family: var(--font-sans);
   font-size: 0.82rem;
   font-weight: 600;
   padding: 5px 12px;
@@ -346,7 +347,7 @@
   border: 1px solid #fecaca;
   background: #fef2f2;
   color: #dc2626;
-  font-family: inherit;
+  font-family: var(--font-sans);
   padding: 5px 12px;
   border-radius: 999px;
   font-size: 0.8rem;
@@ -414,7 +415,7 @@
   border: 1px solid var(--blue-100);
   background: var(--blue-50);
   color: var(--blue-800);
-  font-family: inherit;
+  font-family: var(--font-sans);
   font-size: 0.78rem;
   font-weight: 600;
   padding: 3px 10px;
@@ -456,10 +457,10 @@
 
 .foot-info {
   display: inline-flex; align-items: center; flex-wrap: wrap; gap: 5px;
-  font-size: 0.74rem; color: #64748b;
+  font-size: 0.74rem; color: var(--text-muted);
   .foot-author { font-weight: 600; color: var(--blue-900); }
-  .foot-dot    { color: #cbd5e1; }
-  .foot-views  { display: inline-flex; align-items: center; gap: 3px; .mat-i { font-size: 14px; color: #94a3b8; } }
+  .foot-dot    { color: var(--border-strong); }
+  .foot-views  { display: inline-flex; align-items: center; gap: 3px; .mat-i { font-size: 14px; color: var(--text-subtle); } }
 }
 
 .hover-actions {
@@ -467,7 +468,8 @@
 }
 
 .act-btn {
-  border: 0; background: var(--surface-raised); color: #475569; padding: 4px;
+  border: 0; background: var(--surface-raised); color: var(--blue-900); padding: 4px;
+  font-family: var(--font-sans);
   border-radius: 6px; cursor: pointer; display: inline-flex;
   .mat-i { font-size: 16px; }
   &:hover { background: var(--blue-100); color: var(--primary); }

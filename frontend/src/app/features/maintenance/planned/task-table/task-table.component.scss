@@ -1,8 +1,9 @@
 /* ─── Task Table Card ─────────────────────────────────────────────────────── */
 .table-card {
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
   padding: 20px;
 }
 
@@ -17,7 +18,7 @@
 .table-title {
   font-size: 1rem;
   font-weight: 700;
-  color: #1e3a5f;
+  color: var(--blue-950);
   margin: 0;
 }
 
@@ -29,11 +30,12 @@
 .icon-action {
   background: none;
   border: none;
+  font-family: var(--font-sans);
   cursor: pointer;
   padding: 4px;
   border-radius: 4px;
 
-  &:hover { background: #f1f5f9; }
+  &:hover { background: var(--blue-50); }
 }
 
 /* Search */
@@ -47,14 +49,17 @@
   width: 320px;
   max-width: 100%;
   padding: 8px 16px;
-  border: 1px solid #e2e8f0;
+  border: 1.5px solid var(--border);
   border-radius: 20px;
+  font-family: var(--font-sans);
   font-size: 0.8125rem;
+  color: var(--blue-950);
+  background: var(--surface);
   outline: none;
   transition: border-color 0.15s;
 
-  &:focus { border-color: #94a3b8; }
-  &::placeholder { color: #94a3b8; }
+  &:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px rgba(33,150,243,0.12); }
+  &::placeholder { color: var(--text-subtle); }
 }
 
 /* Table scroll wrapper */
@@ -69,7 +74,7 @@
   font-size: 0.8125rem;
 
   thead tr {
-    background: #f9fafb;
+    background: var(--blue-50);
   }
 
   th {
@@ -78,21 +83,21 @@
     font-weight: 700;
     font-size: 0.6875rem;
     text-transform: uppercase;
-    color: #64748b;
+    color: var(--text-muted);
     letter-spacing: 0.03em;
     white-space: nowrap;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid var(--border);
   }
 
   td {
     padding: 12px 12px;
-    color: #334155;
-    border-bottom: 1px solid #f1f5f9;
+    color: var(--blue-900);
+    border-bottom: 1px solid var(--border);
     vertical-align: middle;
   }
 
   tbody tr:hover {
-    background: #f8fafc;
+    background: var(--blue-50);
   }
 }
 
@@ -101,13 +106,13 @@
   align-items: center;
   gap: 6px;
   font-weight: 600;
-  color: #1e3a5f;
+  color: var(--blue-950);
 }
 
 .gear-icon { flex-shrink: 0; }
 
-.system-cell { color: #2563eb; font-weight: 500; }
-.subsystem-cell { font-weight: 700; color: #1e293b; }
+.system-cell { color: var(--primary); font-weight: 500; }
+.subsystem-cell { font-weight: 700; color: var(--blue-950); }
 .task-cell { max-width: 280px; }
 
 .date-cell {
@@ -116,7 +121,7 @@
   line-height: 1.5;
 }
 
-.date-end { color: #94a3b8; }
+.date-end { color: var(--text-subtle); }
 
 .center-cell { text-align: center; }
 
@@ -143,18 +148,19 @@
 .row-action {
   background: none;
   border: none;
+  font-family: var(--font-sans);
   cursor: pointer;
   padding: 4px;
   border-radius: 4px;
   display: inline-flex;
 
-  &:hover { background: #f1f5f9; }
+  &:hover { background: var(--blue-50); }
 }
 
 .empty-row {
   text-align: center;
   padding: 32px !important;
-  color: #94a3b8;
+  color: var(--text-subtle);
   font-style: italic;
 }
 
@@ -166,9 +172,9 @@
   gap: 24px;
   padding-top: 16px;
   margin-top: 8px;
-  border-top: 1px solid #f1f5f9;
+  border-top: 1px solid var(--border);
   font-size: 0.8125rem;
-  color: #64748b;
+  color: var(--text-muted);
   flex-wrap: wrap;
 }
 
@@ -179,10 +185,12 @@
 
   select {
     padding: 4px 8px;
-    border: 1px solid #e2e8f0;
+    border: 1px solid var(--border);
     border-radius: 4px;
+    font-family: var(--font-sans);
     font-size: 0.8125rem;
-    background: #fff;
+    color: var(--blue-900);
+    background: var(--surface);
   }
 }
 
@@ -194,15 +202,16 @@
 
   button {
     background: none;
-    border: 1px solid #e2e8f0;
+    border: 1px solid var(--border);
     border-radius: 4px;
     padding: 4px 8px;
+    font-family: var(--font-sans);
     font-size: 0.75rem;
     cursor: pointer;
-    color: #475569;
+    color: var(--blue-900);
     min-width: 28px;
 
-    &:hover:not(:disabled) { background: #f1f5f9; }
+    &:hover:not(:disabled) { background: var(--blue-50); color: var(--primary); }
     &:disabled { opacity: 0.4; cursor: default; }
   }
 }

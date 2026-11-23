@@ -26,12 +26,12 @@ import { AuthService } from '../../core/services/services';
               box-shadow:0 40px 80px rgba(0,0,0,0.4);position:relative;z-index:1" class="slide-up">
 
     <div style="text-align:center;margin-bottom:36px">
-      <div style="width:56px;height:56px;background:#1565C0;border-radius:16px;
+      <div style="width:56px;height:56px;background:var(--primary);border-radius:16px;
                   display:flex;align-items:center;justify-content:center;margin:0 auto 16px">
         <span style="font-family:'Material Icons Round';font-style:normal;font-size:28px;color:#fff">dns</span>
       </div>
       <h1 style="font-size:1.6rem;margin-bottom:6px;font-weight:800">Welcome back</h1>
-      <p style="color:#6B7280;font-size:0.9rem">Sign in to SMaRT Platform</p>
+      <p style="color:var(--text-muted);font-size:0.9rem">Sign in to SMaRT Platform</p>
     </div>
 
     <div class="form-group">
@@ -43,7 +43,7 @@ import { AuthService } from '../../core/services/services';
     <div class="form-group">
       <label class="form-label" style="display:flex;justify-content:space-between">
         Password
-        <a href="#" style="color:#1565C0;font-weight:500;font-size:0.82rem">Forgot password?</a>
+        <a href="#" style="color:var(--primary);font-weight:500;font-size:0.82rem">Forgot password?</a>
       </label>
       <div style="position:relative">
         <input [type]="showPwd ? 'text' : 'password'" class="form-control"
@@ -51,7 +51,7 @@ import { AuthService } from '../../core/services/services';
                style="padding:12px 16px;padding-right:48px" (keyup.enter)="login()">
         <button type="button" (click)="showPwd=!showPwd"
                 style="position:absolute;right:12px;top:50%;transform:translateY(-50%);
-                       background:none;border:none;cursor:pointer;color:#9CA3AF;font-family:'Material Icons Round';font-style:normal;font-size:20px">
+                       background:none;border:none;cursor:pointer;color:var(--text-subtle);font-family:'Material Icons Round';font-style:normal;font-size:20px">
           {{showPwd ? 'visibility_off' : 'visibility'}}
         </button>
       </div>
@@ -70,9 +70,9 @@ import { AuthService } from '../../core/services/services';
       {{loading ? 'Signing in…' : 'Sign In'}}
     </button>
 
-    <p style="text-align:center;margin-top:24px;font-size:0.875rem;color:#6B7280">
+    <p style="text-align:center;margin-top:24px;font-size:0.875rem;color:var(--text-muted)">
       Don't have an account?
-      <a routerLink="/auth/register" style="color:#1565C0;font-weight:600;margin-left:4px">Create account</a>
+      <a routerLink="/auth/register" style="color:var(--primary);font-weight:600;margin-left:4px">Create account</a>
     </p>
   </div>
 </div>
@@ -123,12 +123,12 @@ export class LoginComponent {
               box-shadow:0 40px 80px rgba(0,0,0,0.4)" class="slide-up">
 
     <div style="text-align:center;margin-bottom:32px">
-      <div style="width:56px;height:56px;background:#1565C0;border-radius:16px;
+      <div style="width:56px;height:56px;background:var(--primary);border-radius:16px;
                   display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
         <span style="font-family:'Material Icons Round';font-style:normal;font-size:28px;color:#fff">person_add</span>
       </div>
       <h1 style="font-size:1.5rem;font-weight:800;margin-bottom:4px">Create your account</h1>
-      <p style="color:#6B7280;font-size:0.9rem">Join the SMaRT Platform</p>
+      <p style="color:var(--text-muted);font-size:0.9rem">Join the SMaRT Platform</p>
     </div>
 
     <div class="form-row">
@@ -174,9 +174,9 @@ export class LoginComponent {
       {{loading ? 'Creating account…' : 'Create Account'}}
     </button>
 
-    <p style="text-align:center;margin-top:20px;font-size:0.875rem;color:#6B7280">
+    <p style="text-align:center;margin-top:20px;font-size:0.875rem;color:var(--text-muted)">
       Already have an account?
-      <a routerLink="/auth/login" style="color:#1565C0;font-weight:600;margin-left:4px">Sign in</a>
+      <a routerLink="/auth/login" style="color:var(--primary);font-weight:600;margin-left:4px">Sign in</a>
     </p>
   </div>
 </div>

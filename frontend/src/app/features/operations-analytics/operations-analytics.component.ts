@@ -10,8 +10,14 @@ import { Chart, registerables } from 'chart.js';
 import { ApiService } from '../../core/services/services';
 import { DateFilterService } from '../../core/services/services';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
+import {
+  applySmartChartDefaults,
+  SMART_CHART_FONT_FAMILY,
+  SMART_CHART_GRID_COLOR
+} from '../../shared/utils/chart-theme';
 
 Chart.register(...registerables);
+applySmartChartDefaults(Chart);
 
 @Component({
   selector: 'app-operations-analytics',
@@ -75,8 +81,9 @@ export class OperationsAnalyticsComponent implements OnInit, AfterViewInit, OnDe
   }
 
   private initCharts(): void {
-    const baseFont = { family: 'Plus Jakarta Sans', size: 12 };
-    const gridColor = '#E1EAF5';
+    const baseFont = { family: SMART_CHART_FONT_FAMILY, size: 12 };
+    const titleFont = { family: SMART_CHART_FONT_FAMILY, size: 12, weight: 600 };
+    const gridColor = SMART_CHART_GRID_COLOR;
 
     // 1) Operations Trend Chart
     const trendCanvas = this.getCanvas('trendChart');
@@ -96,7 +103,7 @@ export class OperationsAnalyticsComponent implements OnInit, AfterViewInit, OnDe
               beginAtZero: true,
               grid: { color: gridColor },
               ticks: { font: baseFont, precision: 0 },
-              title: { display: true, text: 'Operations Count' }
+              title: { display: true, text: 'Operations Count', font: titleFont }
             }
           },
           elements: { line: { tension: 0.4, borderWidth: 2 }, point: { radius: 4 } }
@@ -122,7 +129,7 @@ export class OperationsAnalyticsComponent implements OnInit, AfterViewInit, OnDe
               beginAtZero: true,
               grid: { color: gridColor },
               ticks: { font: baseFont, precision: 0 },
-              title: { display: true, text: 'Minutes' }
+              title: { display: true, text: 'Minutes', font: titleFont }
             }
           },
           elements: { bar: { borderRadius: 4 } }
@@ -182,8 +189,8 @@ export class OperationsAnalyticsComponent implements OnInit, AfterViewInit, OnDe
           position: 'right',
           beginAtZero: true,
           grid: { drawOnChartArea: false },
-          ticks: { font: { family: 'Plus Jakarta Sans', size: 12 }, precision: 0 },
-          title: { display: true, text: 'Avg Duration (min)' }
+          ticks: { font: { family: SMART_CHART_FONT_FAMILY, size: 12 }, precision: 0 },
+          title: { display: true, text: 'Avg Duration (min)', font: { family: SMART_CHART_FONT_FAMILY, size: 12, weight: 600 } }
         }
       };
       trendChart.update('active');

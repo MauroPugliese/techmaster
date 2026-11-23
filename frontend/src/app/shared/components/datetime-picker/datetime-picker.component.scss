@@ -80,7 +80,7 @@
 
 .dtp-lead-ic {
   font-size: 16px;
-  color: #64748b;
+  color: var(--text-muted);
   flex-shrink: 0;
   transition: color 0.15s ease;
 }
@@ -99,13 +99,13 @@
 }
 
 .dtp-placeholder {
-  color: #9ca3af;
+  color: var(--text-subtle);
   font-weight: 400;
 }
 
 .dtp-caret {
   font-size: 18px;
-  color: #94a3b8;
+  color: var(--text-subtle);
   flex-shrink: 0;
   margin-left: auto;
   transition: transform 0.15s ease, color 0.15s ease;
@@ -127,7 +127,7 @@
   border: 0;
   border-radius: 50%;
   background: var(--surface-raised);
-  color: #64748b;
+  color: var(--text-muted);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -192,7 +192,8 @@
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: #475569;
+  color: var(--blue-900);
+  font-family: var(--font-sans);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -213,7 +214,7 @@
   border: 0;
   background: transparent;
   color: var(--blue-950);
-  font-family: inherit;
+  font-family: var(--font-sans);
   font-size: 0.84rem;
   font-weight: 700;
   padding: 4px 8px;
@@ -225,7 +226,7 @@
 
   .mat-i {
     font-size: 16px;
-    color: #64748b;
+    color: var(--text-muted);
     transition: transform 0.15s ease;
     &.flipped { transform: rotate(180deg); }
   }
@@ -245,7 +246,7 @@
     text-align: center;
     font-size: 0.69rem;
     font-weight: 700;
-    color: #94a3b8;
+    color: var(--text-subtle);
     text-transform: uppercase;
     letter-spacing: 0.03em;
     padding: 2px 0;
@@ -265,7 +266,7 @@
   border-radius: 7px;
   background: transparent;
   color: var(--blue-950);
-  font-family: inherit;
+  font-family: var(--font-sans);
   font-size: 0.78rem;
   font-weight: 500;
   display: inline-flex;
@@ -275,7 +276,7 @@
   transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease;
 
   &.outside {
-    color: #cbd5e1;
+    color: var(--border-strong);
   }
 
   &.today:not(.selected) {
@@ -333,7 +334,7 @@
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--blue-900);
-  font-family: inherit;
+  font-family: var(--font-sans);
   font-size: 0.8rem;
   font-weight: 600;
   cursor: pointer;
@@ -395,7 +396,7 @@
 
 .dtp-time-sep {
   font-weight: 700;
-  color: #64748b;
+  color: var(--text-muted);
   font-size: 0.85rem;
 }
 
@@ -465,7 +466,7 @@
   border: 0;
   background: transparent;
   color: var(--primary);
-  font-family: inherit;
+  font-family: var(--font-sans);
   font-size: 0.78rem;
   font-weight: 700;
   padding: 4px 8px;
@@ -486,7 +487,7 @@
   border: 0;
   background: var(--primary);
   color: #fff;
-  font-family: inherit;
+  font-family: var(--font-sans);
   font-size: 0.78rem;
   font-weight: 700;
   padding: 5px 12px;

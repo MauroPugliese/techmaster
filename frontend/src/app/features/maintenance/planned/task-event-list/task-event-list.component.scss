@@ -1,8 +1,9 @@
 /* ─── Event Card ──────────────────────────────────────────────────────────── */
 .event-card {
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
   padding: 20px;
   min-height: 380px;
 }
@@ -20,7 +21,7 @@
 .event-title {
   font-size: 1rem;
   font-weight: 700;
-  color: #1e293b;
+  color: var(--blue-950);
   margin: 0;
 }
 
@@ -39,24 +40,25 @@
   padding: 4px 14px;
   border: none;
   border-radius: 16px;
+  font-family: var(--font-sans);
   font-size: 0.6875rem;
   font-weight: 700;
   cursor: pointer;
-  color: #64748b;
-  background: #f1f5f9;
+  color: var(--text-muted);
+  background: var(--surface-raised);
   transition: all 0.15s;
 
   &.active {
     color: #fff;
-    background: var(--btn-color, #2563eb);
+    background: var(--btn-color, var(--primary));
   }
 
-  &:hover:not(.active) { background: #e2e8f0; }
+  &:hover:not(.active) { background: var(--blue-50); color: var(--primary); }
 }
 
 .selected-date-label {
   font-size: 0.8125rem;
-  color: #64748b;
+  color: var(--text-muted);
   font-weight: 500;
 }
 
@@ -73,12 +75,12 @@
 .tasks-event-label {
   font-weight: 600;
   font-size: 0.875rem;
-  color: #334155;
+  color: var(--blue-900);
 }
 
 .optional-note {
   font-size: 0.75rem;
-  color: #94a3b8;
+  color: var(--text-subtle);
   margin-top: 2px;
 }
 
@@ -89,16 +91,17 @@
 
 .outline-btn {
   padding: 6px 18px;
-  border: 1.5px solid #cbd5e1;
-  border-radius: 6px;
-  background: #fff;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-family: var(--font-sans);
   font-size: 0.75rem;
   font-weight: 700;
-  color: #334155;
+  color: var(--blue-900);
   cursor: pointer;
   transition: all 0.15s;
 
-  &:hover { border-color: #94a3b8; background: #f8fafc; }
+  &:hover { border-color: var(--primary); color: var(--primary); background: var(--blue-50); }
 }
 
 /* Event list */
@@ -112,7 +115,7 @@
   align-items: flex-start;
   gap: 12px;
   padding: 14px 0;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--border);
 
   &:last-child { border-bottom: none; }
 }
@@ -136,23 +139,23 @@
 .event-system {
   font-weight: 700;
   font-size: 0.8125rem;
-  color: #1e293b;
+  color: var(--blue-950);
 }
 
 .optional-tag {
   font-weight: 400;
-  color: #64748b;
+  color: var(--text-muted);
 }
 
 .event-task {
   font-size: 0.8125rem;
-  color: #475569;
+  color: var(--blue-900);
   margin-top: 2px;
 }
 
 .event-time {
   font-size: 0.6875rem;
-  color: #94a3b8;
+  color: var(--text-subtle);
   margin-top: 4px;
 }
 
@@ -172,8 +175,8 @@
   white-space: nowrap;
 
   &.todo {
-    background: #dbeafe;
-    color: #2563eb;
+    background: var(--blue-100);
+    color: var(--primary);
   }
 
   &.done {
@@ -185,19 +188,20 @@
 .icon-btn {
   background: none;
   border: none;
+  font-family: var(--font-sans);
   cursor: pointer;
   padding: 4px;
   border-radius: 4px;
   display: inline-flex;
   flex-shrink: 0;
 
-  &:hover { background: #eef2ff; }
+  &:hover { background: var(--blue-50); }
 }
 
 /* Empty */
 .empty-events {
   text-align: center;
   padding: 40px 0;
-  color: #94a3b8;
+  color: var(--text-subtle);
   font-style: italic;
 }

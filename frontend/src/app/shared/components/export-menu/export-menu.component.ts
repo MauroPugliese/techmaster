@@ -149,7 +149,7 @@ import {
       background: transparent;
       cursor: pointer;
       text-align: left;
-      font-family: var(--font-sans, inherit);
+      font-family: var(--font-sans);
       transition: background-color 0.14s ease;
     }
     .export-dropdown-item:hover:not(:disabled) {
@@ -202,16 +202,17 @@ import {
     }
     .export-item-desc {
       font-size: 0.72rem;
-      color: #64748b;
+      color: var(--text-muted);
       line-height: 1.25;
       margin-top: 1px;
     }
     .export-item-ext {
       font-size: 0.7rem;
       font-weight: 600;
-      font-family: var(--font-mono, monospace);
-      color: #475569;
-      background: #f1f5f9;
+      font-family: var(--font-mono);
+      color: var(--blue-900);
+      background: var(--surface-raised);
+      border: 1px solid var(--border);
       padding: 2px 6px;
       border-radius: 4px;
     }

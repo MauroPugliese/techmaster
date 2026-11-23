@@ -44,6 +44,7 @@
   color: #e2e8f0;
   padding: 4px 10px;
   border-radius: 6px;
+  font-family: var(--font-sans);
   font-size: 0.76rem;
   font-weight: 600;
   cursor: pointer;
@@ -67,12 +68,13 @@
   border: 1px solid rgba(255, 255, 255, 0.25);
   border-radius: 6px;
   padding: 5px 10px;
+  font-family: var(--font-sans);
   font-size: 0.78rem;
   font-weight: 600;
   cursor: pointer;
 
   option {
-    background: #0d1f3c;
+    background: var(--blue-900);
     color: #fff;
   }
 }
@@ -86,6 +88,7 @@
   color: #fff;
   border-radius: 6px;
   padding: 5px 11px;
+  font-family: var(--font-sans);
   font-size: 0.78rem;
   font-weight: 700;
   cursor: pointer;
@@ -120,7 +123,7 @@
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: #64748b;
+    color: var(--text-muted);
     white-space: nowrap;
   }
 
@@ -213,7 +216,7 @@
 
 .sub-desc {
   font-size: 0.74rem;
-  color: #64748b;
+  color: var(--text-muted);
   max-width: 260px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -223,8 +226,9 @@
 .sub-tag {
   font-size: 0.66rem;
   font-weight: 600;
-  color: #64748b;
-  background: #f1f5f9;
+  color: var(--text-muted);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
   padding: 1px 6px;
   border-radius: 4px;
 }
@@ -232,6 +236,7 @@
 .cell-select {
   border-radius: 999px;
   padding: 4px 10px;
+  font-family: var(--font-sans);
   font-size: 0.74rem;
   font-weight: 700;
   border: 1px solid color-mix(in srgb, var(--pill-color, #cbd5e1) 35%, transparent);
@@ -265,8 +270,8 @@
 }
 
 .assignee-select {
-  --pill-color: #334155;
-  background: #f8fafc;
+  --pill-color: var(--blue-900);
+  background: var(--surface-raised);
   border-color: var(--border);
   font-weight: 600;
   max-width: 145px;
@@ -282,13 +287,13 @@
 .sub-fraction {
   font-size: 0.74rem;
   font-weight: 700;
-  color: #475569;
+  color: var(--blue-900);
 }
 
 .mini-bar {
   flex: 1;
   height: 5px;
-  background: #e2e8f0;
+  background: var(--border);
   border-radius: 6px;
   overflow: hidden;
   min-width: 36px;
@@ -304,7 +309,7 @@
 .hours-badge {
   font-size: 0.74rem;
   font-weight: 600;
-  color: #475569;
+  color: var(--blue-900);
   white-space: nowrap;
 
   &.warn { color: #b45309; font-weight: 700; }
@@ -317,8 +322,8 @@
   font-weight: 600;
   padding: 3px 9px;
   border-radius: 999px;
-  background: #f1f5f9;
-  color: #475569;
+  background: var(--surface-raised);
+  color: var(--blue-900);
   white-space: nowrap;
 
   &.soon { background: #fef3c7; color: #b45309; }
@@ -338,7 +343,7 @@
 .icon-btn {
   border: 0;
   background: transparent;
-  color: #64748b;
+  color: var(--text-muted);
   padding: 5px;
   border-radius: 6px;
   cursor: pointer;
@@ -354,7 +359,7 @@
 .list-empty {
   text-align: center;
   padding: 48px 16px;
-  color: #94a3b8;
+  color: var(--text-subtle);
 
   .mat-i { font-size: 40px; opacity: 0.7; }
   p { margin-top: 8px; font-size: 0.9rem; font-weight: 600; }

@@ -18,7 +18,8 @@
 
   .tab-btn {
     display: inline-flex; align-items: center; gap: 6px;
-    border: 0; background: transparent; color: #6b7280;
+    border: 0; background: transparent; color: var(--text-muted);
+    font-family: var(--font-sans);
     font-weight: 600; font-size: 0.82rem; padding: 6px 12px;
     border-radius: var(--radius-md); cursor: pointer;
     transition: background .18s, color .18s;
@@ -37,7 +38,8 @@
 
   .view-btn {
     display: inline-flex; align-items: center; gap: 5px;
-    border: 0; background: transparent; color: #64748b;
+    border: 0; background: transparent; color: var(--text-muted);
+    font-family: var(--font-sans);
     padding: 5px 11px; border-radius: 7px; font-size: 0.8rem; font-weight: 600;
     cursor: pointer; transition: background .15s, color .15s;
 
@@ -74,7 +76,8 @@
 .pill-toggle {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 6px 12px; border: 1px solid var(--border); border-radius: 999px;
-  background: var(--surface); color: #475569; font-size: 0.78rem; font-weight: 600;
+  background: var(--surface); color: var(--blue-900); font-family: var(--font-sans);
+  font-size: 0.78rem; font-weight: 600;
   cursor: pointer; transition: all .15s;
 
   .mat-i { font-size: 16px; }
@@ -88,8 +91,8 @@
 }
 
 .sort-btn, .d-btn {
-  border: 0; background: transparent; color: #6b7280; padding: 6px 10px;
-  font-size: 0.78rem; font-weight: 600; cursor: pointer;
+  border: 0; background: transparent; color: var(--text-muted); padding: 6px 10px;
+  font-family: var(--font-sans); font-size: 0.78rem; font-weight: 600; cursor: pointer;
   display: inline-flex; align-items: center; gap: 4px; transition: background .15s, color .15s;
 
   .mat-i { font-size: 14px; }
@@ -103,7 +106,7 @@
 .btn-clear-filters {
   margin-left: auto; display: inline-flex; align-items: center; gap: 4px;
   border: 1px solid #fecaca; background: #fef2f2; color: #dc2626;
-  padding: 5px 11px; border-radius: 999px; font-size: 0.76rem; font-weight: 700; cursor: pointer;
+  padding: 5px 11px; border-radius: 999px; font-family: var(--font-sans); font-size: 0.76rem; font-weight: 700; cursor: pointer;
   .mat-i { font-size: 15px; }
   &:hover { background: #fee2e2; }
 }
@@ -112,7 +115,7 @@
 .stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 
 .stat-card {
-  width: 100%; text-align: left; font-family: inherit; cursor: pointer;
+  width: 100%; text-align: left; font-family: var(--font-sans); cursor: pointer;
   background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius-md);
   padding: 13px 14px; display: flex; align-items: center; gap: 12px;
   transition: transform .18s, box-shadow .18s, border-color .18s;
@@ -160,12 +163,12 @@
   display: inline-flex; align-items: center; gap: 6px;
 
   .col-hours {
-    font-size: 0.7rem; font-weight: 600; color: #64748b;
+    font-size: 0.7rem; font-weight: 600; color: var(--text-muted);
     background: rgba(255, 255, 255, 0.75); padding: 2px 7px; border-radius: 999px;
   }
   .col-count { background: rgba(15, 23, 42, 0.08); border-radius: 10px; padding: 2px 8px; font-size: 0.72rem; font-weight: 700; }
   .col-add {
-    border: 0; background: transparent; color: #6b7280; padding: 2px; border-radius: 6px; cursor: pointer;
+    border: 0; background: transparent; color: var(--text-muted); padding: 2px; border-radius: 6px; cursor: pointer;
     display: inline-flex; align-items: center; justify-content: center; transition: background .15s, color .15s;
     .mat-i { font-size: 18px; }
     &:hover { background: var(--blue-100); color: var(--primary); }
@@ -294,17 +297,17 @@
 }
 
 .col-empty {
-  text-align: center; padding: 24px 8px; color: #9ca3af;
+  text-align: center; padding: 24px 8px; color: var(--text-subtle);
   border: 2px dashed var(--border); border-radius: var(--radius-md); background: rgba(255, 255, 255, 0.4);
   .mat-i { font-size: 32px; opacity: 0.6; }
   p { margin: 8px 0 10px; font-size: 0.82rem; }
 }
 
 .col-add-inline {
-  border: 2px dashed var(--border); color: #9ca3af; background: transparent;
+  border: 2px dashed var(--border); color: var(--text-subtle); background: transparent;
   padding: 9px 12px; border-radius: var(--radius-md); cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  font-size: 0.82rem; font-weight: 600; flex-shrink: 0; transition: border-color .15s, color .15s, background .15s;
+  font-family: var(--font-sans); font-size: 0.82rem; font-weight: 600; flex-shrink: 0; transition: border-color .15s, color .15s, background .15s;
   .mat-i { font-size: 18px; }
   &:hover { border-color: var(--primary); color: var(--primary); background: rgba(255, 255, 255, 0.65); }
 }
@@ -339,7 +342,7 @@
   background: var(--surface-raised); border-bottom: 1px solid var(--border); cursor: pointer; user-select: none;
 
   &:hover { background: var(--blue-50); }
-  .lane-chevron { font-size: 20px; color: #64748b; }
+  .lane-chevron { font-size: 20px; color: var(--text-muted); }
   .lane-dot { width: 10px; height: 10px; border-radius: 50%; }
   .lane-avatar {
     width: 28px; height: 28px; border-radius: 50%; color: #fff; font-size: 0.72rem; font-weight: 700;
@@ -347,9 +350,9 @@
   }
   .lane-titles { display: flex; align-items: baseline; gap: 8px; }
   .lane-name   { font-weight: 700; font-size: 0.92rem; color: var(--blue-950); }
-  .lane-sub    { font-size: 0.75rem; color: #64748b; }
+  .lane-sub    { font-size: 0.75rem; color: var(--text-muted); }
   .lane-meta   { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
-  .lane-hours  { font-size: 0.74rem; font-weight: 600; color: #475569; }
+  .lane-hours  { font-size: 0.74rem; font-weight: 600; color: var(--blue-900); }
   .lane-count  { font-size: 0.74rem; font-weight: 700; background: var(--blue-100); color: var(--primary); padding: 2px 9px; border-radius: 999px; }
 }
 
@@ -358,7 +361,7 @@
 .lane-col { background: var(--blue-50); border-radius: var(--radius-md); padding: 8px; min-height: 92px; display: flex; flex-direction: column; gap: 8px; }
 
 .lane-col-head {
-  display: flex; align-items: center; gap: 6px; font-size: 0.76rem; font-weight: 700; color: #475569; padding: 2px 4px;
+  display: flex; align-items: center; gap: 6px; font-size: 0.76rem; font-weight: 700; color: var(--blue-900); padding: 2px 4px;
   .dot { width: 7px; height: 7px; border-radius: 50%; }
   .cnt { margin-left: auto; background: rgba(15, 23, 42, 0.08); padding: 1px 7px; border-radius: 999px; font-size: 0.68rem; }
 }

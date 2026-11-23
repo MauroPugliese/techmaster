@@ -51,7 +51,7 @@
 
     .header-subtitle {
       font-size: 0.85rem;
-      color: #64748B;
+      color: var(--text-muted);
       margin: 0;
     }
   }
@@ -87,13 +87,14 @@
       display: flex;
       align-items: center;
       gap: 12px;
+      font-family: var(--font-sans);
       cursor: pointer;
       text-align: left;
       transition: var(--transition);
 
       span {
         font-size: 24px;
-        color: #94A3B8;
+        color: var(--text-subtle);
         transition: var(--transition);
       }
 
@@ -110,7 +111,7 @@
 
         .tab-desc {
           font-size: 0.72rem;
-          color: #64748B;
+          color: var(--text-muted);
         }
       }
 
@@ -120,7 +121,7 @@
       }
 
       &.active {
-        background: #EFF6FF;
+        background: var(--blue-50);
         border-color: var(--primary);
         box-shadow: 0 0 0 1px var(--primary);
 
@@ -162,6 +163,8 @@
         border-radius: 20px;
         border: 1px solid var(--border);
         background: var(--surface);
+        color: var(--blue-900);
+        font-family: var(--font-sans);
         font-size: 0.82rem;
         font-weight: 600;
         cursor: pointer;
@@ -205,7 +208,7 @@
         top: 50%;
         transform: translateY(-50%);
         font-size: 18px;
-        color: #94A3B8;
+        color: var(--text-subtle);
       }
 
       .user-search-input {
@@ -226,7 +229,7 @@
 
 /* ── Selected User Identity Card ────────────────────────────────────────── */
 .user-profile-banner {
-  background: linear-gradient(135deg, #F8FAFC 0%, #EFF6FF 100%);
+  background: linear-gradient(135deg, var(--surface-raised) 0%, var(--blue-50) 100%);
   border: 1px solid var(--blue-200);
   border-radius: var(--radius-lg);
   padding: 14px 18px;
@@ -259,7 +262,7 @@
 
       .user-banner-username {
         font-weight: 500;
-        color: #64748B;
+        color: var(--text-muted);
         font-size: 0.85rem;
         margin-left: 6px;
       }
@@ -282,11 +285,11 @@
       }
 
       .email-text {
-        color: #475569;
+        color: var(--blue-900);
       }
 
       .inheritance-hint {
-        color: #64748B;
+        color: var(--text-muted);
         margin-left: 6px;
 
         strong {
@@ -335,9 +338,10 @@
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
       padding: 5px 10px;
+      font-family: var(--font-sans);
       font-size: 0.78rem;
       font-weight: 600;
-      color: #334155;
+      color: var(--blue-900);
       cursor: pointer;
       display: inline-flex;
       align-items: center;
@@ -414,7 +418,7 @@
       top: 50%;
       transform: translateY(-50%);
       font-size: 18px;
-      color: #94A3B8;
+      color: var(--text-subtle);
     }
 
     input {
@@ -432,7 +436,7 @@
       background: transparent;
       border: none;
       cursor: pointer;
-      color: #94A3B8;
+      color: var(--text-subtle);
 
       span {
         font-size: 16px;
@@ -448,7 +452,7 @@
     .filter-label {
       font-size: 0.78rem;
       font-weight: 700;
-      color: #64748B;
+      color: var(--text-muted);
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
@@ -463,9 +467,10 @@
         border: 1px solid var(--border);
         border-radius: 14px;
         padding: 4px 10px;
+        font-family: var(--font-sans);
         font-size: 0.78rem;
         font-weight: 600;
-        color: #475569;
+        color: var(--blue-900);
         cursor: pointer;
         transition: var(--transition);
 
@@ -573,8 +578,9 @@
           .group-tag {
             font-size: 0.68rem;
             padding: 1px 6px;
-            background: #F1F5F9;
-            color: #475569;
+            background: var(--surface-raised);
+            border: 1px solid var(--border);
+            color: var(--blue-900);
             border-radius: 4px;
             font-weight: 600;
             white-space: nowrap;
@@ -588,12 +594,13 @@
           flex-wrap: wrap;
 
           .path-code {
+            font-family: var(--font-mono);
             font-size: 0.75rem;
-            background: #F8FAFC;
+            background: var(--surface-raised);
             padding: 2px 6px;
             border-radius: 4px;
-            color: #334155;
-            border: 1px solid #E2E8F0;
+            color: var(--blue-900);
+            border: 1px solid var(--border);
           }
 
           .source-badge {
@@ -609,8 +616,8 @@
             }
 
             &.badge-source-role {
-              background: #DBEAFE;
-              color: #1D4ED8;
+              background: var(--blue-100);
+              color: var(--primary);
             }
 
             &.badge-source-global {
@@ -619,8 +626,8 @@
             }
 
             &.badge-source-default {
-              background: #F3F4F6;
-              color: #64748B;
+              background: var(--surface-raised);
+              color: var(--text-muted);
             }
           }
         }
@@ -635,12 +642,13 @@
 
       .revert-btn {
         background: transparent;
-        border: 1px solid #CBD5E1;
+        border: 1px solid var(--border-strong);
         border-radius: var(--radius-sm);
         padding: 4px 8px;
+        font-family: var(--font-sans);
         font-size: 0.72rem;
         font-weight: 600;
-        color: #64748B;
+        color: var(--text-muted);
         cursor: pointer;
         display: inline-flex;
         align-items: center;
@@ -736,7 +744,7 @@
 
   .empty-icon {
     font-size: 48px;
-    color: #CBD5E1;
+    color: var(--border-strong);
   }
 
   h3 {

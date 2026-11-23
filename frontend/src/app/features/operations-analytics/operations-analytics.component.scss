@@ -7,11 +7,11 @@
 }
 
 .controls-section {
-  background: white;
-  border-radius: 12px;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
   padding: 16px 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border: 1px solid #E1EAF5;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border);
 }
 
 .controls-row {
@@ -27,8 +27,8 @@
   align-items: center;
   gap: 4px;
   padding: 4px;
-  background: #F3F6FB;
-  border: 1px solid #E1EAF5;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
   border-radius: 999px;
   flex-wrap: wrap;
 }
@@ -36,7 +36,7 @@
 .period-selector-icon {
   font-family: 'Material Icons Round';
   font-size: 18px;
-  color: #6B7280;
+  color: var(--text-muted);
   padding: 0 8px 0 10px;
   line-height: 1;
 }
@@ -45,7 +45,8 @@
   appearance: none;
   border: none;
   background: transparent;
-  color: #374151;
+  color: var(--blue-900);
+  font-family: var(--font-sans);
   font-size: 13px;
   font-weight: 500;
   padding: 7px 14px;
@@ -53,12 +54,11 @@
   cursor: pointer;
   white-space: nowrap;
   transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
-  font-family: inherit;
 }
 
 .period-chip:hover {
   background: rgba(21, 101, 192, 0.08);
-  color: #1565C0;
+  color: var(--primary);
 }
 
 .period-chip:focus-visible {
@@ -67,7 +67,7 @@
 }
 
 .period-chip.active {
-  background: linear-gradient(135deg, #1565C0, #0288D1);
+  background: linear-gradient(135deg, var(--primary), #0288D1);
   color: white;
   box-shadow: 0 2px 6px rgba(21, 101, 192, 0.3);
 }
@@ -82,9 +82,9 @@
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  background: #F9FBFD;
-  border: 1px dashed #C7D6E8;
-  border-radius: 10px;
+  background: var(--surface-raised);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
   flex-wrap: wrap;
 }
 
@@ -99,7 +99,7 @@
 }
 
 .range-separator {
-  color: #6B7280;
+  color: var(--text-muted);
   font-weight: 600;
   font-size: 14px;
 }
@@ -120,23 +120,25 @@
 .control-label {
   font-size: 14px;
   font-weight: 500;
-  color: #374151;
+  color: var(--blue-900);
 }
 
 .form-select,
 .form-input {
   padding: 8px 12px;
-  border: 1px solid #D1D5DB;
-  border-radius: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-sans);
   font-size: 14px;
-  background: white;
+  color: var(--blue-950);
+  background: var(--surface);
   min-width: 140px;
 }
 
 .form-select:focus,
 .form-input:focus {
   outline: none;
-  border-color: #1565C0;
+  border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(21, 101, 192, 0.1);
 }
 
@@ -152,8 +154,8 @@
 .loading-spinner {
   width: 40px;
   height: 40px;
-  border: 4px solid #E1EAF5;
-  border-top: 4px solid #1565C0;
+  border: 4px solid var(--border);
+  border-top: 4px solid var(--primary);
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin-bottom: 16px;
@@ -172,11 +174,11 @@
 }
 
 .metric-card {
-  background: white;
-  border-radius: 12px;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
   padding: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border: 1px solid #E1EAF5;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border);
   display: flex;
   align-items: center;
   gap: 16px;
@@ -185,13 +187,13 @@
 
 .metric-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-md);
 }
 
 .metric-icon {
   width: 48px;
   height: 48px;
-  background: linear-gradient(135deg, #1565C0, #0288D1);
+  background: linear-gradient(135deg, var(--primary), #0288D1);
   border-radius: 12px;
   display: flex;
   align-items: center;
@@ -208,13 +210,13 @@
 .metric-value {
   font-size: 28px;
   font-weight: 700;
-  color: #111827;
+  color: var(--blue-950);
   line-height: 1.2;
 }
 
 .metric-label {
   font-size: 14px;
-  color: #6B7280;
+  color: var(--text-muted);
   font-weight: 500;
 }
 
@@ -226,25 +228,25 @@
 }
 
 .insight-card {
-  background: white;
-  border-radius: 12px;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
   padding: 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border: 1px solid #E1EAF5;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border);
   text-align: center;
 }
 
 .insight-card h4 {
   font-size: 14px;
   font-weight: 600;
-  color: #374151;
+  color: var(--blue-900);
   margin-bottom: 8px;
 }
 
 .insight-value {
   font-size: 20px;
   font-weight: 700;
-  color: #1565C0;
+  color: var(--primary);
 }
 
 .charts-grid {
@@ -254,10 +256,10 @@
 }
 
 .chart-container {
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border: 1px solid #E1EAF5;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border);
   overflow: hidden;
 }
 
@@ -268,13 +270,13 @@
 .card-header h3 {
   font-size: 18px;
   font-weight: 600;
-  color: #111827;
+  color: var(--blue-950);
   margin-bottom: 4px;
 }
 
 .card-header p {
   font-size: 14px;
-  color: #6B7280;
+  color: var(--text-muted);
   margin-bottom: 20px;
 }
 

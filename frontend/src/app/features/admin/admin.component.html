@@ -9,14 +9,15 @@
 
   <!-- ── Left sidebar ───────────────────────────────────────────────────── -->
   <div class="card" style="padding:12px;align-self:start">
-    <div style="font-size:0.7rem;font-weight:700;letter-spacing:0.08em;color:#9CA3AF;
+    <div style="font-size:0.7rem;font-weight:700;letter-spacing:0.08em;color:var(--text-subtle);
                 text-transform:uppercase;padding:8px 12px 4px">Settings</div>
 
     <button *ngFor="let tab of tabs"
             (click)="setTab(tab.id)"
             style="width:100%;text-align:left;padding:10px 12px;border-radius:var(--radius-md);
-                   display:flex;align-items:center;gap:10px;font-size:0.85rem;font-weight:600;
-                   border:none;cursor:pointer;transition:var(--transition);background:transparent"
+                   display:flex;align-items:center;gap:10px;font-family:var(--font-sans);
+                   font-size:0.85rem;font-weight:600;border:none;cursor:pointer;
+                   transition:var(--transition);background:transparent"
             [style.background]="activeTab===tab.id ? 'var(--blue-100)' : 'transparent'"
             [style.color]="activeTab===tab.id ? 'var(--primary)' : 'var(--blue-900)'">
       <span style="font-family:'Material Icons Round';font-style:normal;font-size:18px">{{tab.icon}}</span>

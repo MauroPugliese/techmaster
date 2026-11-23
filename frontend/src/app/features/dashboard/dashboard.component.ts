@@ -14,8 +14,14 @@ import {
 } from '../../core/models/interfaces';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
 import { DropdownComponent, DropdownOptionComponent } from '../../shared/components/dropdown/dropdown.component';
+import {
+  applySmartChartDefaults,
+  SMART_CHART_FONT_FAMILY,
+  SMART_CHART_GRID_COLOR
+} from '../../shared/utils/chart-theme';
 
 Chart.register(...registerables);
+applySmartChartDefaults(Chart);
 
 export interface ActivityFeedItem {
   id: number;
@@ -233,10 +239,10 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: { legend: { position: 'top', labels: { usePointStyle: true, padding: 16, font: { family: 'Plus Jakarta Sans', size: 12 } } } },
+          plugins: { legend: { position: 'top', labels: { usePointStyle: true, padding: 16, font: { family: SMART_CHART_FONT_FAMILY, size: 12 } } } },
           scales: {
-            x: { grid: { color: '#E1EAF5' }, ticks: { font: { family: 'Plus Jakarta Sans', size: 11 } } },
-            y: { beginAtZero: true, grid: { color: '#E1EAF5' }, ticks: { precision: 0, font: { family: 'Plus Jakarta Sans', size: 11 } } }
+            x: { grid: { color: SMART_CHART_GRID_COLOR }, ticks: { font: { family: SMART_CHART_FONT_FAMILY, size: 11 } } },
+            y: { beginAtZero: true, grid: { color: SMART_CHART_GRID_COLOR }, ticks: { precision: 0, font: { family: SMART_CHART_FONT_FAMILY, size: 11 } } }
           },
           elements: { line: { tension: 0.4, borderWidth: 2.5 }, point: { radius: 4, hoverRadius: 6 } }
         }
@@ -262,7 +268,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
           maintainAspectRatio: false,
           cutout: '68%',
           plugins: {
-            legend: { position: 'right', labels: { padding: 16, usePointStyle: true, font: { family: 'Plus Jakarta Sans', size: 12 } } }
+            legend: { position: 'right', labels: { padding: 16, usePointStyle: true, font: { family: SMART_CHART_FONT_FAMILY, size: 12 } } }
           }
         }
       });
