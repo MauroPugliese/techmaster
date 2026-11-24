@@ -94,7 +94,7 @@
               <span class="badge" *ngIf="c.is_protected && !c.is_system" style="background:var(--surface-raised);color:var(--text-muted)">Protected</span>
             </div>
           </td>
-          <td><code style="font-size:0.78rem">{{c.column_type}}</code></td>
+          <td><span class="admin-code-pill" style="font-size:0.78rem">{{c.column_type}}</span></td>
           <td>
             <span class="badge"
                   [style.background]="c.is_nullable === 'YES' ? 'var(--blue-100)' : '#FEE2E2'"
@@ -218,7 +218,7 @@
       </thead>
       <tbody>
         <tr *ngFor="let f of filteredUiFields; let i = index">
-          <td><code>{{f.field_key}}</code></td>
+          <td><span class="admin-code-pill">{{f.field_key}}</span></td>
           <td>
             <label class="admin-switch">
               <input type="checkbox" [(ngModel)]="f.is_visible">
@@ -269,7 +269,7 @@
       <div class="preview-pill" *ngFor="let p of visibleUiPreviewFields; let idx = index">
         <span class="preview-idx">{{idx + 1}}</span>
         <span class="preview-lbl">{{p.label || p.field_key}}</span>
-        <code class="preview-key">{{p.field_key}}</code>
+        <span class="admin-code-pill preview-key">{{p.field_key}}</span>
       </div>
     </div>
   </div>

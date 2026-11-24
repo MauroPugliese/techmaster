@@ -9,8 +9,10 @@ const { validateRegister, validateLogin, validateRefresh, validateUpdateProfile 
 router.post('/register', validateRegister, authCtrl.register);
 router.post('/login',    validateLogin, authCtrl.login);
 router.post('/refresh',  validateRefresh, authCtrl.refresh);
-router.post('/logout',   authenticate, authCtrl.logout);
-router.get ('/me',       authenticate, authCtrl.me);
-router.put ('/profile',  authenticate, validateUpdateProfile, authCtrl.updateProfile);
+router.post('/logout',          authenticate, authCtrl.logout);
+router.get ('/me',              authenticate, authCtrl.me);
+router.put ('/profile',         authenticate, validateUpdateProfile, authCtrl.updateProfile);
+router.get ('/sessions',        authenticate, authCtrl.getSessions);
+router.post('/revoke-sessions', authenticate, authCtrl.revokeSessions);
 
 module.exports = router;

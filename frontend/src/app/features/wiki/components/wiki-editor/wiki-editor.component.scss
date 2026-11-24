@@ -231,6 +231,20 @@
   font-size: 0.74rem; color: var(--text-muted);
 }
 
+.kbd-hint {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--blue-50);
+  border: 1px solid var(--border);
+  color: var(--blue-900);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
 .mat-i {
   font-family: 'Material Icons Round'; font-style: normal; font-weight: normal;
   line-height: 1; vertical-align: middle; user-select: none; display: inline-block;

@@ -244,10 +244,23 @@ export class TasksComponent implements OnInit, OnDestroy {
 
     this.loadAllParentCandidates();
 
-    // Handle /tasks?id=123 deep-links from notifications
+    // Handle /tasks?id=123 and /tasks?action=new deep-links
     this.route.queryParamMap.pipe(takeUntil(this.destroy$)).subscribe(params => {
       const id = Number(params.get('id'));
       if (id > 0) this.openTaskById(id);
+
+      if (params.get('action') === 'new') {
+        setTimeout(() => {
+          this.openDrawerForCreate();
+          this.router.navigate([], {
+            relativeTo: this.route,
+            queryParams: { action: null },
+            queryParamsHandling: 'merge',
+            replaceUrl: true
+          });
+          this.cdr.markForCheck();
+        }, 0);
+      }
     });
   }
 

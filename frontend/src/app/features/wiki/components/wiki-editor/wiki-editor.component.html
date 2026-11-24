@@ -285,8 +285,8 @@
 
   <!-- ── Footer Status Bar ──────────────────────────────────────────────────── -->
   <footer class="editor-footer">
-    <span class="foot-hint" *ngIf="editorMode==='visual'">Type <code>/</code> for blocks · Stored cleanly as Markdown</span>
+    <span class="foot-hint" *ngIf="editorMode==='visual'">Type <span class="kbd-hint">/</span> for blocks · Stored cleanly as Markdown</span>
     <span class="foot-hint" *ngIf="editorMode==='split'">Live GitHub Flavored Markdown + Mermaid + Highlight.js</span>
-    <span class="foot-stats">{{wordCount}} words · <code>Ctrl+S</code> to save</span>
+    <span class="foot-stats">{{wordCount}} words · <span class="kbd-hint">Ctrl+S</span> to save</span>
   </footer>
 </div>

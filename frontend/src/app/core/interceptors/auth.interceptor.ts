@@ -1,10 +1,18 @@
-import { HttpInterceptorFn, HttpErrorResponse } from '@angular/common/http';
+import { HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
 import { inject } from '@angular/core';
-import { catchError, switchMap, throwError } from 'rxjs';
+import { BehaviorSubject, catchError, filter, finalize, switchMap, take, throwError } from 'rxjs';
 import { AuthService } from '../services/auth.service';
 
+interface RefreshState {
+  status: 'idle' | 'pending' | 'success' | 'failed';
+  token: string | null;
+}
+
+let isRefreshing = false;
+const refreshState$ = new BehaviorSubject<RefreshState>({ status: 'idle', token: null });
+
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
-  const auth  = inject(AuthService);
+  const auth = inject(AuthService);
   const token = auth.getAccessToken();
 
   const authReq = token
@@ -13,16 +21,47 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
 
   return next(authReq).pipe(
     catchError((err: HttpErrorResponse) => {
-      if (err.status === 401 && !req.url.includes('/auth/')) {
-        return auth.refreshToken().pipe(
-          switchMap(() => {
-            const newToken = auth.getAccessToken();
-            return next(req.clone({ setHeaders: { Authorization: `Bearer ${newToken}` } }));
-          }),
-          catchError(() => { auth.logout(); return throwError(() => err); })
+      const isAuthCredentialEndpoint = /\/auth\/(login|register|refresh|logout)\b/.test(req.url);
+      if (err.status !== 401 || isAuthCredentialEndpoint) {
+        return throwError(() => err);
+      }
+
+      if (isRefreshing) {
+        return refreshState$.pipe(
+          filter((state) => state.status !== 'pending'),
+          take(1),
+          switchMap((state) => {
+            if (state.status === 'success' && state.token) {
+              return next(req.clone({ setHeaders: { Authorization: `Bearer ${state.token}` } }));
+            }
+            return throwError(() => err);
+          })
         );
       }
-      return throwError(() => err);
+
+      isRefreshing = true;
+      refreshState$.next({ status: 'pending', token: null });
+
+      return auth.refreshToken().pipe(
+        switchMap((res: any) => {
+          const newToken = res?.data?.access_token || auth.getAccessToken();
+          if (!newToken) {
+            refreshState$.next({ status: 'failed', token: null });
+            auth.logout();
+            return throwError(() => err);
+          }
+          refreshState$.next({ status: 'success', token: newToken });
+          return next(req.clone({ setHeaders: { Authorization: `Bearer ${newToken}` } }));
+        }),
+        catchError((refreshErr) => {
+          refreshState$.next({ status: 'failed', token: null });
+          auth.logout();
+          return throwError(() => refreshErr);
+        }),
+        finalize(() => {
+          isRefreshing = false;
+        })
+      );
     })
   );
 };

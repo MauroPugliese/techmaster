@@ -82,11 +82,11 @@ const validateUpdateProfile = [
   body('phone').trim().isLength({ max: 30 }).optional(),
   body('avatar_url').trim().isURL().optional({ checkFalsy: true }),
   body('current_password')
-    .if(() => body('new_password').exists())
-    .isLength({ min: 1 })
+    .if((value, { req }) => Boolean(req.body?.new_password))
+    .notEmpty()
     .withMessage('Current password required for password change'),
   body('new_password')
-    .if(() => body('current_password').exists())
+    .if((value, { req }) => Boolean(req.body?.current_password))
     .isLength({ min: 8 })
     .withMessage('New password must be at least 8 characters')
     .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)

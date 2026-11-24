@@ -1,0 +1,357 @@
+.profile-page {
+  font-family: var(--font-sans);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.pr-page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.pr-identity {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.pr-avatar-lg {
+  width: 60px;
+  height: 60px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, var(--blue-800), var(--primary));
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  font-weight: 800;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  flex-shrink: 0;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.pr-eyebrow {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--primary);
+  margin-bottom: 2px;
+}
+
+.pr-page-head h1 {
+  font-size: 1.55rem;
+  font-weight: 800;
+  color: var(--blue-950);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.pr-sub {
+  margin-top: 4px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pr-dot {
+  color: var(--blue-300);
+}
+
+.pr-role-pill {
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: #EFF6FF;
+  border: 1px solid var(--blue-200);
+  color: var(--blue-800);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.pr-meta-num,
+.pr-tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Grid ───────────────────────────────────────────────────────────────── */
+.pr-grid {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 20px;
+  align-items: start;
+}
+
+.pr-side-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.pr-card {
+  box-shadow: var(--shadow-sm);
+
+  .card-subtitle {
+    margin-top: 2px;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }
+}
+
+/* ── Read-Only Account Identity Strip ───────────────────────────────────── */
+.pr-readonly-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px 14px;
+  margin-bottom: 18px;
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+}
+
+.pr-ro-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pr-ro-label {
+  font-size: 0.69rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-subtle);
+}
+
+.pr-ro-val {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--blue-950);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pr-actions {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ── Password Field + Strength Meter ────────────────────────────────────── */
+.pr-pw-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+
+  .form-control {
+    padding-right: 40px;
+  }
+}
+
+.pr-pw-toggle {
+  position: absolute;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+
+  span {
+    font-family: 'Material Icons Round';
+    font-style: normal;
+    font-size: 18px;
+  }
+
+  &:hover {
+    background: var(--blue-50);
+    color: var(--blue-900);
+  }
+}
+
+.pr-strength-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.pr-strength-bars {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+  flex: 1;
+}
+
+.pr-bar {
+  height: 5px;
+  border-radius: 999px;
+  background: var(--blue-100);
+  transition: background 0.18s ease;
+
+  &.filled.tone-danger  { background: #EF4444; }
+  &.filled.tone-warning { background: #F59E0B; }
+  &.filled.tone-info    { background: #3B82F6; }
+  &.filled.tone-success { background: #10B981; }
+}
+
+.pr-strength-label {
+  font-size: 0.74rem;
+  font-weight: 700;
+
+  &.tone-neutral { color: var(--text-subtle); }
+  &.tone-danger  { color: #DC2626; }
+  &.tone-warning { color: #D97706; }
+  &.tone-info    { color: #2563EB; }
+  &.tone-success { color: #059669; }
+}
+
+.pr-pw-checks {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+
+.pr-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-subtle);
+
+  span {
+    font-family: 'Material Icons Round';
+    font-style: normal;
+    font-size: 15px;
+  }
+
+  &.met {
+    color: #059669;
+  }
+}
+
+.pr-mismatch {
+  margin-top: 6px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #DC2626;
+}
+
+/* ── Active Sessions ────────────────────────────────────────────────────── */
+.pr-sessions-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.pr-session-count {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--blue-50);
+  border: 1px solid var(--blue-200);
+  color: var(--blue-800);
+  font-size: 0.74rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.pr-session-loading,
+.pr-session-empty {
+  padding: 14px 0;
+  font-size: 0.84rem;
+  color: var(--text-muted);
+}
+
+.pr-session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.pr-session-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+}
+
+.pr-session-icon {
+  font-family: 'Material Icons Round';
+  font-style: normal;
+  font-size: 18px;
+  color: var(--primary);
+}
+
+.pr-session-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.pr-session-id {
+  font-size: 0.83rem;
+  font-weight: 700;
+  color: var(--blue-950);
+  font-variant-numeric: tabular-nums;
+}
+
+.pr-session-dates {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.pr-active-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #DCFCE7;
+  color: #15803D;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.pr-revoke-row {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 1024px) {
+  .pr-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .pr-readonly-strip {
+    grid-template-columns: 1fr;
+  }
+}

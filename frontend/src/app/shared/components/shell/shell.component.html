@@ -1,12 +1,13 @@
 <!-- ==========================================================================
-     app-shell.component.html — Main layout with sidebar
+     shell.component.html — Enterprise Shell with Breadcrumb, Command Palette & Live Badges
      ========================================================================== -->
-<div class="app-shell" (click)="closeNotifications($event)">
+<div class="app-shell">
+
+  <div class="sidebar-backdrop" *ngIf="mobileSidebarOpen" (click)="closeMobileSidebar()"></div>
 
   <!-- ── Sidebar ─────────────────────────────────────────────────────────── -->
-  <aside class="sidebar" [class.collapsed]="sidebarCollapsed">
+  <aside class="sidebar" [class.collapsed]="sidebarCollapsed" [class.mobile-open]="mobileSidebarOpen">
 
-    <!-- Logo -->
     <div class="sidebar-logo">
       <div class="logo-icon">
         <span style="font-family:'Material Icons Round';font-style:normal;color:#fff;font-size:22px">dns</span>
@@ -15,9 +16,11 @@
         SMaRT
         <span class="logo-sub">Operations Platform</span>
       </div>
+      <button type="button" class="mobile-drawer-close" (click)="closeMobileSidebar()" aria-label="Close navigation">
+        <span>close</span>
+      </button>
     </div>
 
-    <!-- Navigation -->
     <nav class="sidebar-nav">
 
       <div class="nav-section-label" *ngIf="showNavSection('dashboard')">Overview</div>
@@ -31,20 +34,38 @@
 
       <a class="nav-item" routerLink="/operations" routerLinkActive="active" *ngIf="showNavSection('operations')">
         <span class="nav-icon">rocket_launch</span>
-        <span class="nav-label">Operations & Sorties</span>
-        <span class="nav-badge" *ngIf="activeOpsCount > 0">{{activeOpsCount}}</span>
+        <span class="nav-label">Operations &amp; Sorties</span>
+        <span
+          class="nav-badge"
+          *ngIf="activeOpsCount > 0"
+          [attr.data-tooltip]="activeOpsCount + (activeOpsCount === 1 ? ' active or planned operation' : ' active or planned operations')"
+          [attr.aria-label]="activeOpsCount + (activeOpsCount === 1 ? ' active or planned operation' : ' active or planned operations')">
+          {{ activeOpsCount }}
+        </span>
       </a>
 
       <a class="nav-item" routerLink="/maintenance" routerLinkActive="active" *ngIf="showNavSection('maintenance')">
         <span class="nav-icon">build_circle</span>
         <span class="nav-label">Maintenance</span>
-        <span class="nav-badge" *ngIf="pendingMaintCount > 0">{{pendingMaintCount}}</span>
+        <span
+          class="nav-badge"
+          *ngIf="pendingMaintCount > 0"
+          [attr.data-tooltip]="pendingMaintCount + (pendingMaintCount === 1 ? ' open or scheduled work order' : ' open or scheduled work orders')"
+          [attr.aria-label]="pendingMaintCount + (pendingMaintCount === 1 ? ' open or scheduled work order' : ' open or scheduled work orders')">
+          {{ pendingMaintCount }}
+        </span>
       </a>
 
       <a class="nav-item" routerLink="/warehouse" routerLinkActive="active" *ngIf="showNavSection('warehouse')">
         <span class="nav-icon">inventory_2</span>
         <span class="nav-label">Warehouse</span>
-        <span class="nav-badge" *ngIf="lowStockCount > 0">{{lowStockCount}}</span>
+        <span
+          class="nav-badge nav-badge-warn"
+          *ngIf="lowStockCount > 0"
+          [attr.data-tooltip]="lowStockCount + (lowStockCount === 1 ? ' low or out-of-stock item' : ' low or out-of-stock items')"
+          [attr.aria-label]="lowStockCount + (lowStockCount === 1 ? ' low or out-of-stock item' : ' low or out-of-stock items')">
+          {{ lowStockCount }}
+        </span>
       </a>
 
       <a class="nav-item" routerLink="/shifts" routerLinkActive="active" *ngIf="showNavSection('shifts')">
@@ -56,7 +77,7 @@
 
       <a class="nav-item" routerLink="/analytics" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}" *ngIf="showNavSection('analytics')">
         <span class="nav-icon">insights</span>
-        <span class="nav-label">Analytics & Reports</span>
+        <span class="nav-label">Analytics &amp; Reports</span>
       </a>
 
       <a class="nav-item" routerLink="/analytics/operations" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}" *ngIf="showNavSection('operations_analytics')">
@@ -67,14 +88,20 @@
       <a class="nav-item" routerLink="/tasks" routerLinkActive="active" *ngIf="showNavSection('tasks')">
         <span class="nav-icon">task_alt</span>
         <span class="nav-label">Task Manager</span>
-        <span class="nav-badge" *ngIf="openTasksCount > 0">{{openTasksCount}}</span>
+        <span
+          class="nav-badge"
+          *ngIf="openTasksCount > 0"
+          [attr.data-tooltip]="openTasksCount + (openTasksCount === 1 ? ' open task' : ' open tasks')"
+          [attr.aria-label]="openTasksCount + (openTasksCount === 1 ? ' open task' : ' open tasks')">
+          {{ openTasksCount }}
+        </span>
       </a>
 
       <div class="nav-section-label" *ngIf="showNavSection('wiki')">Knowledge</div>
 
       <a class="nav-item" routerLink="/wiki" routerLinkActive="active" *ngIf="showNavSection('wiki')">
         <span class="nav-icon">menu_book</span>
-        <span class="nav-label">Wiki & Docs</span>
+        <span class="nav-label">Wiki &amp; Docs</span>
       </a>
 
       <div class="nav-section-label" *ngIf="showNavSection('admin')">Administration</div>
@@ -86,15 +113,14 @@
 
     </nav>
 
-    <!-- User Footer -->
-    <div class="sidebar-user" [routerLink]="['/settings/profile']">
+    <div class="sidebar-user" routerLink="/profile" routerLinkActive="active" title="My Profile &amp; Security">
       <div class="user-avatar">
         <img *ngIf="currentUser?.avatar_url" [src]="currentUser!.avatar_url" [alt]="fullName">
-        <span *ngIf="!currentUser?.avatar_url">{{initials}}</span>
+        <span *ngIf="!currentUser?.avatar_url">{{ initials }}</span>
       </div>
       <div class="user-info">
-        <div class="user-name">{{fullName}}</div>
-        <div class="user-role">{{currentUser?.role?.name | titlecase}}</div>
+        <div class="user-name">{{ fullName }}</div>
+        <div class="user-role">{{ currentUser?.role?.name | titlecase }}</div>
       </div>
     </div>
 
@@ -103,99 +129,105 @@
   <!-- ── Main Area ────────────────────────────────────────────────────────── -->
   <div class="main-area" [class.sidebar-collapsed]="sidebarCollapsed">
 
-    <!-- Header -->
     <header class="app-header" [class.sidebar-collapsed]="sidebarCollapsed">
 
-      <!-- Hamburger -->
-      <button class="btn btn-ghost btn-icon-only" (click)="toggleSidebar()">
+      <button type="button" class="btn btn-ghost btn-icon-only" (click)="toggleSidebar()" aria-label="Toggle sidebar">
         <span class="btn-icon">menu</span>
       </button>
 
-      <!-- Page Title -->
-      <div class="header-title">
-        <h2>{{pageTitle}}</h2>
-        <p>{{pageSubtitle}}</p>
+      <!-- Contextual Breadcrumb -->
+      <div class="shell-breadcrumb">
+        <span class="shell-crumb-group">{{ pageGroup }}</span>
+        <span class="shell-crumb-sep">chevron_right</span>
+        <span class="shell-crumb-page">{{ pageTitle }}</span>
+        <span class="shell-crumb-sub" *ngIf="pageSubtitle">{{ pageSubtitle }}</span>
       </div>
 
-      <!-- Global Date Filter -->
-      <div class="flex items-center gap-2">
+      <!-- Command Palette Trigger -->
+      <button type="button" class="cmd-trigger" (click)="openCommandPalette()" title="Search or jump to page">
+        <span class="cmd-trigger-icon">search</span>
+        <span class="cmd-trigger-text">Quick search…</span>
+        <span class="cmd-trigger-kbd">{{ isMac ? '⌘K' : 'Ctrl+K' }}</span>
+      </button>
 
+      <!-- Global Date Filter -->
+      <div class="header-date-controls">
         <div class="preset-chips">
-          <button class="chip" [class.active]="activePreset==='today'"   (click)="setPreset('today')">Today</button>
-          <button class="chip" [class.active]="activePreset==='week'"    (click)="setPreset('week')">7D</button>
-          <button class="chip" [class.active]="activePreset==='month'"   (click)="setPreset('month')">30D</button>
-          <button class="chip" [class.active]="activePreset==='quarter'" (click)="setPreset('quarter')">90D</button>
+          <button type="button" class="chip" [class.active]="activePreset==='today'"   (click)="setPreset('today')">Today</button>
+          <button type="button" class="chip" [class.active]="activePreset==='week'"    (click)="setPreset('week')">7D</button>
+          <button type="button" class="chip" [class.active]="activePreset==='month'"   (click)="setPreset('month')">30D</button>
+          <button type="button" class="chip" [class.active]="activePreset==='quarter'" (click)="setPreset('quarter')">90D</button>
         </div>
 
         <div class="date-filter-bar" (click)="openDatePicker()">
           <span class="date-icon">date_range</span>
-          {{dateLabel}}
-          <span class="date-icon" style="font-size:14px">arrow_drop_down</span>
+          {{ dateLabel }}
+          <span class="date-icon date-arrow-icon">arrow_drop_down</span>
         </div>
 
-        <button class="btn btn-ghost btn-icon-only" *ngIf="hasDateFilter" (click)="clearDate()" title="Clear filter">
+        <button type="button" class="btn btn-ghost btn-icon-only" *ngIf="hasDateFilter" (click)="clearDate()" title="Clear filter">
           <span class="btn-icon">close</span>
         </button>
-
       </div>
 
       <!-- Notifications -->
-      <button class="btn btn-ghost btn-icon-only" style="position:relative" (click)="toggleNotifications($event)">
-        <span class="btn-icon">notifications</span>
-        <span *ngIf="unreadNotifications > 0" style="
-          position:absolute; top:6px; right:6px;
-          width:8px; height:8px; background:#EF4444; border-radius:50%;
-          border:2px solid white;">
-        </span>
-      </button>
+      <div class="notif-anchor">
+        <button type="button" class="btn btn-ghost btn-icon-only notif-btn" (click)="toggleNotifications($event)" title="Notifications">
+          <span class="btn-icon">notifications</span>
+          <span class="notif-dot" *ngIf="unreadNotifications > 0"></span>
+        </button>
 
-      <div *ngIf="showNotifications" (click)="$event.stopPropagation()" style="
-        position:absolute;
-        top:68px;
-        right:72px;
-        width:360px;
-        max-height:420px;
-        overflow:auto;
-        background:var(--surface);
-        border:1px solid var(--border);
-        border-radius:var(--radius-md);
-        box-shadow:var(--shadow-md);
-        z-index:1200;">
-        <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 14px; border-bottom:1px solid var(--border);">
-          <strong style="font-size:0.95rem;">Notifications</strong>
-          <button class="btn btn-ghost" style="padding:4px 8px; font-size:0.78rem;" (click)="markAllAsRead($event)">Mark all read</button>
-        </div>
-
-        <div *ngIf="notifications.length === 0" style="padding:18px 14px; color:var(--blue-700); font-size:0.9rem;">
-          No notifications yet.
-        </div>
-
-        <div *ngFor="let n of notifications; trackBy: trackByNotificationId"
-             (click)="openNotification(n, $event)"
-             style="display:block; width:100%; text-align:left; border:0; background:var(--surface); padding:12px 14px; border-bottom:1px solid var(--blue-100); cursor:pointer;"
-             [style.background]="n.is_read ? 'var(--surface)' : 'var(--blue-50)'">
-          <div style="display:flex; gap:10px; align-items:flex-start;">
-            <span [style.background]="n.is_read ? 'var(--blue-300)' : 'var(--primary)'" style="margin-top:6px; width:8px; height:8px; border-radius:50%; flex:0 0 auto;"></span>
-            <div style="min-width:0; flex:1 1 auto;">
-              <div style="font-size:0.86rem; font-weight:600; color:var(--blue-900); margin-bottom:2px;">{{ n.title }}</div>
-              <div *ngIf="n.body" style="font-size:0.82rem; color:var(--blue-800); line-height:1.35; white-space:normal;">{{ n.body }}</div>
-              <div style="font-size:0.74rem; color:var(--blue-400); margin-top:6px;">{{ n.created_at | date:'short' }}</div>
+        <div class="notif-popover" *ngIf="showNotifications" (click)="$event.stopPropagation()">
+          <div class="notif-pop-header">
+            <div class="notif-title-group">
+              <strong>Notifications</strong>
+              <span class="notif-unread-pill" *ngIf="unreadNotifications > 0">{{ unreadNotifications }} new</span>
             </div>
-            <button *ngIf="!n.is_read" class="btn btn-ghost btn-icon-only" style="width:24px; height:24px;" (click)="markAsRead(n, $event)" title="Mark as read">
-              <span class="btn-icon" style="font-size:16px;">done</span>
+            <button type="button" class="btn btn-ghost notif-mark-all" *ngIf="unreadNotifications > 0" (click)="markAllAsRead($event)">
+              Mark all read
             </button>
+          </div>
+
+          <div class="notif-tabs">
+            <button type="button" class="notif-tab" [class.active]="notifFilter === 'all'" (click)="setNotifFilter('all')">
+              All ({{ notifications.length }})
+            </button>
+            <button type="button" class="notif-tab" [class.active]="notifFilter === 'unread'" (click)="setNotifFilter('unread')">
+              Unread ({{ unreadNotifications }})
+            </button>
+          </div>
+
+          <div class="notif-list">
+            <div class="notif-empty" *ngIf="filteredNotifications.length === 0">
+              <span class="notif-empty-icon">notifications_none</span>
+              <span>{{ notifFilter === 'unread' ? 'All notifications caught up.' : 'No notifications yet.' }}</span>
+            </div>
+
+            <div class="notif-item"
+                 *ngFor="let n of filteredNotifications; trackBy: trackByNotificationId"
+                 [class.unread]="!n.is_read"
+                 (click)="openNotification(n, $event)">
+              <span class="notif-indicator" [class.unread]="!n.is_read"></span>
+              <div class="notif-body-col">
+                <div class="notif-item-title">{{ n.title }}</div>
+                <div class="notif-item-text" *ngIf="n.body">{{ n.body }}</div>
+                <div class="notif-item-time">{{ n.created_at | date:'short' }}</div>
+              </div>
+              <button *ngIf="!n.is_read" type="button" class="btn btn-ghost btn-icon-only notif-read-btn" (click)="markAsRead(n, $event)" title="Mark as read">
+                <span class="btn-icon">done</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
       <!-- Logout -->
-      <button class="btn btn-ghost btn-icon-only" (click)="logout()" title="Sign out">
+      <button type="button" class="btn btn-ghost btn-icon-only" (click)="logout()" title="Sign out">
         <span class="btn-icon">logout</span>
       </button>
 
     </header>
 
-    <!-- Router Outlet -->
     <main class="page-content">
       <router-outlet></router-outlet>
     </main>
@@ -203,7 +235,8 @@
   </div>
 
   <app-toast></app-toast>
-<app-confirm></app-confirm>
+  <app-confirm></app-confirm>
+  <app-command-palette [open]="commandPaletteOpen" (closed)="closeCommandPalette()"></app-command-palette>
 
 </div>
 
@@ -211,8 +244,8 @@
 <div class="modal-overlay" *ngIf="showDatePicker" (click)="closeDatePicker($event)">
   <div class="modal" style="max-width:560px">
     <div class="modal-header">
-      <h3>Select Date & Time Range</h3>
-      <button class="btn btn-ghost btn-icon-only" (click)="showDatePicker=false">
+      <h3>Select Date &amp; Time Range</h3>
+      <button type="button" class="btn btn-ghost btn-icon-only" (click)="showDatePicker=false">
         <span class="btn-icon">close</span>
       </button>
     </div>
@@ -225,7 +258,7 @@
             mode="datetime"
             defaultTime="00:00"
             [(ngModel)]="pickerFrom"
-            placeholder="Start date & time">
+            placeholder="Start date &amp; time">
           </app-datetime-picker>
         </div>
         <div class="form-group">
@@ -235,14 +268,14 @@
             mode="datetime"
             defaultTime="23:59"
             [(ngModel)]="pickerTo"
-            placeholder="End date & time">
+            placeholder="End date &amp; time">
           </app-datetime-picker>
         </div>
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-ghost" (click)="clearDate()">Clear</button>
-      <button class="btn btn-primary" (click)="applyDatePicker()">Apply Filter</button>
+      <button type="button" class="btn btn-ghost" (click)="clearDate()">Clear</button>
+      <button type="button" class="btn btn-primary" (click)="applyDatePicker()">Apply Filter</button>
     </div>
   </div>
 </div>

@@ -153,7 +153,7 @@ export function printBinLabel(item: InventoryItem): boolean {
   <meta charset="utf-8" />
   <title>Bin Label — ${escapeHtml(item.sku)}</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&display=swap');
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
@@ -185,7 +185,8 @@ export function printBinLabel(item: InventoryItem): boolean {
       color: #1565C0;
     }
     .sku-box {
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+      font-variant-numeric: tabular-nums;
       font-size: 22px;
       font-weight: 700;
       letter-spacing: 0.04em;
@@ -229,7 +230,7 @@ export function printBinLabel(item: InventoryItem): boolean {
       color: #0D1F3C;
       margin-top: 2px;
     }
-    .mono { font-family: 'JetBrains Mono', monospace; }
+    .mono { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; font-variant-numeric: tabular-nums; font-weight: 600; }
     @media print {
       body { background: #FFFFFF; padding: 0; }
       .label-card { border-width: 1.5px; }

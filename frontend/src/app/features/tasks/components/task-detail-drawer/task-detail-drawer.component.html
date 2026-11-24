@@ -250,7 +250,7 @@
 
             <div *ngIf="!loadingComments && !comments.length" class="comments-empty">
               <span class="mat-i">chat_bubble_outline</span>
-              <p>No comments yet. Mention teammates with <code>&#64;username</code> to notify them immediately.</p>
+              <p>No comments yet. Mention teammates with <span class="kbd-pill">&#64;username</span> to notify them immediately.</p>
             </div>
 
             <div *ngFor="let c of comments; trackBy: trackById" class="comment-card">
@@ -303,7 +303,7 @@
                       placeholder="Write a comment… type @ to mention a colleague (Ctrl+Enter to send)"></textarea>
 
             <div class="composer-foot">
-              <span class="composer-hint">Tip: type <code>&#64;</code> to mention · <code>Ctrl+Enter</code> to send</span>
+              <span class="composer-hint">Tip: type <span class="kbd-pill">&#64;</span> to mention · <span class="kbd-pill">Ctrl+Enter</span> to send</span>
               <button type="button"
                       class="btn btn-primary btn-sm"
                       (click)="postComment()"
@@ -317,7 +317,7 @@
         <ng-template #createHint>
           <div class="comments-empty create-note">
             <span class="mat-i">alternate_email</span>
-            <p>Save the task first to unlock interactive subtasks checklist and team <code>&#64;mention</code> comments.</p>
+            <p>Save the task first to unlock interactive subtasks checklist and team <span class="kbd-pill">&#64;mention</span> comments.</p>
           </div>
         </ng-template>
       </aside>

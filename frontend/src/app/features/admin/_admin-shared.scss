@@ -1,6 +1,6 @@
 /* ============================================================================
    _admin-shared.scss — Shared Admin Settings Design System Styles
-   Uses global SMaRT tokens exclusively (--font-sans, --font-mono, --blue-*)
+   Uses global SMaRT tokens exclusively (--font-sans, tabular-nums, --blue-*)
    ============================================================================ */
 
 .admin-page-head {
@@ -361,11 +361,26 @@
   background: var(--blue-950);
   color: #E2E8F0;
   border: 1px solid var(--blue-900);
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
   font-size: 0.8rem;
   line-height: 1.55;
   overflow-x: auto;
   max-height: 300px;
+}
+
+.admin-code-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--blue-50);
+  border: 1px solid var(--border);
+  color: var(--blue-900);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.76rem;
+  font-weight: 600;
 }
 
 @media (max-width: 640px) {

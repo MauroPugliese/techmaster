@@ -71,7 +71,7 @@
             <td>
               <div class="flex items-center gap-2">
                 <span class="color-dot" [style.background]="item.color || '#1565C0'"></span>
-                <code style="font-size:0.75rem">{{item.color}}</code>
+                <span class="admin-code-pill" style="font-size:0.75rem">{{item.color}}</span>
               </div>
             </td>
             <td class="text-sm text-muted truncate" style="max-width:260px">{{item.description || '—'}}</td>
@@ -88,7 +88,7 @@
                 </div>
               </div>
             </td>
-            <td><code style="font-size:0.78rem">{{item.code}}</code></td>
+            <td><span class="admin-code-pill" style="font-size:0.78rem">{{item.code}}</span></td>
             <td>
               <span class="badge"
                     [style.background]="item.category === 'LEAVE' ? '#FEF3C7' : 'var(--blue-100)'"
@@ -126,13 +126,13 @@
               </div>
             </td>
             <td class="text-sm">{{item.sort_order}}</td>
-            <td><code style="font-size:0.75rem">{{item.slug}}</code></td>
+            <td><span class="admin-code-pill" style="font-size:0.75rem">{{item.slug}}</span></td>
           </ng-container>
 
           <!-- Warehouse Locations -->
           <ng-container *ngIf="activeTab === 'warehouse-locations'">
             <td class="font-bold text-sm">{{item.name}}</td>
-            <td><code style="font-size:0.78rem">{{item.code}}</code></td>
+            <td><span class="admin-code-pill" style="font-size:0.78rem">{{item.code}}</span></td>
             <td class="text-sm text-muted">{{item.description || '—'}}</td>
             <td>
               <div class="flex items-center gap-2">

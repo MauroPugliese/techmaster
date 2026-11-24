@@ -44,7 +44,9 @@
   align-items: center;
   padding: 2px 8px;
   border-radius: 999px;
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
   font-size: 0.72rem;
   font-weight: 600;
   color: var(--text-muted);
@@ -144,7 +146,9 @@
   word-break: break-word;
 
   &.mono {
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
     font-size: 0.85rem;
   }
 }

@@ -1,0 +1,239 @@
+<div class="profile-page">
+
+  <!-- Unified Page Header -->
+  <header class="pr-page-head">
+    <div class="pr-identity">
+      <div class="pr-avatar-lg">
+        <img *ngIf="avatarUrl && !avatarLoadError" [src]="avatarUrl" [alt]="fullName" (error)="avatarLoadError = true" />
+        <span *ngIf="!avatarUrl || avatarLoadError">{{ initials }}</span>
+      </div>
+      <div>
+        <div class="pr-eyebrow">Account &amp; Security</div>
+        <h1>{{ fullName }}</h1>
+        <p class="pr-sub">
+          <span>{{ currentUser?.email }}</span>
+          <span class="pr-dot">•</span>
+          <span class="pr-role-pill">{{ currentUser?.role?.name || 'member' | titlecase }}</span>
+          <ng-container *ngIf="currentUser?.last_login">
+            <span class="pr-dot">•</span>
+            <span class="pr-meta-num">Last sign-in {{ currentUser?.last_login | date:'medium' }}</span>
+          </ng-container>
+        </p>
+      </div>
+    </div>
+  </header>
+
+  <div class="pr-grid">
+
+    <!-- Left Column: Personal Information -->
+    <section class="card pr-card">
+      <div class="card-header">
+        <div>
+          <h3>Personal Information</h3>
+          <p class="card-subtitle">Keep your contact details and display profile up to date.</p>
+        </div>
+      </div>
+
+      <div class="card-body">
+        <div class="pr-readonly-strip">
+          <div class="pr-ro-item">
+            <span class="pr-ro-label">Username</span>
+            <span class="pr-ro-val">{{ currentUser?.username || '—' }}</span>
+          </div>
+          <div class="pr-ro-item">
+            <span class="pr-ro-label">Account Email</span>
+            <span class="pr-ro-val">{{ currentUser?.email || '—' }}</span>
+          </div>
+          <div class="pr-ro-item">
+            <span class="pr-ro-label">Access Role</span>
+            <span class="pr-ro-val">{{ currentUser?.role?.name || '—' | titlecase }}</span>
+          </div>
+        </div>
+
+        <form (ngSubmit)="saveProfile()" #profileForm="ngForm">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">First Name</label>
+              <input class="form-control" name="firstName" [(ngModel)]="firstName" required maxlength="80" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Last Name</label>
+              <input class="form-control" name="lastName" [(ngModel)]="lastName" required maxlength="80" />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Department</label>
+              <input class="form-control" name="department" [(ngModel)]="department" placeholder="e.g. Flight Operations" maxlength="100" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Job Title</label>
+              <input class="form-control" name="jobTitle" [(ngModel)]="jobTitle" placeholder="e.g. Lead Engineer" maxlength="100" />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Phone</label>
+              <input class="form-control pr-tabular" name="phone" [(ngModel)]="phone" placeholder="+39 000 000 0000" maxlength="30" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Avatar URL</label>
+              <input class="form-control" name="avatarUrl" [(ngModel)]="avatarUrl" (ngModelChange)="onAvatarUrlChange()" placeholder="https://example.com/avatar.jpg" />
+            </div>
+          </div>
+
+          <div class="pr-actions">
+            <button type="submit" class="btn btn-primary" [disabled]="savingProfile || !profileForm.valid">
+              <span class="btn-icon">save</span>
+              {{ savingProfile ? 'Saving…' : 'Save Profile' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- Right Column: Security + Sessions -->
+    <div class="pr-side-stack">
+
+      <!-- Change Password -->
+      <section class="card pr-card">
+        <div class="card-header">
+          <div>
+            <h3>Change Password</h3>
+            <p class="card-subtitle">Use at least 8 characters with uppercase, lowercase, and numbers.</p>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <form (ngSubmit)="updatePassword()">
+            <div class="form-group">
+              <label class="form-label">Current Password</label>
+              <div class="pr-pw-wrap">
+                <input
+                  class="form-control"
+                  [type]="showCurrentPw ? 'text' : 'password'"
+                  name="currentPassword"
+                  [(ngModel)]="currentPassword"
+                  autocomplete="current-password" />
+                <button type="button" class="pr-pw-toggle" (click)="showCurrentPw = !showCurrentPw" aria-label="Toggle visibility">
+                  <span>{{ showCurrentPw ? 'visibility_off' : 'visibility' }}</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">New Password</label>
+              <div class="pr-pw-wrap">
+                <input
+                  class="form-control"
+                  [type]="showNewPw ? 'text' : 'password'"
+                  name="newPassword"
+                  [(ngModel)]="newPassword"
+                  autocomplete="new-password" />
+                <button type="button" class="pr-pw-toggle" (click)="showNewPw = !showNewPw" aria-label="Toggle visibility">
+                  <span>{{ showNewPw ? 'visibility_off' : 'visibility' }}</span>
+                </button>
+              </div>
+
+              <div class="pr-strength-row">
+                <div class="pr-strength-bars">
+                  <span class="pr-bar" [class.filled]="pwScore >= 1" [ngClass]="pwStrengthClass"></span>
+                  <span class="pr-bar" [class.filled]="pwScore >= 2" [ngClass]="pwStrengthClass"></span>
+                  <span class="pr-bar" [class.filled]="pwScore >= 3" [ngClass]="pwStrengthClass"></span>
+                  <span class="pr-bar" [class.filled]="pwScore >= 4" [ngClass]="pwStrengthClass"></span>
+                </div>
+                <span class="pr-strength-label" [ngClass]="pwStrengthClass">{{ pwStrengthLabel }}</span>
+              </div>
+
+              <div class="pr-pw-checks">
+                <span class="pr-check" [class.met]="pwHasMinLen">
+                  <span>{{ pwHasMinLen ? 'check_circle' : 'radio_button_unchecked' }}</span> 8+ chars
+                </span>
+                <span class="pr-check" [class.met]="pwHasUpper">
+                  <span>{{ pwHasUpper ? 'check_circle' : 'radio_button_unchecked' }}</span> Uppercase
+                </span>
+                <span class="pr-check" [class.met]="pwHasLower">
+                  <span>{{ pwHasLower ? 'check_circle' : 'radio_button_unchecked' }}</span> Lowercase
+                </span>
+                <span class="pr-check" [class.met]="pwHasNumber">
+                  <span>{{ pwHasNumber ? 'check_circle' : 'radio_button_unchecked' }}</span> Number
+                </span>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Confirm New Password</label>
+              <div class="pr-pw-wrap">
+                <input
+                  class="form-control"
+                  [type]="showConfirmPw ? 'text' : 'password'"
+                  name="confirmPassword"
+                  [(ngModel)]="confirmPassword"
+                  autocomplete="new-password" />
+                <button type="button" class="pr-pw-toggle" (click)="showConfirmPw = !showConfirmPw" aria-label="Toggle visibility">
+                  <span>{{ showConfirmPw ? 'visibility_off' : 'visibility' }}</span>
+                </button>
+              </div>
+              <div class="pr-mismatch" *ngIf="confirmPassword && !passwordsMatch">
+                Passwords do not match.
+              </div>
+            </div>
+
+            <div class="pr-actions">
+              <button type="submit" class="btn btn-primary" [disabled]="!canSubmitPassword">
+                <span class="btn-icon">lock_reset</span>
+                {{ savingPassword ? 'Updating…' : 'Update Password' }}
+              </button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- Active Sessions -->
+      <section class="card pr-card">
+        <div class="card-header pr-sessions-header">
+          <div>
+            <h3>Active Sessions</h3>
+            <p class="card-subtitle">Active refresh tokens issued for your account.</p>
+          </div>
+          <span class="pr-session-count">{{ sessions.length }} active</span>
+        </div>
+
+        <div class="card-body">
+          <div class="pr-session-loading" *ngIf="loadingSessions">Loading active sessions…</div>
+
+          <div class="pr-session-empty" *ngIf="!loadingSessions && sessions.length === 0">
+            No active refresh sessions found.
+          </div>
+
+          <div class="pr-session-list" *ngIf="!loadingSessions && sessions.length > 0">
+            <div class="pr-session-row" *ngFor="let s of sessions; trackBy: trackBySessionId">
+              <span class="pr-session-icon">devices</span>
+              <div class="pr-session-meta">
+                <div class="pr-session-id">Session #{{ s.id }}</div>
+                <div class="pr-session-dates">
+                  Issued {{ s.created_at | date:'medium' }} · Expires {{ s.expires_at | date:'shortDate' }}
+                </div>
+              </div>
+              <span class="pr-active-badge">Active</span>
+            </div>
+          </div>
+
+          <div class="pr-actions pr-revoke-row">
+            <button
+              type="button"
+              class="btn btn-danger"
+              [disabled]="revokingSessions"
+              (click)="revokeAllSessions()">
+              <span class="btn-icon">logout</span>
+              {{ revokingSessions ? 'Revoking…' : 'Sign Out All Devices' }}
+            </button>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>

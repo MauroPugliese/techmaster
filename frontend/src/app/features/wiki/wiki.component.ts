@@ -161,6 +161,19 @@ export class WikiComponent implements OnInit, OnDestroy {
         this.viewingArticle = null;
         this.cdr.markForCheck();
       }
+
+      if (params.get('action') === 'new') {
+        setTimeout(() => {
+          this.openEditor(null);
+          this.router.navigate([], {
+            relativeTo: this.route,
+            queryParams: { action: null },
+            queryParamsHandling: 'merge',
+            replaceUrl: true
+          });
+          this.cdr.markForCheck();
+        }, 0);
+      }
     });
   }
 

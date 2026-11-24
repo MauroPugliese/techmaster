@@ -54,7 +54,8 @@
   font-weight: 700;
   background: var(--blue-50);
   color: var(--primary);
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
 }
 
 .health-value {
@@ -257,7 +258,9 @@
 .recent-time {
   font-size: 0.72rem;
   color: var(--text-muted);
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
   flex-shrink: 0;
 }
 

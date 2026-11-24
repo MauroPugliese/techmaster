@@ -4,7 +4,39 @@
 
 :host { display: block; width: 100%; }
 
-.tasks-page { width: 100%; display: flex; flex-direction: column; gap: 14px; }
+.tasks-page { width: 100%; display: flex; flex-direction: column; gap: 14px; font-family: var(--font-sans); }
+
+.tasks-page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+
+  .tasks-eyebrow {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--primary);
+    margin-bottom: 2px;
+  }
+
+  h1 {
+    margin: 0;
+    font-size: 1.55rem;
+    font-weight: 800;
+    color: var(--blue-950);
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+
+  .tasks-sub {
+    margin: 4px 0 0;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+  }
+}
 
 // ── Primary Toolbar ────────────────────────────────────────────────────────
 .tasks-toolbar {

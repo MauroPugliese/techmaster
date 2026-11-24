@@ -382,7 +382,9 @@
   border-radius: 6px;
   background: var(--surface-raised);
   color: var(--blue-950);
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
   font-size: 0.8rem;
   font-weight: 600;
   text-align: center;
@@ -426,7 +428,9 @@
   border-radius: 6px;
   background: transparent;
   color: var(--blue-900);
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
   font-size: 0.77rem;
   font-weight: 500;
   cursor: pointer;

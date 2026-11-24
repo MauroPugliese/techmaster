@@ -124,7 +124,7 @@
             </thead>
             <tbody>
               <tr *ngFor="let t of systemInfo.storage?.top_tables">
-                <td><code>{{t.table_name}}</code></td>
+                <td><span class="admin-code-pill">{{t.table_name}}</span></td>
                 <td class="text-sm">{{t.table_rows | number}}</td>
                 <td class="text-sm font-bold">{{t.size_mb | number:'1.2-2'}}</td>
               </tr>
@@ -193,7 +193,7 @@
                     [style.color]="getMethodBadgeStyle(ev.method).color">
                 {{ev.method}}
               </span>
-              <code class="recent-path">{{ev.path}}</code>
+              <span class="admin-code-pill recent-path">{{ev.path}}</span>
               <span class="badge"
                     [style.background]="getHttpStatusBadgeStyle(ev.status).bg"
                     [style.color]="getHttpStatusBadgeStyle(ev.status).color">

@@ -4,7 +4,6 @@
 import { Chart } from 'chart.js';
 
 export const SMART_CHART_FONT_FAMILY = "'Plus Jakarta Sans', system-ui, sans-serif";
-export const SMART_CHART_MONO_FAMILY = "'JetBrains Mono', monospace";
 export const SMART_CHART_TEXT_COLOR = '#6B7280';
 export const SMART_CHART_GRID_COLOR = '#E1EAF5';
 

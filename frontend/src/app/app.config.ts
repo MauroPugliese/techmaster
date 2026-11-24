@@ -85,6 +85,15 @@ const appRoutes: Routes = [
         canActivate: [sectionAccessGuard],
         data: { sectionKey: 'wiki' }
       },
+      {
+        path: 'profile',
+        loadComponent: () => import('./features/profile/profile.component').then(m => m.ProfileComponent)
+      },
+      {
+        path: 'settings/profile',
+        redirectTo: '/profile',
+        pathMatch: 'full'
+      },
     ]
   },
   { path: '**', redirectTo: '/dashboard' }

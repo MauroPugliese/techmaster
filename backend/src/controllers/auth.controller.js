@@ -197,6 +197,51 @@ exports.updateProfile = async (req, res, next) => {
     }
 
     await req.user.update(updates);
-    res.json({ success: true, message: 'Profile updated', data: req.user });
+    const updatedUser = await User.findByPk(req.user.id, {
+      attributes: { exclude: ['password_hash'] },
+      include: [{ model: Role, as: 'role' }]
+    });
+    res.json({ success: true, message: 'Profile updated', data: updatedUser });
+  } catch (err) { next(err); }
+};
+
+// GET /api/auth/sessions
+exports.getSessions = async (req, res, next) => {
+  try {
+    const sessions = await RefreshToken.findAll({
+      where: {
+        user_id: req.user.id,
+        is_revoked: false,
+        expires_at: { [Op.gte]: new Date() }
+      },
+      attributes: ['id', 'created_at', 'expires_at'],
+      order: [['created_at', 'DESC']]
+    });
+    res.json({
+      success: true,
+      data: {
+        active_count: sessions.length,
+        sessions: sessions.map((s) => ({
+          id: s.id,
+          created_at: s.created_at,
+          expires_at: s.expires_at
+        }))
+      }
+    });
+  } catch (err) { next(err); }
+};
+
+// POST /api/auth/revoke-sessions
+exports.revokeSessions = async (req, res, next) => {
+  try {
+    const [revokedCount] = await RefreshToken.update(
+      { is_revoked: true },
+      { where: { user_id: req.user.id, is_revoked: false } }
+    );
+    res.json({
+      success: true,
+      message: 'All active sessions revoked',
+      data: { revoked_count: revokedCount }
+    });
   } catch (err) { next(err); }
 };

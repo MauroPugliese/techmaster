@@ -492,6 +492,20 @@
   .composer-hint { font-size: 0.7rem; color: var(--text-muted); }
 }
 
+.kbd-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--blue-50);
+  border: 1px solid var(--border);
+  color: var(--blue-900);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
 .drawer-footer {
   display: flex;
   align-items: center;

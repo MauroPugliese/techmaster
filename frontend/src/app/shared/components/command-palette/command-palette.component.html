@@ -1,0 +1,65 @@
+<div class="cp-overlay" *ngIf="open" (click)="onBackdropClick($event)" (keydown)="onKeyDown($event)">
+  <div class="cp-dialog" role="dialog" aria-modal="true" aria-label="Command palette">
+
+    <div class="cp-search-bar">
+      <span class="cp-search-icon">search</span>
+      <input
+        #searchInput
+        type="text"
+        class="cp-input"
+        [ngModel]="query"
+        (ngModelChange)="onQueryChange($event)"
+        placeholder="Search operations, assets, inventory, tasks, wiki, or jump to page…"
+        autocomplete="off"
+        spellcheck="false" />
+      <span class="cp-spinner" *ngIf="loading"></span>
+      <button type="button" class="cp-clear-btn" *ngIf="query" (click)="clearQuery()" title="Clear search">
+        <span>close</span>
+      </button>
+      <span class="cp-kbd">Esc</span>
+    </div>
+
+    <div class="cp-body">
+      <div class="cp-empty" *ngIf="!loading && flatItems.length === 0">
+        <span class="cp-empty-icon">manage_search</span>
+        <div class="cp-empty-title">No matching results for “{{ query }}”</div>
+        <div class="cp-empty-sub">Try another keyword such as an operation title, SKU, asset serial number, or page name.</div>
+      </div>
+
+      <div class="cp-group" *ngFor="let grp of visibleGroups; trackBy: trackByGroup">
+        <div class="cp-group-label">{{ grp.label }}</div>
+
+        <button
+          type="button"
+          class="cp-item"
+          *ngFor="let item of grp.items; trackBy: trackByKey"
+          [class.active]="getItemFlatIndex(item) === activeIndex"
+          (mouseenter)="activeIndex = getItemFlatIndex(item)"
+          (click)="selectItem(item)">
+          <span class="cp-item-icon">{{ item.icon }}</span>
+          <span class="cp-item-main">
+            <span class="cp-item-title">{{ item.title }}</span>
+            <span class="cp-item-sub" *ngIf="item.subtitle">{{ item.subtitle }}</span>
+          </span>
+          <span
+            class="cp-item-badge"
+            *ngIf="item.badge"
+            [ngClass]="'tone-' + (item.badgeTone || 'neutral')">
+            {{ item.badge }}
+          </span>
+          <span class="cp-item-arrow">keyboard_return</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="cp-footer">
+      <div class="cp-hints">
+        <span><span class="cp-kbd">↑</span> <span class="cp-kbd">↓</span> Navigate</span>
+        <span><span class="cp-kbd">Enter</span> Open</span>
+        <span><span class="cp-kbd">Esc</span> Close</span>
+      </div>
+      <span class="cp-count" *ngIf="flatItems.length">{{ flatItems.length }} results</span>
+    </div>
+
+  </div>
+</div>

@@ -24,6 +24,7 @@ const adminRoutes             = require('./routes/admin.routes');
 const notificationRoutes      = require('./routes/notification.routes');
 const exportRoutes            = require('./routes/export.routes');
 const uiRoutes                = require('./routes/ui.routes');
+const searchRoutes            = require('./routes/search.routes');
 
 const { errorHandler } = require('./middleware/error.middleware');
 const { authenticate, authorize } = require('./middleware/auth.middleware');
@@ -105,6 +106,7 @@ app.use('/api/notifications', authenticate, notificationRoutes);
 app.use('/api/export',        exportRoutes);
 app.use('/api/admin', authenticate, authorize('admin'), adminRoutes);
 app.use('/api/ui', authenticate, uiRoutes);
+app.use('/api/search', authenticate, searchRoutes);
 
 // ── Health Check ──────────────────────────────────────────────────────────────
 app.get('/api/health', async (req, res) => {

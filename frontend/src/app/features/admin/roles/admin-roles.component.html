@@ -27,7 +27,7 @@
       <p class="role-desc">{{r.description || 'Platform access role'}}</p>
 
       <div class="perm-tags">
-        <code *ngFor="let p of parsePermissions(r)">{{p}}</code>
+        <span class="admin-code-pill" *ngFor="let p of parsePermissions(r)">{{p}}</span>
       </div>
 
       <div class="role-footer-meta">

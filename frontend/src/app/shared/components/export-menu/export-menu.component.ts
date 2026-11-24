@@ -208,8 +208,9 @@ import {
     }
     .export-item-ext {
       font-size: 0.7rem;
-      font-weight: 600;
-      font-family: var(--font-mono);
+      font-weight: 700;
+      font-family: var(--font-sans);
+      font-variant-numeric: tabular-nums;
       color: var(--blue-900);
       background: var(--surface-raised);
       border: 1px solid var(--border);

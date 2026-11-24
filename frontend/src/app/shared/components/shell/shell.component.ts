@@ -1,67 +1,95 @@
 // =============================================================================
-// shell.component.ts — App Shell with Sidebar + Header
+// shell.component.ts — App Shell with Sidebar + Contextual Header + Palette
 // =============================================================================
-import { Component, OnInit, OnDestroy, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
+import {
+  Component,
+  OnInit,
+  OnDestroy,
+  HostListener,
+  ChangeDetectionStrategy,
+  ChangeDetectorRef
+} from '@angular/core';
 import { Router, RouterModule, NavigationEnd } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Subject } from 'rxjs';
+import { Subject, interval } from 'rxjs';
 import { takeUntil, filter } from 'rxjs/operators';
 import { AuthService, ApiService, DateFilterService, SocketService, SectionAccessService, NavSectionAccess } from '../../../core/services/services';
 import { User, Notification, ApiResponse } from '../../../core/models/interfaces';
-import { ToastComponent }   from '../toast/toast.component';
+import { ToastComponent } from '../toast/toast.component';
 import { ConfirmComponent } from '../confirm/confirm.component';
 import { DateTimePickerComponent } from '../datetime-picker/datetime-picker.component';
+import { CommandPaletteComponent } from '../command-palette/command-palette.component';
 
 interface NavPage {
   path: string;
+  group: string;
   title: string;
   subtitle: string;
 }
 
+const SIDEBAR_STORAGE_KEY = 'smart_sidebar_collapsed';
+
 const PAGE_MAP: Record<string, NavPage> = {
-  '/admin':       { path: '/admin',       title: 'Admin Settings',           subtitle: 'Platform configuration and user management' },
-  '/dashboard':   { path: '/dashboard',   title: 'Dashboard',                subtitle: 'Real-time overview of operations' },
-  '/operations':  { path: '/operations',  title: 'Operations & Sorties',     subtitle: 'Manage deployments and tech activities' },
-  '/maintenance': { path: '/maintenance', title: 'Maintenance',              subtitle: 'Track hardware and software maintenance' },
-  '/warehouse':   { path: '/warehouse',   title: 'Warehouse & Inventory',    subtitle: 'Asset tracking and stock management' },
-  '/shifts':      { path: '/shifts',      title: 'Shift Management',         subtitle: 'Employee scheduling and rotations' },
-  '/analytics':   { path: '/analytics',   title: 'Analytics & Reports',      subtitle: 'Data visualization and insights' },
-  '/tasks':       { path: '/tasks',       title: 'Task Manager',             subtitle: 'Recursive task management by interval' },
-  '/wiki':        { path: '/wiki',        title: 'Wiki & Documentation',     subtitle: 'Internal knowledge base and SOPs' },
+  '/admin':                 { path: '/admin',                 group: 'Administration', title: 'Admin Settings',       subtitle: 'Platform configuration and user management' },
+  '/dashboard':             { path: '/dashboard',             group: 'Overview',       title: 'Dashboard',            subtitle: 'Real-time operational overview' },
+  '/operations':            { path: '/operations',            group: 'Operations',     title: 'Operations & Sorties', subtitle: 'Deployments, sorties and team rosters' },
+  '/maintenance/planned':   { path: '/maintenance/planned',   group: 'Operations',     title: 'Planned Maintenance',  subtitle: 'Recurring preventive calendar' },
+  '/maintenance':           { path: '/maintenance',           group: 'Operations',     title: 'Maintenance & Assets', subtitle: 'Work orders and hardware registry' },
+  '/warehouse':             { path: '/warehouse',             group: 'Operations',     title: 'Warehouse',            subtitle: 'Inventory control and stock movements' },
+  '/shifts':                { path: '/shifts',                group: 'Operations',     title: 'Shifts & Roster',      subtitle: 'Employee scheduling and rotations' },
+  '/analytics/operations':  { path: '/analytics/operations',  group: 'Intelligence',   title: 'Operations Analytics', subtitle: 'Mission tempo and efficiency deep dive' },
+  '/analytics':             { path: '/analytics',             group: 'Intelligence',   title: 'Analytics & Reports',  subtitle: 'Executive reporting and data visualization' },
+  '/tasks':                 { path: '/tasks',                 group: 'Intelligence',   title: 'Task Manager',         subtitle: 'Recurring tasks and execution queues' },
+  '/wiki':                  { path: '/wiki',                  group: 'Knowledge',      title: 'Wiki & Docs',          subtitle: 'Internal knowledge base and SOPs' },
+  '/profile':               { path: '/profile',               group: 'Account',        title: 'My Profile',           subtitle: 'Personal info, password and active sessions' },
 };
 
 @Component({
   selector: 'app-shell',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule, DateTimePickerComponent, ToastComponent, ConfirmComponent],
+  imports: [
+    CommonModule,
+    RouterModule,
+    FormsModule,
+    DateTimePickerComponent,
+    ToastComponent,
+    ConfirmComponent,
+    CommandPaletteComponent
+  ],
   templateUrl: './shell.component.html',
+  styleUrls: ['./shell.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ShellComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();
 
-  sidebarCollapsed   = false;
-  showDatePicker     = false;
-  showNotifications  = false;
+  sidebarCollapsed = false;
+  mobileSidebarOpen = false;
+  showDatePicker = false;
+  showNotifications = false;
+  commandPaletteOpen = false;
+  notifFilter: 'all' | 'unread' = 'all';
 
   currentUser!: User;
-  pageTitle    = 'Dashboard';
+  pageGroup = 'Overview';
+  pageTitle = 'Dashboard';
   pageSubtitle = '';
-  dateLabel    = 'All time';
+  dateLabel = 'All time';
   hasDateFilter = false;
   activePreset: string | null = null;
   pickerFrom: Date | null = null;
   pickerTo: Date | null = null;
 
-  // KPI badges from dashboard
-  activeOpsCount   = 0;
+  activeOpsCount = 0;
   pendingMaintCount = 0;
-  lowStockCount    = 0;
-  openTasksCount   = 0;
+  lowStockCount = 0;
+  openTasksCount = 0;
   notifications: Notification[] = [];
   unreadNotifications = 0;
   navSections: NavSectionAccess[] = [];
+
+  readonly isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/i.test(navigator.platform || '');
 
   constructor(
     private auth: AuthService,
@@ -74,17 +102,25 @@ export class ShellComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
+    try {
+      this.sidebarCollapsed = localStorage.getItem(SIDEBAR_STORAGE_KEY) === '1';
+    } catch {
+      this.sidebarCollapsed = false;
+    }
+
+    this.resolvePageFromUrl(this.router.url);
+
     this.sectionAccess.sections$.pipe(takeUntil(this.destroy$)).subscribe(sections => {
       this.navSections = sections;
       this.cdr.markForCheck();
     });
 
-    // Track current user
     this.auth.currentUser$.pipe(takeUntil(this.destroy$)).subscribe(user => {
       if (!user) return;
 
       this.currentUser = user;
       this.loadNotifications();
+      this.loadNavBadges();
       this.sectionAccess.load(true).subscribe();
 
       const token = this.auth.getAccessToken();
@@ -98,26 +134,66 @@ export class ShellComponent implements OnInit, OnDestroy {
     this.socketService.notifications$.pipe(takeUntil(this.destroy$)).subscribe((notif) => {
       this.notifications = [{ ...notif, is_read: false }, ...this.notifications].slice(0, 50);
       this.unreadNotifications = this.notifications.filter(n => !n.is_read).length;
+      this.loadNavBadges();
       this.cdr.markForCheck();
     });
 
-    // Update page title on navigation
+    interval(60_000).pipe(takeUntil(this.destroy$)).subscribe(() => {
+      if (this.currentUser) {
+        this.loadNavBadges();
+      }
+    });
+
     this.router.events.pipe(
       filter(e => e instanceof NavigationEnd),
       takeUntil(this.destroy$)
     ).subscribe((e: any) => {
-      const base = '/' + e.urlAfterRedirects.split('/')[1];
-      const page = PAGE_MAP[base];
-      if (page) { this.pageTitle = page.title; this.pageSubtitle = page.subtitle; }
+      this.resolvePageFromUrl(e.urlAfterRedirects || e.url || '');
+      this.mobileSidebarOpen = false;
+      this.showNotifications = false;
       this.cdr.markForCheck();
     });
 
-    // Track date filter changes
     this.dateFilter.range$.pipe(takeUntil(this.destroy$)).subscribe(range => {
       this.hasDateFilter = !!(range.from || range.to);
       this.dateLabel = this.dateFilter.getLabel();
       this.cdr.markForCheck();
     });
+  }
+
+  @HostListener('window:keydown', ['$event'])
+  onGlobalKeyDown(event: KeyboardEvent): void {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault();
+      this.showNotifications = false;
+      this.mobileSidebarOpen = false;
+      this.commandPaletteOpen = !this.commandPaletteOpen;
+      this.cdr.markForCheck();
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      let changed = false;
+      if (this.showNotifications) {
+        this.showNotifications = false;
+        changed = true;
+      }
+      if (this.mobileSidebarOpen) {
+        this.mobileSidebarOpen = false;
+        changed = true;
+      }
+      if (changed) this.cdr.markForCheck();
+    }
+  }
+
+  @HostListener('document:click', ['$event'])
+  onDocumentClick(event: MouseEvent): void {
+    if (!this.showNotifications) return;
+    const target = event.target as HTMLElement | null;
+    if (!target || !target.closest('.notif-anchor')) {
+      this.showNotifications = false;
+      this.cdr.markForCheck();
+    }
   }
 
   get fullName(): string {
@@ -133,7 +209,39 @@ export class ShellComponent implements OnInit, OnDestroy {
     return `${first}${last}`.toUpperCase();
   }
 
-  toggleSidebar(): void { this.sidebarCollapsed = !this.sidebarCollapsed; }
+  get filteredNotifications(): Notification[] {
+    if (this.notifFilter === 'unread') {
+      return this.notifications.filter(n => !n.is_read);
+    }
+    return this.notifications;
+  }
+
+  openCommandPalette(): void {
+    this.showNotifications = false;
+    this.mobileSidebarOpen = false;
+    this.commandPaletteOpen = true;
+  }
+
+  closeCommandPalette(): void {
+    this.commandPaletteOpen = false;
+  }
+
+  toggleSidebar(): void {
+    if (typeof window !== 'undefined' && window.innerWidth <= 960) {
+      this.mobileSidebarOpen = !this.mobileSidebarOpen;
+      return;
+    }
+    this.sidebarCollapsed = !this.sidebarCollapsed;
+    try {
+      localStorage.setItem(SIDEBAR_STORAGE_KEY, this.sidebarCollapsed ? '1' : '0');
+    } catch {
+      // ignore storage failure
+    }
+  }
+
+  closeMobileSidebar(): void {
+    this.mobileSidebarOpen = false;
+  }
 
   showNavSection(sectionKey: string): boolean {
     const section = this.navSections.find(item => item.section_key === sectionKey);
@@ -153,7 +261,7 @@ export class ShellComponent implements OnInit, OnDestroy {
   openDatePicker(): void {
     const r = this.dateFilter.currentRange;
     this.pickerFrom = r.from || null;
-    this.pickerTo   = r.to || null;
+    this.pickerTo = r.to || null;
     this.showDatePicker = true;
   }
 
@@ -166,7 +274,7 @@ export class ShellComponent implements OnInit, OnDestroy {
   applyDatePicker(): void {
     this.dateFilter.setRange({
       from: this.pickerFrom,
-      to:   this.pickerTo
+      to: this.pickerTo
     });
     this.activePreset = null;
     this.showDatePicker = false;
@@ -183,13 +291,19 @@ export class ShellComponent implements OnInit, OnDestroy {
     this.showNotifications = !this.showNotifications;
   }
 
+  setNotifFilter(mode: 'all' | 'unread'): void {
+    this.notifFilter = mode;
+  }
+
   markAsRead(notification: Notification, event?: MouseEvent): void {
     event?.stopPropagation();
     if (notification.is_read) return;
 
     this.api.put<ApiResponse<Notification>>(`/notifications/${notification.id}/read`, {}).subscribe({
       next: () => {
-        notification.is_read = true;
+        this.notifications = this.notifications.map(n =>
+          n.id === notification.id ? { ...n, is_read: true } : n
+        );
         this.unreadNotifications = this.notifications.filter(n => !n.is_read).length;
         this.cdr.markForCheck();
       }
@@ -219,14 +333,21 @@ export class ShellComponent implements OnInit, OnDestroy {
     }
   }
 
-  closeNotifications(event: MouseEvent): void {
-    if ((event.target as HTMLElement).classList.contains('app-shell')) {
-      this.showNotifications = false;
-    }
-  }
-
   trackByNotificationId(_: number, item: Notification): number {
     return item.id;
+  }
+
+  private resolvePageFromUrl(rawUrl: string): void {
+    const cleanPath = (rawUrl || '/dashboard').split('?')[0].split('#')[0];
+    const parts = cleanPath.split('/').filter(Boolean);
+    const twoSeg = parts.length >= 2 ? `/${parts[0]}/${parts[1]}` : '';
+    const oneSeg = parts.length >= 1 ? `/${parts[0]}` : '/dashboard';
+    const page = PAGE_MAP[twoSeg] || PAGE_MAP[oneSeg];
+    if (page) {
+      this.pageGroup = page.group;
+      this.pageTitle = page.title;
+      this.pageSubtitle = page.subtitle;
+    }
   }
 
   private loadNotifications(): void {
@@ -244,7 +365,26 @@ export class ShellComponent implements OnInit, OnDestroy {
     });
   }
 
-  logout(): void { this.auth.logout(); }
+  private loadNavBadges(): void {
+    this.api.get<any>('/search/nav-badges').subscribe({
+      next: (res) => {
+        const d = res?.data;
+        if (!d) return;
+        this.activeOpsCount = Number(d.operations) || 0;
+        this.pendingMaintCount = Number(d.maintenance) || 0;
+        this.lowStockCount = Number(d.warehouse) || 0;
+        this.openTasksCount = Number(d.tasks) || 0;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        // Keep previous counts on transient network errors
+      }
+    });
+  }
+
+  logout(): void {
+    this.auth.logout();
+  }
 
   ngOnDestroy(): void {
     this.socketService.disconnect();
