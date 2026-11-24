@@ -19,6 +19,34 @@ import {
   standalone: true,
   imports: [CommonModule, DatePipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  styles: [`
+    .detail-id-pill,
+    .detail-value,
+    .detail-sub,
+    .sh-badge-time,
+    .sh-badge-ot {
+      font-family: var(--font-sans);
+      font-variant-numeric: tabular-nums;
+    }
+    .sh-badge-custom {
+      background: #EDE9FE;
+      color: #5B21B6;
+    }
+    .sh-badge-leave {
+      background: #CCFBF1;
+      color: #0F766E;
+    }
+    .sh-badge-time {
+      background: var(--blue-50);
+      color: var(--blue-900);
+    }
+    .sh-badge-ot {
+      background: #EDE9FE;
+      color: #6D28D9;
+    }
+    .sh-icon-in { color: #0284C7; }
+    .sh-icon-out { color: #15803D; }
+  `],
   template: `
     <div class="modal-overlay" *ngIf="shift" (click)="onBackdrop($event)">
       <div class="modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="shift-detail-title" (click)="$event.stopPropagation()">
@@ -31,8 +59,8 @@ import {
                   <span class="detail-type-dot" [style.background]="info.color"></span>
                   {{info.name}} ({{info.code}})
                 </span>
-                <span class="badge" *ngIf="info.isCustom" style="background:#EDE9FE;color:#5B21B6">Custom Hours</span>
-                <span class="badge" *ngIf="info.isLeave" style="background:#CCFBF1;color:#0F766E">{{getLeave(shift).label}}</span>
+                <span class="badge sh-badge-custom" *ngIf="info.isCustom">Custom Hours</span>
+                <span class="badge sh-badge-leave" *ngIf="info.isLeave">{{getLeave(shift).label}}</span>
               </div>
               <h2 id="shift-detail-title">
                 {{getPersonName(shift.employee)}} · {{shift.date | date:'EEEE, MMM d, y'}}
@@ -48,10 +76,10 @@ import {
               <span class="badge" [ngClass]="getStatus(shift).badgeClass">
                 {{getStatus(shift).label}}
               </span>
-              <span class="badge" *ngIf="!info.isLeave" style="background:var(--blue-50);color:var(--blue-900)">
+              <span class="badge sh-badge-time" *ngIf="!info.isLeave">
                 Effective: {{info.start}}–{{info.end}} ({{formatHrs(info.effectiveHours)}})
               </span>
-              <span class="badge" *ngIf="shift.overtime_hours > 0" style="background:#EDE9FE;color:#6D28D9">
+              <span class="badge sh-badge-ot" *ngIf="shift.overtime_hours > 0">
                 {{formatSignedHrs(shift.overtime_hours)}} Overtime
               </span>
             </div>
@@ -109,7 +137,7 @@ import {
 
             <div class="detail-section">
               <span class="detail-section-title">Notes</span>
-              <div class="detail-text-box" [style.color]="shift.notes ? 'var(--blue-900)' : '#6B7280'">
+              <div class="detail-text-box" [style.color]="shift.notes ? 'var(--blue-900)' : 'var(--text-muted)'">
                 {{shift.notes || 'No notes recorded for this entry.'}}
               </div>
             </div>
@@ -127,7 +155,7 @@ import {
                       class="btn btn-secondary"
                       [disabled]="checkingId === shift.id"
                       (click)="checkIn.emit(shift)">
-                <span class="btn-icon" style="color:#0284C7">login</span>
+                <span class="btn-icon sh-icon-in">login</span>
                 Check In
               </button>
               <button *ngIf="canCheckOut(shift)"
@@ -135,7 +163,7 @@ import {
                       class="btn btn-secondary"
                       [disabled]="checkingId === shift.id"
                       (click)="checkOut.emit(shift)">
-                <span class="btn-icon" style="color:#15803D">logout</span>
+                <span class="btn-icon sh-icon-out">logout</span>
                 Check Out
               </button>
               <button type="button" class="btn btn-primary" (click)="edit.emit(shift)">

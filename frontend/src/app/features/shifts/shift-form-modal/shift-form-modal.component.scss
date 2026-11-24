@@ -30,7 +30,7 @@
   font-family: var(--font-sans);
   font-size: 0.8rem;
   font-weight: 600;
-  color: #6B7280;
+  color: var(--text-muted);
   cursor: pointer;
   transition: var(--transition);
   min-width: 0;
@@ -118,6 +118,7 @@
 
 .custom-delta-badge {
   font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
   font-size: 0.74rem;
   font-weight: 700;
   padding: 3px 10px;
@@ -150,7 +151,7 @@
   font-family: var(--font-sans);
   font-size: 0.72rem;
   font-weight: 600;
-  color: #6B7280;
+  color: var(--text-muted);
 }
 
 .delta-chip {
@@ -159,6 +160,7 @@
   border: 1px solid var(--border);
   background: var(--surface);
   font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
   font-size: 0.74rem;
   font-weight: 600;
   color: var(--blue-900);
@@ -185,7 +187,7 @@
   }
 
   &.reset {
-    color: #6B7280;
+    color: var(--text-muted);
   }
 }
 
@@ -206,13 +208,19 @@
   text-align: center;
   padding-left: 8px;
   padding-right: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+input[type="time"] {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
 }
 
 .hm-unit {
   font-family: var(--font-sans);
   font-size: 0.8rem;
   font-weight: 600;
-  color: #6B7280;
+  color: var(--text-muted);
   flex-shrink: 0;
 }
 
@@ -238,7 +246,7 @@
   font-family: var(--font-sans);
   font-size: 0.72rem;
   font-weight: 600;
-  color: #6B7280;
+  color: var(--text-muted);
   cursor: pointer;
   transition: var(--transition);
 
@@ -270,6 +278,7 @@
   justify-content: space-between;
   gap: 8px;
   margin-top: 10px;
+  font-variant-numeric: tabular-nums;
 }
 
 .weekday-chips {
@@ -301,6 +310,7 @@
   .wd-num {
     font-size: 0.84rem;
     font-weight: 700;
+    font-variant-numeric: tabular-nums;
   }
 
   &:hover:not(.selected) {

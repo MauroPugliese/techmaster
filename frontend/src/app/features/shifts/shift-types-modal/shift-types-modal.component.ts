@@ -72,11 +72,16 @@ const PRESET_COLORS = [
       grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
       align-items: center;
       gap: 8px;
+
+      input[type="time"] {
+        font-family: var(--font-sans);
+        font-variant-numeric: tabular-nums;
+      }
     }
     .st-leave-note {
       display: flex;
       align-items: center;
-      color: #6B7280;
+      color: var(--text-muted);
       background: var(--surface);
       font-size: 0.84rem;
     }
@@ -108,11 +113,12 @@ const PRESET_COLORS = [
     }
     .st-section-title {
       font-family: var(--font-sans);
+      font-variant-numeric: tabular-nums;
       font-size: 0.72rem;
       font-weight: 700;
       letter-spacing: 0.05em;
       text-transform: uppercase;
-      color: #6B7280;
+      color: var(--text-muted);
       margin-bottom: 8px;
     }
     .st-list {
@@ -150,8 +156,9 @@ const PRESET_COLORS = [
     }
     .st-item-sub {
       font-family: var(--font-sans);
+      font-variant-numeric: tabular-nums;
       font-size: 0.76rem;
-      color: #6B7280;
+      color: var(--text-muted);
     }
   `],
   template: `

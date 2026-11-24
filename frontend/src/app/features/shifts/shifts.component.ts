@@ -5,12 +5,15 @@ import {
   ChangeDetectionStrategy,
   ChangeDetectorRef,
   Component,
+  ElementRef,
   HostListener,
   OnDestroy,
   OnInit,
+  ViewChild,
 } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
 import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 
@@ -75,7 +78,10 @@ export type ShiftViewMode = 'grid' | 'list';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ShiftsComponent implements OnInit, OnDestroy {
+  @ViewChild('searchInput') searchInput?: ElementRef<HTMLInputElement>;
+
   private readonly destroy$ = new Subject<void>();
+  private actionHandled = false;
 
   // Core datasets
   shifts: Shift[] = [];
@@ -141,6 +147,8 @@ export class ShiftsComponent implements OnInit, OnDestroy {
     private readonly uiCustomization: UiCustomizationService,
     private readonly toast: ToastService,
     private readonly confirm: ConfirmService,
+    private readonly route: ActivatedRoute,
+    private readonly router: Router,
     private readonly cdr: ChangeDetectorRef
   ) {
     this.rebuildWeekState();
@@ -197,6 +205,23 @@ export class ShiftsComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
+    this.route.queryParams
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(qp => {
+        if (qp['action'] === 'new' && !this.actionHandled) {
+          this.actionHandled = true;
+          setTimeout(() => {
+            this.openModal();
+            this.router.navigate([], {
+              relativeTo: this.route,
+              queryParams: { action: null },
+              queryParamsHandling: 'merge',
+              replaceUrl: true,
+            });
+          }, 0);
+        }
+      });
+
     this.uiCustomization
       .load('shifts')
       .pipe(takeUntil(this.destroy$))
@@ -212,6 +237,18 @@ export class ShiftsComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.destroy$.next();
     this.destroy$.complete();
+  }
+
+  @HostListener('document:keydown', ['$event'])
+  onKeydown(e: KeyboardEvent): void {
+    if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+    const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+    const isEditable = tag === 'input' || tag === 'textarea' || tag === 'select' || (e.target as HTMLElement)?.isContentEditable;
+    if (isEditable) return;
+    if (this.searchInput?.nativeElement) {
+      e.preventDefault();
+      this.searchInput.nativeElement.focus();
+    }
   }
 
   @HostListener('document:keydown.escape')
@@ -350,6 +387,29 @@ export class ShiftsComponent implements OnInit, OnDestroy {
     this.listPage = 1;
     this.recomputeViewState();
     this.cdr.markForCheck();
+  }
+
+  clearSearch(): void {
+    this.searchTerm = '';
+    this.onFilterChanged();
+  }
+
+  filterByKpi(kind: 'ALL' | 'ACTIVE' | 'LEAVE' | 'CUSTOM'): void {
+    if (kind === 'ALL') {
+      this.selectedEntryKind = '';
+      this.selectedStatus = '';
+      this.selectedShiftTypeId = null;
+    } else if (kind === 'ACTIVE') {
+      this.selectedEntryKind = '';
+      this.selectedStatus = this.selectedStatus === 'IN_PROGRESS' ? '' : 'IN_PROGRESS';
+    } else if (kind === 'LEAVE') {
+      this.selectedStatus = '';
+      this.selectedEntryKind = this.selectedEntryKind === 'LEAVE' ? '' : 'LEAVE';
+    } else if (kind === 'CUSTOM') {
+      this.selectedStatus = '';
+      this.selectedEntryKind = this.selectedEntryKind === 'CUSTOM' ? '' : 'CUSTOM';
+    }
+    this.onFilterChanged();
   }
 
   clearFilters(): void {

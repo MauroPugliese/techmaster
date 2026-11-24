@@ -1,57 +1,115 @@
 <div class="shifts-page fade-in">
 
-  <!-- ── Weekly KPI Strip ─────────────────────────────────────────────────── -->
-  <div class="kpi-grid shifts-kpi-grid">
-    <div class="kpi-card" style="--kpi-color:#1565C0">
-      <div class="kpi-icon-wrap">event_note</div>
-      <div>
-        <div class="kpi-value">{{kpis.workShiftsCount}}</div>
-        <div class="kpi-label">Shifts Planned · {{formatHours(kpis.totalPlannedHours)}}</div>
-      </div>
+  <!-- ── Unified Page Header ─────────────────────────────────────────────── -->
+  <div class="sh-page-head">
+    <div>
+      <h2>Shifts &amp; Roster</h2>
+      <p>Weekly workforce coverage, shift patterns, attendance, and leave management.</p>
     </div>
 
-    <div class="kpi-card" style="--kpi-color:#10B981">
-      <div class="kpi-icon-wrap">check_circle</div>
-      <div>
-        <div class="kpi-value">{{kpis.inProgressCount + kpis.confirmedOrDoneCount}}</div>
-        <div class="kpi-label">
-          Active / Verified
-          <span *ngIf="kpis.inProgressCount > 0"> ({{kpis.inProgressCount}} live)</span>
-        </div>
-      </div>
-    </div>
+    <div class="sh-head-actions">
+      <button type="button" class="btn btn-secondary btn-sm" (click)="openCopyWeekModal()" title="Copy previous week roster">
+        <span class="btn-icon">content_copy</span> Copy Week
+      </button>
 
-    <div class="kpi-card" style="--kpi-color:#F59E0B">
-      <div class="kpi-icon-wrap">beach_access</div>
-      <div>
-        <div class="kpi-value">{{kpis.leaveAndAbsentCount}}</div>
-        <div class="kpi-label">
-          Leave &amp; Absences
-          <span class="kpi-sub-break">
-            ({{kpis.vacationCount}} vac · {{kpis.sickCount}} sick · {{kpis.absentCount}} abs)
-          </span>
-        </div>
-      </div>
-    </div>
+      <button *ngIf="canManageShiftTypes"
+              type="button"
+              class="btn btn-secondary btn-sm"
+              (click)="showShiftTypesModal = true"
+              title="Manage shift and leave types">
+        <span class="btn-icon">tune</span> Shift Types
+      </button>
 
-    <div class="kpi-card" style="--kpi-color:#7C3AED">
-      <div class="kpi-icon-wrap">more_time</div>
-      <div>
-        <div class="kpi-value">{{formatHours(kpis.totalOvertimeHours)}}</div>
-        <div class="kpi-label">Overtime · {{kpis.customAdjustedCount}} custom</div>
-      </div>
+      <app-export-menu endpoint="shifts"
+                       filename="Shifts"
+                       [includeDateRange]="false"
+                       [params]="exportParams">
+      </app-export-menu>
+
+      <button type="button" class="btn btn-secondary btn-sm" (click)="openModal(undefined, undefined, 'LEAVE')">
+        <span class="btn-icon">beach_access</span> Log Leave
+      </button>
+
+      <button type="button" class="btn btn-primary" (click)="openModal()">
+        <span class="btn-icon">add</span> Schedule Shift
+      </button>
     </div>
   </div>
 
-  <!-- ── Top Toolbar (Filters & Primary Actions) ──────────────────────────── -->
-  <div class="shifts-toolbar">
-    <div class="shifts-filters-group">
-      <div class="search-bar shifts-search">
-        <span class="search-icon">search</span>
-        <input type="text"
-               [(ngModel)]="searchTerm"
-               (ngModelChange)="onFilterChanged()"
-               placeholder="Search employee or dept…">
+  <!-- ── Compact Horizontal KPI Strip (Clickable Quick Toggles) ──────────── -->
+  <div class="shifts-kpi-grid">
+    <button type="button"
+            class="kpi-card sh-kpi-card sh-kpi-clickable"
+            [class.active]="!selectedEntryKind && !selectedStatus && selectedShiftTypeId === null"
+            style="--kpi-color:#1565C0"
+            (click)="filterByKpi('ALL')">
+      <div class="kpi-icon-wrap">event_note</div>
+      <div class="sh-kpi-body">
+        <div class="sh-kpi-value">{{kpis.workShiftsCount}}</div>
+        <div class="sh-kpi-title">Shifts Planned</div>
+        <div class="sh-kpi-sub">{{formatHours(kpis.totalPlannedHours)}} scheduled</div>
+      </div>
+    </button>
+
+    <button type="button"
+            class="kpi-card sh-kpi-card sh-kpi-clickable"
+            [class.active]="selectedStatus === 'IN_PROGRESS'"
+            style="--kpi-color:#10B981"
+            (click)="filterByKpi('ACTIVE')">
+      <div class="kpi-icon-wrap">check_circle</div>
+      <div class="sh-kpi-body">
+        <div class="sh-kpi-value">{{kpis.inProgressCount + kpis.confirmedOrDoneCount}}</div>
+        <div class="sh-kpi-title">Active / Verified</div>
+        <div class="sh-kpi-sub">{{kpis.inProgressCount}} live · {{kpis.confirmedOrDoneCount}} verified</div>
+      </div>
+    </button>
+
+    <button type="button"
+            class="kpi-card sh-kpi-card sh-kpi-clickable"
+            [class.active]="selectedEntryKind === 'LEAVE'"
+            style="--kpi-color:#F59E0B"
+            (click)="filterByKpi('LEAVE')">
+      <div class="kpi-icon-wrap">beach_access</div>
+      <div class="sh-kpi-body">
+        <div class="sh-kpi-value">{{kpis.leaveAndAbsentCount}}</div>
+        <div class="sh-kpi-title">Leave &amp; Absences</div>
+        <div class="sh-kpi-sub">{{kpis.vacationCount}} vac · {{kpis.sickCount}} sick · {{kpis.absentCount}} abs</div>
+      </div>
+    </button>
+
+    <button type="button"
+            class="kpi-card sh-kpi-card sh-kpi-clickable"
+            [class.active]="selectedEntryKind === 'CUSTOM'"
+            style="--kpi-color:#7C3AED"
+            (click)="filterByKpi('CUSTOM')">
+      <div class="kpi-icon-wrap">more_time</div>
+      <div class="sh-kpi-body">
+        <div class="sh-kpi-value">{{formatHours(kpis.totalOvertimeHours)}}</div>
+        <div class="sh-kpi-title">Overtime</div>
+        <div class="sh-kpi-sub">{{kpis.customAdjustedCount}} custom adjustments</div>
+      </div>
+    </button>
+  </div>
+
+  <!-- ── Unified Filter & View Toggle Toolbar ────────────────────────────── -->
+  <div class="sh-toolbar-card">
+    <div class="sh-filter-row">
+      <div class="sh-search-wrap">
+        <div class="search-bar">
+          <span class="search-icon">search</span>
+          <input #searchInput
+                 type="text"
+                 [(ngModel)]="searchTerm"
+                 (ngModelChange)="onFilterChanged()"
+                 placeholder="Search employee or dept… (Press /)">
+          <button *ngIf="searchTerm"
+                  type="button"
+                  class="sh-search-clear"
+                  (click)="clearSearch()"
+                  title="Clear search">
+            <span class="mat-i" style="font-size:16px">close</span>
+          </button>
+        </div>
       </div>
 
       <app-dropdown class="form-control filter-dropdown"
@@ -87,47 +145,29 @@
       </app-dropdown>
 
       <button *ngIf="hasActiveFilters" type="button" class="btn btn-ghost btn-sm" (click)="clearFilters()">
-        <span class="btn-icon">filter_alt_off</span>
-        Clear
-      </button>
-    </div>
-
-    <div class="shifts-actions-group">
-      <button type="button" class="btn btn-secondary btn-sm" (click)="openCopyWeekModal()" title="Copy previous week roster">
-        <span class="btn-icon">content_copy</span>
-        Copy Week
+        <span class="btn-icon">filter_alt_off</span> Clear
       </button>
 
-      <button *ngIf="canManageShiftTypes"
-              type="button"
-              class="btn btn-secondary btn-sm"
-              (click)="showShiftTypesModal = true"
-              title="Manage shift and leave types">
-        <span class="btn-icon">tune</span>
-        Shift Types
-      </button>
-
-      <app-export-menu endpoint="shifts"
-                       filename="Shifts"
-                       [includeDateRange]="false"
-                       [params]="exportParams">
-      </app-export-menu>
-
-      <button type="button" class="btn btn-secondary btn-sm" (click)="openModal(undefined, undefined, 'LEAVE')">
-        <span class="btn-icon">beach_access</span>
-        Log Leave
-      </button>
-
-      <button type="button" class="btn btn-primary" (click)="openModal()">
-        <span class="btn-icon">add</span>
-        Schedule Shift
-      </button>
+      <div class="view-toggle" role="group" aria-label="Roster view mode">
+        <button type="button"
+                class="view-toggle-btn"
+                [class.active]="viewMode === 'grid'"
+                (click)="viewMode = 'grid'">
+          <span class="btn-icon">calendar_view_week</span> Grid
+        </button>
+        <button type="button"
+                class="view-toggle-btn"
+                [class.active]="viewMode === 'list'"
+                (click)="viewMode = 'list'">
+          <span class="btn-icon">view_list</span> List
+        </button>
+      </div>
     </div>
   </div>
 
   <!-- ── Unified Roster Table Container ───────────────────────────────────── -->
   <div class="table-container">
-    <!-- Week Header & View Mode Switch -->
+    <!-- Week Navigation Header -->
     <div class="shifts-card-header">
       <div class="shifts-week-controls">
         <button type="button" class="btn btn-secondary btn-sm" (click)="prevWeek()" title="Previous week">
@@ -155,25 +195,9 @@
       </div>
 
       <div class="shifts-card-meta">
-        <span class="text-sm text-muted">
+        <span class="text-sm text-muted sh-num">
           {{filteredEmployees.length}} employees · {{filteredShiftsList.length}} entries
         </span>
-        <div class="view-toggle">
-          <button type="button"
-                  class="view-toggle-btn"
-                  [class.active]="viewMode === 'grid'"
-                  (click)="viewMode = 'grid'">
-            <span class="btn-icon">calendar_view_week</span>
-            Grid
-          </button>
-          <button type="button"
-                  class="view-toggle-btn"
-                  [class.active]="viewMode === 'list'"
-                  (click)="viewMode = 'list'">
-            <span class="btn-icon">view_list</span>
-            List
-          </button>
-        </div>
       </div>
     </div>
 
@@ -335,7 +359,7 @@
                   <div class="cov-off" *ngIf="cov.leaveCount > 0 || cov.absentCount > 0">
                     <span *ngIf="cov.leaveCount > 0">{{cov.leaveCount}} off</span>
                     <span *ngIf="cov.leaveCount > 0 && cov.absentCount > 0"> · </span>
-                    <span *ngIf="cov.absentCount > 0" style="color:#EF4444">{{cov.absentCount}} abs</span>
+                    <span *ngIf="cov.absentCount > 0" class="cov-abs">{{cov.absentCount}} abs</span>
                   </div>
                 </ng-container>
               </td>
@@ -355,10 +379,9 @@
         <button *ngIf="hasActiveFilters" type="button" class="btn btn-secondary mt-3" (click)="clearFilters()">Clear Filters</button>
       </div>
 
-      <!-- Standard App Paginator (matches Warehouse / Maintenance) -->
       <div class="table-pagination-bar" *ngIf="filteredEmployees.length > 0">
         <div class="table-page-size-control">
-          <span class="text-sm text-muted">
+          <span class="text-sm text-muted sh-num">
             Showing {{employeeStartIndex}}–{{employeeEndIndex}} of {{filteredEmployees.length}}
           </span>
           <app-dropdown class="form-control table-page-size-select"
@@ -382,7 +405,7 @@
 
     <!-- ── List View ──────────────────────────────────────────────────────── -->
     <ng-container *ngIf="viewMode === 'list'">
-      <table class="data-table">
+      <table class="data-table sh-list-table">
         <thead>
           <tr>
             <th>Date</th>
@@ -399,9 +422,9 @@
           <tr *ngFor="let s of pagedShiftsList"
               class="row-clickable"
               (click)="openDetailModal(s)">
-            <td class="text-sm font-bold">{{s.date | date:'EEE, MMM d'}}</td>
+            <td class="text-sm font-bold sh-num">{{s.date | date:'EEE, MMM d'}}</td>
             <td>
-              <div style="font-weight:600">{{getPersonName(s.employee)}}</div>
+              <div class="sh-emp-name">{{getPersonName(s.employee)}}</div>
               <div class="text-sm text-muted">{{s.employee?.department || '—'}}</div>
             </td>
             <td>
@@ -413,7 +436,7 @@
                 </span>
               </ng-container>
             </td>
-            <td class="text-sm">
+            <td class="text-sm sh-num">
               <ng-container *ngIf="getShiftInfo(s) as info">
                 <span *ngIf="!info.isLeave">{{info.start}}–{{info.end}} ({{formatHours(info.effectiveHours)}})</span>
                 <span *ngIf="info.isLeave" class="text-muted">Full day leave</span>
@@ -424,13 +447,13 @@
                 {{getStatusInfo(s.status).label}}
               </span>
             </td>
-            <td class="text-sm">
-              <span *ngIf="s.overtime_hours > 0" style="font-weight:700;color:#6D28D9">{{formatSignedHours(s.overtime_hours)}}</span>
+            <td class="text-sm sh-num">
+              <span *ngIf="s.overtime_hours > 0" class="sh-ot-val">{{formatSignedHours(s.overtime_hours)}}</span>
               <span *ngIf="s.overtime_hours > 0 && s.adjustment_reason"> · </span>
               <span *ngIf="s.adjustment_reason">{{s.adjustment_reason}}</span>
               <span *ngIf="!s.overtime_hours && !s.adjustment_reason" class="text-muted">—</span>
             </td>
-            <td class="text-sm">
+            <td class="text-sm sh-num">
               <span *ngIf="s.check_in || s.check_out">
                 {{s.check_in ? (s.check_in | date:'HH:mm') : '--:--'}} → {{s.check_out ? (s.check_out | date:'HH:mm') : '--:--'}}
               </span>
@@ -444,7 +467,7 @@
                         [disabled]="checkingId === s.id"
                         (click)="checkInShift(s)"
                         title="Check In">
-                  <span class="btn-icon" style="font-size:17px;color:#0284C7">login</span>
+                  <span class="btn-icon sh-action-icon sh-icon-in">login</span>
                 </button>
                 <button *ngIf="canCheckOut(s)"
                         type="button"
@@ -452,19 +475,19 @@
                         [disabled]="checkingId === s.id"
                         (click)="checkOutShift(s)"
                         title="Check Out">
-                  <span class="btn-icon" style="font-size:17px;color:#15803D">logout</span>
+                  <span class="btn-icon sh-action-icon sh-icon-out">logout</span>
                 </button>
                 <button type="button"
                         class="btn btn-ghost btn-icon-only btn-sm"
                         (click)="editShift(s)"
                         title="Edit">
-                  <span class="btn-icon" style="font-size:17px">edit</span>
+                  <span class="btn-icon sh-action-icon">edit</span>
                 </button>
                 <button type="button"
                         class="btn btn-ghost btn-icon-only btn-sm"
                         (click)="deleteShiftRecord(s)"
                         title="Delete">
-                  <span class="btn-icon" style="font-size:17px;color:#EF4444">delete</span>
+                  <span class="btn-icon sh-action-icon sh-icon-del">delete</span>
                 </button>
               </div>
             </td>
@@ -480,7 +503,7 @@
 
       <div class="table-pagination-bar" *ngIf="filteredShiftsList.length > 0">
         <div class="table-page-size-control">
-          <span class="text-sm text-muted">
+          <span class="text-sm text-muted sh-num">
             Showing {{listStartIndex}}–{{listEndIndex}} of {{filteredShiftsList.length}}
           </span>
           <app-dropdown class="form-control table-page-size-select"
@@ -536,7 +559,7 @@
 
 <!-- ── Copy Previous Week Modal ───────────────────────────────────────────── -->
 <div class="modal-overlay" *ngIf="showCopyWeekModal" (click)="closeCopyWeekModal($event)">
-  <div class="modal" style="max-width:480px" (click)="$event.stopPropagation()" role="dialog" aria-modal="true" aria-labelledby="copy-week-title">
+  <div class="modal sh-copy-modal" (click)="$event.stopPropagation()" role="dialog" aria-modal="true" aria-labelledby="copy-week-title">
     <div class="modal-header">
       <h3 id="copy-week-title">Copy Previous Week Roster</h3>
       <button type="button" class="btn btn-ghost btn-icon-only" (click)="showCopyWeekModal = false">
@@ -544,13 +567,13 @@
       </button>
     </div>
 
-    <div class="modal-body" style="display:flex;flex-direction:column;gap:14px">
+    <div class="modal-body sh-copy-body">
       <div class="copy-week-summary">
         <div>
           <span class="detail-label">Source Week</span>
           <div class="font-bold">{{prevWeekStart | date:'MMM d'}} – {{prevWeekEnd | date:'MMM d, y'}}</div>
         </div>
-        <span class="btn-icon" style="color:var(--primary)">arrow_forward</span>
+        <span class="btn-icon sh-copy-arrow">arrow_forward</span>
         <div>
           <span class="detail-label">Target Week</span>
           <div class="font-bold">{{weekStart | date:'MMM d'}} – {{weekEnd | date:'MMM d, y'}}</div>
@@ -567,7 +590,7 @@
         <span>Overwrite shifts already scheduled in target week</span>
       </label>
 
-      <p class="text-sm text-muted" style="margin:0">
+      <p class="text-sm text-muted sh-copy-note">
         Copied shifts automatically start as <strong>Scheduled</strong> (custom times preserved) and remain subject to the 11-hour rest rule.
       </p>
     </div>
