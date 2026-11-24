@@ -1,0 +1,401 @@
+<!-- ==========================================================================
+     WORK ORDER CREATE / EDIT MODAL
+     ========================================================================== -->
+<div class="modal-overlay" *ngIf="showRecordModal" (click)="closeRecordModal($event)">
+  <div class="modal mnt-modal-wide" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h3>{{editingRecord ? 'Edit Work Order' : 'Log Work Order'}}</h3>
+      <button type="button" class="btn btn-ghost btn-icon-only" (click)="showRecordModal = false">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="mnt-inline-error" *ngIf="recordError">
+        <span class="mat-i">error_outline</span>
+        <span>{{recordError}}</span>
+      </div>
+
+      <div class="mnt-warn-banner mb-4" *ngIf="assets.length === 0">
+        <span>No active assets found in registry.</span>
+        <button type="button" class="btn btn-secondary btn-sm" (click)="showRecordModal = false; openAssetModal()">
+          <span class="btn-icon">add</span> Create Asset First
+        </button>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group" style="grid-column:1 / -1" *ngIf="showFormField('title')">
+          <label class="form-label">{{fieldLabel('form','title','Title')}} *</label>
+          <input class="form-control" [(ngModel)]="recordForm.title" placeholder="e.g. Monthly UPS battery inspection">
+        </div>
+
+        <div class="form-group" *ngIf="showFormField('asset_id')">
+          <label class="form-label">{{fieldLabel('form','asset_id','Asset')}} *</label>
+          <app-dropdown class="form-control" [(ngModel)]="recordForm.asset_id" placeholder="— Select asset —">
+            <app-dropdown-option [ngValue]="undefined">— Select asset —</app-dropdown-option>
+            <app-dropdown-option *ngFor="let a of assets" [ngValue]="a.id">
+              {{a.name}}{{a.serial_number ? ' — ' + a.serial_number : ''}}
+            </app-dropdown-option>
+          </app-dropdown>
+        </div>
+
+        <div class="form-group" *ngIf="showFormField('type')">
+          <label class="form-label">{{fieldLabel('form','type','Type')}} *</label>
+          <app-dropdown class="form-control" [(ngModel)]="recordForm.type">
+            <app-dropdown-option value="PREVENTIVE">Preventive</app-dropdown-option>
+            <app-dropdown-option value="CORRECTIVE">Corrective</app-dropdown-option>
+            <app-dropdown-option value="PREDICTIVE">Predictive</app-dropdown-option>
+            <app-dropdown-option value="UPGRADE">Upgrade</app-dropdown-option>
+            <app-dropdown-option value="INSPECTION">Inspection</app-dropdown-option>
+          </app-dropdown>
+        </div>
+
+        <div class="form-group" *ngIf="showFormField('priority')">
+          <label class="form-label">{{fieldLabel('form','priority','Priority')}}</label>
+          <app-dropdown class="form-control" [(ngModel)]="recordForm.priority">
+            <app-dropdown-option value="LOW">Low</app-dropdown-option>
+            <app-dropdown-option value="MEDIUM">Medium</app-dropdown-option>
+            <app-dropdown-option value="HIGH">High</app-dropdown-option>
+            <app-dropdown-option value="CRITICAL">Critical</app-dropdown-option>
+          </app-dropdown>
+        </div>
+
+        <div class="form-group" *ngIf="showFormField('status')">
+          <label class="form-label">{{fieldLabel('form','status','Status')}}</label>
+          <app-dropdown class="form-control" [(ngModel)]="recordForm.status">
+            <app-dropdown-option value="SCHEDULED">Scheduled</app-dropdown-option>
+            <app-dropdown-option value="IN_PROGRESS">In Progress</app-dropdown-option>
+            <app-dropdown-option value="COMPLETED">Completed</app-dropdown-option>
+            <app-dropdown-option value="FAILED">Failed</app-dropdown-option>
+            <app-dropdown-option value="DEFERRED">Deferred</app-dropdown-option>
+          </app-dropdown>
+        </div>
+
+        <div class="form-group" *ngIf="showFormField('scheduled_date')">
+          <label class="form-label">{{fieldLabel('form','scheduled_date','Scheduled Date')}} *</label>
+          <app-datetime-picker class="form-control"
+                               mode="datetime"
+                               [(ngModel)]="recordForm.scheduled_date"
+                               placeholder="Select scheduled date & time">
+          </app-datetime-picker>
+        </div>
+
+        <div class="form-group" *ngIf="showFormField('next_scheduled')">
+          <label class="form-label">{{fieldLabel('form','next_scheduled','Next Scheduled Cycle')}}</label>
+          <app-datetime-picker class="form-control"
+                               mode="datetime"
+                               [(ngModel)]="recordForm.next_scheduled"
+                               placeholder="Optional recurring next date">
+          </app-datetime-picker>
+          <div class="mnt-quick-presets">
+            <button *ngFor="let p of nextCyclePresets"
+                    type="button"
+                    class="mnt-preset-btn"
+                    (click)="applyNextCyclePreset(p.days)">
+              {{p.label}}
+            </button>
+            <button *ngIf="recordForm.next_scheduled"
+                    type="button"
+                    class="mnt-preset-btn"
+                    (click)="clearNextCycle()">
+              Clear
+            </button>
+          </div>
+        </div>
+
+        <div class="form-group" *ngIf="showFormField('downtime_hours')">
+          <label class="form-label">{{fieldLabel('form','downtime_hours','Downtime Duration')}}</label>
+          <div class="mnt-downtime-inputs">
+            <div class="mnt-unit-input">
+              <input type="number" class="form-control" [(ngModel)]="downtimeHoursPart" min="0" placeholder="0">
+              <span>hrs</span>
+            </div>
+            <div class="mnt-unit-input">
+              <input type="number" class="form-control" [(ngModel)]="downtimeMinutesPart" min="0" max="59" placeholder="0">
+              <span>min</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group" *ngIf="showFormField('cost')">
+          <label class="form-label">{{fieldLabel('form','cost','Cost ($)')}}</label>
+          <input type="number" class="form-control" [(ngModel)]="recordForm.cost" min="0" step="0.01" placeholder="0.00">
+        </div>
+
+        <!-- Spare Parts Used (Warehouse Integration) -->
+        <div class="form-group" style="grid-column:1 / -1" *ngIf="showFormField('parts_used')">
+          <label class="form-label">{{fieldLabel('form','parts_used','Spare Parts (Warehouse)')}}</label>
+          <div class="mnt-parts-picker">
+            <app-dropdown class="form-control mnt-part-select"
+                          [(ngModel)]="selectedWarehouseItemId"
+                          placeholder="— Select part from Warehouse —">
+              <app-dropdown-option [ngValue]="null">— Select part from Warehouse —</app-dropdown-option>
+              <app-dropdown-option *ngFor="let w of warehouseItems" [ngValue]="w.id">
+                {{w.name}} ({{w.sku}} · {{w.quantity}} {{w.unit || 'pcs'}} avail)
+              </app-dropdown-option>
+            </app-dropdown>
+            <input type="number"
+                   class="form-control mnt-part-qty"
+                   [(ngModel)]="selectedPartQty"
+                   min="1"
+                   placeholder="Qty">
+            <button type="button"
+                    class="btn btn-secondary btn-sm"
+                    [disabled]="!selectedWarehouseItemId"
+                    (click)="addWarehousePart()">
+              <span class="btn-icon">add</span> Add
+            </button>
+          </div>
+
+          <div class="mnt-parts-list" *ngIf="partsList.length > 0">
+            <div class="mnt-part-chip" *ngFor="let part of partsList; let idx = index">
+              <span>
+                <strong>{{part.name}}</strong>
+                <span class="text-muted" *ngIf="part.sku"> · {{part.sku}}</span>
+              </span>
+              <div class="mnt-head-actions">
+                <span class="mnt-num font-bold">{{part.quantity}} {{part.unit || 'pcs'}}</span>
+                <button type="button" class="btn btn-ghost btn-icon-only btn-sm" (click)="removePart(idx)" title="Remove part">
+                  <span class="btn-icon" style="font-size:16px">close</span>
+                </button>
+              </div>
+            </div>
+
+            <label class="mnt-check-label" *ngIf="!editingRecord" style="margin-top:4px;align-self:flex-start">
+              <input type="checkbox" class="mnt-checkbox" [(ngModel)]="deductStock">
+              <span>Deduct part quantities from Warehouse stock automatically</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-group" style="grid-column:1 / -1" *ngIf="showFormField('description')">
+          <label class="form-label">{{fieldLabel('form','description','Description')}} *</label>
+          <textarea class="form-control mnt-textarea-sm"
+                    [(ngModel)]="recordForm.description"
+                    placeholder="Describe scope of work and procedures…"></textarea>
+        </div>
+
+        <div class="form-group" style="grid-column:1 / -1" *ngIf="showFormField('findings')">
+          <label class="form-label">{{fieldLabel('form','findings','Findings / Resolution')}}</label>
+          <textarea class="form-control mnt-textarea-sm"
+                    [(ngModel)]="recordForm.findings"
+                    placeholder="Post-maintenance notes or root cause (optional)…"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button type="button" class="btn btn-ghost" (click)="showRecordModal = false">Cancel</button>
+      <button type="button" class="btn btn-primary" (click)="saveRecord()" [disabled]="savingRecord">
+        {{savingRecord ? 'Saving…' : (editingRecord ? 'Save Changes' : 'Create Work Order')}}
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ==========================================================================
+     WORK ORDER DETAIL INFO MODAL
+     ========================================================================== -->
+<div class="modal-overlay" *ngIf="detailRecord" (click)="closeDetailModal($event)">
+  <div class="modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="maint-detail-title" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <div class="detail-header-title">
+        <div class="detail-head-meta">
+          <span class="detail-id-pill">#{{detailRecord.id}}</span>
+          <span class="detail-type-chip" *ngIf="detailRecord.type">{{label(detailRecord.type)}}</span>
+          <span class="mnt-overdue-tag" *ngIf="overdue(detailRecord)">Overdue</span>
+        </div>
+        <h2 id="maint-detail-title">{{detailRecord.title}}</h2>
+      </div>
+      <button type="button" class="btn btn-ghost btn-icon-only" (click)="detailRecord = null" title="Close">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="detail-badges">
+        <span class="badge" [ngClass]="statusBadge(detailRecord.status)">{{label(detailRecord.status)}}</span>
+        <span class="badge" [ngClass]="priorityBadge(detailRecord.priority)">Priority: {{label(detailRecord.priority)}}</span>
+      </div>
+
+      <div class="detail-grid">
+        <div class="detail-field">
+          <span class="detail-label">Asset</span>
+          <span class="detail-value">{{detailRecord.asset?.name || '—'}}</span>
+          <span class="detail-sub" *ngIf="detailRecord.asset?.category?.name || detailRecord.asset?.serial_number || detailRecord.asset?.location">
+            {{detailRecord.asset?.category?.name}}<span *ngIf="detailRecord.asset?.category?.name && detailRecord.asset?.serial_number"> · </span><span *ngIf="detailRecord.asset?.serial_number">S/N {{detailRecord.asset?.serial_number}}</span><span *ngIf="(detailRecord.asset?.category?.name || detailRecord.asset?.serial_number) && detailRecord.asset?.location"> · </span>{{detailRecord.asset?.location}}
+          </span>
+        </div>
+
+        <div class="detail-field">
+          <span class="detail-label">Technician</span>
+          <span class="detail-value">{{techName(detailRecord)}}</span>
+        </div>
+
+        <div class="detail-field">
+          <span class="detail-label">Scheduled Date</span>
+          <span class="detail-value mnt-num">
+            {{detailRecord.scheduled_date ? (detailRecord.scheduled_date | date:'dd MMM yyyy, HH:mm') : '—'}}
+          </span>
+        </div>
+
+        <div class="detail-field">
+          <span class="detail-label">Completed Date</span>
+          <span class="detail-value mnt-num">
+            {{detailRecord.completed_date ? (detailRecord.completed_date | date:'dd MMM yyyy, HH:mm') : '—'}}
+          </span>
+        </div>
+
+        <div class="detail-field">
+          <span class="detail-label">Downtime</span>
+          <span class="detail-value mnt-num">{{downtime(detailRecord.downtime_hours)}}</span>
+        </div>
+
+        <div class="detail-field">
+          <span class="detail-label">Cost</span>
+          <span class="detail-value mnt-num">{{money(detailRecord.cost)}}</span>
+        </div>
+
+        <div class="detail-field full-span" *ngIf="detailRecord.next_scheduled">
+          <span class="detail-label">Next Scheduled Cycle</span>
+          <span class="detail-value mnt-num">{{detailRecord.next_scheduled | date:'dd MMM yyyy, HH:mm'}}</span>
+        </div>
+      </div>
+
+      <div class="detail-section" *ngIf="detailRecord.parts_used && detailRecord.parts_used.length > 0">
+        <span class="detail-section-title">Spare Parts Used</span>
+        <div class="mnt-parts-list">
+          <div class="mnt-part-chip" *ngFor="let p of detailRecord.parts_used">
+            <span><strong>{{p.name}}</strong> <span class="text-muted" *ngIf="p.sku">· {{p.sku}}</span></span>
+            <span class="mnt-num font-bold">{{p.quantity}} {{p.unit || 'pcs'}}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="detail-section" *ngIf="detailRecord.description">
+        <span class="detail-section-title">Description</span>
+        <div class="detail-text-box">{{detailRecord.description}}</div>
+      </div>
+
+      <div class="detail-section" *ngIf="detailRecord.findings">
+        <span class="detail-section-title">Findings &amp; Resolution</span>
+        <div class="detail-text-box">{{detailRecord.findings}}</div>
+      </div>
+    </div>
+
+    <div class="modal-footer detail-footer">
+      <button type="button" class="btn btn-ghost detail-delete-btn" (click)="deleteRecord(detailRecord)">
+        <span class="btn-icon">delete</span> Delete
+      </button>
+      <div class="detail-footer-actions">
+        <button type="button" class="btn btn-secondary" (click)="detailRecord = null">Close</button>
+        <button type="button"
+                class="btn btn-secondary"
+                *ngIf="detailRecord.status === 'SCHEDULED' || detailRecord.status === 'DEFERRED'"
+                (click)="updateRecordStatus(detailRecord, 'IN_PROGRESS')">
+          <span class="btn-icon text-primary">play_circle</span> Start
+        </button>
+        <button type="button"
+                class="btn btn-secondary"
+                *ngIf="detailRecord.status !== 'COMPLETED' && detailRecord.status !== 'FAILED'"
+                (click)="updateRecordStatus(detailRecord, 'COMPLETED')">
+          <span class="btn-icon" style="color:#16A34A">check_circle</span> Complete
+        </button>
+        <button type="button" class="btn btn-primary" (click)="editFromDetail()">
+          <span class="btn-icon">edit</span> Edit
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==========================================================================
+     ASSET CREATE / EDIT MODAL
+     ========================================================================== -->
+<div class="modal-overlay" *ngIf="showAssetModal" (click)="closeAssetModal($event)">
+  <div class="modal mnt-modal-wide" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h3>{{editingAsset ? 'Edit Asset' : 'Add New Asset'}}</h3>
+      <button type="button" class="btn btn-ghost btn-icon-only" (click)="showAssetModal = false">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="mnt-inline-error" *ngIf="assetError">
+        <span class="mat-i">error_outline</span>
+        <span>{{assetError}}</span>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Asset Name *</label>
+          <input class="form-control" [(ngModel)]="assetForm.name" placeholder="e.g. Primary Core Switch A">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Category *</label>
+          <app-dropdown class="form-control" [(ngModel)]="assetForm.category_id" placeholder="— Select category —">
+            <app-dropdown-option [ngValue]="undefined">— Select category —</app-dropdown-option>
+            <app-dropdown-option *ngFor="let c of assetCategories" [ngValue]="c.id">{{c.name}}</app-dropdown-option>
+          </app-dropdown>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Serial Number</label>
+          <input class="form-control" [(ngModel)]="assetForm.serial_number" placeholder="e.g. SN-440219">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Status</label>
+          <app-dropdown class="form-control" [(ngModel)]="assetForm.status">
+            <app-dropdown-option value="ACTIVE">Active</app-dropdown-option>
+            <app-dropdown-option value="UNDER_MAINTENANCE">Under Maintenance</app-dropdown-option>
+            <app-dropdown-option value="INACTIVE">Inactive</app-dropdown-option>
+            <app-dropdown-option value="RETIRED">Retired</app-dropdown-option>
+            <app-dropdown-option value="LOST">Lost</app-dropdown-option>
+          </app-dropdown>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Manufacturer</label>
+          <input class="form-control" [(ngModel)]="assetForm.manufacturer" placeholder="e.g. Cisco / APC">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Model</label>
+          <input class="form-control" [(ngModel)]="assetForm.model" placeholder="e.g. Catalyst 9300">
+        </div>
+
+        <div class="form-group" style="grid-column:1 / -1">
+          <label class="form-label">Location</label>
+          <input class="form-control" [(ngModel)]="assetForm.location" placeholder="e.g. Server Room A — Rack 02">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Purchase Date</label>
+          <app-datetime-picker class="form-control" mode="date" [(ngModel)]="assetForm.purchase_date" placeholder="Select date">
+          </app-datetime-picker>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Warranty Expiry</label>
+          <app-datetime-picker class="form-control" mode="date" [(ngModel)]="assetForm.warranty_expiry" placeholder="Select date">
+          </app-datetime-picker>
+        </div>
+
+        <div class="form-group" style="grid-column:1 / -1">
+          <label class="form-label">Notes</label>
+          <textarea class="form-control mnt-textarea-sm" [(ngModel)]="assetForm.notes" placeholder="Optional asset documentation notes…"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button type="button" class="btn btn-ghost" (click)="showAssetModal = false">Cancel</button>
+      <button type="button" class="btn btn-primary" (click)="saveAsset()" [disabled]="savingAsset">
+        {{savingAsset ? 'Saving…' : (editingAsset ? 'Save Changes' : 'Create Asset')}}
+      </button>
+    </div>
+  </div>
+</div>

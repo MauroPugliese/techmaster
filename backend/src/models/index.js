@@ -54,6 +54,22 @@ const Operation = sequelize.define('Operation', {
   metadata:        { type: DataTypes.JSON }
 }, { tableName: 'operations' });
 
+const OperationMember = sequelize.define('OperationMember', {
+  operation_id: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, primaryKey: true },
+  user_id:      { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, primaryKey: true },
+  role_in_op:   { type: DataTypes.STRING(100) },
+  joined_at:    { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
+}, { tableName: 'operation_members', timestamps: false });
+
+const OperationLog = sequelize.define('OperationLog', {
+  id:           { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
+  operation_id: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+  user_id:      { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+  action:       { type: DataTypes.STRING(200), allowNull: false },
+  details:      { type: DataTypes.TEXT },
+  logged_at:    { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
+}, { tableName: 'operation_logs', timestamps: false });
+
 // ── Asset / Maintenance ──────────────────────────────────────────────────────
 const AssetCategory = sequelize.define('AssetCategory', {
   id:          { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
@@ -319,6 +335,12 @@ Role.hasMany(User, { foreignKey: 'role_id' });
 
 Operation.belongsTo(OperationType, { foreignKey: 'type_id', as: 'type' });
 Operation.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
+Operation.hasMany(OperationMember, { foreignKey: 'operation_id', as: 'members', onDelete: 'CASCADE' });
+OperationMember.belongsTo(Operation, { foreignKey: 'operation_id', as: 'operation' });
+OperationMember.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+Operation.hasMany(OperationLog, { foreignKey: 'operation_id', as: 'logs', onDelete: 'CASCADE' });
+OperationLog.belongsTo(Operation, { foreignKey: 'operation_id', as: 'operation' });
+OperationLog.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 
 Asset.belongsTo(AssetCategory, { foreignKey: 'category_id', as: 'category' });
 Asset.belongsTo(User, { foreignKey: 'assigned_to', as: 'assignedUser' });
@@ -366,7 +388,7 @@ WarehouseLocation.hasMany(InventoryItem, { foreignKey: 'location_id', as: 'items
 InventoryItem.belongsTo(WarehouseLocation, { foreignKey: 'location_id', as: 'location' });
 
 module.exports = {
-  sequelize, User, Role, Operation, OperationType,
+  sequelize, User, Role, Operation, OperationType, OperationMember, OperationLog,
   Asset, AssetCategory, MaintenanceRecord,
   PlannedMaintenanceTask, PlannedMaintenanceTaskInstance,
   WarehouseLocation, ItemCategory, InventoryItem, StockMovement,

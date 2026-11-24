@@ -1,12 +1,56 @@
 // =============================================================================
-// routes/operation.routes.js  — FIXED: added GET /types route
+// routes/operation.routes.js — Operations, Crew Members, Mission Logs & Bulk Ops
 // =============================================================================
 const router = require('express').Router();
-const { Op }  = require('sequelize');
-const { Operation, OperationType, User } = require('../models');
+const { Op } = require('sequelize');
+const {
+  Operation,
+  OperationType,
+  OperationMember,
+  OperationLog,
+  User,
+  sequelize
+} = require('../models');
 const { parseDateFilter } = require('../middleware/error.middleware');
+const { validateIdParam } = require('../middleware/validation.middleware');
+const {
+  sanitizeMembersInput,
+  sanitizeOperationPayload,
+  sanitizeBulkOperationAction,
+  sanitizeOperationLogPayload,
+  buildOperationSortOrder,
+  summarizeOperationRows
+} = require('../services/operation-helpers.service');
 
-// ── GET /operations/types  ← ADDED (was missing, broke the type dropdown)
+const LIST_INCLUDES = [
+  { model: OperationType, as: 'type' },
+  { model: User, as: 'creator', attributes: ['id', 'first_name', 'last_name', 'username', 'avatar_url'] },
+  {
+    model: OperationMember,
+    as: 'members',
+    include: [
+      { model: User, as: 'user', attributes: ['id', 'first_name', 'last_name', 'username', 'avatar_url', 'job_title'] }
+    ]
+  }
+];
+
+async function syncOperationMembers(operationId, membersList, transaction) {
+  await OperationMember.destroy({ where: { operation_id: operationId }, transaction });
+  if (membersList.length > 0) {
+    await OperationMember.bulkCreate(
+      membersList.map(m => ({
+        operation_id: operationId,
+        user_id: m.user_id,
+        role_in_op: m.role_in_op
+      })),
+      { transaction }
+    );
+  }
+}
+
+// ── Static routes MUST stay strictly BEFORE /:id ─────────────────────────────
+
+// GET /operations/types — operation categories/types
 router.get('/types', async (req, res, next) => {
   try {
     const types = await OperationType.findAll({ order: [['name', 'ASC']] });
@@ -14,73 +58,427 @@ router.get('/types', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.get('/', parseDateFilter, async (req, res, next) => {
+// GET /operations/staff — active users for crew roster assignment
+router.get('/staff', async (req, res, next) => {
+  try {
+    const users = await User.findAll({
+      where: { is_active: true },
+      attributes: ['id', 'username', 'first_name', 'last_name', 'department', 'job_title', 'avatar_url'],
+      order: [['first_name', 'ASC'], ['last_name', 'ASC']]
+    });
+    res.json({ success: true, data: users });
+  } catch (err) { next(err); }
+});
+
+// GET /operations/summary — real DB KPI metrics respecting active date range
+router.get('/summary', parseDateFilter, async (req, res, next) => {
   try {
     const { from, to } = req.dateRange;
-    const { status, priority, search, page = 1, limit = 20 } = req.query;
     const where = {};
     if (from || to) {
       where.start_date = {};
       if (from) where.start_date[Op.gte] = from;
-      if (to)   where.start_date[Op.lte] = to;
+      if (to) where.start_date[Op.lte] = to;
     }
-    if (status)   where.status   = status;
-    if (priority) where.priority = priority;
+
+    const rows = await Operation.findAll({
+      where,
+      attributes: ['id', 'status', 'start_date', 'end_date', 'actual_end_date']
+    });
+
+    res.json({
+      success: true,
+      data: summarizeOperationRows(rows.map(r => r.get({ plain: true })))
+    });
+  } catch (err) { next(err); }
+});
+
+// PATCH /operations/bulk — batch status, priority, or delete
+router.patch('/bulk', async (req, res, next) => {
+  try {
+    const { data, error } = sanitizeBulkOperationAction(req.body);
+    if (error) return res.status(400).json({ success: false, message: error });
+
+    const { ids, action, value } = data;
+    let affected = 0;
+
+    if (action === 'status') {
+      const updateFields = { status: value };
+      if (value === 'COMPLETED') {
+        updateFields.actual_end_date = new Date();
+      }
+      const [count] = await Operation.update(updateFields, {
+        where: { id: { [Op.in]: ids } }
+      });
+      affected = count;
+
+      await OperationLog.bulkCreate(
+        ids.map(opId => ({
+          operation_id: opId,
+          user_id: req.user.id,
+          action: `Bulk status update: ${value}`
+        }))
+      ).catch(() => {});
+    } else if (action === 'priority') {
+      const [count] = await Operation.update(
+        { priority: value },
+        { where: { id: { [Op.in]: ids } } }
+      );
+      affected = count;
+    } else if (action === 'delete') {
+      affected = await Operation.destroy({ where: { id: { [Op.in]: ids } } });
+    }
+
+    res.json({ success: true, data: { affected, ids, action, value } });
+  } catch (err) { next(err); }
+});
+
+// ── Collection & Item CRUD ───────────────────────────────────────────────────
+
+router.get('/', parseDateFilter, async (req, res, next) => {
+  try {
+    const { from, to } = req.dateRange;
+    const {
+      status,
+      priority,
+      type_id,
+      search,
+      sort_by,
+      sort_dir,
+      page = 1,
+      limit = 20
+    } = req.query;
+
+    const parsedPage = Math.max(1, parseInt(page, 10) || 1);
+    const parsedLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+
+    const where = {};
+    const andConditions = [];
+
+    if (from || to) {
+      where.start_date = {};
+      if (from) where.start_date[Op.gte] = from;
+      if (to) where.start_date[Op.lte] = to;
+    }
+
+    const normalizedStatus = String(status || '').trim().toUpperCase();
+    if (normalizedStatus === 'OVERDUE') {
+      andConditions.push({
+        status: { [Op.in]: ['PLANNED', 'IN_PROGRESS', 'ON_HOLD'] },
+        end_date: { [Op.ne]: null, [Op.lt]: new Date() }
+      });
+    } else if (normalizedStatus) {
+      where.status = normalizedStatus;
+    }
+
+    if (priority) where.priority = String(priority).trim().toUpperCase();
+    if (type_id && Number.isInteger(Number(type_id)) && Number(type_id) > 0) {
+      where.type_id = Number(type_id);
+    }
+
     if (search?.trim()) {
       const searchTerm = `%${search.trim()}%`;
-      where[Op.or] = [
-        { title: { [Op.like]: searchTerm } },
-        { description: { [Op.like]: searchTerm } },
-        { location: { [Op.like]: searchTerm } }
-      ];
+      andConditions.push({
+        [Op.or]: [
+          { title: { [Op.like]: searchTerm } },
+          { description: { [Op.like]: searchTerm } },
+          { location: { [Op.like]: searchTerm } },
+          { notes: { [Op.like]: searchTerm } }
+        ]
+      });
     }
+
+    if (andConditions.length) {
+      where[Op.and] = andConditions;
+    }
+
+    const order = buildOperationSortOrder(sort_by, sort_dir, { OperationType, User });
 
     const { count, rows } = await Operation.findAndCountAll({
       where,
-      include: [
-        { model: OperationType, as: 'type' },
-        { model: User, as: 'creator', attributes: ['id','first_name','last_name','avatar_url'] }
-      ],
-      limit: +limit, offset: (+page - 1) * +limit,
-      order: [['start_date','DESC']]
+      distinct: true,
+      include: LIST_INCLUDES,
+      limit: parsedLimit,
+      offset: (parsedPage - 1) * parsedLimit,
+      order
     });
-    res.json({ success: true, data: { items: rows, total: count, page: +page, limit: +limit } });
+
+    res.json({
+      success: true,
+      data: { items: rows, total: count, page: parsedPage, limit: parsedLimit }
+    });
   } catch (err) { next(err); }
 });
 
 router.post('/', async (req, res, next) => {
+  const transaction = await sequelize.transaction();
   try {
-    const op = await Operation.create({ ...req.body, created_by: req.user.id });
-    res.status(201).json({ success: true, data: op });
-  } catch (err) { next(err); }
+    const { data, error } = sanitizeOperationPayload(req.body, { isCreate: true });
+    if (error) {
+      await transaction.rollback();
+      return res.status(400).json({ success: false, message: error });
+    }
+
+    const membersRes = sanitizeMembersInput(req.body?.members);
+    if (membersRes.error) {
+      await transaction.rollback();
+      return res.status(400).json({ success: false, message: membersRes.error });
+    }
+
+    const op = await Operation.create(
+      { ...data, created_by: req.user.id },
+      { transaction }
+    );
+
+    if (membersRes.provided && membersRes.data.length > 0) {
+      await syncOperationMembers(op.id, membersRes.data, transaction);
+    }
+
+    await OperationLog.create({
+      operation_id: op.id,
+      user_id: req.user.id,
+      action: 'Operation created',
+      details: `Initial status: ${op.status}`
+    }, { transaction });
+
+    await transaction.commit();
+
+    const full = await Operation.findByPk(op.id, { include: LIST_INCLUDES });
+    res.status(201).json({ success: true, data: full || op });
+  } catch (err) {
+    await transaction.rollback();
+    next(err);
+  }
 });
 
-// NOTE: /:id routes MUST come after named routes like /types
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', validateIdParam, async (req, res, next) => {
   try {
     const op = await Operation.findByPk(req.params.id, {
       include: [
-        { model: OperationType, as: 'type' },
-        { model: User, as: 'creator', attributes: ['id','first_name','last_name'] }
-      ]
+        ...LIST_INCLUDES,
+        {
+          model: OperationLog,
+          as: 'logs',
+          include: [{ model: User, as: 'user', attributes: ['id', 'first_name', 'last_name', 'username'] }]
+        }
+      ],
+      order: [[{ model: OperationLog, as: 'logs' }, 'logged_at', 'DESC']]
     });
     if (!op) return res.status(404).json({ success: false, message: 'Not found' });
     res.json({ success: true, data: op });
   } catch (err) { next(err); }
 });
 
-router.put('/:id', async (req, res, next) => {
+router.put('/:id', validateIdParam, async (req, res, next) => {
+  const transaction = await sequelize.transaction();
   try {
-    const op = await Operation.findByPk(req.params.id);
-    if (!op) return res.status(404).json({ success: false, message: 'Not found' });
-    await op.update(req.body);
-    res.json({ success: true, data: op });
+    const op = await Operation.findByPk(req.params.id, { transaction });
+    if (!op) {
+      await transaction.rollback();
+      return res.status(404).json({ success: false, message: 'Not found' });
+    }
+
+    const { data, error } = sanitizeOperationPayload(req.body, { isCreate: false, existing: op });
+    if (error) {
+      await transaction.rollback();
+      return res.status(400).json({ success: false, message: error });
+    }
+
+    const membersRes = sanitizeMembersInput(req.body?.members);
+    if (membersRes.error) {
+      await transaction.rollback();
+      return res.status(400).json({ success: false, message: membersRes.error });
+    }
+
+    const previousStatus = op.status;
+    await op.update(data, { transaction });
+
+    if (membersRes.provided) {
+      await syncOperationMembers(op.id, membersRes.data, transaction);
+    }
+
+    if (data.status && data.status !== previousStatus) {
+      await OperationLog.create({
+        operation_id: op.id,
+        user_id: req.user.id,
+        action: `Status changed: ${previousStatus} -> ${data.status}`
+      }, { transaction });
+    }
+
+    await transaction.commit();
+
+    const full = await Operation.findByPk(op.id, { include: LIST_INCLUDES });
+    res.json({ success: true, data: full || op });
+  } catch (err) {
+    await transaction.rollback();
+    next(err);
+  }
+});
+
+// POST /operations/:id/duplicate — clone operation + crew roster into PLANNED draft
+router.post('/:id/duplicate', validateIdParam, async (req, res, next) => {
+  const transaction = await sequelize.transaction();
+  try {
+    const source = await Operation.findByPk(req.params.id, {
+      include: [{ model: OperationMember, as: 'members' }],
+      transaction
+    });
+    if (!source) {
+      await transaction.rollback();
+      return res.status(404).json({ success: false, message: 'Not found' });
+    }
+
+    const copy = await Operation.create({
+      type_id: source.type_id,
+      created_by: req.user.id,
+      title: `${source.title} (Copy)`.slice(0, 200),
+      description: source.description,
+      status: 'PLANNED',
+      priority: source.priority,
+      location: source.location,
+      start_date: source.start_date,
+      end_date: source.end_date,
+      actual_end_date: null,
+      notes: source.notes
+    }, { transaction });
+
+    const existingMembers = (source.members || []).map(m => ({
+      operation_id: copy.id,
+      user_id: m.user_id,
+      role_in_op: m.role_in_op
+    }));
+    if (existingMembers.length > 0) {
+      await OperationMember.bulkCreate(existingMembers, { transaction });
+    }
+
+    await OperationLog.create({
+      operation_id: copy.id,
+      user_id: req.user.id,
+      action: `Duplicated from operation #${source.id}`
+    }, { transaction });
+
+    await transaction.commit();
+
+    const full = await Operation.findByPk(copy.id, { include: LIST_INCLUDES });
+    res.status(201).json({ success: true, data: full || copy });
+  } catch (err) {
+    await transaction.rollback();
+    next(err);
+  }
+});
+
+// ── Crew Members Endpoints ───────────────────────────────────────────────────
+
+router.get('/:id/members', validateIdParam, async (req, res, next) => {
+  try {
+    const op = await Operation.findByPk(req.params.id, { attributes: ['id'] });
+    if (!op) return res.status(404).json({ success: false, message: 'Operation not found' });
+
+    const members = await OperationMember.findAll({
+      where: { operation_id: op.id },
+      include: [{ model: User, as: 'user', attributes: ['id', 'first_name', 'last_name', 'username', 'avatar_url', 'job_title'] }],
+      order: [['joined_at', 'ASC']]
+    });
+    res.json({ success: true, data: members });
   } catch (err) { next(err); }
 });
 
-router.delete('/:id', async (req, res, next) => {
+router.post('/:id/members', validateIdParam, async (req, res, next) => {
   try {
-    await Operation.destroy({ where: { id: req.params.id } });
+    const op = await Operation.findByPk(req.params.id, { attributes: ['id'] });
+    if (!op) return res.status(404).json({ success: false, message: 'Operation not found' });
+
+    const userId = Number(req.body?.user_id);
+    if (!Number.isInteger(userId) || userId < 1) {
+      return res.status(400).json({ success: false, message: 'Valid user_id is required.' });
+    }
+    const targetUser = await User.findByPk(userId, { attributes: ['id', 'first_name', 'last_name', 'username'] });
+    if (!targetUser) return res.status(404).json({ success: false, message: 'User not found.' });
+
+    const roleInOp = String(req.body?.role_in_op ?? '').trim().slice(0, 100) || null;
+    const [member, created] = await OperationMember.findOrCreate({
+      where: { operation_id: op.id, user_id: userId },
+      defaults: { operation_id: op.id, user_id: userId, role_in_op: roleInOp }
+    });
+    if (!created) {
+      await member.update({ role_in_op: roleInOp });
+    }
+
+    const memberName = `${targetUser.first_name || ''} ${targetUser.last_name || ''}`.trim() || targetUser.username;
+    await OperationLog.create({
+      operation_id: op.id,
+      user_id: req.user.id,
+      action: `${created ? 'Assigned crew member' : 'Updated crew role'}: ${memberName}`,
+      details: roleInOp ? `Role: ${roleInOp}` : null
+    }).catch(() => {});
+
+    const members = await OperationMember.findAll({
+      where: { operation_id: op.id },
+      include: [{ model: User, as: 'user', attributes: ['id', 'first_name', 'last_name', 'username', 'avatar_url', 'job_title'] }],
+      order: [['joined_at', 'ASC']]
+    });
+    res.status(created ? 201 : 200).json({ success: true, data: members });
+  } catch (err) { next(err); }
+});
+
+router.delete('/:id/members/:userId', validateIdParam, async (req, res, next) => {
+  try {
+    const userId = Number(req.params.userId);
+    if (!Number.isInteger(userId) || userId < 1) {
+      return res.status(400).json({ success: false, message: 'Invalid userId.' });
+    }
+    const deleted = await OperationMember.destroy({
+      where: { operation_id: req.params.id, user_id: userId }
+    });
+    if (!deleted) return res.status(404).json({ success: false, message: 'Member not found on operation.' });
+
+    res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
+// ── Mission Logs Endpoints ───────────────────────────────────────────────────
+
+router.get('/:id/logs', validateIdParam, async (req, res, next) => {
+  try {
+    const op = await Operation.findByPk(req.params.id, { attributes: ['id'] });
+    if (!op) return res.status(404).json({ success: false, message: 'Operation not found' });
+
+    const logs = await OperationLog.findAll({
+      where: { operation_id: op.id },
+      include: [{ model: User, as: 'user', attributes: ['id', 'first_name', 'last_name', 'username'] }],
+      order: [['logged_at', 'DESC'], ['id', 'DESC']]
+    });
+    res.json({ success: true, data: logs });
+  } catch (err) { next(err); }
+});
+
+router.post('/:id/logs', validateIdParam, async (req, res, next) => {
+  try {
+    const op = await Operation.findByPk(req.params.id, { attributes: ['id'] });
+    if (!op) return res.status(404).json({ success: false, message: 'Operation not found' });
+
+    const { data, error } = sanitizeOperationLogPayload(req.body);
+    if (error) return res.status(400).json({ success: false, message: error });
+
+    const log = await OperationLog.create({
+      operation_id: op.id,
+      user_id: req.user.id,
+      action: data.action,
+      details: data.details
+    });
+
+    const full = await OperationLog.findByPk(log.id, {
+      include: [{ model: User, as: 'user', attributes: ['id', 'first_name', 'last_name', 'username'] }]
+    });
+    res.status(201).json({ success: true, data: full || log });
+  } catch (err) { next(err); }
+});
+
+router.delete('/:id', validateIdParam, async (req, res, next) => {
+  try {
+    const op = await Operation.findByPk(req.params.id);
+    if (!op) return res.status(404).json({ success: false, message: 'Not found' });
+    await op.destroy();
     res.json({ success: true, message: 'Deleted' });
   } catch (err) { next(err); }
 });

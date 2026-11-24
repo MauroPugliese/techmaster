@@ -53,11 +53,20 @@ const handleValidation = (req, res, next) => {
 // GET /api/maintenance/planned — list all (with search, pagination, filters)
 router.get('/', ctrl.getAll);
 
+// GET /api/maintenance/planned/systems — distinct system values for filters
+router.get('/systems', ctrl.getSystems);
+
+// GET /api/maintenance/planned/summary — monthly planned maintenance KPIs
+router.get('/summary', ctrl.getSummary);
+
 // GET /api/maintenance/planned/calendar/:year/:month — calendar indicators
 router.get('/calendar/:year/:month', ctrl.getCalendarIndicators);
 
 // GET /api/maintenance/planned/date/:date — tasks for specific date (YYYY-MM-DD)
 router.get('/date/:date', ctrl.getByDate);
+
+// POST /api/maintenance/planned/:id/work-order — create work order from planned task
+router.post('/:id/work-order', ctrl.createWorkOrder);
 
 // PUT /api/maintenance/planned/:id/occurrence/:date — update a single occurrence
 router.put('/:id/occurrence/:date', validateOccurrenceUpdate, handleValidation, ctrl.updateOccurrence);

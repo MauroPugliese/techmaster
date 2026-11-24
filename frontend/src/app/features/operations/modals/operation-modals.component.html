@@ -1,0 +1,342 @@
+<!-- ==========================================================================
+     CREATE / EDIT OPERATION MODAL
+     ========================================================================== -->
+<div class="modal-overlay" *ngIf="showFormModal" (click)="closeFormModal($event)">
+  <div class="modal ops-modal-wide" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h3>{{editingOp ? 'Edit Operation' : 'New Operation / Sortie'}}</h3>
+      <button type="button" class="btn btn-ghost btn-icon-only" (click)="showFormModal = false">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="ops-inline-error" *ngIf="formError">
+        <span class="mat-i">error_outline</span>
+        <span>{{formError}}</span>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group" style="grid-column:1 / -1" *ngIf="showFormField('title')">
+          <label class="form-label">{{fieldLabel('form','title','Title')}} *</label>
+          <input class="form-control" [(ngModel)]="form.title" placeholder="e.g. Night Telemetry Sortie — Sector B">
+        </div>
+
+        <div class="form-group" *ngIf="showFormField('type_id')">
+          <label class="form-label">{{fieldLabel('form','type_id','Type')}} *</label>
+          <app-dropdown class="form-control" [(ngModel)]="form.type_id" placeholder="— Select type —">
+            <app-dropdown-option [ngValue]="undefined">— Select type —</app-dropdown-option>
+            <app-dropdown-option *ngFor="let t of opTypes" [ngValue]="t.id">{{t.name}}</app-dropdown-option>
+          </app-dropdown>
+        </div>
+
+        <div class="form-group" *ngIf="showFormField('priority')">
+          <label class="form-label">{{fieldLabel('form','priority','Priority')}}</label>
+          <app-dropdown class="form-control" [(ngModel)]="form.priority">
+            <app-dropdown-option value="LOW">Low</app-dropdown-option>
+            <app-dropdown-option value="MEDIUM">Medium</app-dropdown-option>
+            <app-dropdown-option value="HIGH">High</app-dropdown-option>
+            <app-dropdown-option value="CRITICAL">Critical</app-dropdown-option>
+          </app-dropdown>
+        </div>
+
+        <div class="form-group" *ngIf="showFormField('status')">
+          <label class="form-label">{{fieldLabel('form','status','Status')}}</label>
+          <app-dropdown class="form-control" [(ngModel)]="form.status">
+            <app-dropdown-option value="PLANNED">Planned</app-dropdown-option>
+            <app-dropdown-option value="IN_PROGRESS">In Progress</app-dropdown-option>
+            <app-dropdown-option value="ON_HOLD">On Hold</app-dropdown-option>
+            <app-dropdown-option value="COMPLETED">Completed</app-dropdown-option>
+            <app-dropdown-option value="CANCELLED">Cancelled</app-dropdown-option>
+          </app-dropdown>
+        </div>
+
+        <div class="form-group" *ngIf="showFormField('location')">
+          <label class="form-label">{{fieldLabel('form','location','Location')}}</label>
+          <input class="form-control" [(ngModel)]="form.location" placeholder="e.g. Hangar 2 / Runway East">
+        </div>
+
+        <div class="form-group" *ngIf="showFormField('start_date')">
+          <label class="form-label">{{fieldLabel('form','start_date','Start Date & Time')}} *</label>
+          <app-datetime-picker class="form-control"
+                               mode="datetime"
+                               [(ngModel)]="form.start_date"
+                               placeholder="Select start date & time">
+          </app-datetime-picker>
+        </div>
+
+        <div class="form-group" *ngIf="showFormField('end_date')">
+          <label class="form-label">
+            {{fieldLabel('form','end_date','Planned End Date')}}
+            <span class="ops-subtext" style="display:inline;margin-left:6px" *ngIf="plannedFormDuration !== '—'">
+              · {{plannedFormDuration}}
+            </span>
+          </label>
+          <app-datetime-picker class="form-control"
+                               mode="datetime"
+                               [(ngModel)]="form.end_date"
+                               placeholder="Select end date & time">
+          </app-datetime-picker>
+          <div class="ops-quick-presets">
+            <button *ngFor="let p of durationPresets"
+                    type="button"
+                    class="ops-preset-btn"
+                    (click)="applyDurationPreset(p.hours)">
+              {{p.label}}
+            </button>
+          </div>
+        </div>
+
+        <!-- Initial Crew Assignment -->
+        <div class="form-group" style="grid-column:1 / -1">
+          <label class="form-label">Crew Roster</label>
+          <div class="ops-crew-picker">
+            <app-dropdown class="form-control ops-crew-select"
+                          [(ngModel)]="selectedDraftUserId"
+                          placeholder="— Select crew member —">
+              <app-dropdown-option [ngValue]="null">— Select crew member —</app-dropdown-option>
+              <app-dropdown-option *ngFor="let u of availableDraftStaff" [ngValue]="u.id">
+                {{userName(u)}}{{u.job_title ? ' (' + u.job_title + ')' : ''}}
+              </app-dropdown-option>
+            </app-dropdown>
+            <input class="form-control ops-crew-role"
+                   [(ngModel)]="selectedDraftRole"
+                   placeholder="Role (e.g. Mission Lead)">
+            <button type="button"
+                    class="btn btn-secondary btn-sm"
+                    [disabled]="!selectedDraftUserId"
+                    (click)="addDraftMember()">
+              <span class="btn-icon">person_add</span> Assign
+            </button>
+          </div>
+
+          <div class="ops-quick-presets" *ngIf="selectedDraftUserId">
+            <button *ngFor="let r of roleSuggestions"
+                    type="button"
+                    class="ops-preset-btn"
+                    (click)="selectedDraftRole = r">
+              {{r}}
+            </button>
+          </div>
+
+          <div class="ops-crew-list" *ngIf="draftMembers.length > 0">
+            <div class="ops-crew-chip" *ngFor="let m of draftMembers">
+              <div class="ops-head-actions">
+                <span class="ops-avatar">{{userInitials(m.user)}}</span>
+                <div>
+                  <div class="font-bold">{{userName(m.user)}}</div>
+                  <div class="ops-subtext" *ngIf="m.role_in_op">{{m.role_in_op}}</div>
+                </div>
+              </div>
+              <button type="button" class="btn btn-ghost btn-icon-only btn-sm" (click)="removeDraftMember(m.user_id)" title="Remove member">
+                <span class="btn-icon" style="font-size:16px">close</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group" style="grid-column:1 / -1" *ngIf="showFormField('description')">
+          <label class="form-label">{{fieldLabel('form','description','Description')}}</label>
+          <textarea class="form-control ops-textarea-sm"
+                    [(ngModel)]="form.description"
+                    placeholder="Mission objective and flight/operation profile…"></textarea>
+        </div>
+
+        <div class="form-group" style="grid-column:1 / -1" *ngIf="showFormField('notes')">
+          <label class="form-label">{{fieldLabel('form','notes','Notes')}}</label>
+          <textarea class="form-control ops-textarea-sm"
+                    [(ngModel)]="form.notes"
+                    placeholder="Safety constraints, equipment checklist, handover notes…"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button type="button" class="btn btn-ghost" (click)="showFormModal = false">Cancel</button>
+      <button type="button" class="btn btn-primary" (click)="saveOperation()" [disabled]="saving">
+        {{saving ? 'Saving…' : (editingOp ? 'Save Changes' : 'Create Operation')}}
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ==========================================================================
+     MISSION BRIEF DETAIL MODAL (Roster + Live Mission Log + Workflow)
+     ========================================================================== -->
+<div class="modal-overlay" *ngIf="detailOp" (click)="closeDetailModal($event)">
+  <div class="modal detail-modal ops-detail-modal" role="dialog" aria-modal="true" aria-labelledby="op-detail-title" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <div class="detail-header-title">
+        <div class="detail-head-meta">
+          <span class="detail-id-pill">#{{detailOp.id}}</span>
+          <span class="detail-type-chip" *ngIf="detailOp.type">
+            <span class="detail-type-dot" [style.background]="detailOp.type.color || 'var(--primary)'"></span>
+            {{detailOp.type.name}}
+          </span>
+          <span class="ops-overdue-tag" *ngIf="overdue(detailOp)">Overdue</span>
+        </div>
+        <h2 id="op-detail-title">{{detailOp.title}}</h2>
+      </div>
+      <button type="button" class="btn btn-ghost btn-icon-only" (click)="detailOp = null" title="Close">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="detail-badges">
+        <span class="badge" [ngClass]="statusBadge(detailOp.status)">{{label(detailOp.status)}}</span>
+        <span class="badge" [ngClass]="priorityBadge(detailOp.priority)">Priority: {{label(detailOp.priority)}}</span>
+        <span class="detail-type-chip ops-num">
+          Planned: {{duration(detailOp.start_date, detailOp.end_date)}}
+        </span>
+        <span class="detail-type-chip ops-num" *ngIf="detailOp.actual_end_date">
+          Actual: {{duration(detailOp.start_date, detailOp.actual_end_date)}}
+        </span>
+      </div>
+
+      <div class="detail-grid">
+        <div class="detail-field">
+          <span class="detail-label">Start Date &amp; Time</span>
+          <span class="detail-value ops-num">{{detailOp.start_date ? (detailOp.start_date | date:'dd MMM yyyy, HH:mm') : '—'}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Planned End</span>
+          <span class="detail-value ops-num">{{detailOp.end_date ? (detailOp.end_date | date:'dd MMM yyyy, HH:mm') : '—'}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Location</span>
+          <span class="detail-value">{{detailOp.location || '—'}}</span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Created By</span>
+          <span class="detail-value">{{userName(detailOp.creator)}}</span>
+        </div>
+        <div class="detail-field full-span" *ngIf="detailOp.actual_end_date">
+          <span class="detail-label">Actual Completion Time</span>
+          <span class="detail-value ops-num">{{detailOp.actual_end_date | date:'dd MMM yyyy, HH:mm'}}</span>
+        </div>
+      </div>
+
+      <div class="detail-section" *ngIf="detailOp.description">
+        <span class="detail-section-title">Description</span>
+        <div class="detail-text-box">{{detailOp.description}}</div>
+      </div>
+
+      <div class="detail-section" *ngIf="detailOp.notes">
+        <span class="detail-section-title">Notes</span>
+        <div class="detail-text-box">{{detailOp.notes}}</div>
+      </div>
+
+      <!-- Interactive Crew Roster -->
+      <div class="detail-section mt-4">
+        <span class="detail-section-title">Crew Roster ({{detailMembers.length}})</span>
+        <div class="ops-crew-picker">
+          <app-dropdown class="form-control ops-crew-select"
+                        [(ngModel)]="newMemberUserId"
+                        placeholder="— Assign operator —">
+            <app-dropdown-option [ngValue]="null">— Assign operator —</app-dropdown-option>
+            <app-dropdown-option *ngFor="let u of availableDetailStaff" [ngValue]="u.id">
+              {{userName(u)}}{{u.job_title ? ' (' + u.job_title + ')' : ''}}
+            </app-dropdown-option>
+          </app-dropdown>
+          <input class="form-control ops-crew-role" [(ngModel)]="newMemberRole" placeholder="Operational role">
+          <button type="button"
+                  class="btn btn-secondary btn-sm"
+                  [disabled]="!newMemberUserId || memberBusy"
+                  (click)="addDetailMember()">
+            <span class="btn-icon">person_add</span> Assign
+          </button>
+        </div>
+
+        <div class="ops-crew-list" *ngIf="detailMembers.length > 0">
+          <div class="ops-crew-chip" *ngFor="let m of detailMembers">
+            <div class="ops-head-actions">
+              <span class="ops-avatar">{{userInitials(m.user)}}</span>
+              <div>
+                <div class="font-bold">{{userName(m.user)}}</div>
+                <div class="ops-subtext">{{m.role_in_op || m.user?.job_title || 'Crew Member'}}</div>
+              </div>
+            </div>
+            <button type="button"
+                    class="btn btn-ghost btn-icon-only btn-sm"
+                    [disabled]="memberBusy"
+                    (click)="removeDetailMember(m)"
+                    title="Remove from crew">
+              <span class="btn-icon" style="font-size:16px">close</span>
+            </button>
+          </div>
+        </div>
+        <div *ngIf="detailMembers.length === 0" class="text-sm text-muted mt-2">
+          No crew members assigned yet.
+        </div>
+      </div>
+
+      <!-- Interactive Mission Log Timeline -->
+      <div class="detail-section mt-4">
+        <span class="detail-section-title">Mission Log ({{detailLogs.length}})</span>
+        <div class="ops-crew-picker">
+          <input class="form-control ops-crew-select"
+                 [(ngModel)]="newLogAction"
+                 placeholder="Log update (e.g. Wheels up, Check completed)…">
+          <input class="form-control ops-crew-role"
+                 [(ngModel)]="newLogDetails"
+                 placeholder="Optional details">
+          <button type="button"
+                  class="btn btn-primary btn-sm"
+                  [disabled]="!newLogAction.trim() || logBusy"
+                  (click)="addLogEntry()">
+            <span class="btn-icon">add_comment</span> Log
+          </button>
+        </div>
+
+        <div *ngIf="detailLoading" class="text-sm text-muted mt-2">Loading mission logs…</div>
+
+        <div class="ops-log-list" *ngIf="!detailLoading && detailLogs.length > 0">
+          <div class="ops-log-row" *ngFor="let l of detailLogs">
+            <div class="flex items-center justify-between gap-2">
+              <strong style="color:var(--blue-950)">{{l.action}}</strong>
+              <span class="ops-subtext">{{userName(l.user)}} · {{l.logged_at | date:'MMM d, HH:mm'}}</span>
+            </div>
+            <div class="ops-subtext" *ngIf="l.details">{{l.details}}</div>
+          </div>
+        </div>
+        <div *ngIf="!detailLoading && detailLogs.length === 0" class="text-sm text-muted mt-2">
+          No activity logged yet.
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-footer detail-footer">
+      <button type="button" class="btn btn-ghost detail-delete-btn" (click)="deleteOperation(detailOp)">
+        <span class="btn-icon">delete</span> Delete
+      </button>
+
+      <div class="detail-footer-actions">
+        <button type="button" class="btn btn-secondary" (click)="duplicateOperation(detailOp)" title="Clone as Planned">
+          <span class="btn-icon">content_copy</span> Duplicate
+        </button>
+        <button type="button"
+                class="btn btn-secondary"
+                *ngIf="detailOp.status === 'PLANNED' || detailOp.status === 'ON_HOLD'"
+                (click)="updateStatus(detailOp, 'IN_PROGRESS')">
+          <span class="btn-icon text-primary">play_circle</span> Start
+        </button>
+        <button type="button"
+                class="btn btn-secondary"
+                *ngIf="detailOp.status === 'IN_PROGRESS'"
+                (click)="updateStatus(detailOp, 'ON_HOLD')">
+          <span class="btn-icon" style="color:#D97706">pause_circle</span> Hold
+        </button>
+        <button type="button"
+                class="btn btn-secondary"
+                *ngIf="detailOp.status !== 'COMPLETED' && detailOp.status !== 'CANCELLED'"
+                (click)="updateStatus(detailOp, 'COMPLETED')">
+          <span class="btn-icon" style="color:#16A34A">check_circle</span> Complete
+        </button>
+        <button type="button" class="btn btn-primary" (click)="editFromDetail()">
+          <span class="btn-icon">edit</span> Edit
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

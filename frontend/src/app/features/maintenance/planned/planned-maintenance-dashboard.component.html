@@ -1,75 +1,209 @@
 <div class="pm-dashboard fade-in">
 
-  <!-- ── Toolbar ───────────────────────────────────────────────────────────── -->
-  <div class="flex items-center justify-between mb-6">
-    <div class="search-bar">
-      <span class="search-icon">search</span>
-      <input type="text" class="form-control" placeholder="Search tasks..."
-             [(ngModel)]="searchTerm" (input)="onSearch()">
+  <!-- ── Standalone Toolbar (hidden when hosted inside 3-tab shell) ──────── -->
+  <div class="mnt-page-head" *ngIf="!embedded">
+    <div>
+      <h2>Planned Maintenance</h2>
+      <p>Recurring preventive schedules, calendar occurrences, and daily checklists.</p>
     </div>
-    <div class="flex gap-2">
-      <app-export-menu endpoint="planned-maintenance" filename="Planned_Maintenance"
-                       [params]="{ search: searchTerm }"></app-export-menu>
-      <button class="btn btn-primary" (click)="openModal()">
-        <span class="btn-icon">add</span> New Task
+    <div class="mnt-head-actions">
+      <app-export-menu endpoint="planned-maintenance"
+                       filename="Planned_Maintenance"
+                       [params]="{ search: searchTerm, system: systemFilter, repeat_task_type: repeatTypeFilter, status: statusFilter }">
+      </app-export-menu>
+      <button type="button" class="btn btn-primary" (click)="openModal()">
+        <span class="btn-icon">add</span> New Planned Task
       </button>
     </div>
   </div>
 
-  <!-- ── Task Table ────────────────────────────────────────────────────────── -->
-  <div class="table-container">
-    <table class="data-table">
+  <!-- ── Compact Monthly KPI Strip ───────────────────────────────────────── -->
+  <div class="mnt-kpi-grid mnt-kpi-4">
+    <div class="kpi-card mnt-kpi-card" style="--kpi-color:#1565C0">
+      <div class="kpi-icon-wrap">event_repeat</div>
+      <div class="mnt-kpi-body">
+        <div class="mnt-kpi-value">{{summary?.active_series ?? 0}}</div>
+        <div class="kpi-label mnt-num">Active Series · {{summary?.total_series ?? 0}} total</div>
+      </div>
+    </div>
+
+    <div class="kpi-card mnt-kpi-card" style="--kpi-color:#0288D1">
+      <div class="kpi-icon-wrap">today</div>
+      <div class="mnt-kpi-body">
+        <div class="mnt-kpi-value">{{summary?.due_today_count ?? 0}}</div>
+        <div class="kpi-label mnt-num">Due Today · {{summary?.due_today_todo ?? 0}} open</div>
+      </div>
+    </div>
+
+    <div class="kpi-card mnt-kpi-card" style="--kpi-color:#16A34A">
+      <div class="kpi-icon-wrap">task_alt</div>
+      <div class="mnt-kpi-body">
+        <div class="mnt-kpi-value">{{summary?.month_completion_pct ?? 0}}%</div>
+        <div class="kpi-label mnt-num">{{summary?.month_done_occurrences ?? 0}} / {{summary?.month_total_occurrences ?? 0}} in month</div>
+      </div>
+    </div>
+
+    <div class="kpi-card mnt-kpi-card" style="--kpi-color:#D97706">
+      <div class="kpi-icon-wrap">tune</div>
+      <div class="mnt-kpi-body">
+        <div class="mnt-kpi-value">{{summary?.optional_series ?? 0}}</div>
+        <div class="kpi-label">Optional Series</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Single-Row Filter Toolbar ───────────────────────────────────────── -->
+  <div class="mnt-toolbar-card">
+    <div class="mnt-filter-row">
+      <div class="mnt-search-wrap">
+        <div class="search-bar">
+          <span class="search-icon">search</span>
+          <input #searchInput
+                 [ngModel]="searchTerm"
+                 (ngModelChange)="onSearchModelChange($event)"
+                 placeholder="Search system, subsystem, task, reference… ( / )"
+                 aria-label="Search planned tasks">
+          <button *ngIf="searchTerm" type="button" class="mnt-search-clear" (click)="clearSearch()" title="Clear search">
+            <span class="mat-i" style="font-size:16px">close</span>
+          </button>
+        </div>
+      </div>
+
+      <app-dropdown class="form-control mnt-filter-select" [(ngModel)]="systemFilter" (change)="applyFilters()" placeholder="All Systems">
+        <app-dropdown-option value="">All Systems</app-dropdown-option>
+        <app-dropdown-option *ngFor="let sys of systems" [value]="sys">{{sys}}</app-dropdown-option>
+      </app-dropdown>
+
+      <app-dropdown class="form-control mnt-filter-select" [(ngModel)]="repeatTypeFilter" (change)="applyFilters()" placeholder="All Frequencies">
+        <app-dropdown-option value="">All Frequencies</app-dropdown-option>
+        <app-dropdown-option value="DAY">Daily</app-dropdown-option>
+        <app-dropdown-option value="WEEK">Weekly</app-dropdown-option>
+        <app-dropdown-option value="MONTH">Monthly</app-dropdown-option>
+      </app-dropdown>
+
+      <app-dropdown class="form-control mnt-filter-select" [(ngModel)]="statusFilter" (change)="applyFilters()" placeholder="All Statuses">
+        <app-dropdown-option value="">All Statuses</app-dropdown-option>
+        <app-dropdown-option value="TODO">TODO</app-dropdown-option>
+        <app-dropdown-option value="DONE">DONE</app-dropdown-option>
+      </app-dropdown>
+
+      <button *ngIf="hasActiveFilters" type="button" class="btn btn-ghost btn-sm" (click)="resetFilters()">
+        <span class="btn-icon">filter_alt_off</span> Reset
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Compact Planned Series Table (5 Clean Columns) ──────────────────── -->
+  <div class="table-container mnt-table-wrap">
+    <table class="data-table mnt-table">
       <thead>
         <tr>
-          <th *ngIf="showTableField('system')">{{fieldLabel('table','system','System')}}</th>
-          <th *ngIf="showTableField('subsystem')">{{fieldLabel('table','subsystem','Subsystem')}}</th>
-          <th *ngIf="showTableField('task')">{{fieldLabel('table','task','Task')}}</th>
-          <th *ngIf="showTableField('start_date')">{{fieldLabel('table','start_date','Start Date')}}</th>
-          <th *ngIf="showTableField('repeat_type')">{{fieldLabel('table','repeat_type','Repeat')}}</th>
-          <th *ngIf="showTableField('every_n')">{{fieldLabel('table','every_n','Every')}}</th>
-          <th *ngIf="showTableField('repeat_until')">{{fieldLabel('table','repeat_until','Repeat Until')}}</th>
-          <th *ngIf="showTableField('status')">{{fieldLabel('table','status','Status')}}</th>
-          <th>Actions</th>
+          <th *ngIf="showTableField('task') || showTableField('system') || showTableField('subsystem')">
+            <button type="button" class="mnt-sort-btn" [class.active]="sortBy === 'task'" (click)="toggleSort('task')">
+              <span>{{fieldLabel('table','task','Planned Task')}}</span>
+              <span class="mat-i">{{sortIcon('task')}}</span>
+            </button>
+          </th>
+
+          <th *ngIf="showTableField('repeat_type') || showTableField('start_date')">
+            <button type="button" class="mnt-sort-btn" [class.active]="sortBy === 'operation_date_start'" (click)="toggleSort('operation_date_start')">
+              <span>Schedule</span>
+              <span class="mat-i">{{sortIcon('operation_date_start')}}</span>
+            </button>
+          </th>
+
+          <th *ngIf="showTableField('repeat_until')">
+            <button type="button" class="mnt-sort-btn" [class.active]="sortBy === 'recurrence_end_date'" (click)="toggleSort('recurrence_end_date')">
+              <span>{{fieldLabel('table','repeat_until','Repeat Until')}}</span>
+              <span class="mat-i">{{sortIcon('recurrence_end_date')}}</span>
+            </button>
+          </th>
+
+          <th *ngIf="showTableField('status')">
+            <button type="button" class="mnt-sort-btn" [class.active]="sortBy === 'status'" (click)="toggleSort('status')">
+              <span>{{fieldLabel('table','status','Status')}}</span>
+              <span class="mat-i">{{sortIcon('status')}}</span>
+            </button>
+          </th>
+
+          <th class="mnt-col-actions">Actions</th>
         </tr>
       </thead>
       <tbody>
-        <tr *ngFor="let t of tasks"
+        <tr *ngFor="let t of tasks; let idx = index"
             class="row-clickable"
             (click)="openDetailModal(t)">
-          <td class="font-bold text-sm" *ngIf="showTableField('system')">{{ t.system }}</td>
-          <td class="text-sm" *ngIf="showTableField('subsystem')">{{ t.subsystem }}</td>
-          <td *ngIf="showTableField('task')">
-            <div class="font-bold text-sm">{{ t.task }}</div>
-            <div class="text-sm text-muted truncate" style="max-width:220px">{{ t.reference }}</div>
+          <td *ngIf="showTableField('task') || showTableField('system') || showTableField('subsystem')">
+            <div class="mnt-title-main" *ngIf="showTableField('task')">{{t.task}}</div>
+            <div class="mnt-subtext">
+              <span *ngIf="showTableField('system')">{{t.system}}</span>
+              <span *ngIf="showTableField('system') && showTableField('subsystem')"> &rsaquo; </span>
+              <span *ngIf="showTableField('subsystem')">{{t.subsystem}}</span>
+              <span *ngIf="t.reference"> · Ref {{t.reference}}</span>
+            </div>
           </td>
-          <td class="text-sm" *ngIf="showTableField('start_date')">{{ formatDate(t.operation_date_start || t.operationDateStart) }}</td>
-          <td *ngIf="showTableField('repeat_type')">
-            <span class="badge" [ngClass]="getRepeatBadgeClass(t.repeat_task_type || t.repeatTaskType)">
-              {{ t.repeat_task_type || t.repeatTaskType }}
+
+          <td *ngIf="showTableField('repeat_type') || showTableField('start_date')">
+            <span class="badge" [ngClass]="getRepeatBadgeClass(t.repeatTaskType)">
+              {{recurrenceLabel(t)}}
             </span>
+            <div class="mnt-subtext" *ngIf="showTableField('start_date')">
+              Starts {{formatDate(t.operationDateStart)}}
+            </div>
           </td>
-          <td class="text-sm text-center" *ngIf="showTableField('every_n')">{{ t.repeat_task_number || t.repeatTaskNumber }}</td>
-          <td class="text-sm" *ngIf="showTableField('repeat_until')">{{ formatDate(t.recurrence_end_date || t.recurrenceEndDate) }}</td>
+
+          <td class="text-sm mnt-num" *ngIf="showTableField('repeat_until')">
+            {{formatDate(t.recurrenceEndDate)}}
+          </td>
+
           <td *ngIf="showTableField('status')">
-            <span class="badge" [ngClass]="getStatusBadgeClass(t.status)">
-              {{ t.status }}
-            </span>
+            <span class="badge" [ngClass]="getStatusBadgeClass(t.status)">{{t.status}}</span>
+            <div class="mnt-subtext" *ngIf="t.optional">Optional</div>
           </td>
-          <td (click)="$event.stopPropagation()">
-            <div class="flex gap-1">
-              <button class="btn btn-ghost btn-icon-only btn-sm"
-                      (click)="toggleStatus(t)" [title]="t.status === 'DONE' ? 'Mark TODO' : 'Mark DONE'">
-                <span class="btn-icon" style="font-size:17px"
-                      [style.color]="t.status === 'DONE' ? '#6B7280' : '#10B981'">
-                  {{ t.status === 'DONE' ? 'undo' : 'check_circle' }}
+
+          <td class="mnt-col-actions" (click)="$event.stopPropagation()">
+            <div class="mnt-row-actions">
+              <button type="button"
+                      class="btn btn-ghost btn-icon-only btn-sm"
+                      (click)="toggleStatus(t)"
+                      [title]="t.status === 'DONE' ? 'Mark TODO' : 'Mark DONE'">
+                <span class="btn-icon" [style.color]="t.status === 'DONE' ? 'var(--text-muted)' : '#16A34A'">
+                  {{t.status === 'DONE' ? 'undo' : 'check_circle'}}
                 </span>
               </button>
-              <button class="btn btn-ghost btn-icon-only btn-sm" (click)="openModal(t)" title="Edit">
-                <span class="btn-icon" style="font-size:17px">edit</span>
+
+              <button type="button" class="btn btn-ghost btn-icon-only btn-sm" (click)="openModal(t)" title="Edit">
+                <span class="btn-icon">edit</span>
               </button>
-              <button class="btn btn-ghost btn-icon-only btn-sm" (click)="deleteTask(t)" title="Delete">
-                <span class="btn-icon" style="font-size:17px;color:#EF4444">delete</span>
-              </button>
+
+              <div class="mnt-menu-wrap">
+                <button type="button"
+                        class="btn btn-ghost btn-icon-only btn-sm"
+                        [attr.aria-expanded]="openMenuTaskId === t.id"
+                        (click)="toggleRowMenu(t.id, $event)"
+                        title="More actions">
+                  <span class="btn-icon">more_vert</span>
+                </button>
+
+                <div class="mnt-row-menu"
+                     *ngIf="openMenuTaskId === t.id"
+                     [class.open-up]="tasks.length > 2 && idx >= tasks.length - 2"
+                     (click)="$event.stopPropagation()">
+                  <button type="button" class="mnt-menu-item" (click)="closeRowMenu(); openDetailModal(t)">
+                    <span class="mat-i text-muted">visibility</span>
+                    <span>View Details</span>
+                  </button>
+                  <button type="button" class="mnt-menu-item" (click)="closeRowMenu(); createWorkOrderRequested.emit({ task: t })">
+                    <span class="mat-i text-primary">build</span>
+                    <span>Create Work Order</span>
+                  </button>
+                  <div class="mnt-menu-divider"></div>
+                  <button type="button" class="mnt-menu-item danger" (click)="closeRowMenu(); deleteTask(t)">
+                    <span class="mat-i">delete</span>
+                    <span>Delete Series</span>
+                  </button>
+                </div>
+              </div>
             </div>
           </td>
         </tr>
@@ -78,125 +212,168 @@
 
     <div class="empty-state" *ngIf="!tasks.length && !loading">
       <span class="empty-icon">event_note</span>
-      <h3>No planned tasks</h3>
-      <p>Create your first planned maintenance task</p>
-      <button class="btn btn-primary mt-4" (click)="openModal()">New Task</button>
+      <h3>No planned maintenance tasks</h3>
+      <p *ngIf="hasActiveFilters">Try clearing one or more filters to view all recurring schedules.</p>
+      <button *ngIf="!hasActiveFilters" type="button" class="btn btn-primary" (click)="openModal()">New Planned Task</button>
+      <button *ngIf="hasActiveFilters" type="button" class="btn btn-secondary" (click)="resetFilters()">Reset Filters</button>
     </div>
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-top:1px solid var(--border)"
-         *ngIf="total > 0">
+
+    <div class="mnt-pagination-bar" *ngIf="total > 0">
       <div class="table-page-size-control">
-        <span class="text-sm text-muted">Showing {{(page-1)*pageSize+1}}–{{Math.min(page*pageSize,total)}} of {{total}}</span>
-        <app-dropdown class="form-control table-page-size-select" [(ngModel)]="pageSize" (change)="onPageSizeChange()" ariaLabel="Rows per page">
+        <span class="text-sm text-muted mnt-num">
+          Showing {{(page - 1) * pageSize + 1}}–{{Math.min(page * pageSize, total)}} of {{total}}
+        </span>
+        <app-dropdown class="form-control table-page-size-select"
+                      [(ngModel)]="pageSize"
+                      (change)="onPageSizeChange()"
+                      ariaLabel="Rows per page">
           <app-dropdown-option *ngFor="let size of pageSizeOptions" [ngValue]="size">{{size}}</app-dropdown-option>
         </app-dropdown>
       </div>
-      <div class="flex gap-2">
-        <button class="btn btn-secondary btn-sm" [disabled]="page <= 1" (click)="changePage(page-1)">
+      <div class="flex items-center gap-2">
+        <button type="button" class="btn btn-secondary btn-sm" [disabled]="page <= 1" (click)="changePage(page - 1)">
           <span class="btn-icon">chevron_left</span>
         </button>
-        <span style="padding:5px 12px;font-size:0.85rem;font-weight:600">{{page}} / {{totalPages}}</span>
-        <button class="btn btn-secondary btn-sm" [disabled]="page >= totalPages" (click)="changePage(page+1)">
+        <span class="mnt-page-indicator">{{page}} / {{totalPages}}</span>
+        <button type="button" class="btn btn-secondary btn-sm" [disabled]="page >= totalPages" (click)="changePage(page + 1)">
           <span class="btn-icon">chevron_right</span>
         </button>
       </div>
     </div>
   </div>
 
-  <!-- ── Bottom: Calendar + Event List ─────────────────────────────────────── -->
+  <!-- ── Calendar & Daily Agenda Grid ────────────────────────────────────── -->
   <div class="bottom-row">
 
-    <!-- Calendar -->
+    <!-- Monthly Recurrence Calendar -->
     <div class="card">
       <div class="card-header">
         <div>
-          <h3>{{ monthLabel }}</h3>
-          <p>Task occurrences (with repetitions)</p>
+          <h3>{{monthLabel}}</h3>
+          <p>Click a date to inspect or check off scheduled tasks</p>
         </div>
-        <div class="flex gap-1">
-          <button class="btn btn-ghost btn-icon-only btn-sm" (click)="prevMonth()">
+        <div class="mnt-head-actions">
+          <button type="button" class="btn btn-secondary btn-sm" (click)="goToToday()">Today</button>
+          <button type="button" class="btn btn-ghost btn-icon-only btn-sm" (click)="prevMonth()" title="Previous month">
             <span class="btn-icon">chevron_left</span>
           </button>
-          <button class="btn btn-ghost btn-icon-only btn-sm" (click)="nextMonth()">
+          <button type="button" class="btn btn-ghost btn-icon-only btn-sm" (click)="nextMonth()" title="Next month">
             <span class="btn-icon">chevron_right</span>
           </button>
         </div>
       </div>
 
       <div class="calendar-grid">
-        <div class="cal-header" *ngFor="let wd of weekDays">{{ wd }}</div>
+        <div class="cal-header" *ngFor="let wd of weekDays">{{wd}}</div>
         <div class="cal-day"
              *ngFor="let day of calendarDays"
              [class.empty]="!day"
              [class.today]="isToday(day)"
              [class.selected]="isSelected(day)"
              (click)="selectDay(day)">
-          <span class="day-number" *ngIf="day">{{ day }}</span>
+          <span class="day-number mnt-num" *ngIf="day">{{day}}</span>
           <div class="day-indicators" *ngIf="day && getIndicators(day).length">
-            <span class="dot" *ngFor="let ind of getIndicators(day)"
+            <span class="dot"
+                  *ngFor="let ind of getIndicators(day)"
                   [style.background]="ind.color"
                   [title]="ind.count + ' task(s)'"></span>
           </div>
         </div>
       </div>
+
+      <div class="cal-legend">
+        <span class="cal-legend-item"><span class="dot" style="background:#0288D1"></span> Daily</span>
+        <span class="cal-legend-item"><span class="dot" style="background:#F59E0B"></span> Weekly</span>
+        <span class="cal-legend-item"><span class="dot" style="background:#EF4444"></span> Monthly</span>
+        <span class="cal-legend-item"><span class="dot" style="background:#10B981"></span> Done</span>
+      </div>
     </div>
 
-    <!-- Event List for Selected Date -->
+    <!-- Daily Occurrence Agenda -->
     <div class="card">
       <div class="card-header">
         <div>
-          <h3>Tasks for {{ selectedDateLabel }}</h3>
-          <p>Recurring tasks on this date</p>
+          <h3>{{selectedDateLabel}}</h3>
+          <p class="mnt-num">{{dayTasks.length}} scheduled occurrence{{dayTasks.length === 1 ? '' : 's'}}</p>
         </div>
-        <div class="flex gap-2" style="flex-wrap:wrap">
-          <button class="btn btn-primary btn-sm" (click)="exportDailyTemplate('checklist', 'docx')" title="Download official Word checklist">
-            <span class="btn-icon" style="font-size:16px">description</span>
-            Checklist DOCX
+
+        <div class="mnt-menu-wrap">
+          <button type="button" class="btn btn-secondary btn-sm" (click)="toggleDailyExport($event)">
+            <span class="btn-icon">download</span>
+            <span>Daily Export</span>
+            <span class="btn-icon">expand_more</span>
           </button>
-          <button class="btn btn-secondary btn-sm" (click)="exportDailyTemplate('checklist', 'pdf')" title="Download checklist PDF">
-            <span class="btn-icon" style="font-size:16px">picture_as_pdf</span>
-            Checklist PDF
-          </button>
-          <button class="btn btn-ghost btn-sm" (click)="exportDailyTemplate('report', 'docx')" title="Download official Word daily report">
-            <span class="btn-icon" style="font-size:16px">description</span>
-            Report DOCX
-          </button>
-          <button class="btn btn-ghost btn-sm" (click)="exportDailyTemplate('report', 'pdf')" title="Download daily report PDF">
-            <span class="btn-icon" style="font-size:16px">picture_as_pdf</span>
-            Report PDF
-          </button>
+
+          <div class="mnt-row-menu" *ngIf="dailyExportOpen" (click)="$event.stopPropagation()">
+            <button type="button" class="mnt-menu-item" (click)="exportDailyTemplate('checklist', 'docx')">
+              <span class="mat-i text-primary">description</span>
+              <span>Checklist (DOCX)</span>
+            </button>
+            <button type="button" class="mnt-menu-item" (click)="exportDailyTemplate('checklist', 'pdf')">
+              <span class="mat-i text-primary">picture_as_pdf</span>
+              <span>Checklist (PDF)</span>
+            </button>
+            <div class="mnt-menu-divider"></div>
+            <button type="button" class="mnt-menu-item" (click)="exportDailyTemplate('report', 'docx')">
+              <span class="mat-i text-muted">description</span>
+              <span>Daily Report (DOCX)</span>
+            </button>
+            <button type="button" class="mnt-menu-item" (click)="exportDailyTemplate('report', 'pdf')">
+              <span class="mat-i text-muted">picture_as_pdf</span>
+              <span>Daily Report (PDF)</span>
+            </button>
+          </div>
         </div>
       </div>
 
       <div class="event-list">
-        <div class="event-item"
-             style="cursor:pointer"
-             *ngFor="let t of dayTasks"
-             (click)="openDetailModal(t, true)">
-          <div class="event-color" [style.background]="getTypeColor(t.repeat_task_type || t.repeatTaskType)"></div>
+        <div class="event-item" *ngFor="let t of dayTasks" (click)="openDetailModal(t, true)">
+          <div class="event-color" [style.background]="getTypeColor(t.repeatTaskType)"></div>
+
+          <button type="button"
+                  class="btn btn-ghost btn-icon-only btn-sm"
+                  (click)="$event.stopPropagation(); toggleStatus(t, true)"
+                  [title]="t.status === 'DONE' ? 'Mark occurrence TODO' : 'Complete occurrence'">
+            <span class="btn-icon" [style.color]="t.status === 'DONE' ? '#16A34A' : 'var(--text-subtle)'">
+              {{t.status === 'DONE' ? 'check_circle' : 'radio_button_unchecked'}}
+            </span>
+          </button>
+
           <div class="event-info">
-            <div class="event-title">{{ t.task }}</div>
-            <div class="event-meta">{{ t.system }} › {{ t.subsystem }}</div>
-            <div class="event-meta" *ngIf="t.isOccurrence && t.occurrenceDate">Occurrence: {{ t.occurrenceDate }}</div>
+            <div class="event-title" [class.done-text]="t.status === 'DONE'">{{t.task}}</div>
+            <div class="event-meta">
+              {{t.system}} &rsaquo; {{t.subsystem}}
+              <span *ngIf="t.isOccurrence"> · Customized</span>
+            </div>
           </div>
-          <span class="badge" [ngClass]="getRepeatBadgeClass(t.repeat_task_type || t.repeatTaskType)">
-            {{ t.repeat_task_type || t.repeatTaskType }}
-          </span>
-          <span class="badge" [ngClass]="getStatusBadgeClass(t.status)">
-            {{ t.status }}
-          </span>
-          <span class="badge" *ngIf="t.isOccurrence" style="background:#E0F2FE;color:#075985">Occurrence</span>
-          <div class="flex gap-1" style="margin-left:auto" (click)="$event.stopPropagation()">
-            <button class="btn btn-ghost btn-icon-only btn-sm" (click)="openOccurrenceModal(t)" title="Edit occurrence">
-              <span class="btn-icon" style="font-size:17px">event_repeat</span>
+
+          <span class="badge" [ngClass]="getStatusBadgeClass(t.status)">{{t.status}}</span>
+
+          <div class="mnt-row-actions" (click)="$event.stopPropagation()">
+            <button type="button"
+                    class="btn btn-ghost btn-icon-only btn-sm"
+                    (click)="createWorkOrderRequested.emit({ task: t, occurrenceDate: selectedDate })"
+                    title="Create Work Order">
+              <span class="btn-icon text-primary">build</span>
             </button>
-            <button class="btn btn-ghost btn-icon-only btn-sm" (click)="deleteOccurrence(t)" title="Delete occurrence">
-              <span class="btn-icon" style="font-size:17px;color:#EF4444">delete</span>
+            <button type="button"
+                    class="btn btn-ghost btn-icon-only btn-sm"
+                    (click)="openOccurrenceModal(t)"
+                    title="Edit Occurrence">
+              <span class="btn-icon">event_repeat</span>
+            </button>
+            <button type="button"
+                    class="btn btn-ghost btn-icon-only btn-sm"
+                    (click)="deleteOccurrence(t)"
+                    title="Delete Occurrence">
+              <span class="btn-icon" style="color:#DC2626">delete</span>
             </button>
           </div>
         </div>
-        <div class="empty-state" *ngIf="!dayTasks.length" style="padding:24px">
-          <span class="empty-icon" style="font-size:32px">event_busy</span>
-          <p class="text-sm text-muted">No tasks on this date</p>
+
+        <div class="empty-state" *ngIf="!dayTasks.length" style="padding:28px 16px">
+          <span class="empty-icon" style="font-size:36px">event_busy</span>
+          <p class="text-sm text-muted">No recurring maintenance tasks on {{selectedDateLabel}}.</p>
         </div>
       </div>
     </div>
@@ -204,20 +381,27 @@
   </div>
 </div>
 
-<!-- ── Create / Edit Modal ──────────────────────────────────────────────────── -->
+<!-- ── Create / Edit Planned Task Modal ────────────────────────────────────── -->
 <div class="modal-overlay" *ngIf="showModal" (click)="closeModal($event)">
-  <div class="modal" style="max-width:600px" (click)="$event.stopPropagation()">
-
+  <div class="modal mnt-modal-wide" (click)="$event.stopPropagation()">
     <div class="modal-header">
-      <h3>{{ editing ? (editingScope === 'occurrence' ? 'Edit Occurrence' : 'Edit Task') : 'New Planned Task' }}</h3>
-      <button class="btn btn-ghost btn-icon-only" (click)="showModal=false">
+      <h3>{{editing ? (editingScope === 'occurrence' ? 'Edit Occurrence' : 'Edit Planned Task') : 'New Planned Task'}}</h3>
+      <button type="button" class="btn btn-ghost btn-icon-only" (click)="showModal = false">
         <span class="btn-icon">close</span>
       </button>
     </div>
 
     <div class="modal-body">
-      <div class="form-row">
+      <div class="mnt-inline-error" *ngIf="modalError">
+        <span class="mat-i">error_outline</span>
+        <span>{{modalError}}</span>
+      </div>
 
+      <div *ngIf="editingScope === 'occurrence'" class="mnt-warn-banner mb-4" style="background:var(--blue-50);border-color:var(--blue-200);border-left-color:var(--primary);color:var(--blue-900)">
+        <span>Editing occurrence on <strong>{{occurrenceMeta?.occurrenceDate}}</strong> only. The master series remains unchanged.</span>
+      </div>
+
+      <div class="form-row">
         <div class="form-group" *ngIf="showFormField('system')">
           <label class="form-label">{{fieldLabel('form','system','System')}} *</label>
           <input class="form-control" [(ngModel)]="form.system" placeholder="e.g. Server Room">
@@ -225,79 +409,47 @@
 
         <div class="form-group" *ngIf="showFormField('subsystem')">
           <label class="form-label">{{fieldLabel('form','subsystem','Subsystem')}} *</label>
-          <input class="form-control" [(ngModel)]="form.subsystem" placeholder="e.g. DEHUMIDIFIER">
+          <input class="form-control" [(ngModel)]="form.subsystem" placeholder="e.g. Dehumidifier">
         </div>
 
-        <div class="form-group" style="grid-column:1/-1" *ngIf="showFormField('task')">
+        <div class="form-group" style="grid-column:1 / -1" *ngIf="showFormField('task')">
           <label class="form-label">{{fieldLabel('form','task','Task Description')}} *</label>
-          <textarea class="form-control" [(ngModel)]="form.task" style="min-height:60px"
-                    placeholder="What needs to be done..."></textarea>
+          <textarea class="form-control" style="min-height:68px" [(ngModel)]="form.task" placeholder="Inspect filters, clean coils…"></textarea>
         </div>
 
         <div class="form-group" *ngIf="showFormField('operationDateStart')">
-          <label class="form-label">{{fieldLabel('form','operationDateStart','Start Date')}} *</label>
-          <app-datetime-picker
-            class="form-control"
-            mode="datetime"
-            [(ngModel)]="form.operationDateStart"
-            placeholder="Select start date & time">
+          <label class="form-label">{{fieldLabel('form','operationDateStart','Start Date & Time')}} *</label>
+          <app-datetime-picker class="form-control" mode="datetime" [(ngModel)]="form.operationDateStart" placeholder="Select start date & time">
           </app-datetime-picker>
         </div>
 
         <div class="form-group" *ngIf="showFormField('operationDateEnd')">
-          <label class="form-label">{{fieldLabel('form','operationDateEnd','End Date')}}</label>
-          <app-datetime-picker
-            class="form-control"
-            mode="datetime"
-            [(ngModel)]="form.operationDateEnd"
-            placeholder="Select end date & time">
+          <label class="form-label">{{fieldLabel('form','operationDateEnd','End Date & Time')}}</label>
+          <app-datetime-picker class="form-control" mode="datetime" [(ngModel)]="form.operationDateEnd" placeholder="Select end date & time">
           </app-datetime-picker>
         </div>
 
         <div *ngIf="editingScope === 'series' && showFormField('repeatTaskType')" class="form-group">
           <label class="form-label">{{fieldLabel('form','repeatTaskType','Repeat Type')}} *</label>
           <app-dropdown class="form-control" [(ngModel)]="form.repeatTaskType">
-            <app-dropdown-option value="DAY">Every N Days</app-dropdown-option>
-            <app-dropdown-option value="WEEK">Every N Weeks</app-dropdown-option>
-            <app-dropdown-option value="MONTH">Every N Months</app-dropdown-option>
+            <app-dropdown-option value="DAY">Daily (Every N Days)</app-dropdown-option>
+            <app-dropdown-option value="WEEK">Weekly (Every N Weeks)</app-dropdown-option>
+            <app-dropdown-option value="MONTH">Monthly (Every N Months)</app-dropdown-option>
           </app-dropdown>
         </div>
 
         <div *ngIf="editingScope === 'series' && showFormField('repeatTaskNumber')" class="form-group">
-          <label class="form-label">{{fieldLabel('form','repeatTaskNumber','Every N')}} *</label>
+          <label class="form-label">
+            {{fieldLabel('form','repeatTaskNumber','Interval')}} *
+            <span class="mnt-subtext" style="display:inline;margin-left:6px">· {{formRecurrencePreview}}</span>
+          </label>
           <input type="number" class="form-control" [(ngModel)]="form.repeatTaskNumber" min="1" max="365">
-          <span class="text-sm text-muted" style="margin-top:4px;display:block">
-            e.g. 1 = every week, 2 = every 2 weeks
-          </span>
         </div>
 
         <div *ngIf="editingScope === 'series' && showFormField('recurrenceEndDate')" class="form-group">
           <label class="form-label">{{fieldLabel('form','recurrenceEndDate','Repeat Until')}}</label>
-          <app-datetime-picker
-            class="form-control"
-            mode="date"
-            [(ngModel)]="form.recurrenceEndDate"
-            placeholder="Select date">
+          <app-datetime-picker class="form-control" mode="date" [(ngModel)]="form.recurrenceEndDate" placeholder="Open-ended series">
           </app-datetime-picker>
-          <span class="text-sm text-muted" style="margin-top:4px;display:block">
-            Leave blank for an open-ended series.
-          </span>
-        </div>
-
-        <div *ngIf="editingScope === 'occurrence'" class="form-group" style="grid-column:1/-1">
-          <div style="padding:12px 14px;border-radius:12px;background:#EFF6FF;border:1px solid #BFDBFE;color:#1D4ED8;font-size:0.875rem">
-            You are editing one calendar occurrence only. The master task in the table will not change.
-          </div>
-        </div>
-
-        <div class="form-group" *ngIf="showFormField('reference')">
-          <label class="form-label">{{fieldLabel('form','reference','Reference')}}</label>
-          <input class="form-control" [(ngModel)]="form.reference" placeholder="Document ref (optional)">
-        </div>
-
-        <div class="form-group" *ngIf="showFormField('reportTemplate')">
-          <label class="form-label">{{fieldLabel('form','reportTemplate','Report Template')}}</label>
-          <input class="form-control" [(ngModel)]="form.reportTemplate" placeholder="Template path (optional)">
         </div>
 
         <div class="form-group" *ngIf="showFormField('status')">
@@ -308,23 +460,31 @@
           </app-dropdown>
         </div>
 
-        <div class="form-group" style="display:flex;align-items:center;gap:8px;padding-top:24px" *ngIf="showFormField('optional')">
-          <input type="checkbox" id="optional" [(ngModel)]="form.optional">
-          <label for="optional" class="form-label" style="margin:0">Optional task</label>
+        <div class="form-group" *ngIf="showFormField('reference')">
+          <label class="form-label">{{fieldLabel('form','reference','Reference')}}</label>
+          <input class="form-control" [(ngModel)]="form.reference" placeholder="SOP / Doc ref (optional)">
         </div>
 
+        <div class="form-group" *ngIf="showFormField('reportTemplate')">
+          <label class="form-label">{{fieldLabel('form','reportTemplate','Report Template')}}</label>
+          <input class="form-control" [(ngModel)]="form.reportTemplate" placeholder="Template key (optional)">
+        </div>
+
+        <div class="form-group" style="grid-column:1 / -1" *ngIf="showFormField('optional')">
+          <label class="mnt-check-label" style="align-self:flex-start">
+            <input type="checkbox" class="mnt-checkbox" [(ngModel)]="form.optional">
+            <span>Optional task (excluded from mandatory checklists)</span>
+          </label>
+        </div>
       </div>
     </div>
 
     <div class="modal-footer">
-      <button class="btn btn-ghost" (click)="showModal=false">Cancel</button>
-      <button class="btn btn-primary" (click)="save()" [disabled]="saving">
-        <div class="spinner" *ngIf="saving"
-             style="width:16px;height:16px;border-width:2px;border-top-color:#fff;margin-right:6px"></div>
-        {{ saving ? 'Saving…' : (editing ? 'Save Changes' : 'Create Task') }}
+      <button type="button" class="btn btn-ghost" (click)="showModal = false">Cancel</button>
+      <button type="button" class="btn btn-primary" (click)="save()" [disabled]="saving">
+        {{saving ? 'Saving…' : (editing ? 'Save Changes' : 'Create Task')}}
       </button>
     </div>
-
   </div>
 </div>
 
@@ -351,12 +511,9 @@
 
     <div class="modal-body">
       <div class="detail-badges">
-        <span class="badge" [ngClass]="getStatusBadgeClass(detailTask.status)">
-          {{detailTask.status}}
-        </span>
+        <span class="badge" [ngClass]="getStatusBadgeClass(detailTask.status)">{{detailTask.status}}</span>
         <span class="badge" [ngClass]="getRepeatBadgeClass(getDetailProp(detailTask, 'repeatTaskType', 'repeat_task_type'))">
-          Every {{getDetailProp(detailTask, 'repeatTaskNumber', 'repeat_task_number') || 1}}
-          {{getDetailProp(detailTask, 'repeatTaskType', 'repeat_task_type') || 'N/A'}}
+          {{recurrenceLabel(detailTask)}}
         </span>
         <span class="badge badge-gray" *ngIf="detailTask.optional">Optional</span>
       </div>
@@ -372,7 +529,7 @@
         </div>
         <div class="detail-field">
           <span class="detail-label">Reference</span>
-          <span class="detail-value mono">{{detailTask.reference || '—'}}</span>
+          <span class="detail-value mnt-num">{{detailTask.reference || '—'}}</span>
         </div>
         <div class="detail-field">
           <span class="detail-label">Optional Task</span>
@@ -380,26 +537,23 @@
         </div>
         <div class="detail-field">
           <span class="detail-label">Start Date &amp; Time</span>
-          <span class="detail-value">{{formatDateTime(getDetailProp(detailTask, 'operationDateStart', 'operation_date_start'))}}</span>
+          <span class="detail-value mnt-num">{{formatDateTime(getDetailProp(detailTask, 'operationDateStart', 'operation_date_start'))}}</span>
         </div>
         <div class="detail-field">
           <span class="detail-label">End Date &amp; Time</span>
-          <span class="detail-value">{{formatDateTime(getDetailProp(detailTask, 'operationDateEnd', 'operation_date_end'))}}</span>
+          <span class="detail-value mnt-num">{{formatDateTime(getDetailProp(detailTask, 'operationDateEnd', 'operation_date_end'))}}</span>
         </div>
         <div class="detail-field">
           <span class="detail-label">Repeat Schedule</span>
-          <span class="detail-value">
-            Every {{getDetailProp(detailTask, 'repeatTaskNumber', 'repeat_task_number') || 1}}
-            {{getDetailProp(detailTask, 'repeatTaskType', 'repeat_task_type') || '—'}}
-          </span>
+          <span class="detail-value">{{recurrenceLabel(detailTask)}}</span>
         </div>
         <div class="detail-field">
           <span class="detail-label">Repeat Until</span>
-          <span class="detail-value">{{formatDateTime(getDetailProp(detailTask, 'recurrenceEndDate', 'recurrence_end_date'))}}</span>
+          <span class="detail-value mnt-num">{{formatDateTime(getDetailProp(detailTask, 'recurrenceEndDate', 'recurrence_end_date'))}}</span>
         </div>
         <div class="detail-field full-span" *ngIf="detailIsDayEvent || detailTask.occurrenceDate">
           <span class="detail-label">Occurrence Date</span>
-          <span class="detail-value">{{formatDateTime(detailTask.occurrenceDate || selectedDate)}}</span>
+          <span class="detail-value mnt-num">{{formatDateTime(detailTask.occurrenceDate || selectedDate)}}</span>
         </div>
       </div>
 
@@ -421,8 +575,11 @@
       </button>
       <div class="detail-footer-actions">
         <button type="button" class="btn btn-secondary" (click)="detailTask = null; detailIsDayEvent = false">Close</button>
+        <button type="button" class="btn btn-secondary" (click)="createWorkOrderFromDetail()">
+          <span class="btn-icon text-primary">build</span> Work Order
+        </button>
         <button type="button" class="btn btn-secondary" (click)="toggleStatusFromDetail()">
-          <span class="btn-icon" [style.color]="detailTask.status === 'DONE' ? '#6B7280' : '#10B981'">
+          <span class="btn-icon" [style.color]="detailTask.status === 'DONE' ? 'var(--text-muted)' : '#16A34A'">
             {{detailTask.status === 'DONE' ? 'undo' : 'check_circle'}}
           </span>
           {{detailTask.status === 'DONE' ? 'Mark TODO' : 'Mark DONE'}}

@@ -1,22 +1,39 @@
 // =============================================================================
-// planned-maintenance-dashboard.component.ts — Full CRUD with real API
+// planned-maintenance-dashboard.component.ts — Clean Recurrence & Calendar View
 // =============================================================================
-import { Component, OnInit, OnDestroy, HostListener, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  ChangeDetectorRef,
+  Component,
+  ElementRef,
+  EventEmitter,
+  HostListener,
+  Input,
+  OnChanges,
+  OnDestroy,
+  OnInit,
+  Output,
+  SimpleChanges,
+  ViewChild
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject } from 'rxjs';
-import { takeUntil } from 'rxjs/operators';
+import { debounceTime, distinctUntilChanged, takeUntil } from 'rxjs/operators';
 
-import { PlannedMaintenanceTask, CalendarIndicators } from '../../../core/models/interfaces';
+import {
+  CalendarIndicators,
+  PlannedMaintenanceSummary,
+  PlannedMaintenanceTask
+} from '../../../core/models/interfaces';
 import { PlannedMaintenanceService } from './planned-maintenance.service';
-import { ToastService } from '../../../core/services/services';
-import { ConfirmService } from '../../../core/services/services';
-import { UiCustomizationService, UiSectionPreferences } from '../../../core/services/services';
+import { ConfirmService, ToastService, UiCustomizationService, UiSectionPreferences } from '../../../core/services/services';
 import { ExportService } from '../../../core/services/export.service';
 import { DateTimePickerComponent } from '../../../shared/components/datetime-picker/datetime-picker.component';
 import { formatLocalYmd } from '../../../shared/components/datetime-picker/datetime-picker.utils';
 import { ExportMenuComponent } from '../../../shared/components/export-menu/export-menu.component';
 import { DropdownComponent, DropdownOptionComponent } from '../../../shared/components/dropdown/dropdown.component';
+import { formatRecurrenceText } from '../maintenance-helpers';
 
 @Component({
   selector: 'app-planned-maintenance-dashboard',
@@ -26,26 +43,47 @@ import { DropdownComponent, DropdownOptionComponent } from '../../../shared/comp
   templateUrl: './planned-maintenance-dashboard.component.html',
   styleUrls: ['./planned-maintenance-dashboard.component.scss']
 })
-export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
+export class PlannedMaintenanceDashboardComponent implements OnInit, OnChanges, OnDestroy {
+  @ViewChild('searchInput') searchInput?: ElementRef<HTMLInputElement>;
+
+  @Input() embedded = false;
+  @Input() refreshTick = 0;
+
+  @Output() createWorkOrderRequested = new EventEmitter<{ task: PlannedMaintenanceTask; occurrenceDate?: string }>();
+  @Output() summaryChange = new EventEmitter<PlannedMaintenanceSummary | null>();
+  @Output() exportParamsChange = new EventEmitter<Record<string, any>>();
 
   private destroy$ = new Subject<void>();
+  private searchInput$ = new Subject<string>();
+  private initialized = false;
   Math = Math;
 
-  // Table
+  // Table & Filters
   tasks: PlannedMaintenanceTask[] = [];
+  systems: string[] = [];
+  summary: PlannedMaintenanceSummary | null = null;
   total = 0;
   page = 1;
   pageSize = 20;
   readonly pageSizeOptions = [10, 20, 50, 100];
   searchTerm = '';
+  systemFilter = '';
+  repeatTypeFilter = '';
+  statusFilter = '';
+  sortBy = 'operation_date_start';
+  sortDir: 'ASC' | 'DESC' = 'ASC';
   loading = false;
+
+  // Menus
+  openMenuTaskId: number | null = null;
+  dailyExportOpen = false;
 
   // Calendar
   indicators: CalendarIndicators = {};
   calYear = new Date().getFullYear();
   calMonth = new Date().getMonth() + 1;
   calendarDays: (number | null)[] = [];
-  weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  readonly weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   // Event list
   selectedDate = this.formatDateStr(new Date());
@@ -53,6 +91,7 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
 
   // Modal
   showModal = false;
+  modalError = '';
   detailTask: PlannedMaintenanceTask | null = null;
   detailIsDayEvent = false;
   editing = false;
@@ -73,14 +112,36 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
-    this.uiCustomization.load('planned_maintenance').subscribe(p => {
+    this.uiCustomization.load('planned_maintenance').pipe(takeUntil(this.destroy$)).subscribe(p => {
       this.uiPrefs = p;
       this.cdr.markForCheck();
     });
+
+    this.searchInput$
+      .pipe(debounceTime(280), distinctUntilChanged(), takeUntil(this.destroy$))
+      .subscribe(val => {
+        this.searchTerm = val;
+        this.page = 1;
+        this.loadTasks();
+      });
+
+    this.initialized = true;
+    this.loadSystems();
+    this.loadSummary();
     this.loadTasks();
     this.buildCalendar();
     this.loadIndicators();
     this.loadDayTasks();
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (this.initialized && changes['refreshTick'] && !changes['refreshTick'].firstChange) {
+      this.loadSystems();
+      this.loadSummary();
+      this.loadTasks();
+      this.loadIndicators();
+      this.loadDayTasks();
+    }
   }
 
   ngOnDestroy(): void {
@@ -88,32 +149,161 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
     this.destroy$.complete();
   }
 
-  // ─── Table CRUD ───────────────────────────────────────────────────────────
+  @HostListener('document:click')
+  onDocumentClick(): void {
+    this.openMenuTaskId = null;
+    this.dailyExportOpen = false;
+  }
+
+  @HostListener('document:keydown', ['$event'])
+  onKeydown(e: KeyboardEvent): void {
+    if (e.key === 'Escape') {
+      if (this.showModal) {
+        this.showModal = false;
+        this.cdr.markForCheck();
+        return;
+      }
+      if (this.detailTask) {
+        this.detailTask = null;
+        this.detailIsDayEvent = false;
+        this.cdr.markForCheck();
+        return;
+      }
+      this.openMenuTaskId = null;
+      this.dailyExportOpen = false;
+      return;
+    }
+
+    if (!this.embedded) return;
+    if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+    const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+    const isEditable = tag === 'input' || tag === 'textarea' || tag === 'select' || (e.target as HTMLElement)?.isContentEditable;
+    if (isEditable) return;
+    if (this.searchInput?.nativeElement) {
+      e.preventDefault();
+      this.searchInput.nativeElement.focus();
+    }
+  }
+
+  // ── Data Loading ───────────────────────────────────────────────────────────
+  loadSystems(): void {
+    this.svc.getSystems().pipe(takeUntil(this.destroy$)).subscribe({
+      next: list => {
+        this.systems = list;
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  loadSummary(): void {
+    const todayStr = this.formatDateStr(new Date());
+    this.svc.getSummary(this.calYear, this.calMonth, todayStr).pipe(takeUntil(this.destroy$)).subscribe({
+      next: s => {
+        this.summary = s;
+        this.summaryChange.emit(s);
+        this.cdr.markForCheck();
+      }
+    });
+  }
 
   loadTasks(): void {
     this.loading = true;
-    this.svc.getAll({ search: this.searchTerm, page: this.page, limit: this.pageSize })
-      .pipe(takeUntil(this.destroy$))
-      .subscribe({
-        next: result => {
-          this.tasks = result.items;
-          this.total = result.total;
-          this.loading = false;
-          this.cdr.markForCheck();
-        },
-        error: () => {
-          this.loading = false;
-          this.toast.error('Failed to load tasks');
-          this.cdr.markForCheck();
-        }
-      });
+    this.openMenuTaskId = null;
+    const params: Record<string, any> = {
+      search: this.searchTerm.trim(),
+      system: this.systemFilter,
+      repeat_task_type: this.repeatTypeFilter,
+      status: this.statusFilter,
+      sort_by: this.sortBy,
+      sort_dir: this.sortDir,
+      page: this.page,
+      limit: this.pageSize
+    };
+
+    this.exportParamsChange.emit({
+      search: this.searchTerm.trim(),
+      system: this.systemFilter,
+      repeat_task_type: this.repeatTypeFilter,
+      status: this.statusFilter
+    });
+
+    this.svc.getAll(params).pipe(takeUntil(this.destroy$)).subscribe({
+      next: result => {
+        this.tasks = result.items;
+        this.total = result.total;
+        this.loading = false;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.loading = false;
+        this.toast.error('Failed to load planned tasks');
+        this.cdr.markForCheck();
+      }
+    });
   }
 
-  onSearch(): void {
+  onSearchModelChange(val: string): void {
+    this.searchTerm = val;
+    this.searchInput$.next(val);
+  }
+
+  clearSearch(): void {
+    this.searchTerm = '';
+    this.searchInput$.next('');
     this.page = 1;
     this.loadTasks();
   }
 
+  applyFilters(): void {
+    this.page = 1;
+    this.loadTasks();
+  }
+
+  get hasActiveFilters(): boolean {
+    return Boolean(this.searchTerm.trim() || this.systemFilter || this.repeatTypeFilter || this.statusFilter);
+  }
+
+  resetFilters(): void {
+    this.searchTerm = '';
+    this.systemFilter = '';
+    this.repeatTypeFilter = '';
+    this.statusFilter = '';
+    this.applyFilters();
+  }
+
+  toggleSort(column: string): void {
+    if (this.sortBy === column) {
+      this.sortDir = this.sortDir === 'ASC' ? 'DESC' : 'ASC';
+    } else {
+      this.sortBy = column;
+      this.sortDir = 'ASC';
+    }
+    this.page = 1;
+    this.loadTasks();
+  }
+
+  sortIcon(column: string): string {
+    if (this.sortBy !== column) return 'unfold_more';
+    return this.sortDir === 'ASC' ? 'arrow_upward' : 'arrow_downward';
+  }
+
+  toggleRowMenu(id: number, event: Event): void {
+    event.stopPropagation();
+    this.dailyExportOpen = false;
+    this.openMenuTaskId = this.openMenuTaskId === id ? null : id;
+  }
+
+  closeRowMenu(): void {
+    this.openMenuTaskId = null;
+  }
+
+  toggleDailyExport(event: Event): void {
+    event.stopPropagation();
+    this.openMenuTaskId = null;
+    this.dailyExportOpen = !this.dailyExportOpen;
+  }
+
+  // ── Pagination ─────────────────────────────────────────────────────────────
   get totalPages(): number {
     return Math.max(1, Math.ceil(this.total / this.pageSize));
   }
@@ -129,9 +319,11 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
     this.loadTasks();
   }
 
+  // ── Modals ─────────────────────────────────────────────────────────────────
   openModal(task?: PlannedMaintenanceTask): void {
     this.editingScope = 'series';
     this.occurrenceMeta = null;
+    this.modalError = '';
     if (task) {
       this.editing = true;
       this.editId = task.id;
@@ -155,10 +347,12 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
       this.form = this.emptyForm();
     }
     this.showModal = true;
+    this.cdr.markForCheck();
   }
 
   openOccurrenceModal(task: PlannedMaintenanceTask): void {
     this.editingScope = 'occurrence';
+    this.modalError = '';
     this.occurrenceMeta = {
       masterId: task.masterId || task.id,
       occurrenceDate: task.occurrenceDate || this.selectedDate
@@ -180,6 +374,7 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
       optional: task.optional || false
     };
     this.showModal = true;
+    this.cdr.markForCheck();
   }
 
   openDetailModal(task: PlannedMaintenanceTask, fromDayList = false): void {
@@ -201,19 +396,17 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
     const isDayEvent = this.detailIsDayEvent;
     this.detailTask = null;
     this.detailIsDayEvent = false;
-    if (isDayEvent) {
-      this.openOccurrenceModal(task);
-    } else {
-      this.openModal(task);
-    }
+    if (isDayEvent) this.openOccurrenceModal(task);
+    else this.openModal(task);
   }
 
   toggleStatusFromDetail(): void {
     if (!this.detailTask) return;
     const task = this.detailTask;
+    const isDayEvent = this.detailIsDayEvent;
     this.detailTask = null;
     this.detailIsDayEvent = false;
-    this.toggleStatus(task);
+    this.toggleStatus(task, isDayEvent);
   }
 
   deleteFromDetail(): void {
@@ -222,26 +415,17 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
     const isDayEvent = this.detailIsDayEvent;
     this.detailTask = null;
     this.detailIsDayEvent = false;
-    if (isDayEvent) {
-      this.deleteOccurrence(task);
-    } else {
-      this.deleteTask(task);
-    }
+    if (isDayEvent) this.deleteOccurrence(task);
+    else this.deleteTask(task);
   }
 
-  getDetailProp(task: PlannedMaintenanceTask | null, camelKey: string, snakeKey: string): any {
-    if (!task) return null;
-    const raw = task as unknown as Record<string, unknown>;
-    return raw[snakeKey] ?? raw[camelKey] ?? null;
-  }
-
-  @HostListener('document:keydown.escape')
-  onEsc(): void {
-    if (this.detailTask) {
-      this.detailTask = null;
-      this.detailIsDayEvent = false;
-      this.cdr.markForCheck();
-    }
+  createWorkOrderFromDetail(): void {
+    if (!this.detailTask) return;
+    const task = this.detailTask;
+    const occDate = this.detailIsDayEvent ? (task.occurrenceDate || this.selectedDate) : undefined;
+    this.detailTask = null;
+    this.detailIsDayEvent = false;
+    this.createWorkOrderRequested.emit({ task, occurrenceDate: occDate });
   }
 
   closeModal(event: MouseEvent): void {
@@ -250,25 +434,45 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
     }
   }
 
+  get formRecurrencePreview(): string {
+    return formatRecurrenceText(this.form.repeatTaskType, this.form.repeatTaskNumber);
+  }
+
   save(): void {
-    if (
-      (this.showFormField('system') && !this.form.system) ||
-      (this.showFormField('subsystem') && !this.form.subsystem) ||
-      (this.showFormField('task') && !this.form.task) ||
-      (this.showFormField('operationDateStart') && !this.form.operationDateStart)
-    ) {
-      this.toast.error('Please fill required fields');
+    this.modalError = '';
+    if (this.showFormField('system') && !String(this.form.system || '').trim()) {
+      this.modalError = 'System is required.';
+      return;
+    }
+    if (this.showFormField('subsystem') && !String(this.form.subsystem || '').trim()) {
+      this.modalError = 'Subsystem is required.';
+      return;
+    }
+    if (this.showFormField('task') && !String(this.form.task || '').trim()) {
+      this.modalError = 'Task description is required.';
+      return;
+    }
+    if (this.showFormField('operationDateStart') && !this.form.operationDateStart) {
+      this.modalError = 'Start date is required.';
+      return;
+    }
+
+    const startDateObj = this.form.operationDateStart ? new Date(this.form.operationDateStart) : null;
+    const endDateObj = this.form.operationDateEnd ? new Date(this.form.operationDateEnd) : startDateObj;
+    if (startDateObj && endDateObj && endDateObj < startDateObj) {
+      this.modalError = 'End date must be on or after start date.';
       return;
     }
 
     this.saving = true;
-    const operationDateStart = this.form.operationDateStart ? new Date(this.form.operationDateStart).toISOString() : '';
-    const operationDateEnd = this.form.operationDateEnd ? new Date(this.form.operationDateEnd).toISOString() : operationDateStart;
+    const operationDateStart = startDateObj ? startDateObj.toISOString() : '';
+    const operationDateEnd = endDateObj ? endDateObj.toISOString() : operationDateStart;
     const recurrenceEndDate = this.form.recurrenceEndDate
       ? (this.form.recurrenceEndDate instanceof Date
           ? formatLocalYmd(this.form.recurrenceEndDate)
           : formatLocalYmd(new Date(this.form.recurrenceEndDate)))
       : null;
+
     const payload: Partial<PlannedMaintenanceTask> = {
       system: this.form.system,
       subsystem: this.form.subsystem,
@@ -277,7 +481,7 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
       operationDateStart,
       operationDateEnd,
       repeatTaskType: this.form.repeatTaskType,
-      repeatTaskNumber: this.form.repeatTaskNumber,
+      repeatTaskNumber: Math.max(1, Number(this.form.repeatTaskNumber) || 1),
       recurrenceEndDate,
       reportTemplate: this.form.reportTemplate,
       status: this.form.status,
@@ -292,28 +496,33 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
 
     obs.pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {
-        this.toast.success(this.editing ? 'Task updated' : 'Task created');
+        this.toast.success(this.editing ? 'Planned task updated.' : 'Planned task created.');
         this.showModal = false;
         this.saving = false;
+        this.loadSystems();
+        this.loadSummary();
         this.loadTasks();
         this.loadIndicators();
         this.loadDayTasks();
         this.cdr.markForCheck();
       },
-      error: () => {
-        this.toast.error('Save failed');
+      error: (e: any) => {
         this.saving = false;
+        this.modalError = e?.error?.message || 'Failed to save planned task.';
+        this.toast.error(this.modalError);
         this.cdr.markForCheck();
       }
     });
   }
 
   deleteTask(task: PlannedMaintenanceTask): void {
-    this.confirm.confirm(`Delete "${task.task}"?`, 'Delete Task', true).then(confirmed => {
+    this.confirm.confirm(`Delete planned series "${task.task}"?`, 'Delete Task', true).then(confirmed => {
       if (!confirmed) return;
       this.svc.delete(task.id).pipe(takeUntil(this.destroy$)).subscribe({
         next: () => {
-          this.toast.success('Task deleted');
+          this.toast.success('Planned task deleted.');
+          this.loadSystems();
+          this.loadSummary();
           this.loadTasks();
           this.loadIndicators();
           this.loadDayTasks();
@@ -326,11 +535,12 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
   deleteOccurrence(task: PlannedMaintenanceTask): void {
     const masterId = task.masterId || task.id;
     const occurrenceDate = task.occurrenceDate || this.selectedDate;
-    this.confirm.confirm(`Delete this occurrence of "${task.task}"?`, 'Delete Occurrence', true).then(confirmed => {
+    this.confirm.confirm(`Delete this occurrence of "${task.task}" on ${occurrenceDate}?`, 'Delete Occurrence', true).then(confirmed => {
       if (!confirmed) return;
       this.svc.deleteOccurrence(masterId, occurrenceDate).pipe(takeUntil(this.destroy$)).subscribe({
         next: () => {
-          this.toast.success('Occurrence deleted');
+          this.toast.success('Occurrence deleted.');
+          this.loadSummary();
           this.loadTasks();
           this.loadIndicators();
           this.loadDayTasks();
@@ -340,32 +550,31 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
     });
   }
 
-  toggleStatus(task: PlannedMaintenanceTask): void {
+  toggleStatus(task: PlannedMaintenanceTask, isDayOccurrence = false): void {
     const newStatus = task.status === 'DONE' ? 'TODO' : 'DONE';
     const masterId = task.masterId || task.id;
-    const occurrenceDate = task.occurrenceDate || this.selectedDate;
-    const obs = !!task.occurrenceDate
+    const occurrenceDate = task.occurrenceDate || (isDayOccurrence ? this.selectedDate : null);
+    const obs = occurrenceDate
       ? this.svc.updateOccurrence(masterId, occurrenceDate, { status: newStatus })
       : this.svc.update(task.id, { status: newStatus });
 
-    obs
-      .pipe(takeUntil(this.destroy$))
-      .subscribe({
-        next: () => {
-          this.loadTasks();
-          this.loadIndicators();
-          this.loadDayTasks();
-        },
-        error: () => this.toast.error('Update failed')
-      });
+    obs.pipe(takeUntil(this.destroy$)).subscribe({
+      next: () => {
+        this.toast.success(`Marked ${newStatus}.`);
+        this.loadSummary();
+        this.loadTasks();
+        this.loadIndicators();
+        this.loadDayTasks();
+      },
+      error: () => this.toast.error('Status update failed')
+    });
   }
 
-  // ─── Calendar ─────────────────────────────────────────────────────────────
-
+  // ── Calendar ───────────────────────────────────────────────────────────────
   buildCalendar(): void {
     const firstDay = new Date(this.calYear, this.calMonth - 1, 1);
     const lastDay = new Date(this.calYear, this.calMonth, 0);
-    const startWeekday = (firstDay.getDay() + 6) % 7; // Monday=0
+    const startWeekday = (firstDay.getDay() + 6) % 7;
     const totalDays = lastDay.getDate();
 
     this.calendarDays = [];
@@ -386,6 +595,7 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
     this.calMonth--;
     if (this.calMonth < 1) { this.calMonth = 12; this.calYear--; }
     this.buildCalendar();
+    this.loadSummary();
     this.loadIndicators();
     this.selectedDate = `${this.calYear}-${String(this.calMonth).padStart(2, '0')}-01`;
     this.loadDayTasks();
@@ -395,8 +605,20 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
     this.calMonth++;
     if (this.calMonth > 12) { this.calMonth = 1; this.calYear++; }
     this.buildCalendar();
+    this.loadSummary();
     this.loadIndicators();
     this.selectedDate = `${this.calYear}-${String(this.calMonth).padStart(2, '0')}-01`;
+    this.loadDayTasks();
+  }
+
+  goToToday(): void {
+    const now = new Date();
+    this.calYear = now.getFullYear();
+    this.calMonth = now.getMonth() + 1;
+    this.selectedDate = this.formatDateStr(now);
+    this.buildCalendar();
+    this.loadSummary();
+    this.loadIndicators();
     this.loadDayTasks();
   }
 
@@ -424,12 +646,10 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
   }
 
   get monthLabel(): string {
-    const d = new Date(this.calYear, this.calMonth - 1, 1);
-    return d.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    return new Date(this.calYear, this.calMonth - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' });
   }
 
-  // ─── Event List ───────────────────────────────────────────────────────────
-
+  // ── Daily Agenda ───────────────────────────────────────────────────────────
   loadDayTasks(): void {
     this.svc.getTasksForDate(this.selectedDate)
       .pipe(takeUntil(this.destroy$))
@@ -441,17 +661,15 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
 
   get selectedDateLabel(): string {
     const d = new Date(this.selectedDate + 'T00:00:00');
-    return d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
   }
 
   getTypeColor(type: string): string {
     if (type === 'DAY') return '#0288D1';
-    if (type === 'WEEK') return '#F59E0B';
-    if (type === 'MONTH') return '#EF4444';
+    if (type === 'WEEK') return '#D97706';
+    if (type === 'MONTH') return '#DC2626';
     return '#64748b';
   }
-
-  // ─── Helpers ──────────────────────────────────────────────────────────────
 
   getRepeatBadgeClass(type: string): string {
     if (type === 'DAY') return 'badge-day';
@@ -463,8 +681,12 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
     return status === 'DONE' ? 'badge-completed' : 'badge-scheduled';
   }
 
-  formatDate(iso: string): string {
-    if (!iso) return '—';
+  recurrenceLabel(t: PlannedMaintenanceTask): string {
+    return formatRecurrenceText(t.repeatTaskType, t.repeatTaskNumber);
+  }
+
+  formatDate(iso?: string | null): string {
+    if (!iso) return 'Open-ended';
     return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   }
 
@@ -481,39 +703,18 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
-      hour12: false,
+      hour12: false
     });
+  }
+
+  getDetailProp(task: PlannedMaintenanceTask | null, camelKey: string, snakeKey: string): any {
+    if (!task) return null;
+    const raw = task as unknown as Record<string, unknown>;
+    return raw[snakeKey] ?? raw[camelKey] ?? null;
   }
 
   private formatDateStr(d: Date): string {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  }
-
-  private toDateInputValue(value?: string | null): string {
-    if (!value) return '';
-    const date = new Date(value);
-    if (isNaN(date.getTime())) return String(value).slice(0, 10);
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }
-
-  private toDateTimeLocalValue(value?: string): string {
-    if (!value) return '';
-    const date = new Date(value);
-    if (isNaN(date.getTime())) return value.slice(0, 16);
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${year}-${month}-${day}T${hours}:${minutes}`;
-  }
-
-  private toIsoString(value: string): string {
-    const date = new Date(value);
-    return isNaN(date.getTime()) ? value : date.toISOString();
   }
 
   showTableField(fieldKey: string): boolean {
@@ -528,8 +729,8 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
     return this.uiCustomization.getLabel(this.uiPrefs, scope, fieldKey, fallback);
   }
 
-  
   async exportDailyTemplate(template: 'checklist' | 'report', format: 'docx' | 'pdf'): Promise<void> {
+    this.dailyExportOpen = false;
     const label = template === 'checklist' ? 'Checklist' : 'Report';
     await this.exportSvc.download(
       `planned-maintenance-daily/${this.selectedDate}/${template}`,
@@ -538,8 +739,8 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
       {},
       {
         includeDateRange: false,
-        successMessage: `${label} ${format.toUpperCase()} exported for ${this.selectedDate}.`,
-      },
+        successMessage: `${label} ${format.toUpperCase()} exported for ${this.selectedDate}.`
+      }
     );
   }
 
@@ -560,4 +761,3 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnDestroy {
     };
   }
 }
-

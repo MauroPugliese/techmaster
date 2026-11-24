@@ -1,31 +1,121 @@
-<!-- ==========================================================================
-     operations.component.html — Full Operations Management
-     ========================================================================== -->
+<div class="ops-page fade-in">
 
-<div class="operations-page fade-in">
+  <!-- ── Page Header ─────────────────────────────────────────────────────── -->
+  <div class="ops-page-head">
+    <div>
+      <h2>Operations &amp; Sorties</h2>
+      <p>Mission planning, active sorties, crew assignments, and activity logs.</p>
+    </div>
 
-  <!-- ── Toolbar ─────────────────────────────────────────────────────────── -->
-  <div class="flex items-center justify-between mb-6">
-    <div class="flex items-center gap-2">
+    <div class="ops-head-actions">
+      <a class="btn btn-secondary" routerLink="/analytics/operations">
+        <span class="btn-icon">analytics</span> Analytics
+      </a>
+      <app-export-menu endpoint="operations"
+                       filename="Operations"
+                       [params]="{ status: statusFilter, priority: priorityFilter, type_id: typeFilter, search: searchQuery }">
+      </app-export-menu>
+      <button type="button" class="btn btn-primary" (click)="openModal()">
+        <span class="btn-icon">add</span> New Operation
+      </button>
+    </div>
+  </div>
 
-      <!-- Search -->
-      <div class="search-bar" style="width:260px">
-        <span class="search-icon">search</span>
-        <input placeholder="Search operations..." [(ngModel)]="searchQuery" (input)="onSearch()">
+  <!-- ── Compact DB KPI Strip (Clickable Quick Filters) ──────────────────── -->
+  <div class="ops-kpi-grid">
+    <button type="button"
+            class="kpi-card ops-kpi-card ops-kpi-clickable"
+            [class.active]="statusFilter === 'PLANNED'"
+            style="--kpi-color:#5C6BC0"
+            (click)="filterByKpi('PLANNED')">
+      <div class="kpi-icon-wrap">event</div>
+      <div class="ops-kpi-body">
+        <div class="ops-kpi-value">{{summary?.planned_count ?? 0}}</div>
+        <div class="kpi-label">Planned</div>
+      </div>
+    </button>
+
+    <button type="button"
+            class="kpi-card ops-kpi-card ops-kpi-clickable"
+            [class.active]="statusFilter === 'IN_PROGRESS'"
+            style="--kpi-color:#0288D1"
+            (click)="filterByKpi('IN_PROGRESS')">
+      <div class="kpi-icon-wrap">rocket_launch</div>
+      <div class="ops-kpi-body">
+        <div class="ops-kpi-value">{{summary?.in_progress_count ?? 0}}</div>
+        <div class="kpi-label">In Progress</div>
+      </div>
+    </button>
+
+    <button type="button"
+            class="kpi-card ops-kpi-card ops-kpi-clickable"
+            [class.active]="statusFilter === 'ON_HOLD'"
+            style="--kpi-color:#D97706"
+            (click)="filterByKpi('ON_HOLD')">
+      <div class="kpi-icon-wrap">pause_circle</div>
+      <div class="ops-kpi-body">
+        <div class="ops-kpi-value">{{summary?.on_hold_count ?? 0}}</div>
+        <div class="kpi-label">On Hold</div>
+      </div>
+    </button>
+
+    <button type="button"
+            class="kpi-card ops-kpi-card ops-kpi-clickable"
+            [class.active]="statusFilter === 'COMPLETED'"
+            style="--kpi-color:#16A34A"
+            (click)="filterByKpi('COMPLETED')">
+      <div class="kpi-icon-wrap">check_circle</div>
+      <div class="ops-kpi-body">
+        <div class="ops-kpi-value">{{summary?.completed_count ?? 0}}</div>
+        <div class="kpi-label ops-num">Completed · {{summary?.completion_rate ?? 0}}% rate</div>
+      </div>
+    </button>
+
+    <button type="button"
+            class="kpi-card ops-kpi-card ops-kpi-clickable"
+            [class.active]="statusFilter === 'OVERDUE'"
+            style="--kpi-color:#1565C0"
+            (click)="filterByKpi('OVERDUE')">
+      <div class="kpi-icon-wrap">schedule</div>
+      <div class="ops-kpi-body">
+        <div class="ops-kpi-value">{{summary?.total ?? 0}}</div>
+        <div class="kpi-label ops-num">Avg {{avgDurationText()}} · {{summary?.overdue_count ?? 0}} overdue</div>
+      </div>
+    </button>
+  </div>
+
+  <!-- ── Single-Row Filter Toolbar + View Switcher ───────────────────────── -->
+  <div class="ops-toolbar-card">
+    <div class="ops-filter-row">
+      <div class="ops-search-wrap">
+        <div class="search-bar">
+          <span class="search-icon">search</span>
+          <input #searchInput
+                 [ngModel]="searchQuery"
+                 (ngModelChange)="onSearchModelChange($event)"
+                 placeholder="Search title, location, notes… ( / )"
+                 aria-label="Search operations">
+          <button *ngIf="searchQuery"
+                  type="button"
+                  class="ops-search-clear"
+                  (click)="clearSearch()"
+                  title="Clear search">
+            <span class="mat-i" style="font-size:16px">close</span>
+          </button>
+        </div>
       </div>
 
-      <!-- Status Filter -->
-      <app-dropdown class="form-control select-w-160" [(ngModel)]="statusFilter" (change)="loadOperations()" placeholder="All Statuses">
+      <app-dropdown class="form-control ops-filter-select" [(ngModel)]="statusFilter" (change)="applyFilters()" placeholder="All Statuses">
         <app-dropdown-option value="">All Statuses</app-dropdown-option>
+        <app-dropdown-option value="OVERDUE">Overdue</app-dropdown-option>
         <app-dropdown-option value="PLANNED">Planned</app-dropdown-option>
         <app-dropdown-option value="IN_PROGRESS">In Progress</app-dropdown-option>
+        <app-dropdown-option value="ON_HOLD">On Hold</app-dropdown-option>
         <app-dropdown-option value="COMPLETED">Completed</app-dropdown-option>
         <app-dropdown-option value="CANCELLED">Cancelled</app-dropdown-option>
-        <app-dropdown-option value="ON_HOLD">On Hold</app-dropdown-option>
       </app-dropdown>
 
-      <!-- Priority Filter -->
-      <app-dropdown class="form-control select-w-140" [(ngModel)]="priorityFilter" (change)="loadOperations()" placeholder="All Priorities">
+      <app-dropdown class="form-control ops-filter-select" [(ngModel)]="priorityFilter" (change)="applyFilters()" placeholder="All Priorities">
         <app-dropdown-option value="">All Priorities</app-dropdown-option>
         <app-dropdown-option value="LOW">Low</app-dropdown-option>
         <app-dropdown-option value="MEDIUM">Medium</app-dropdown-option>
@@ -33,342 +123,407 @@
         <app-dropdown-option value="CRITICAL">Critical</app-dropdown-option>
       </app-dropdown>
 
+      <app-dropdown class="form-control ops-filter-select" [(ngModel)]="typeFilter" (change)="applyFilters()" placeholder="All Types">
+        <app-dropdown-option [ngValue]="''">All Types</app-dropdown-option>
+        <app-dropdown-option *ngFor="let t of opTypes" [ngValue]="t.id">{{t.name}}</app-dropdown-option>
+      </app-dropdown>
+
+      <button *ngIf="hasActiveFilters" type="button" class="btn btn-ghost btn-sm" (click)="resetFilters()">
+        <span class="btn-icon">filter_alt_off</span> Reset
+      </button>
+
+      <div class="ops-view-toggle" role="group" aria-label="View mode">
+        <button type="button" class="ops-view-btn" [class.active]="viewMode === 'table'" (click)="viewMode = 'table'">
+          <span class="mat-i">table_rows</span> Table
+        </button>
+        <button type="button" class="ops-view-btn" [class.active]="viewMode === 'cards'" (click)="viewMode = 'cards'">
+          <span class="mat-i">grid_view</span> Cards
+        </button>
+        <button type="button" class="ops-view-btn" [class.active]="viewMode === 'board'" (click)="viewMode = 'board'">
+          <span class="mat-i">view_kanban</span> Board
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Contextual Bulk Action Bar ──────────────────────────────────────── -->
+  <div class="ops-bulk-bar" *ngIf="selectedIds.size > 0">
+    <div class="ops-head-actions">
+      <span class="mat-i">checklist</span>
+      <strong>{{selectedIds.size}} operation{{selectedIds.size > 1 ? 's' : ''}} selected</strong>
     </div>
 
-    <div class="flex gap-2">
-      <app-export-menu endpoint="operations" filename="Operations"
-                       [params]="{ status: statusFilter, priority: priorityFilter, search: searchQuery }"></app-export-menu>
-      <button class="btn btn-primary" (click)="openModal()">
-        <span class="btn-icon">add</span>
-        New Operation
+    <div class="ops-bulk-controls">
+      <app-dropdown class="form-control ops-bulk-select" [(ngModel)]="bulkStatus" placeholder="Set status…">
+        <app-dropdown-option value="">Set status…</app-dropdown-option>
+        <app-dropdown-option value="PLANNED">Planned</app-dropdown-option>
+        <app-dropdown-option value="IN_PROGRESS">In Progress</app-dropdown-option>
+        <app-dropdown-option value="ON_HOLD">On Hold</app-dropdown-option>
+        <app-dropdown-option value="COMPLETED">Completed</app-dropdown-option>
+        <app-dropdown-option value="CANCELLED">Cancelled</app-dropdown-option>
+      </app-dropdown>
+      <button type="button" class="btn btn-secondary btn-sm" [disabled]="!bulkStatus || bulkBusy" (click)="applyBulkStatus()">
+        Apply
+      </button>
+
+      <app-dropdown class="form-control ops-bulk-select" [(ngModel)]="bulkPriority" placeholder="Set priority…">
+        <app-dropdown-option value="">Set priority…</app-dropdown-option>
+        <app-dropdown-option value="LOW">Low</app-dropdown-option>
+        <app-dropdown-option value="MEDIUM">Medium</app-dropdown-option>
+        <app-dropdown-option value="HIGH">High</app-dropdown-option>
+        <app-dropdown-option value="CRITICAL">Critical</app-dropdown-option>
+      </app-dropdown>
+      <button type="button" class="btn btn-secondary btn-sm" [disabled]="!bulkPriority || bulkBusy" (click)="applyBulkPriority()">
+        Apply
+      </button>
+
+      <button type="button" class="btn btn-danger btn-sm" [disabled]="bulkBusy" (click)="applyBulkDelete()">
+        <span class="btn-icon">delete</span> Delete
+      </button>
+
+      <button type="button" class="btn btn-ghost btn-sm" style="color:#fff" (click)="clearSelection()">
+        Clear
       </button>
     </div>
   </div>
 
-  <!-- ── Loading ─────────────────────────────────────────────────────────── -->
-  <div *ngIf="loading" class="flex items-center justify-between" style="padding:40px;justify-content:center">
-    <div class="spinner"></div>
-  </div>
+  <!-- ── Main Content Surface ────────────────────────────────────────────── -->
+  <div class="table-container ops-table-wrap">
 
-  <!-- ── Table ───────────────────────────────────────────────────────────── -->
-  <div class="table-container" *ngIf="!loading">
-    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
-      <span class="text-sm text-muted">{{total}} operations found</span>
-      <div class="flex gap-2">
-        <button class="btn btn-ghost btn-sm" [class.active]="viewMode==='table'" (click)="viewMode='table'">
-          <span class="btn-icon">table_rows</span>
-        </button>
-        <button class="btn btn-ghost btn-sm" [class.active]="viewMode==='cards'" (click)="viewMode='cards'">
-          <span class="btn-icon">grid_view</span>
-        </button>
-      </div>
+    <div *ngIf="loading" class="flex items-center" style="justify-content:center;padding:48px">
+      <div class="spinner"></div>
     </div>
 
-    <!-- Table View -->
-    <table class="data-table" *ngIf="viewMode==='table'">
+    <!-- VIEW 1: Compact 7-Column Table (Zero Horizontal Scroll) -->
+    <table class="data-table ops-table" *ngIf="!loading && viewMode === 'table' && operations.length > 0">
       <thead>
         <tr>
-          <th *ngIf="showTableField('id')">{{fieldLabel('table','id','#')}}</th>
-          <th *ngIf="showTableField('title')">{{fieldLabel('table','title','Title')}}</th>
-          <th *ngIf="showTableField('type')">{{fieldLabel('table','type','Type')}}</th>
-          <th *ngIf="showTableField('status')">{{fieldLabel('table','status','Status')}}</th>
-          <th *ngIf="showTableField('priority')">{{fieldLabel('table','priority','Priority')}}</th>
-          <th *ngIf="showTableField('location')">{{fieldLabel('table','location','Location')}}</th>
-          <th *ngIf="showTableField('start_date')">{{fieldLabel('table','start_date','Start Date')}}</th>
-          <th *ngIf="showTableField('creator')">{{fieldLabel('table','creator','Creator')}}</th>
-          <th>Actions</th>
+          <th style="width:36px">
+            <input type="checkbox"
+                   class="ops-checkbox"
+                   [checked]="allVisibleSelected"
+                   (change)="toggleSelectAll($any($event.target).checked)"
+                   aria-label="Select all operations on page">
+          </th>
+
+          <th *ngIf="showTableField('title') || showTableField('type') || showTableField('location')">
+            <button type="button" class="ops-sort-btn" [class.active]="sortBy === 'title'" (click)="toggleSort('title')">
+              <span>{{fieldLabel('table','title','Operation')}}</span>
+              <span class="mat-i">{{sortIcon('title')}}</span>
+            </button>
+          </th>
+
+          <th *ngIf="showTableField('priority')">
+            <button type="button" class="ops-sort-btn" [class.active]="sortBy === 'priority'" (click)="toggleSort('priority')">
+              <span>{{fieldLabel('table','priority','Priority')}}</span>
+              <span class="mat-i">{{sortIcon('priority')}}</span>
+            </button>
+          </th>
+
+          <th *ngIf="showTableField('status')">
+            <button type="button" class="ops-sort-btn" [class.active]="sortBy === 'status'" (click)="toggleSort('status')">
+              <span>{{fieldLabel('table','status','Status')}}</span>
+              <span class="mat-i">{{sortIcon('status')}}</span>
+            </button>
+          </th>
+
+          <th *ngIf="showTableField('start_date')">
+            <button type="button" class="ops-sort-btn" [class.active]="sortBy === 'start_date'" (click)="toggleSort('start_date')">
+              <span>{{fieldLabel('table','start_date','Schedule')}}</span>
+              <span class="mat-i">{{sortIcon('start_date')}}</span>
+            </button>
+          </th>
+
+          <th *ngIf="showTableField('creator')">
+            <button type="button" class="ops-sort-btn" [class.active]="sortBy === 'creator'" (click)="toggleSort('creator')">
+              <span>{{fieldLabel('table','creator','Lead / Crew')}}</span>
+              <span class="mat-i">{{sortIcon('creator')}}</span>
+            </button>
+          </th>
+
+          <th class="ops-col-actions">Actions</th>
         </tr>
       </thead>
       <tbody>
-        <tr *ngFor="let op of operations; let i = index"
-            class="row-clickable"
-            (click)="openDetailModal(op)">
-          <td class="text-muted text-sm" *ngIf="showTableField('id')">{{op.id}}</td>
-          <td *ngIf="showTableField('title')">
-            <div class="font-bold">{{op.title}}</div>
-            <div class="text-sm text-muted truncate" style="max-width:220px">{{op.description}}</div>
+        <tr *ngFor="let op of operations; let idx = index" class="row-clickable" (click)="openDetail(op)">
+          <td (click)="$event.stopPropagation()">
+            <input type="checkbox"
+                   class="ops-checkbox"
+                   [checked]="selectedIds.has(op.id)"
+                   (change)="toggleSelection(op, $any($event.target).checked)"
+                   [attr.aria-label]="'Select ' + op.title">
           </td>
-          <td *ngIf="showTableField('type')">
-            <span style="display:inline-flex;align-items:center;gap:5px">
-              <span style="width:8px;height:8px;border-radius:50%;flex-shrink:0"
-                    [style.background]="op.type?.color"></span>
-              {{op.type?.name}}
-            </span>
-          </td>
-          <td *ngIf="showTableField('status')"><span class="badge" [ngClass]="getStatusBadge(op.status)">{{op.status | titlecase}}</span></td>
-          <td *ngIf="showTableField('priority')"><span class="badge" [ngClass]="getPriorityBadge(op.priority)">{{op.priority | titlecase}}</span></td>
-          <td class="text-sm" *ngIf="showTableField('location')">{{op.location || '—'}}</td>
-          <td class="text-sm" *ngIf="showTableField('start_date')">{{op.start_date | date:'MMM d, y'}}</td>
-          <td *ngIf="showTableField('creator')">
-            <div style="display:flex;align-items:center;gap:6px">
-              <div style="width:24px;height:24px;border-radius:50%;background:var(--blue-200);
-                          display:flex;align-items:center;justify-content:center;font-size:0.65rem;font-weight:700;color:var(--primary)">
-                {{getInitials(op.creator)}}
-              </div>
-              <span class="text-sm">{{op.creator?.first_name}}</span>
+
+          <td *ngIf="showTableField('title') || showTableField('type') || showTableField('location')">
+            <div class="ops-title-main" *ngIf="showTableField('title')">{{op.title}}</div>
+            <div class="ops-subtext ops-sub-inline">
+              <ng-container *ngIf="showTableField('type') && op.type">
+                <span class="ops-dot" [style.background]="op.type.color || '#1565C0'"></span>
+                <span>{{op.type.name}}</span>
+                <span *ngIf="opSubline(op)">·</span>
+              </ng-container>
+              <span *ngIf="opSubline(op)">{{opSubline(op)}}</span>
             </div>
           </td>
-          <td (click)="$event.stopPropagation()">
-            <div class="flex gap-2">
-              <button class="btn btn-ghost btn-icon-only btn-sm" (click)="editOperation(op)" title="Edit">
-                <span class="btn-icon" style="font-size:17px">edit</span>
+
+          <td *ngIf="showTableField('priority')">
+            <span class="badge" [ngClass]="priorityBadge(op.priority)">{{label(op.priority)}}</span>
+          </td>
+
+          <td *ngIf="showTableField('status')">
+            <div class="ops-status-stack">
+              <span class="badge" [ngClass]="statusBadge(op.status)">{{label(op.status)}}</span>
+              <span class="ops-overdue-tag" *ngIf="overdue(op)">Overdue</span>
+            </div>
+          </td>
+
+          <td *ngIf="showTableField('start_date')">
+            <div class="ops-num">{{op.start_date | date:'MMM d, y · HH:mm'}}</div>
+            <div class="ops-subtext">Duration: {{durationText(op)}}</div>
+          </td>
+
+          <td *ngIf="showTableField('creator')">
+            <div class="ops-owner-cell">
+              <span class="ops-avatar">{{creatorInitials(op)}}</span>
+              <div>
+                <div class="text-sm font-bold">{{creatorName(op)}}</div>
+                <div class="ops-subtext" *ngIf="(op.members?.length ?? 0) > 0">
+                  +{{op.members?.length}} crew assigned
+                </div>
+              </div>
+            </div>
+          </td>
+
+          <td class="ops-col-actions" (click)="$event.stopPropagation()">
+            <div class="ops-row-actions">
+              <button *ngIf="op.status === 'PLANNED' || op.status === 'ON_HOLD'"
+                      type="button"
+                      class="btn btn-ghost btn-icon-only btn-sm"
+                      (click)="setStatus(op, 'IN_PROGRESS')"
+                      title="Start Operation">
+                <span class="btn-icon text-primary">play_circle</span>
               </button>
-              <button class="btn btn-ghost btn-icon-only btn-sm" (click)="deleteOperation(op)" title="Delete">
-                <span class="btn-icon" style="font-size:17px;color:#EF4444">delete</span>
+              <button *ngIf="op.status === 'IN_PROGRESS'"
+                      type="button"
+                      class="btn btn-ghost btn-icon-only btn-sm"
+                      (click)="setStatus(op, 'COMPLETED')"
+                      title="Mark Completed">
+                <span class="btn-icon" style="color:#16A34A">check_circle</span>
               </button>
+
+              <button type="button"
+                      class="btn btn-ghost btn-icon-only btn-sm"
+                      (click)="openModal(op)"
+                      title="Edit">
+                <span class="btn-icon">edit</span>
+              </button>
+
+              <div class="ops-menu-wrap">
+                <button type="button"
+                        class="btn btn-ghost btn-icon-only btn-sm"
+                        [attr.aria-expanded]="openMenuOpId === op.id"
+                        (click)="toggleRowMenu(op.id, $event)"
+                        title="More actions">
+                  <span class="btn-icon">more_vert</span>
+                </button>
+
+                <div class="ops-row-menu"
+                     *ngIf="openMenuOpId === op.id"
+                     [class.open-up]="operations.length > 2 && idx >= operations.length - 2"
+                     (click)="$event.stopPropagation()">
+                  <button type="button" class="ops-menu-item" (click)="closeRowMenu(); openDetail(op)">
+                    <span class="mat-i text-muted">assignment</span>
+                    <span>Mission Brief &amp; Log</span>
+                  </button>
+                  <button *ngIf="op.status === 'IN_PROGRESS'"
+                          type="button"
+                          class="ops-menu-item"
+                          (click)="setStatus(op, 'ON_HOLD')">
+                    <span class="mat-i" style="color:#D97706">pause_circle</span>
+                    <span>Put On Hold</span>
+                  </button>
+                  <button *ngIf="op.status !== 'COMPLETED' && op.status !== 'CANCELLED'"
+                          type="button"
+                          class="ops-menu-item"
+                          (click)="setStatus(op, 'COMPLETED')">
+                    <span class="mat-i" style="color:#16A34A">check_circle</span>
+                    <span>Mark Completed</span>
+                  </button>
+                  <button type="button" class="ops-menu-item" (click)="duplicate(op)">
+                    <span class="mat-i text-primary">content_copy</span>
+                    <span>Duplicate Operation</span>
+                  </button>
+                  <div class="ops-menu-divider"></div>
+                  <button type="button" class="ops-menu-item danger" (click)="deleteOp(op)">
+                    <span class="mat-i">delete</span>
+                    <span>Delete</span>
+                  </button>
+                </div>
+              </div>
             </div>
           </td>
         </tr>
       </tbody>
     </table>
 
-    <!-- Cards View -->
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;padding:20px" *ngIf="viewMode==='cards'">
-      <div *ngFor="let op of operations"
-           style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);
-                  padding:18px;transition:var(--transition);cursor:pointer;
-                  border-left:4px solid {{op.type?.color || 'var(--primary)'}}"
-           (click)="openDetailModal(op)"
-           [style.border-left-color]="op.type?.color">
-        <div class="flex items-center justify-between mb-4">
-          <span class="badge" [ngClass]="getStatusBadge(op.status)">{{op.status}}</span>
-          <span class="badge" [ngClass]="getPriorityBadge(op.priority)">{{op.priority}}</span>
+    <!-- VIEW 2: Clean Cards View -->
+    <div class="ops-cards-grid" *ngIf="!loading && viewMode === 'cards' && operations.length > 0">
+      <div class="ops-card"
+           *ngFor="let op of operations"
+           [style.border-left-color]="op.type?.color || 'var(--primary)'"
+           (click)="openDetail(op)">
+        <div class="ops-card-top">
+          <div class="ops-status-stack">
+            <span class="badge" [ngClass]="statusBadge(op.status)">{{label(op.status)}}</span>
+            <span class="ops-overdue-tag" *ngIf="overdue(op)">Overdue</span>
+          </div>
+          <span class="badge" [ngClass]="priorityBadge(op.priority)">{{label(op.priority)}}</span>
         </div>
-        <h4 style="margin-bottom:6px">{{op.title}}</h4>
-        <p class="text-sm text-muted" style="margin-bottom:12px">{{op.description || 'No description'}}</p>
-        <div style="display:flex;flex-direction:column;gap:4px">
-          <div class="flex items-center gap-2 text-sm text-muted">
-            <span style="font-family:'Material Icons Round';font-style:normal;font-size:14px">location_on</span>
-            {{op.location || 'No location'}}
+
+        <h4 class="ops-card-title">{{op.title}}</h4>
+        <p class="ops-card-desc">{{op.description || 'No description provided.'}}</p>
+
+        <div class="ops-card-meta">
+          <div class="ops-card-meta-row" *ngIf="op.type">
+            <span class="ops-dot" [style.background]="op.type.color || '#1565C0'"></span>
+            <span>{{op.type.name}}</span>
           </div>
-          <div class="flex items-center gap-2 text-sm text-muted">
-            <span style="font-family:'Material Icons Round';font-style:normal;font-size:14px">calendar_today</span>
-            {{op.start_date | date:'MMM d, y'}}
+          <div class="ops-card-meta-row">
+            <span class="mat-i">location_on</span>
+            <span>{{op.location || 'No location specified'}}</span>
           </div>
+          <div class="ops-card-meta-row ops-num">
+            <span class="mat-i">calendar_today</span>
+            <span>{{op.start_date | date:'MMM d, y · HH:mm'}} · {{durationText(op)}}</span>
+          </div>
+        </div>
+
+        <div class="ops-card-foot" (click)="$event.stopPropagation()">
+          <span class="ops-subtext">
+            {{creatorName(op)}} · {{op.members?.length ?? 0}} crew
+          </span>
+          <div class="ops-row-actions">
+            <button *ngIf="op.status === 'PLANNED' || op.status === 'ON_HOLD'"
+                    type="button"
+                    class="btn btn-ghost btn-icon-only btn-sm"
+                    (click)="setStatus(op, 'IN_PROGRESS')"
+                    title="Start">
+              <span class="btn-icon text-primary">play_circle</span>
+            </button>
+            <button *ngIf="op.status === 'IN_PROGRESS'"
+                    type="button"
+                    class="btn btn-ghost btn-icon-only btn-sm"
+                    (click)="setStatus(op, 'COMPLETED')"
+                    title="Complete">
+              <span class="btn-icon" style="color:#16A34A">check_circle</span>
+            </button>
+            <button type="button" class="btn btn-ghost btn-icon-only btn-sm" (click)="openModal(op)" title="Edit">
+              <span class="btn-icon">edit</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW 3: Status Board (Kanban) -->
+    <div class="ops-board-grid" *ngIf="!loading && viewMode === 'board' && operations.length > 0">
+      <div class="ops-board-col" *ngFor="let col of boardColumns">
+        <div class="ops-board-head">
+          <span class="ops-head-actions">
+            <span class="ops-dot" [style.background]="col.color"></span>
+            <span>{{col.label}}</span>
+          </span>
+          <span class="ops-board-count">{{operationsByStatus(col.status).length}}</span>
+        </div>
+
+        <div class="ops-board-card"
+             *ngFor="let op of operationsByStatus(col.status)"
+             [style.border-left-color]="op.type?.color || col.color"
+             (click)="openDetail(op)">
+          <div class="ops-card-top">
+            <span class="badge" [ngClass]="priorityBadge(op.priority)">{{label(op.priority)}}</span>
+            <span class="ops-overdue-tag" *ngIf="overdue(op)">Overdue</span>
+          </div>
+          <div class="ops-title-main">{{op.title}}</div>
+          <div class="ops-subtext">
+            {{op.type?.name || 'Operation'}} · {{op.location || 'No location'}}
+          </div>
+          <div class="ops-subtext">
+            {{op.start_date | date:'MMM d, HH:mm'}} · {{op.members?.length ?? 0}} crew
+          </div>
+          <div class="ops-row-actions" style="justify-content:flex-start;margin-top:4px" (click)="$event.stopPropagation()">
+            <button *ngIf="op.status === 'PLANNED' || op.status === 'ON_HOLD'"
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    (click)="setStatus(op, 'IN_PROGRESS')">
+              Start
+            </button>
+            <button *ngIf="op.status === 'IN_PROGRESS'"
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    (click)="setStatus(op, 'ON_HOLD')">
+              Hold
+            </button>
+            <button *ngIf="op.status === 'IN_PROGRESS' || op.status === 'PLANNED'"
+                    type="button"
+                    class="btn btn-primary btn-sm"
+                    (click)="setStatus(op, 'COMPLETED')">
+              Complete
+            </button>
+          </div>
+        </div>
+
+        <div class="ops-subtext text-center" *ngIf="operationsByStatus(col.status).length === 0" style="padding:18px 8px">
+          No operations
         </div>
       </div>
     </div>
 
     <!-- Empty State -->
-    <div class="empty-state" *ngIf="!operations.length">
+    <div class="empty-state" *ngIf="!loading && operations.length === 0">
       <span class="empty-icon">rocket_launch</span>
       <h3>No operations found</h3>
-      <p>Create your first operation to get started</p>
-      <button class="btn btn-primary" (click)="openModal()">
+      <p *ngIf="hasActiveFilters">Try clearing one or more filters to view all operations.</p>
+      <button *ngIf="!hasActiveFilters" type="button" class="btn btn-primary" (click)="openModal()">
         <span class="btn-icon">add</span> New Operation
+      </button>
+      <button *ngIf="hasActiveFilters" type="button" class="btn btn-secondary" (click)="resetFilters()">
+        Reset Filters
       </button>
     </div>
 
-    <!-- Pagination -->
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-top:1px solid var(--border)" *ngIf="total > 0">
+    <!-- Paginator -->
+    <div class="ops-pagination-bar" *ngIf="!loading && total > 0">
       <div class="table-page-size-control">
-        <span class="text-sm text-muted">Showing {{(page-1)*pageSize+1}}–{{Math.min(page*pageSize,total)}} of {{total}}</span>
-        <app-dropdown class="form-control table-page-size-select" [(ngModel)]="pageSize" (change)="onPageSizeChange()" ariaLabel="Rows per page">
+        <span class="text-sm text-muted ops-num">
+          Showing {{(page - 1) * pageSize + 1}}–{{Math.min(page * pageSize, total)}} of {{total}}
+        </span>
+        <app-dropdown class="form-control table-page-size-select"
+                      [(ngModel)]="pageSize"
+                      (change)="onPageSizeChange()"
+                      ariaLabel="Rows per page">
           <app-dropdown-option *ngFor="let size of pageSizeOptions" [ngValue]="size">{{size}}</app-dropdown-option>
         </app-dropdown>
       </div>
-      <div class="flex gap-2">
-        <button class="btn btn-secondary btn-sm" [disabled]="page <= 1" (click)="changePage(page-1)">
+
+      <div class="flex items-center gap-2">
+        <button type="button" class="btn btn-secondary btn-sm" [disabled]="page <= 1" (click)="changePage(page - 1)">
           <span class="btn-icon">chevron_left</span>
         </button>
-        <span style="padding:5px 12px;font-size:0.85rem;font-weight:600">{{page}} / {{totalPages}}</span>
-        <button class="btn btn-secondary btn-sm" [disabled]="page >= totalPages" (click)="changePage(page+1)">
+        <span class="ops-page-indicator">{{page}} / {{totalPages}}</span>
+        <button type="button" class="btn btn-secondary btn-sm" [disabled]="page >= totalPages" (click)="changePage(page + 1)">
           <span class="btn-icon">chevron_right</span>
         </button>
       </div>
     </div>
-  </div>
 
-</div>
-
-<!-- ── Create / Edit Modal ──────────────────────────────────────────────────── -->
-<div class="modal-overlay" *ngIf="showModal" (click)="closeModal($event)">
-  <div class="modal" style="max-width:620px">
-    <div class="modal-header">
-      <h3>{{editingOp ? 'Edit Operation' : 'New Operation'}}</h3>
-      <button class="btn btn-ghost btn-icon-only" (click)="showModal=false">
-        <span class="btn-icon">close</span>
-      </button>
-    </div>
-
-    <div class="modal-body">
-      <div class="form-row">
-        <div class="form-group" style="grid-column:1/-1" *ngIf="showFormField('title')">
-          <label class="form-label">{{fieldLabel('form','title','Title')}} *</label>
-          <input class="form-control" [(ngModel)]="form.title" placeholder="Operation title">
-        </div>
-        <div class="form-group" *ngIf="showFormField('type_id')">
-          <label class="form-label">{{fieldLabel('form','type_id','Type')}} *</label>
-          <app-dropdown class="form-control" [(ngModel)]="form.type_id" placeholder="Select type">
-            <app-dropdown-option *ngFor="let t of opTypes" [value]="t.id">{{t.name}}</app-dropdown-option>
-          </app-dropdown>
-        </div>
-        <div class="form-group" *ngIf="showFormField('priority')">
-          <label class="form-label">{{fieldLabel('form','priority','Priority')}}</label>
-          <app-dropdown class="form-control" [(ngModel)]="form.priority">
-            <app-dropdown-option value="LOW">Low</app-dropdown-option>
-            <app-dropdown-option value="MEDIUM">Medium</app-dropdown-option>
-            <app-dropdown-option value="HIGH">High</app-dropdown-option>
-            <app-dropdown-option value="CRITICAL">Critical</app-dropdown-option>
-          </app-dropdown>
-        </div>
-        <div class="form-group" *ngIf="showFormField('status')">
-          <label class="form-label">{{fieldLabel('form','status','Status')}}</label>
-          <app-dropdown class="form-control" [(ngModel)]="form.status">
-            <app-dropdown-option value="PLANNED">Planned</app-dropdown-option>
-            <app-dropdown-option value="IN_PROGRESS">In Progress</app-dropdown-option>
-            <app-dropdown-option value="COMPLETED">Completed</app-dropdown-option>
-            <app-dropdown-option value="CANCELLED">Cancelled</app-dropdown-option>
-            <app-dropdown-option value="ON_HOLD">On Hold</app-dropdown-option>
-          </app-dropdown>
-        </div>
-        <div class="form-group" *ngIf="showFormField('location')">
-          <label class="form-label">{{fieldLabel('form','location','Location')}}</label>
-          <input class="form-control" [(ngModel)]="form.location" placeholder="e.g. Server Room A">
-        </div>
-        <div class="form-group" *ngIf="showFormField('start_date')">
-          <label class="form-label">{{fieldLabel('form','start_date','Start Date')}} *</label>
-          <app-datetime-picker
-            class="form-control"
-            mode="datetime"
-            [(ngModel)]="form.start_date"
-            placeholder="Select start date & time">
-          </app-datetime-picker>
-        </div>
-        <div class="form-group" *ngIf="showFormField('end_date')">
-          <label class="form-label">{{fieldLabel('form','end_date','End Date')}}</label>
-          <app-datetime-picker
-            class="form-control"
-            mode="datetime"
-            [(ngModel)]="form.end_date"
-            placeholder="Select end date & time">
-          </app-datetime-picker>
-        </div>
-        <div class="form-group" style="grid-column:1/-1" *ngIf="showFormField('description')">
-          <label class="form-label">{{fieldLabel('form','description','Description')}}</label>
-          <textarea class="form-control" [(ngModel)]="form.description" placeholder="Describe this operation..."></textarea>
-        </div>
-        <div class="form-group" style="grid-column:1/-1" *ngIf="showFormField('notes')">
-          <label class="form-label">{{fieldLabel('form','notes','Notes')}}</label>
-          <textarea class="form-control" [(ngModel)]="form.notes" style="min-height:80px" placeholder="Additional notes..."></textarea>
-        </div>
-      </div>
-    </div>
-
-    <div class="modal-footer">
-      <button class="btn btn-ghost" (click)="showModal=false">Cancel</button>
-      <button class="btn btn-primary" (click)="saveOperation()" [disabled]="saving">
-        <div class="spinner" *ngIf="saving" style="width:16px;height:16px;border-width:2px;border-top-color:#fff"></div>
-        {{saving ? 'Saving...' : (editingOp ? 'Update' : 'Create')}}
-      </button>
-    </div>
   </div>
 </div>
 
-<!-- Operation Detail Info Modal -->
-<div class="modal-overlay" *ngIf="detailOp" (click)="closeDetailModal($event)">
-  <div class="modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="op-detail-title" (click)="$event.stopPropagation()">
-    <div class="modal-header">
-      <div class="detail-header-title">
-        <div class="detail-head-meta">
-          <span class="detail-id-pill">#{{detailOp.id}}</span>
-          <span class="detail-type-chip" *ngIf="detailOp.type">
-            <span class="detail-type-dot" [style.background]="detailOp.type.color || 'var(--primary)'"></span>
-            {{detailOp.type.name}}
-          </span>
-        </div>
-        <h2 id="op-detail-title">{{detailOp.title}}</h2>
-      </div>
-      <button type="button" class="btn btn-ghost btn-icon-only" (click)="detailOp = null" title="Close">
-        <span class="btn-icon">close</span>
-      </button>
-    </div>
-
-    <div class="modal-body">
-      <div class="detail-badges">
-        <span class="badge" [ngClass]="getStatusBadge(detailOp.status)">
-          {{detailOp.status | titlecase}}
-        </span>
-        <span class="badge" [ngClass]="getPriorityBadge(detailOp.priority)">
-          Priority: {{detailOp.priority | titlecase}}
-        </span>
-      </div>
-
-      <div class="detail-grid">
-        <div class="detail-field">
-          <span class="detail-label">Start Date &amp; Time</span>
-          <span class="detail-value">{{detailOp.start_date ? (detailOp.start_date | date:'dd MMM yyyy, HH:mm') : '—'}}</span>
-        </div>
-        <div class="detail-field">
-          <span class="detail-label">End Date &amp; Time</span>
-          <span class="detail-value">{{detailOp.end_date ? (detailOp.end_date | date:'dd MMM yyyy, HH:mm') : '—'}}</span>
-        </div>
-        <div class="detail-field">
-          <span class="detail-label">Location</span>
-          <span class="detail-value">{{detailOp.location || '—'}}</span>
-        </div>
-        <div class="detail-field">
-          <span class="detail-label">Operation Type</span>
-          <span class="detail-value">{{detailOp.type?.name || '—'}}</span>
-        </div>
-        <div class="detail-field">
-          <span class="detail-label">Created By</span>
-          <span class="detail-value">
-            {{(detailOp.creator?.first_name || detailOp.creator?.last_name) ? ((detailOp.creator?.first_name || '') + ' ' + (detailOp.creator?.last_name || '')).trim() : (detailOp.creator?.username || '—')}}
-          </span>
-          <span class="detail-sub" *ngIf="detailOp.creator?.email">{{detailOp.creator?.email}}</span>
-        </div>
-        <div class="detail-field">
-          <span class="detail-label">Created At</span>
-          <span class="detail-value">{{detailOp.created_at ? (detailOp.created_at | date:'dd MMM yyyy, HH:mm') : '—'}}</span>
-        </div>
-      </div>
-
-      <div class="detail-section" *ngIf="detailOp.description">
-        <span class="detail-section-title">Description</span>
-        <div class="detail-text-box">{{detailOp.description}}</div>
-      </div>
-
-      <div class="detail-section" *ngIf="detailOp.notes">
-        <span class="detail-section-title">Notes</span>
-        <div class="detail-text-box">{{detailOp.notes}}</div>
-      </div>
-
-      <div class="detail-section" *ngIf="!detailOp.description && !detailOp.notes">
-        <span class="detail-section-title">Description &amp; Notes</span>
-        <div class="detail-text-box" style="color:var(--text-muted)">No description or notes provided.</div>
-      </div>
-    </div>
-
-    <div class="modal-footer detail-footer">
-      <button type="button" class="btn btn-ghost detail-delete-btn" (click)="deleteFromDetail()">
-        <span class="btn-icon">delete</span>
-        Delete
-      </button>
-      <div class="detail-footer-actions">
-        <button type="button" class="btn btn-secondary" (click)="detailOp = null">Close</button>
-        <button type="button" class="btn btn-primary" (click)="editFromDetail()">
-          <span class="btn-icon">edit</span>
-          Edit
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Delete Confirm -->
-<!-- <div class="modal-overlay" *ngIf="showDeleteConfirm" (click)="showDeleteConfirm=false">
-  <div class="modal" style="max-width:400px" (click)="$event.stopPropagation()">
-    <div class="modal-header">
-      <h3>Delete Operation</h3>
-      <button class="btn btn-ghost btn-icon-only" (click)="showDeleteConfirm=false"><span class="btn-icon">close</span></button>
-    </div>
-    <div class="modal-body">
-      <p>Are you sure you want to delete <strong>"{{deletingOp?.title}}"</strong>? This action cannot be undone.</p>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" (click)="showDeleteConfirm=false">Cancel</button>
-      <button class="btn btn-danger" (click)="confirmDelete()">Delete</button>
-    </div>
-  </div>
-</div> -->
+<!-- ── Shared Modals ─────────────────────────────────────────────────────── -->
+<app-operation-modals
+  [opTypes]="opTypes"
+  [staffUsers]="staffUsers"
+  [uiPrefs]="uiPrefs"
+  (mutated)="onMutated()">
+</app-operation-modals>

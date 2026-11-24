@@ -1,0 +1,151 @@
+<!-- ── Single-Row Filter Toolbar ───────────────────────────────────────── -->
+<div class="mnt-toolbar-card">
+  <div class="mnt-filter-row">
+    <div class="mnt-search-wrap">
+      <div class="search-bar">
+        <span class="search-icon">search</span>
+        <input [ngModel]="search"
+               (ngModelChange)="onSearchModelChange($event)"
+               placeholder="Search asset, serial no, model, location…"
+               aria-label="Search assets">
+        <button *ngIf="search" type="button" class="mnt-search-clear" (click)="clearSearch()" title="Clear search">
+          <span class="mat-i" style="font-size:16px">close</span>
+        </button>
+      </div>
+    </div>
+
+    <app-dropdown class="form-control mnt-filter-select" [(ngModel)]="categoryFilter" (change)="loadAssets()" placeholder="All Categories">
+      <app-dropdown-option [ngValue]="''">All Categories</app-dropdown-option>
+      <app-dropdown-option *ngFor="let c of assetCategories" [ngValue]="c.id">{{c.name}}</app-dropdown-option>
+    </app-dropdown>
+
+    <app-dropdown class="form-control mnt-filter-select" [(ngModel)]="statusFilter" (change)="loadAssets()" placeholder="All Statuses">
+      <app-dropdown-option value="">All Active Statuses</app-dropdown-option>
+      <app-dropdown-option value="ACTIVE">Active</app-dropdown-option>
+      <app-dropdown-option value="UNDER_MAINTENANCE">Under Maintenance</app-dropdown-option>
+      <app-dropdown-option value="INACTIVE">Inactive</app-dropdown-option>
+      <app-dropdown-option value="RETIRED">Retired</app-dropdown-option>
+      <app-dropdown-option value="LOST">Lost</app-dropdown-option>
+    </app-dropdown>
+
+    <label class="mnt-check-label">
+      <input type="checkbox" class="mnt-checkbox" [(ngModel)]="showRetired" (change)="loadAssets()">
+      <span>Show Retired</span>
+    </label>
+
+    <button *ngIf="hasActiveFilters" type="button" class="btn btn-ghost btn-sm" (click)="resetFilters()">
+      <span class="btn-icon">filter_alt_off</span> Reset
+    </button>
+  </div>
+</div>
+
+<!-- ── Compact Assets Table (6 Clean Columns) ──────────────────────────── -->
+<div class="table-container mnt-table-wrap">
+  <table class="data-table mnt-table">
+    <thead>
+      <tr>
+        <th>Asset</th>
+        <th>Category</th>
+        <th>Location</th>
+        <th>Status</th>
+        <th>Warranty &amp; Open Work</th>
+        <th class="mnt-col-actions">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr *ngFor="let a of assets; let idx = index" class="row-clickable" (click)="editAssetRequested.emit(a)">
+        <td>
+          <div class="mnt-title-main">{{a.name}}</div>
+          <div class="mnt-subtext" *ngIf="assetSubline(a)">{{assetSubline(a)}}</div>
+        </td>
+        <td>
+          <div class="font-bold text-sm">{{a.category?.name || '—'}}</div>
+          <div class="mnt-subtext" *ngIf="a.category?.type">{{enumLabel(a.category?.type)}}</div>
+        </td>
+        <td class="text-sm">{{a.location || '—'}}</td>
+        <td>
+          <span class="badge"
+                [style.background]="statusMeta(a.status).bg"
+                [style.color]="statusMeta(a.status).color">
+            {{statusMeta(a.status).label}}
+          </span>
+        </td>
+        <td>
+          <div class="mnt-num text-sm"
+               [style.color]="warrantyTone(a) === 'expired' ? '#DC2626' : (warrantyTone(a) === 'soon' ? '#D97706' : 'var(--blue-900)')">
+            <ng-container *ngIf="a.warranty_expiry; else noWarranty">
+              {{a.warranty_expiry | date:'MMM d, y'}}
+              <span *ngIf="warrantyTone(a) === 'expired'"> (Expired)</span>
+              <span *ngIf="warrantyTone(a) === 'soon'"> (Expiring)</span>
+            </ng-container>
+            <ng-template #noWarranty>No warranty date</ng-template>
+          </div>
+          <div class="mnt-subtext">
+            {{a.open_maintenance_count ? (a.open_maintenance_count + ' open work order' + (a.open_maintenance_count > 1 ? 's' : '')) : 'No open maintenance'}}
+          </div>
+        </td>
+        <td class="mnt-col-actions" (click)="$event.stopPropagation()">
+          <div class="mnt-row-actions">
+            <button type="button"
+                    class="btn btn-ghost btn-icon-only btn-sm"
+                    (click)="logMaintenanceRequested.emit(a)"
+                    title="Log Work Order">
+              <span class="btn-icon text-primary">build</span>
+            </button>
+            <button type="button"
+                    class="btn btn-ghost btn-icon-only btn-sm"
+                    (click)="editAssetRequested.emit(a)"
+                    title="Edit Asset">
+              <span class="btn-icon">edit</span>
+            </button>
+
+            <div class="mnt-menu-wrap">
+              <button type="button"
+                      class="btn btn-ghost btn-icon-only btn-sm"
+                      [attr.aria-expanded]="openMenuAssetId === a.id"
+                      (click)="toggleRowMenu(a.id, $event)"
+                      title="More actions">
+                <span class="btn-icon">more_vert</span>
+              </button>
+
+              <div class="mnt-row-menu"
+                   *ngIf="openMenuAssetId === a.id"
+                   [class.open-up]="assets.length > 2 && idx >= assets.length - 2"
+                   (click)="$event.stopPropagation()">
+                <button type="button" class="mnt-menu-item" [disabled]="a.status === 'ACTIVE'" (click)="setAssetStatus(a, 'ACTIVE')">
+                  <span class="mat-i" style="color:#16A34A">check_circle</span>
+                  <span>Set Active</span>
+                </button>
+                <button type="button" class="mnt-menu-item" [disabled]="a.status === 'UNDER_MAINTENANCE'" (click)="setAssetStatus(a, 'UNDER_MAINTENANCE')">
+                  <span class="mat-i" style="color:#D97706">engineering</span>
+                  <span>Under Maintenance</span>
+                </button>
+                <button type="button" class="mnt-menu-item" [disabled]="a.status === 'INACTIVE'" (click)="setAssetStatus(a, 'INACTIVE')">
+                  <span class="mat-i text-muted">pause_circle</span>
+                  <span>Set Inactive</span>
+                </button>
+                <div class="mnt-menu-divider"></div>
+                <button type="button" class="mnt-menu-item danger" (click)="deleteOrRetireAsset(a)">
+                  <span class="mat-i">delete</span>
+                  <span>Retire / Delete</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="empty-state" *ngIf="!assets.length && !loading">
+    <span class="empty-icon">devices</span>
+    <h3>No matching assets</h3>
+    <p *ngIf="hasActiveFilters">Try clearing filters or enabling Show Retired.</p>
+    <button *ngIf="!hasActiveFilters" type="button" class="btn btn-primary" (click)="addAssetRequested.emit()">
+      Add First Asset
+    </button>
+    <button *ngIf="hasActiveFilters" type="button" class="btn btn-secondary" (click)="resetFilters()">
+      Reset Filters
+    </button>
+  </div>
+</div>

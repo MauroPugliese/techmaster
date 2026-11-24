@@ -1,0 +1,361 @@
+<!-- ── Compact DB KPI Strip (Clickable Quick Filters) ──────────────────── -->
+<div class="mnt-kpi-grid">
+  <button type="button"
+          class="kpi-card mnt-kpi-card mnt-kpi-clickable"
+          [class.active]="statusFilter === 'SCHEDULED'"
+          style="--kpi-color:#1565C0"
+          (click)="filterByKpi('SCHEDULED')">
+    <div class="kpi-icon-wrap">event</div>
+    <div class="mnt-kpi-body">
+      <div class="mnt-kpi-value">{{summary?.scheduled_count ?? 0}}</div>
+      <div class="kpi-label">Scheduled</div>
+    </div>
+  </button>
+
+  <button type="button"
+          class="kpi-card mnt-kpi-card mnt-kpi-clickable"
+          [class.active]="statusFilter === 'IN_PROGRESS'"
+          style="--kpi-color:#0288D1"
+          (click)="filterByKpi('IN_PROGRESS')">
+    <div class="kpi-icon-wrap">pending_actions</div>
+    <div class="mnt-kpi-body">
+      <div class="mnt-kpi-value">{{summary?.in_progress_count ?? 0}}</div>
+      <div class="kpi-label">In Progress</div>
+    </div>
+  </button>
+
+  <button type="button"
+          class="kpi-card mnt-kpi-card mnt-kpi-clickable"
+          [class.active]="statusFilter === 'OVERDUE'"
+          style="--kpi-color:#DC2626"
+          (click)="filterByKpi('OVERDUE')">
+    <div class="kpi-icon-wrap">error_outline</div>
+    <div class="mnt-kpi-body">
+      <div class="mnt-kpi-value">{{summary?.overdue_count ?? 0}}</div>
+      <div class="kpi-label">Overdue</div>
+    </div>
+  </button>
+
+  <button type="button"
+          class="kpi-card mnt-kpi-card mnt-kpi-clickable"
+          [class.active]="statusFilter === 'COMPLETED'"
+          style="--kpi-color:#16A34A"
+          (click)="filterByKpi('COMPLETED')">
+    <div class="kpi-icon-wrap">check_circle</div>
+    <div class="mnt-kpi-body">
+      <div class="mnt-kpi-value">{{summary?.completed_count ?? 0}}</div>
+      <div class="kpi-label">Completed</div>
+    </div>
+  </button>
+
+  <div class="kpi-card mnt-kpi-card" style="--kpi-color:#6366F1">
+    <div class="kpi-icon-wrap">payments</div>
+    <div class="mnt-kpi-body">
+      <div class="mnt-kpi-value">{{money(summary?.total_cost ?? 0)}}</div>
+      <div class="kpi-label mnt-num">Downtime: {{downtime(summary?.total_downtime_hours ?? 0)}}</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── No Assets Prompt ────────────────────────────────────────────────── -->
+<div class="mnt-warn-banner" *ngIf="!loading && assets.length === 0">
+  <div class="mnt-head-actions">
+    <span class="mat-i" style="color:#D97706">warning</span>
+    <span>No active assets found. Add an asset in the Assets Registry before logging work orders.</span>
+  </div>
+  <button type="button" class="btn btn-secondary btn-sm" (click)="openAssetsTabRequested.emit()">
+    <span class="btn-icon">devices</span> Manage Assets
+  </button>
+</div>
+
+<!-- ── Single-Row Filter Toolbar ───────────────────────────────────────── -->
+<div class="mnt-toolbar-card">
+  <div class="mnt-filter-row">
+    <div class="mnt-search-wrap">
+      <div class="search-bar">
+        <span class="search-icon">search</span>
+        <input #searchInput
+               [ngModel]="searchQuery"
+               (ngModelChange)="onSearchModelChange($event)"
+               placeholder="Search title, asset, serial no… ( / )"
+               aria-label="Search work orders">
+        <button *ngIf="searchQuery"
+                type="button"
+                class="mnt-search-clear"
+                (click)="clearSearch()"
+                title="Clear search">
+          <span class="mat-i" style="font-size:16px">close</span>
+        </button>
+      </div>
+    </div>
+
+    <app-dropdown class="form-control mnt-filter-select" [(ngModel)]="statusFilter" (change)="applyFilters()" placeholder="All Statuses">
+      <app-dropdown-option value="">All Statuses</app-dropdown-option>
+      <app-dropdown-option value="OVERDUE">Overdue</app-dropdown-option>
+      <app-dropdown-option value="SCHEDULED">Scheduled</app-dropdown-option>
+      <app-dropdown-option value="IN_PROGRESS">In Progress</app-dropdown-option>
+      <app-dropdown-option value="COMPLETED">Completed</app-dropdown-option>
+      <app-dropdown-option value="FAILED">Failed</app-dropdown-option>
+      <app-dropdown-option value="DEFERRED">Deferred</app-dropdown-option>
+    </app-dropdown>
+
+    <app-dropdown class="form-control mnt-filter-select" [(ngModel)]="priorityFilter" (change)="applyFilters()" placeholder="All Priorities">
+      <app-dropdown-option value="">All Priorities</app-dropdown-option>
+      <app-dropdown-option value="LOW">Low</app-dropdown-option>
+      <app-dropdown-option value="MEDIUM">Medium</app-dropdown-option>
+      <app-dropdown-option value="HIGH">High</app-dropdown-option>
+      <app-dropdown-option value="CRITICAL">Critical</app-dropdown-option>
+    </app-dropdown>
+
+    <app-dropdown class="form-control mnt-filter-select" [(ngModel)]="typeFilter" (change)="applyFilters()" placeholder="All Types">
+      <app-dropdown-option value="">All Types</app-dropdown-option>
+      <app-dropdown-option value="PREVENTIVE">Preventive</app-dropdown-option>
+      <app-dropdown-option value="CORRECTIVE">Corrective</app-dropdown-option>
+      <app-dropdown-option value="PREDICTIVE">Predictive</app-dropdown-option>
+      <app-dropdown-option value="UPGRADE">Upgrade</app-dropdown-option>
+      <app-dropdown-option value="INSPECTION">Inspection</app-dropdown-option>
+    </app-dropdown>
+
+    <app-dropdown class="form-control mnt-filter-select" [(ngModel)]="assetFilter" (change)="applyFilters()" placeholder="All Assets">
+      <app-dropdown-option [ngValue]="''">All Assets</app-dropdown-option>
+      <app-dropdown-option *ngFor="let a of assets" [ngValue]="a.id">{{a.name}}</app-dropdown-option>
+    </app-dropdown>
+
+    <button *ngIf="hasActiveFilters" type="button" class="btn btn-ghost btn-sm" (click)="resetFilters()">
+      <span class="btn-icon">filter_alt_off</span> Reset
+    </button>
+  </div>
+</div>
+
+<!-- ── Contextual Bulk Action Bar ──────────────────────────────────────── -->
+<div class="mnt-bulk-bar" *ngIf="selectedIds.size > 0">
+  <div class="mnt-head-actions">
+    <span class="mat-i">checklist</span>
+    <strong>{{selectedIds.size}} record{{selectedIds.size > 1 ? 's' : ''}} selected</strong>
+  </div>
+
+  <div class="mnt-bulk-controls">
+    <app-dropdown class="form-control mnt-bulk-select" [(ngModel)]="bulkStatus" placeholder="Set status…">
+      <app-dropdown-option value="">Set status…</app-dropdown-option>
+      <app-dropdown-option value="IN_PROGRESS">In Progress</app-dropdown-option>
+      <app-dropdown-option value="COMPLETED">Completed</app-dropdown-option>
+      <app-dropdown-option value="DEFERRED">Deferred</app-dropdown-option>
+    </app-dropdown>
+    <button type="button" class="btn btn-secondary btn-sm" [disabled]="!bulkStatus || bulkBusy" (click)="applyBulkStatus()">
+      Apply
+    </button>
+
+    <app-dropdown class="form-control mnt-bulk-select" [(ngModel)]="bulkPriority" placeholder="Set priority…">
+      <app-dropdown-option value="">Set priority…</app-dropdown-option>
+      <app-dropdown-option value="LOW">Low</app-dropdown-option>
+      <app-dropdown-option value="MEDIUM">Medium</app-dropdown-option>
+      <app-dropdown-option value="HIGH">High</app-dropdown-option>
+      <app-dropdown-option value="CRITICAL">Critical</app-dropdown-option>
+    </app-dropdown>
+    <button type="button" class="btn btn-secondary btn-sm" [disabled]="!bulkPriority || bulkBusy" (click)="applyBulkPriority()">
+      Apply
+    </button>
+
+    <button type="button" class="btn btn-danger btn-sm" [disabled]="bulkBusy" (click)="applyBulkDelete()">
+      <span class="btn-icon">delete</span> Delete
+    </button>
+
+    <button type="button" class="btn btn-ghost btn-sm" style="color:#fff" (click)="clearSelection()">
+      Clear
+    </button>
+  </div>
+</div>
+
+<!-- ── Consolidated Work Orders Table (7 Clean Columns) ────────────────── -->
+<div class="table-container mnt-table-wrap">
+  <table class="data-table mnt-table">
+    <thead>
+      <tr>
+        <th style="width:36px">
+          <input type="checkbox"
+                 class="mnt-checkbox"
+                 [checked]="allVisibleSelected"
+                 (change)="toggleSelectAll($any($event.target).checked)"
+                 aria-label="Select all records on page">
+        </th>
+
+        <th *ngIf="showTableField('title') || showTableField('asset') || showTableField('type')">
+          <button type="button" class="mnt-sort-btn" [class.active]="sortBy === 'title'" (click)="toggleSort('title')">
+            <span>{{fieldLabel('table','title','Work Order')}}</span>
+            <span class="mat-i">{{sortIcon('title')}}</span>
+          </button>
+        </th>
+
+        <th *ngIf="showTableField('priority')">
+          <button type="button" class="mnt-sort-btn" [class.active]="sortBy === 'priority'" (click)="toggleSort('priority')">
+            <span>{{fieldLabel('table','priority','Priority')}}</span>
+            <span class="mat-i">{{sortIcon('priority')}}</span>
+          </button>
+        </th>
+
+        <th *ngIf="showTableField('status')">
+          <button type="button" class="mnt-sort-btn" [class.active]="sortBy === 'status'" (click)="toggleSort('status')">
+            <span>{{fieldLabel('table','status','Status')}}</span>
+            <span class="mat-i">{{sortIcon('status')}}</span>
+          </button>
+        </th>
+
+        <th *ngIf="showTableField('scheduled_date') || showTableField('technician')">
+          <button type="button" class="mnt-sort-btn" [class.active]="sortBy === 'scheduled_date'" (click)="toggleSort('scheduled_date')">
+            <span>{{fieldLabel('table','scheduled_date','Scheduled')}}</span>
+            <span class="mat-i">{{sortIcon('scheduled_date')}}</span>
+          </button>
+        </th>
+
+        <th class="mnt-col-num" *ngIf="showTableField('cost')">
+          <button type="button" class="mnt-sort-btn" [class.active]="sortBy === 'cost'" (click)="toggleSort('cost')">
+            <span>{{fieldLabel('table','cost','Cost / Downtime')}}</span>
+            <span class="mat-i">{{sortIcon('cost')}}</span>
+          </button>
+        </th>
+
+        <th class="mnt-col-actions">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr *ngFor="let r of records; let idx = index"
+          class="row-clickable"
+          (click)="detailRequested.emit(r)">
+        <td (click)="$event.stopPropagation()">
+          <input type="checkbox"
+                 class="mnt-checkbox"
+                 [checked]="selectedIds.has(r.id)"
+                 (change)="toggleSelection(r, $any($event.target).checked)"
+                 [attr.aria-label]="'Select ' + r.title">
+        </td>
+
+        <td *ngIf="showTableField('title') || showTableField('asset') || showTableField('type')">
+          <div class="mnt-title-main" *ngIf="showTableField('title')">{{r.title}}</div>
+          <div class="mnt-subtext" *ngIf="recordSubline(r)">{{recordSubline(r)}}</div>
+        </td>
+
+        <td *ngIf="showTableField('priority')">
+          <span class="badge" [ngClass]="priorityBadge(r.priority)">{{label(r.priority)}}</span>
+        </td>
+
+        <td *ngIf="showTableField('status')">
+          <div class="mnt-status-stack">
+            <span class="badge" [ngClass]="statusBadge(r.status)">{{label(r.status)}}</span>
+            <span class="mnt-overdue-tag" *ngIf="overdue(r)">Overdue</span>
+          </div>
+        </td>
+
+        <td *ngIf="showTableField('scheduled_date') || showTableField('technician')">
+          <div class="mnt-num" *ngIf="showTableField('scheduled_date')">{{r.scheduled_date | date:'MMM d, y'}}</div>
+          <div class="mnt-subtext" *ngIf="showTableField('technician')">{{techName(r)}}</div>
+        </td>
+
+        <td class="mnt-col-num" *ngIf="showTableField('cost')">
+          <div class="mnt-primary-val">{{money(r.cost)}}</div>
+          <div class="mnt-subtext">{{downtime(r.downtime_hours)}}</div>
+        </td>
+
+        <td class="mnt-col-actions" (click)="$event.stopPropagation()">
+          <div class="mnt-row-actions">
+            <button *ngIf="r.status === 'SCHEDULED' || r.status === 'DEFERRED'"
+                    type="button"
+                    class="btn btn-ghost btn-icon-only btn-sm"
+                    (click)="statusChangeRequested.emit({ record: r, status: 'IN_PROGRESS' })"
+                    title="Start Work">
+              <span class="btn-icon text-primary">play_circle</span>
+            </button>
+            <button *ngIf="r.status === 'IN_PROGRESS'"
+                    type="button"
+                    class="btn btn-ghost btn-icon-only btn-sm"
+                    (click)="statusChangeRequested.emit({ record: r, status: 'COMPLETED' })"
+                    title="Mark Completed">
+              <span class="btn-icon" style="color:#16A34A">check_circle</span>
+            </button>
+
+            <button type="button"
+                    class="btn btn-ghost btn-icon-only btn-sm"
+                    (click)="editWorkOrderRequested.emit(r)"
+                    title="Edit">
+              <span class="btn-icon">edit</span>
+            </button>
+
+            <div class="mnt-menu-wrap">
+              <button type="button"
+                      class="btn btn-ghost btn-icon-only btn-sm"
+                      [attr.aria-expanded]="openMenuRecordId === r.id"
+                      (click)="toggleRowMenu(r.id, $event)"
+                      title="More actions">
+                <span class="btn-icon">more_vert</span>
+              </button>
+
+              <div class="mnt-row-menu"
+                   *ngIf="openMenuRecordId === r.id"
+                   [class.open-up]="records.length > 2 && idx >= records.length - 2"
+                   (click)="$event.stopPropagation()">
+                <button type="button" class="mnt-menu-item" (click)="closeRowMenu(); detailRequested.emit(r)">
+                  <span class="mat-i text-muted">visibility</span>
+                  <span>View Details</span>
+                </button>
+                <button *ngIf="r.status !== 'COMPLETED' && r.status !== 'FAILED'"
+                        type="button"
+                        class="mnt-menu-item"
+                        (click)="closeRowMenu(); statusChangeRequested.emit({ record: r, status: 'COMPLETED' })">
+                  <span class="mat-i" style="color:#16A34A">check_circle</span>
+                  <span>Mark Complete</span>
+                </button>
+                <button *ngIf="r.status === 'SCHEDULED' || r.status === 'IN_PROGRESS'"
+                        type="button"
+                        class="mnt-menu-item"
+                        (click)="closeRowMenu(); statusChangeRequested.emit({ record: r, status: 'DEFERRED' })">
+                  <span class="mat-i" style="color:#D97706">schedule</span>
+                  <span>Defer Work Order</span>
+                </button>
+                <div class="mnt-menu-divider"></div>
+                <button type="button" class="mnt-menu-item danger" (click)="closeRowMenu(); deleteRequested.emit(r)">
+                  <span class="mat-i">delete</span>
+                  <span>Delete</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="empty-state" *ngIf="!records.length && !loading">
+    <span class="empty-icon">build_circle</span>
+    <h3>No matching work orders</h3>
+    <p *ngIf="hasActiveFilters">Try clearing one or more filters to view all maintenance records.</p>
+    <button *ngIf="!hasActiveFilters" type="button" class="btn btn-primary" (click)="logWorkOrderRequested.emit()">
+      Log First Work Order
+    </button>
+    <button *ngIf="hasActiveFilters" type="button" class="btn btn-secondary" (click)="resetFilters()">
+      Reset Filters
+    </button>
+  </div>
+
+  <div class="mnt-pagination-bar" *ngIf="total > 0">
+    <div class="table-page-size-control">
+      <span class="text-sm text-muted mnt-num">
+        Showing {{(page - 1) * pageSize + 1}}–{{Math.min(page * pageSize, total)}} of {{total}}
+      </span>
+      <app-dropdown class="form-control table-page-size-select"
+                    [(ngModel)]="pageSize"
+                    (change)="onPageSizeChange()"
+                    ariaLabel="Rows per page">
+        <app-dropdown-option *ngFor="let size of pageSizeOptions" [ngValue]="size">{{size}}</app-dropdown-option>
+      </app-dropdown>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <button type="button" class="btn btn-secondary btn-sm" [disabled]="page <= 1" (click)="changePage(page - 1)">
+        <span class="btn-icon">chevron_left</span>
+      </button>
+      <span class="mnt-page-indicator">{{page}} / {{totalPages}}</span>
+      <button type="button" class="btn btn-secondary btn-sm" [disabled]="page >= totalPages" (click)="changePage(page + 1)">
+        <span class="btn-icon">chevron_right</span>
+      </button>
+    </div>
+  </div>
+</div>

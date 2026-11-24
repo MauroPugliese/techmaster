@@ -1,97 +1,283 @@
-// =============================================================================
-// operations.component.ts — updated: ToastService + ConfirmService
-// =============================================================================
-import { Component, OnInit, OnDestroy, HostListener, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
-import { CommonModule, DatePipe, TitleCasePipe } from '@angular/common';
+import {
+  ChangeDetectionStrategy,
+  ChangeDetectorRef,
+  Component,
+  ElementRef,
+  HostListener,
+  OnDestroy,
+  OnInit,
+  ViewChild
+} from '@angular/core';
+import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { Subject } from 'rxjs';
-import { takeUntil, debounceTime, distinctUntilChanged } from 'rxjs/operators';
-import { ApiService }       from '../../core/services/services';
-import { DateFilterService } from '../../core/services/services';
-import { UiCustomizationService, UiSectionPreferences } from '../../core/services/services';
-import { ToastService }     from '../../core/services/toast.service';
-import { ConfirmService }   from '../../core/services/confirm.service';
-import { Operation, OperationType } from '../../core/models/interfaces';
-import { DateTimePickerComponent } from '../../shared/components/datetime-picker/datetime-picker.component';
+import { debounceTime, distinctUntilChanged, takeUntil } from 'rxjs/operators';
+import {
+  ApiService,
+  ConfirmService,
+  DateFilterService,
+  ToastService,
+  UiCustomizationService,
+  UiSectionPreferences
+} from '../../core/services/services';
+import {
+  Operation,
+  OperationStatus,
+  OperationSummary,
+  OperationType,
+  User
+} from '../../core/models/interfaces';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
 import { DropdownComponent, DropdownOptionComponent } from '../../shared/components/dropdown/dropdown.component';
+import { OperationModalsComponent } from './modals/operation-modals.component';
+import {
+  formatDurationMinutes,
+  formatDurationRange,
+  formatEnumLabel,
+  getPriorityBadgeClass,
+  getStatusBadgeClass,
+  getUserDisplayName,
+  getUserInitials,
+  isOperationOverdue
+} from './operation-helpers';
 
 @Component({
   selector: 'app-operations',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, TitleCasePipe, DateTimePickerComponent, ExportMenuComponent, DropdownComponent, DropdownOptionComponent],
+  imports: [
+    CommonModule,
+    FormsModule,
+    DatePipe,
+    RouterLink,
+    ExportMenuComponent,
+    DropdownComponent,
+    DropdownOptionComponent,
+    OperationModalsComponent
+  ],
   templateUrl: './operations.component.html',
+  styleUrls: ['./operations.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class OperationsComponent implements OnInit, OnDestroy {
+  @ViewChild(OperationModalsComponent) modals?: OperationModalsComponent;
+  @ViewChild('searchInput') searchInput?: ElementRef<HTMLInputElement>;
+
   private destroy$ = new Subject<void>();
-  private search$  = new Subject<string>();
-
-  operations: Operation[]     = [];
-  opTypes:    OperationType[] = [];
-  loading  = true;
-  saving   = false;
-  total    = 0;
-  page     = 1;
-  pageSize = 20;
-  readonly pageSizeOptions = [10, 20, 50, 100];
-  viewMode: 'table' | 'cards' = 'table';
-
-  searchQuery    = '';
-  statusFilter   = '';
-  priorityFilter = '';
-
-  showModal  = false;
-  editingOp: Operation | null = null;
-  detailOp:  Operation | null = null;
-  form:      any = this.emptyForm();
-  uiPrefs: UiSectionPreferences | null = null;
+  private search$ = new Subject<string>();
   Math = Math;
 
+  operations: Operation[] = [];
+  opTypes: OperationType[] = [];
+  staffUsers: Partial<User>[] = [];
+  summary: OperationSummary | null = null;
+  uiPrefs: UiSectionPreferences | null = null;
+
+  loading = true;
+  total = 0;
+  page = 1;
+  pageSize = 20;
+  readonly pageSizeOptions = [10, 20, 50, 100];
+  viewMode: 'table' | 'cards' | 'board' = 'table';
+
+  searchQuery = '';
+  statusFilter = '';
+  priorityFilter = '';
+  typeFilter: number | '' = '';
+  sortBy = 'start_date';
+  sortDir: 'ASC' | 'DESC' = 'DESC';
+
+  openMenuOpId: number | null = null;
+  selectedIds = new Set<number>();
+  bulkStatus = '';
+  bulkPriority = '';
+  bulkBusy = false;
+
+  readonly boardColumns: { status: OperationStatus; label: string; color: string }[] = [
+    { status: 'PLANNED', label: 'Planned', color: '#5C6BC0' },
+    { status: 'IN_PROGRESS', label: 'In Progress', color: '#0288D1' },
+    { status: 'ON_HOLD', label: 'On Hold', color: '#D97706' },
+    { status: 'COMPLETED', label: 'Completed', color: '#16A34A' }
+  ];
+
   constructor(
-    private api:     ApiService,
+    private api: ApiService,
     private dateFilter: DateFilterService,
     private uiCustomization: UiCustomizationService,
-    private toast:   ToastService,
+    private toast: ToastService,
     private confirm: ConfirmService,
-    private cdr:     ChangeDetectorRef
+    private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
-    this.uiCustomization.load('operations').subscribe(p => {
+    this.uiCustomization.load('operations').pipe(takeUntil(this.destroy$)).subscribe(p => {
       this.uiPrefs = p;
       this.cdr.markForCheck();
     });
-    this.api.get<any>('/operations/types').subscribe(res => {
-      this.opTypes = res?.data || []; this.cdr.markForCheck();
+
+    this.api.get<any>('/operations/types').pipe(takeUntil(this.destroy$)).subscribe({
+      next: res => { this.opTypes = res?.data || []; this.cdr.markForCheck(); }
     });
-    this.search$.pipe(debounceTime(300), distinctUntilChanged(), takeUntil(this.destroy$))
-      .subscribe(() => { this.page = 1; this.loadOperations(); });
-    this.dateFilter.range$.pipe(takeUntil(this.destroy$))
-      .subscribe(() => { this.page = 1; this.loadOperations(); });
+
+    this.api.get<any>('/operations/staff').pipe(takeUntil(this.destroy$)).subscribe({
+      next: res => { this.staffUsers = res?.data || []; this.cdr.markForCheck(); }
+    });
+
+    this.search$
+      .pipe(debounceTime(280), distinctUntilChanged(), takeUntil(this.destroy$))
+      .subscribe(val => {
+        this.searchQuery = val;
+        this.page = 1;
+        this.loadOperations();
+      });
+
+    this.dateFilter.range$
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(() => {
+        this.page = 1;
+        this.loadSummary();
+        this.loadOperations();
+      });
   }
 
-  ngOnDestroy(): void { this.destroy$.next(); this.destroy$.complete(); }
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
+  @HostListener('document:click')
+  onDocumentClick(): void {
+    if (this.openMenuOpId !== null) {
+      this.openMenuOpId = null;
+    }
+  }
+
+  @HostListener('document:keydown', ['$event'])
+  onKeydown(e: KeyboardEvent): void {
+    if (e.key === 'Escape' && this.openMenuOpId !== null) {
+      this.openMenuOpId = null;
+      return;
+    }
+    if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+    const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+    const isEditable = tag === 'input' || tag === 'textarea' || tag === 'select' || (e.target as HTMLElement)?.isContentEditable;
+    if (isEditable) return;
+    if (this.searchInput?.nativeElement) {
+      e.preventDefault();
+      this.searchInput.nativeElement.focus();
+    }
+  }
+
+  loadSummary(): void {
+    this.api.get<any>('/operations/summary').subscribe({
+      next: res => {
+        this.summary = res?.data || null;
+        this.cdr.markForCheck();
+      }
+    });
+  }
 
   loadOperations(): void {
     this.loading = true;
+    this.openMenuOpId = null;
+
     this.api.get<any>('/operations', {
-      status: this.statusFilter, priority: this.priorityFilter,
-      page: this.page, limit: this.pageSize, search: this.searchQuery
+      status: this.statusFilter,
+      priority: this.priorityFilter,
+      type_id: this.typeFilter || '',
+      search: this.searchQuery.trim(),
+      sort_by: this.sortBy,
+      sort_dir: this.sortDir,
+      page: this.page,
+      limit: this.pageSize
     }).pipe(takeUntil(this.destroy$)).subscribe({
       next: res => {
-        this.operations = res.data.items; this.total = res.data.total;
-        this.loading = false; this.cdr.markForCheck();
+        this.operations = res?.data?.items || [];
+        this.total = res?.data?.total ?? this.operations.length;
+        const visibleIds = new Set(this.operations.map(o => o.id));
+        this.selectedIds = new Set([...this.selectedIds].filter(id => visibleIds.has(id)));
+        this.loading = false;
+        this.cdr.markForCheck();
       },
-      error: () => { this.loading = false; this.cdr.markForCheck(); }
+      error: () => {
+        this.loading = false;
+        this.cdr.markForCheck();
+      }
     });
   }
 
-  onSearch(): void { this.search$.next(this.searchQuery); }
-  get totalPages(): number { return Math.ceil(this.total / this.pageSize); }
+  onSearchModelChange(val: string): void {
+    this.searchQuery = val;
+    this.search$.next(val);
+  }
+
+  clearSearch(): void {
+    this.searchQuery = '';
+    this.search$.next('');
+    this.page = 1;
+    this.loadOperations();
+  }
+
+  applyFilters(): void {
+    this.page = 1;
+    this.loadOperations();
+  }
+
+  filterByKpi(status: string): void {
+    this.statusFilter = this.statusFilter === status ? '' : status;
+    this.applyFilters();
+  }
+
+  get hasActiveFilters(): boolean {
+    return Boolean(this.searchQuery.trim() || this.statusFilter || this.priorityFilter || this.typeFilter !== '');
+  }
+
+  resetFilters(): void {
+    this.searchQuery = '';
+    this.statusFilter = '';
+    this.priorityFilter = '';
+    this.typeFilter = '';
+    this.applyFilters();
+  }
+
+  toggleSort(column: string): void {
+    if (this.sortBy === column) {
+      this.sortDir = this.sortDir === 'ASC' ? 'DESC' : 'ASC';
+    } else {
+      this.sortBy = column;
+      this.sortDir = 'ASC';
+    }
+    this.page = 1;
+    this.loadOperations();
+  }
+
+  sortIcon(column: string): string {
+    if (this.sortBy !== column) return 'unfold_more';
+    return this.sortDir === 'ASC' ? 'arrow_upward' : 'arrow_downward';
+  }
+
+  toggleRowMenu(id: number, event: Event): void {
+    event.stopPropagation();
+    this.openMenuOpId = this.openMenuOpId === id ? null : id;
+  }
+
+  closeRowMenu(): void {
+    this.openMenuOpId = null;
+  }
+
+  // ── Board & Pagination ─────────────────────────────────────────────────────
+  operationsByStatus(status: OperationStatus): Operation[] {
+    return this.operations.filter(o => o.status === status);
+  }
+
+  get totalPages(): number {
+    return Math.max(1, Math.ceil(this.total / this.pageSize));
+  }
+
   changePage(p: number): void {
     if (p < 1 || p > this.totalPages) return;
-    this.page = p; this.loadOperations();
+    this.page = p;
+    this.loadOperations();
   }
 
   onPageSizeChange(): void {
@@ -99,111 +285,121 @@ export class OperationsComponent implements OnInit, OnDestroy {
     this.loadOperations();
   }
 
-  openModal(op?: Operation): void {
-    this.editingOp = op || null;
-    this.form      = op ? {
-      ...op,
-      start_date: op.start_date ? new Date(op.start_date) : null,
-      end_date: op.end_date ? new Date(op.end_date) : null
-    } : this.emptyForm();
-    this.showModal = true;
-  }
-  openDetailModal(op: Operation): void {
-    this.detailOp = op;
-    this.cdr.markForCheck();
-  }
-  closeDetailModal(e: MouseEvent): void {
-    if ((e.target as HTMLElement).classList.contains('modal-overlay')) {
-      this.detailOp = null;
-    }
-  }
-  editFromDetail(): void {
-    if (!this.detailOp) return;
-    const op = this.detailOp;
-    this.detailOp = null;
-    this.openModal(op);
-  }
-  deleteFromDetail(): void {
-    if (!this.detailOp) return;
-    const op = this.detailOp;
-    this.detailOp = null;
-    this.deleteOperation(op);
+  // ── Multi-select & Bulk Actions ────────────────────────────────────────────
+  get allVisibleSelected(): boolean {
+    return this.operations.length > 0 && this.operations.every(o => this.selectedIds.has(o.id));
   }
 
-  @HostListener('document:keydown.escape')
-  onEsc(): void {
-    if (this.detailOp) {
-      this.detailOp = null;
-      this.cdr.markForCheck();
-    }
+  toggleSelectAll(checked: boolean): void {
+    if (checked) this.operations.forEach(o => this.selectedIds.add(o.id));
+    else this.selectedIds.clear();
   }
 
-  editOperation(op: Operation): void { this.openModal(op); }
-  closeModal(e: MouseEvent): void {
-    if ((e.target as HTMLElement).classList.contains('modal-overlay')) this.showModal = false;
+  toggleSelection(op: Operation, checked: boolean): void {
+    if (checked) this.selectedIds.add(op.id);
+    else this.selectedIds.delete(op.id);
   }
 
-  saveOperation(): void {
-    if (this.showFormField('title') && !this.form.title) return;
-    if (this.showFormField('type_id') && !this.form.type_id) return;
-    if (this.showFormField('start_date') && !this.form.start_date) return;
-    this.saving = true;
-    const isEdit = !!this.editingOp;
-    const req$   = isEdit
-      ? this.api.put<any>(`/operations/${this.editingOp!.id}`, this.form)
-      : this.api.post<any>('/operations', this.form);
-    req$.subscribe({
+  clearSelection(): void {
+    this.selectedIds.clear();
+    this.bulkStatus = '';
+    this.bulkPriority = '';
+  }
+
+  applyBulkStatus(): void {
+    if (!this.selectedIds.size || !this.bulkStatus) return;
+    this.runBulk('status', this.bulkStatus, 'Operations status updated.');
+  }
+
+  applyBulkPriority(): void {
+    if (!this.selectedIds.size || !this.bulkPriority) return;
+    this.runBulk('priority', this.bulkPriority, 'Operations priority updated.');
+  }
+
+  async applyBulkDelete(): Promise<void> {
+    if (!this.selectedIds.size) return;
+    const count = this.selectedIds.size;
+    const ok = await this.confirm.confirm(
+      `Delete ${count} selected operation${count > 1 ? 's' : ''}?`,
+      'Bulk Delete Operations',
+      true
+    );
+    if (!ok) return;
+    this.runBulk('delete', null, `${count} operation${count > 1 ? 's' : ''} deleted.`);
+  }
+
+  private runBulk(action: 'status' | 'priority' | 'delete', value: any, msg: string): void {
+    this.bulkBusy = true;
+    this.api.patch<any>('/operations/bulk', {
+      ids: [...this.selectedIds],
+      action,
+      value
+    }).subscribe({
       next: () => {
-        this.saving = false; this.showModal = false; this.loadOperations();
-        this.toast.success(isEdit ? 'Operation updated.' : 'Operation created.');
-        this.cdr.markForCheck();
+        this.bulkBusy = false;
+        this.clearSelection();
+        this.toast.success(msg);
+        this.onMutated();
       },
       error: (e: any) => {
-        this.saving = false;
-        this.toast.error(e?.error?.message || 'Failed to save operation.');
+        this.bulkBusy = false;
+        this.toast.error(e?.error?.message || 'Bulk action failed.');
         this.cdr.markForCheck();
       }
     });
   }
 
-  async deleteOperation(op: Operation): Promise<void> {
-    const ok = await this.confirm.confirm(
-      `Delete "${op.title}"? This cannot be undone.`, 'Delete Operation');
-    if (!ok) return;
-    this.api.delete<any>(`/operations/${op.id}`).subscribe({
-      next: () => { this.loadOperations(); this.toast.success('Operation deleted.'); },
-      error: (e: any) => this.toast.error(e?.error?.message || 'Failed to delete.')
-    });
+  // ── Modal & Mutation Triggers ──────────────────────────────────────────────
+  openModal(op?: Operation): void { this.modals?.openFormModal(op); }
+  openDetail(op: Operation): void { this.modals?.openDetailModal(op); }
+  setStatus(op: Operation, status: OperationStatus): void {
+    this.closeRowMenu();
+    this.modals?.updateStatus(op, status);
+  }
+  duplicate(op: Operation): void {
+    this.closeRowMenu();
+    this.modals?.duplicateOperation(op);
+  }
+  deleteOp(op: Operation): void {
+    this.closeRowMenu();
+    this.modals?.deleteOperation(op);
   }
 
-  getStatusBadge(s: string): string {
-    const m: Record<string,string> = {
-      PLANNED:'badge-planned', IN_PROGRESS:'badge-in-progress',
-      COMPLETED:'badge-completed', CANCELLED:'badge-cancelled', ON_HOLD:'badge-on-hold'
-    };
-    return m[s] || 'badge-planned';
-  }
-  getPriorityBadge(p: string): string {
-    const m: Record<string,string> = { LOW:'badge-low', MEDIUM:'badge-medium', HIGH:'badge-high', CRITICAL:'badge-critical' };
-    return m[p] || 'badge-medium';
-  }
-  getInitials(u?: Partial<{first_name:string;last_name:string}>): string {
-    if (!u) return '?';
-    return `${u.first_name?.[0]||''}${u.last_name?.[0]||''}`.toUpperCase();
-  }
-  private emptyForm(): any {
-    return { title:'', description:'', status:'PLANNED', priority:'MEDIUM', location:'', start_date:null, end_date:null, notes:'' };
+  onMutated(): void {
+    this.loadSummary();
+    this.loadOperations();
   }
 
+  // ── UI Customization & Row Formatters ──────────────────────────────────────
   showTableField(fieldKey: string): boolean {
     return this.uiCustomization.isVisible(this.uiPrefs, 'table', fieldKey, true);
-  }
-
-  showFormField(fieldKey: string): boolean {
-    return this.uiCustomization.isVisible(this.uiPrefs, 'form', fieldKey, true);
   }
 
   fieldLabel(scope: 'table' | 'form', fieldKey: string, fallback: string): string {
     return this.uiCustomization.getLabel(this.uiPrefs, scope, fieldKey, fallback);
   }
+
+  opSubline(op: Operation): string {
+    const parts: string[] = [];
+    if (this.showTableField('location') && op.location) parts.push(op.location);
+    const crewCount = op.members?.length || 0;
+    if (crewCount > 0) parts.push(`${crewCount} crew`);
+    return parts.join(' · ');
+  }
+
+  avgDurationText(): string {
+    const mins = this.summary?.avg_duration_minutes ?? 0;
+    return mins > 0 ? formatDurationMinutes(mins) : '—';
+  }
+
+  durationText(op: Operation): string {
+    return formatDurationRange(op.start_date, op.actual_end_date || op.end_date);
+  }
+
+  overdue(op: Operation): boolean { return isOperationOverdue(op); }
+  label(v?: string | null): string { return formatEnumLabel(v); }
+  statusBadge(s: string): string { return getStatusBadgeClass(s); }
+  priorityBadge(p: string): string { return getPriorityBadgeClass(p); }
+  creatorName(op: Operation): string { return getUserDisplayName(op.creator); }
+  creatorInitials(op: Operation): string { return getUserInitials(op.creator); }
 }

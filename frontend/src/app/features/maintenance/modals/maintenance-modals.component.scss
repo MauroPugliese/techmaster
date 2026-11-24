@@ -1,0 +1,25 @@
+@import '../maintenance-shared';
+
+.mnt-modal-wide {
+  max-width: 650px;
+}
+
+.mnt-textarea-sm {
+  min-height: 76px;
+}
+
+.mnt-parts-picker {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mnt-part-select {
+  flex: 1 1 240px;
+}
+
+.mnt-part-qty {
+  width: 84px;
+  flex: 0 0 84px;
+}

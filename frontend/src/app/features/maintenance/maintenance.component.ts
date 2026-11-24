@@ -1,246 +1,214 @@
-// =============================================================================
-// maintenance.component.ts — updated: ToastService + ConfirmService
-// =============================================================================
-import { Component, OnInit, OnDestroy, HostListener, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
-import { CommonModule, DatePipe, TitleCasePipe } from '@angular/common';
-import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import {
+  ChangeDetectionStrategy,
+  ChangeDetectorRef,
+  Component,
+  OnDestroy,
+  OnInit,
+  ViewChild
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { ActivatedRoute, Router } from '@angular/router';
 import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
-import { ApiService }       from '../../core/services/services';
-import { DateFilterService } from '../../core/services/services';
-import { UiCustomizationService, UiSectionPreferences } from '../../core/services/services';
-import { ToastService }     from '../../core/services/toast.service';
-import { ConfirmService }   from '../../core/services/confirm.service';
-import { MaintenanceRecord, Asset } from '../../core/models/interfaces';
-import { DateTimePickerComponent } from '../../shared/components/datetime-picker/datetime-picker.component';
+import { ApiService, UiCustomizationService, UiSectionPreferences } from '../../core/services/services';
+import {
+  Asset,
+  AssetCategory,
+  InventoryItem,
+  MaintenanceRecord,
+  MaintenanceStatus,
+  MaintenanceSummary,
+  PlannedMaintenanceSummary,
+  PlannedMaintenanceTask
+} from '../../core/models/interfaces';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
-import { DropdownComponent, DropdownOptionComponent } from '../../shared/components/dropdown/dropdown.component';
+import { MaintenanceWorkOrdersComponent } from './work-orders/maintenance-work-orders.component';
+import { PlannedMaintenanceDashboardComponent } from './planned/planned-maintenance-dashboard.component';
+import { MaintenanceAssetsComponent } from './assets/maintenance-assets.component';
+import { MaintenanceModalsComponent } from './modals/maintenance-modals.component';
+
+export type MaintenanceTab = 'work-orders' | 'planned' | 'assets';
 
 @Component({
   selector: 'app-maintenance',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, TitleCasePipe, RouterLink, DateTimePickerComponent, ExportMenuComponent, DropdownComponent, DropdownOptionComponent],
+  imports: [
+    CommonModule,
+    ExportMenuComponent,
+    MaintenanceWorkOrdersComponent,
+    PlannedMaintenanceDashboardComponent,
+    MaintenanceAssetsComponent,
+    MaintenanceModalsComponent
+  ],
   templateUrl: './maintenance.component.html',
+  styleUrls: ['./maintenance.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class MaintenanceComponent implements OnInit, OnDestroy {
+  @ViewChild(MaintenanceModalsComponent) modals?: MaintenanceModalsComponent;
+  @ViewChild(PlannedMaintenanceDashboardComponent) plannedChild?: PlannedMaintenanceDashboardComponent;
+
   private destroy$ = new Subject<void>();
-  Math = Math;
-  records: MaintenanceRecord[] = [];
-  assets:  Asset[]             = [];
-  loading  = true;
-  saving   = false;
-  total    = 0;
-  page     = 1;
-  pageSize = 20;
-  readonly pageSizeOptions = [10, 20, 50, 100];
-  searchQuery = '';
-  statusFilter   = '';
-  priorityFilter = '';
-  showModal = false;
-  editing:  MaintenanceRecord | null = null;
-  detailRecord: MaintenanceRecord | null = null;
-  form:     any = this.emptyForm();
+
+  activeTab: MaintenanceTab = 'work-orders';
+  refreshTick = 0;
+
+  assets: Asset[] = [];
+  assetCategories: AssetCategory[] = [];
+  warehouseItems: InventoryItem[] = [];
   uiPrefs: UiSectionPreferences | null = null;
 
-  get stats() {
-    return [
-      { label:'Scheduled',   count: this.records.filter(r=>r.status==='SCHEDULED').length,   icon:'event',        color:'#0288D1' },
-      { label:'In Progress', count: this.records.filter(r=>r.status==='IN_PROGRESS').length,  icon:'pending',      color:'#F59E0B' },
-      { label:'Completed',   count: this.records.filter(r=>r.status==='COMPLETED').length,   icon:'check_circle', color:'#10B981' },
-      { label:'Failed',      count: this.records.filter(r=>r.status==='FAILED').length,      icon:'error',        color:'#EF4444' },
-      { label:'Deferred',    count: this.records.filter(r=>r.status==='DEFERRED').length,    icon:'schedule',     color:'#9CA3AF' },
-    ];
-  }
+  maintSummary: MaintenanceSummary | null = null;
+  plannedSummary: PlannedMaintenanceSummary | null = null;
+  workOrdersExportParams: Record<string, any> = {};
+  plannedExportParams: Record<string, any> = {};
 
   constructor(
-    private api:     ApiService,
-    private dateFilter: DateFilterService,
+    private api: ApiService,
     private uiCustomization: UiCustomizationService,
-    private toast:   ToastService,
-    private confirm: ConfirmService,
-    private cdr:     ChangeDetectorRef
+    private route: ActivatedRoute,
+    private router: Router,
+    private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
-    this.uiCustomization.load('maintenance').subscribe(p => {
+    const defaultTab = (this.route.snapshot.data?.['defaultTab'] as MaintenanceTab) || 'work-orders';
+    this.activeTab = defaultTab;
+
+    this.route.queryParams.pipe(takeUntil(this.destroy$)).subscribe(qp => {
+      const tab = qp['tab'];
+      if (tab === 'work-orders' || tab === 'planned' || tab === 'assets') {
+        this.activeTab = tab;
+      }
+      this.cdr.markForCheck();
+    });
+
+    this.uiCustomization.load('maintenance').pipe(takeUntil(this.destroy$)).subscribe(p => {
       this.uiPrefs = p;
       this.cdr.markForCheck();
     });
+
+    this.loadReferenceData();
+  }
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
+  loadReferenceData(): void {
     this.api.get<any>('/maintenance/assets').subscribe({
       next: r => { this.assets = r?.data || []; this.cdr.markForCheck(); }
     });
-    this.dateFilter.range$.pipe(takeUntil(this.destroy$)).subscribe(() => this.load());
-  }
-
-  ngOnDestroy(): void { this.destroy$.next(); this.destroy$.complete(); }
-
-  load(): void {
-    this.loading = true;
-    this.api.get<any>('/maintenance', {
-      search: this.searchQuery,
-      status: this.statusFilter,
-      priority: this.priorityFilter,
-      page: this.page,
-      limit: this.pageSize
-    }).subscribe({
-      next: r => {
-        this.records = r?.data?.items || [];
-        this.total = r?.data?.total || this.records.length;
-        this.loading = false;
-        this.cdr.markForCheck();
-      },
-      error: () => { this.loading = false; this.cdr.markForCheck(); }
+    this.api.get<any>('/maintenance/asset-categories').subscribe({
+      next: r => { this.assetCategories = r?.data || []; this.cdr.markForCheck(); }
+    });
+    this.api.get<any>('/warehouse', { limit: 100, page: 1 }).subscribe({
+      next: r => { this.warehouseItems = r?.data?.items || r?.data || []; this.cdr.markForCheck(); }
+    });
+    this.api.get<any>('/maintenance/summary').subscribe({
+      next: r => { this.maintSummary = r?.data || null; this.cdr.markForCheck(); }
+    });
+    this.api.get<any>('/maintenance/planned/summary').subscribe({
+      next: r => { this.plannedSummary = r?.data || null; this.cdr.markForCheck(); }
     });
   }
 
-  applyFilters(): void {
-    this.page = 1;
-    this.load();
+  selectTab(tab: MaintenanceTab): void {
+    if (this.activeTab === tab) return;
+    this.activeTab = tab;
+    this.router.navigate(['/maintenance'], { queryParams: { tab } });
   }
 
-  get totalPages(): number {
-    return Math.max(1, Math.ceil(this.total / this.pageSize));
+  // ── Header Primary CTA ─────────────────────────────────────────────────────
+  get primaryActionLabel(): string {
+    if (this.activeTab === 'planned') return 'New Planned Task';
+    if (this.activeTab === 'assets') return 'Add Asset';
+    return 'Log Work Order';
   }
 
-  changePage(page: number): void {
-    if (page < 1 || page > this.totalPages) return;
-    this.page = page;
-    this.load();
+  triggerPrimaryAction(): void {
+    if (this.activeTab === 'planned') {
+      this.plannedChild?.openModal();
+    } else if (this.activeTab === 'assets') {
+      this.modals?.openAssetModal();
+    } else {
+      this.modals?.openRecordModal();
+    }
   }
 
-  onPageSizeChange(): void {
-    this.page = 1;
-    this.load();
+  // ── Modal Delegation ───────────────────────────────────────────────────────
+  openAddWorkOrder(): void {
+    this.modals?.openRecordModal();
   }
 
-  private emptyForm() {
-    return { asset_id: undefined, type:'PREVENTIVE', priority:'MEDIUM', status:'SCHEDULED',
-             title:'', description:'', findings:'', scheduled_date: null,
-             downtime_hours: undefined, cost: undefined };
+  openEditWorkOrder(record: MaintenanceRecord): void {
+    this.modals?.openRecordModal(record);
   }
 
-  openModal(): void {
-    this.editing = null; this.form = this.emptyForm(); this.showModal = true; this.cdr.markForCheck();
+  openWorkOrderDetail(record: MaintenanceRecord): void {
+    this.modals?.openDetailModal(record);
   }
-  editRecord(r: MaintenanceRecord): void {
-    this.editing = r;
-    this.form    = { 
-      ...r, 
-      description: r.description ?? '', 
-      findings: r.findings ?? '',
-      scheduled_date: r.scheduled_date ? new Date(r.scheduled_date) : null
-    };
-    this.showModal = true; this.cdr.markForCheck();
+
+  changeWorkOrderStatus(evt: { record: MaintenanceRecord; status: MaintenanceStatus }): void {
+    this.modals?.updateRecordStatus(evt.record, evt.status);
   }
-  openDetailModal(record: MaintenanceRecord): void {
-    this.detailRecord = record;
+
+  deleteWorkOrder(record: MaintenanceRecord): void {
+    this.modals?.deleteRecord(record);
+  }
+
+  openAddAsset(): void {
+    this.modals?.openAssetModal();
+  }
+
+  openEditAsset(asset: Asset): void {
+    this.modals?.openAssetModal(asset);
+  }
+
+  logWorkOrderForAsset(asset: Asset): void {
+    this.modals?.openRecordModal(undefined, {
+      asset_id: asset.id,
+      type: 'PREVENTIVE',
+      status: 'SCHEDULED',
+      scheduled_date: new Date().toISOString()
+    });
+  }
+
+  createWorkOrderFromPlanned(evt: { task: PlannedMaintenanceTask; occurrenceDate?: string }): void {
+    const task = evt.task;
+    const occDate = evt.occurrenceDate || task.occurrenceDate || null;
+    const scheduledIso = occDate ? `${occDate}T09:00:00.000Z` : (task.operationDateStart || new Date().toISOString());
+
+    const descriptionLines = [
+      `Generated from Planned Maintenance #${task.masterId || task.id} (${task.system} / ${task.subsystem}).`,
+      task.reference ? `Reference: ${task.reference}` : null,
+      occDate ? `Occurrence Date: ${occDate}` : null,
+      '',
+      task.task
+    ].filter(v => v !== null);
+
+    this.modals?.openRecordModal(undefined, {
+      title: `${task.system}: ${String(task.task || '').slice(0, 150)}`.slice(0, 200),
+      description: descriptionLines.join('\n'),
+      type: 'PREVENTIVE',
+      priority: 'MEDIUM',
+      status: 'SCHEDULED',
+      scheduled_date: scheduledIso
+    });
+  }
+
+  onMutated(): void {
+    this.refreshTick += 1;
+    this.api.get<any>('/maintenance/summary').subscribe({
+      next: r => { this.maintSummary = r?.data || null; this.cdr.markForCheck(); }
+    });
     this.cdr.markForCheck();
   }
-  closeDetailModal(e: MouseEvent): void {
-    if ((e.target as HTMLElement).classList.contains('modal-overlay')) {
-      this.detailRecord = null;
-    }
-  }
-  editFromDetail(): void {
-    if (!this.detailRecord) return;
-    const record = this.detailRecord;
-    this.detailRecord = null;
-    this.editRecord(record);
-  }
-  completeFromDetail(): void {
-    if (!this.detailRecord) return;
-    const record = this.detailRecord;
-    this.detailRecord = null;
-    this.completeRecord(record);
-  }
-  deleteFromDetail(): void {
-    if (!this.detailRecord) return;
-    const record = this.detailRecord;
-    this.detailRecord = null;
-    this.deleteRecord(record);
-  }
-  formatLabel(value?: string | null): string {
-    return (value || '').replace(/_/g, ' ');
-  }
 
-  @HostListener('document:keydown.escape')
-  onEsc(): void {
-    if (this.detailRecord) {
-      this.detailRecord = null;
-      this.cdr.markForCheck();
-    }
-  }
-
-  closeModal(e: MouseEvent): void {
-    if ((e.target as HTMLElement).classList.contains('modal-overlay')) this.showModal = false;
-  }
-
-  save(): void {
-    if (this.showFormField('title') && !this.form.title?.trim())       { this.toast.warning('Title is required.');          return; }
-    if (this.showFormField('asset_id') && !this.form.asset_id)         { this.toast.warning('Please select an asset.');     return; }
-    if (this.showFormField('scheduled_date') && !this.form.scheduled_date) { this.toast.warning('Scheduled date is required.'); return; }
-    if (this.showFormField('description') && !this.form.description?.trim()) { this.toast.warning('Description is required.');    return; }
-
-    const payload: any = { ...this.form };
-    if (payload.status === 'COMPLETED' && !payload.completed_date)
-      payload.completed_date = new Date().toISOString();
-
-    this.saving = true;
-    const isEdit = !!this.editing;
-    const req$   = isEdit
-      ? this.api.put<any>(`/maintenance/${this.editing!.id}`, payload)
-      : this.api.post<any>('/maintenance', payload);
-
-    req$.subscribe({
-      next: () => {
-        this.saving = false; this.showModal = false; this.load();
-        this.toast.success(isEdit ? 'Record updated.' : 'Maintenance record created.');
-        this.cdr.markForCheck();
-      },
-      error: (e: any) => {
-        this.saving = false;
-        this.toast.error(e?.error?.message || 'Failed to save record.');
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  completeRecord(r: MaintenanceRecord): void {
-    this.api.put<any>(`/maintenance/${r.id}`, { status:'COMPLETED', completed_date: new Date().toISOString() }).subscribe({
-      next: () => { this.load(); this.toast.success('Marked as completed.'); },
-      error: (e: any) => this.toast.error(e?.error?.message || 'Failed to update.')
-    });
-  }
-
-  async deleteRecord(r: MaintenanceRecord): Promise<void> {
-    const ok = await this.confirm.confirm(`Delete "${r.title}"? This cannot be undone.`, 'Delete Record');
-    if (!ok) return;
-    this.api.delete<any>(`/maintenance/${r.id}`).subscribe({
-      next: () => { this.load(); this.toast.success('Record deleted.'); },
-      error: (e: any) => this.toast.error(e?.error?.message || 'Failed to delete.')
-    });
-  }
-
-  getStatusBadge(s: string): string {
-    const m: Record<string,string> = { SCHEDULED:'badge-planned', IN_PROGRESS:'badge-in-progress', COMPLETED:'badge-completed', FAILED:'badge-cancelled', DEFERRED:'badge-on-hold' };
-    return m[s] || 'badge-planned';
-  }
-  getPriorityBadge(p: string): string {
-    const m: Record<string,string> = { LOW:'badge-low', MEDIUM:'badge-medium', HIGH:'badge-high', CRITICAL:'badge-critical' };
-    return m[p] || 'badge-medium';
-  }
-
-  showTableField(fieldKey: string): boolean {
-    return this.uiCustomization.isVisible(this.uiPrefs, 'table', fieldKey, true);
-  }
-
-  showFormField(fieldKey: string): boolean {
-    return this.uiCustomization.isVisible(this.uiPrefs, 'form', fieldKey, true);
-  }
-
-  fieldLabel(scope: 'table' | 'form', fieldKey: string, fallback: string): string {
-    return this.uiCustomization.getLabel(this.uiPrefs, scope, fieldKey, fallback);
+  onAssetsMutated(): void {
+    this.refreshTick += 1;
+    this.loadReferenceData();
+    this.cdr.markForCheck();
   }
 }

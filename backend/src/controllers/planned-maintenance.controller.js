@@ -9,8 +9,13 @@ const {
   taskOccursOnDate,
   loadSeriesAndInstances,
   resolveOccurrencesForDate,
+  expandOccurrencesInRange,
   buildMonthRange
 } = require('../services/planned-recurrence.service');
+const {
+  sanitizeMaintenancePayload,
+  summarizePlannedMonth
+} = require('../services/maintenance-helpers.service');
 
 const ALLOWED_SORT_COLUMNS = new Set([
   'id',
@@ -169,11 +174,57 @@ const getCalendarIndicators = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+const getSystems = async (req, res, next) => {
+  try {
+    const { sequelize } = require('../models');
+    const [rows] = await sequelize.query(
+      `SELECT DISTINCT TRIM(\`system\`) AS system_name
+       FROM planned_maintenance_tasks
+       WHERE deleted_at IS NULL AND \`system\` IS NOT NULL AND TRIM(\`system\`) <> ''
+       ORDER BY system_name ASC`
+    );
+    res.json({ success: true, data: rows.map(r => r.system_name) });
+  } catch (err) { next(err); }
+};
+
+const getSummary = async (req, res, next) => {
+  try {
+    const { PlannedMaintenanceTask } = require('../models');
+    const now = new Date();
+    const year = parseInt(req.query.year, 10) || now.getUTCFullYear();
+    const month = parseInt(req.query.month, 10) || (now.getUTCMonth() + 1);
+    const { start, end } = buildMonthRange(year, month);
+    const todayStr = typeof req.query.today === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.today)
+      ? req.query.today
+      : now.toISOString().slice(0, 10);
+
+    const [masters, expandedOccurrences] = await Promise.all([
+      PlannedMaintenanceTask.findAll({ attributes: ['id', 'status', 'optional'] }),
+      expandOccurrencesInRange(start, end, 35)
+    ]);
+
+    res.json({
+      success: true,
+      data: summarizePlannedMonth({
+        masters: masters.map(m => m.get({ plain: true })),
+        expandedOccurrences,
+        todayStr
+      })
+    });
+  } catch (err) { next(err); }
+};
+
 const create = async (req, res, next) => {
   try {
     const { PlannedMaintenanceTask } = require('../models');
+    const payload = normalizeTaskPayload(req.body);
+    if (payload.operation_date_start && payload.operation_date_end) {
+      if (new Date(payload.operation_date_end) < new Date(payload.operation_date_start)) {
+        return res.status(400).json({ success: false, message: 'End date must be on or after start date.' });
+      }
+    }
     const task = await PlannedMaintenanceTask.create({
-      ...normalizeTaskPayload(req.body),
+      ...payload,
       created_by: req.user.id
     });
     res.status(201).json({ success: true, data: task });
@@ -185,7 +236,13 @@ const update = async (req, res, next) => {
     const { PlannedMaintenanceTask } = require('../models');
     const task = await PlannedMaintenanceTask.findByPk(req.params.id);
     if (!task) return res.status(404).json({ success: false, message: 'Planned task not found' });
-    await task.update(normalizeTaskPayload(req.body));
+    const payload = normalizeTaskPayload(req.body);
+    const nextStart = payload.operation_date_start ?? task.operation_date_start;
+    const nextEnd = payload.operation_date_end ?? task.operation_date_end;
+    if (nextStart && nextEnd && new Date(nextEnd) < new Date(nextStart)) {
+      return res.status(400).json({ success: false, message: 'End date must be on or after start date.' });
+    }
+    await task.update(payload);
     res.json({ success: true, data: task });
   } catch (err) { next(err); }
 };
@@ -320,13 +377,64 @@ const remove = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+const createWorkOrder = async (req, res, next) => {
+  try {
+    const { PlannedMaintenanceTask, MaintenanceRecord, Asset, AssetCategory, User } = require('../models');
+    const planned = await PlannedMaintenanceTask.findByPk(req.params.id);
+    if (!planned) return res.status(404).json({ success: false, message: 'Planned task not found' });
+
+    const occDate = typeof req.body?.occurrence_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.body.occurrence_date)
+      ? req.body.occurrence_date
+      : null;
+
+    const defaultScheduled = req.body?.scheduled_date
+      || (occDate ? `${occDate}T09:00:00.000Z` : planned.operation_date_start);
+
+    const candidateBody = {
+      asset_id: req.body?.asset_id,
+      type: req.body?.type || 'PREVENTIVE',
+      priority: req.body?.priority || 'MEDIUM',
+      status: req.body?.status || 'SCHEDULED',
+      title: req.body?.title || `${planned.system}: ${String(planned.task || '').slice(0, 150)}`.slice(0, 200),
+      description: req.body?.description || [
+        `Generated from Planned Maintenance #${planned.id} (${planned.system} / ${planned.subsystem}).`,
+        planned.reference ? `Reference: ${planned.reference}` : null,
+        occDate ? `Scheduled Occurrence: ${occDate}` : null,
+        '',
+        planned.task
+      ].filter(v => v !== null).join('\n'),
+      scheduled_date: defaultScheduled
+    };
+
+    const { data, error } = sanitizeMaintenancePayload(candidateBody, { isCreate: true });
+    if (error) return res.status(400).json({ success: false, message: error });
+
+    const created = await MaintenanceRecord.create({
+      ...data,
+      performed_by: req.user.id
+    });
+
+    const full = await MaintenanceRecord.findByPk(created.id, {
+      include: [
+        { model: Asset, as: 'asset', include: [{ model: AssetCategory, as: 'category' }] },
+        { model: User, as: 'technician', attributes: ['id', 'first_name', 'last_name', 'username'] }
+      ]
+    });
+
+    res.status(201).json({ success: true, data: full || created });
+  } catch (err) { next(err); }
+};
+
 module.exports = {
   getAll,
+  getSystems,
+  getSummary,
   getById,
   getByDate,
   getCalendarIndicators,
   create,
   update,
+  createWorkOrder,
   updateOccurrence,
   deleteOccurrence,
   remove

@@ -1,0 +1,580 @@
+/* ============================================================================
+   _maintenance-shared.scss — Unified Clean Maintenance & Planned Design System
+   Uses global SMaRT tokens exclusively (--font-sans everywhere + tabular-nums)
+   ============================================================================ */
+
+.mnt-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.mnt-page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+
+  h2 {
+    margin: 0 0 2px;
+    font-family: var(--font-sans);
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: var(--blue-950);
+    letter-spacing: -0.02em;
+  }
+
+  p {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+  }
+}
+
+.mnt-head-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ── Numeric Alignment (Strictly var(--font-sans)) ────────────────────────── */
+.mnt-num {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+
+.mnt-primary-val {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--blue-950);
+  line-height: 1.25;
+}
+
+.mnt-subtext {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.76rem;
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-top: 2px;
+  line-height: 1.3;
+}
+
+/* ── Compact Horizontal KPI Strip ─────────────────────────────────────────── */
+.mnt-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+  gap: 12px;
+}
+
+.mnt-kpi-card {
+  padding: 14px 16px;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  font-family: var(--font-sans);
+
+  .kpi-icon-wrap {
+    width: 40px;
+    height: 40px;
+    font-size: 20px;
+    flex-shrink: 0;
+  }
+
+  &.mnt-kpi-clickable {
+    cursor: pointer;
+
+    &:hover {
+      border-color: var(--blue-300);
+    }
+  }
+
+  &.active {
+    border-color: var(--kpi-color, var(--primary));
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--kpi-color, var(--primary)) 18%, transparent);
+    background: var(--surface-raised);
+  }
+}
+
+.mnt-kpi-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mnt-kpi-value {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.45rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--blue-950);
+  line-height: 1.1;
+}
+
+/* ── Navigation Tab Strip ─────────────────────────────────────────────────── */
+.mnt-tab-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 5px;
+  box-shadow: var(--shadow-sm);
+}
+
+.mnt-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+
+  .mat-i { font-size: 18px; }
+
+  &:hover:not(.active) {
+    background: var(--blue-50);
+    color: var(--primary);
+  }
+
+  &.active {
+    background: var(--primary);
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(21, 101, 192, 0.22);
+  }
+}
+
+.mnt-tab-pill {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: var(--blue-50);
+  color: var(--primary);
+
+  &.warn {
+    background: #FEE2E2;
+    color: #DC2626;
+  }
+
+  .mnt-tab-btn.active & {
+    background: rgba(255, 255, 255, 0.22);
+    color: #fff;
+  }
+}
+
+/* ── Single-Row Filter Toolbars ───────────────────────────────────────────── */
+.mnt-toolbar-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 12px 14px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mnt-filter-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mnt-search-wrap {
+  position: relative;
+  flex: 1 1 220px;
+  min-width: 200px;
+
+  .search-bar {
+    width: 100%;
+    padding: 6px 10px 6px 12px;
+    min-height: 38px;
+  }
+}
+
+.mnt-search-clear {
+  border: none;
+  background: transparent;
+  color: var(--text-subtle);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+
+  &:hover { color: var(--blue-950); }
+}
+
+.mnt-filter-select {
+  min-width: 145px;
+  flex: 0 1 auto;
+  width: auto;
+}
+
+/* ── Contextual Bulk Action Bar ───────────────────────────────────────────── */
+.mnt-bulk-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--blue-900);
+  color: #fff;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  font-size: 0.84rem;
+}
+
+.mnt-bulk-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mnt-bulk-select {
+  min-width: 150px;
+  background: #fff;
+  border-radius: var(--radius-md);
+  color: var(--blue-950);
+}
+
+/* ── Compact Tables (Zero Horizontal Scroll on Desktop) ───────────────────── */
+.mnt-table-wrap {
+  overflow: visible;
+}
+
+.data-table.mnt-table {
+  th {
+    padding: 10px 12px;
+    font-size: 0.72rem;
+  }
+
+  td {
+    padding: 10px 12px;
+    font-size: 0.85rem;
+  }
+
+  th.mnt-col-num,
+  td.mnt-col-num {
+    text-align: right;
+  }
+
+  th.mnt-col-num .mnt-sort-btn {
+    justify-content: flex-end;
+    width: 100%;
+  }
+
+  th.mnt-col-actions,
+  td.mnt-col-actions {
+    width: 104px;
+    text-align: right;
+    white-space: nowrap;
+  }
+}
+
+.mnt-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  cursor: pointer;
+
+  &:hover,
+  &.active {
+    color: var(--primary);
+  }
+
+  .mat-i { font-size: 14px; }
+}
+
+.mnt-title-main {
+  font-weight: 700;
+  color: var(--blue-950);
+  line-height: 1.3;
+}
+
+.mnt-status-stack {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mnt-overdue-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  color: #DC2626;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.mnt-row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+.mnt-checkbox {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--primary);
+}
+
+/* ── Overflow Row Action Menu / Export Dropdown ───────────────────────────── */
+.mnt-menu-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.mnt-row-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 192px;
+  z-index: 95;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+
+  &.open-up {
+    top: auto;
+    bottom: calc(100% + 4px);
+  }
+}
+
+.mnt-menu-item {
+  width: 100%;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--blue-900);
+  text-align: left;
+  cursor: pointer;
+  transition: var(--transition);
+
+  .mat-i { font-size: 16px; }
+
+  &:hover:not(:disabled) {
+    background: var(--blue-50);
+    color: var(--primary);
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  &.danger {
+    color: #DC2626;
+
+    &:hover:not(:disabled) {
+      background: #FEF2F2;
+      color: #B91C1C;
+    }
+  }
+}
+
+.mnt-menu-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 3px 6px;
+}
+
+/* ── Warning Banner, Inline Validation, Presets & Parts ───────────────────── */
+.mnt-warn-banner {
+  background: #FFFBEB;
+  border: 1px solid #FDE68A;
+  border-left: 4px solid #D97706;
+  border-radius: var(--radius-md);
+  padding: 11px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 0.85rem;
+  color: #92400E;
+}
+
+.mnt-inline-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  border-radius: var(--radius-md);
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  color: #DC2626;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.mnt-quick-presets {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.mnt-preset-btn {
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--blue-200);
+  background: var(--blue-50);
+  color: var(--primary);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+
+  &:hover {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+  }
+}
+
+.mnt-downtime-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.mnt-unit-input {
+  position: relative;
+  display: flex;
+  align-items: center;
+
+  .form-control {
+    padding-right: 38px;
+  }
+
+  span {
+    position: absolute;
+    right: 11px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    pointer-events: none;
+  }
+}
+
+.mnt-parts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.mnt-part-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  font-size: 0.82rem;
+}
+
+/* ── Pagination Bar ───────────────────────────────────────────────────────── */
+.mnt-pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.mnt-page-indicator {
+  padding: 4px 10px;
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--blue-900);
+}
+
+/* ── Toggle Checkbox Label ────────────────────────────────────────────────── */
+.mnt-check-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--blue-900);
+  cursor: pointer;
+  user-select: none;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+}
+
+@media (max-width: 1024px) {
+  .mnt-table-wrap {
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 768px) {
+  .mnt-filter-select {
+    min-width: 135px;
+    flex: 1 1 135px;
+  }
+}

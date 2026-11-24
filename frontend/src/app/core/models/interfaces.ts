@@ -81,6 +81,24 @@ export interface OperationType {
   id: number; name: string; color: string; icon: string; description: string;
 }
 
+export interface OperationMember {
+  operation_id: number;
+  user_id: number;
+  role_in_op?: string | null;
+  joined_at?: string;
+  user?: Partial<User>;
+}
+
+export interface OperationLog {
+  id: number;
+  operation_id: number;
+  user_id: number;
+  action: string;
+  details?: string | null;
+  logged_at: string;
+  user?: Partial<User>;
+}
+
 export interface Operation {
   id: number;
   type_id: number;
@@ -92,27 +110,64 @@ export interface Operation {
   location?: string;
   start_date: string;
   end_date?: string;
+  actual_end_date?: string | null;
   notes?: string;
+  metadata?: any;
   type?: OperationType;
   creator?: Partial<User>;
+  members?: OperationMember[];
+  logs?: OperationLog[];
   created_at: string;
+}
+
+export interface OperationSummary {
+  total: number;
+  planned_count: number;
+  in_progress_count: number;
+  on_hold_count: number;
+  completed_count: number;
+  cancelled_count: number;
+  overdue_count: number;
+  completion_rate: number;
+  avg_duration_minutes: number;
 }
 
 // ── Maintenance ───────────────────────────────────────────────────────────────
 export type MaintenanceType = 'PREVENTIVE' | 'CORRECTIVE' | 'PREDICTIVE' | 'UPGRADE' | 'INSPECTION';
 export type MaintenanceStatus = 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED' | 'DEFERRED';
+export type AssetStatus = 'ACTIVE' | 'INACTIVE' | 'UNDER_MAINTENANCE' | 'RETIRED' | 'LOST';
+
+export interface AssetCategory {
+  id: number;
+  name: string;
+  type: 'HARDWARE' | 'SOFTWARE' | 'NETWORK' | 'OTHER';
+  description?: string;
+}
 
 export interface Asset {
   id: number;
+  category_id?: number;
   name: string;
   serial_number?: string;
   model?: string;
   manufacturer?: string;
-  status: 'ACTIVE' | 'INACTIVE' | 'UNDER_MAINTENANCE' | 'RETIRED' | 'LOST';
-  category?: { id: number; name: string; type: string; };
+  purchase_date?: string;
+  status: AssetStatus;
+  category?: AssetCategory;
   assigned_to?: number;
+  assignedUser?: Partial<User>;
   location?: string;
   warranty_expiry?: string;
+  notes?: string;
+  open_maintenance_count?: number;
+}
+
+export interface MaintenancePartUsage {
+  item_id?: number | null;
+  sku?: string | null;
+  name: string;
+  quantity: number;
+  unit?: string;
 }
 
 export interface MaintenanceRecord {
@@ -126,14 +181,26 @@ export interface MaintenanceRecord {
   priority: Priority;
   scheduled_date: string;
   completed_date?: string;
-  downtime_hours?: number;
-  cost?: number;
-  findings?: string;
-  parts_used?: any[];
-  next_scheduled?: string;
+  downtime_hours?: number | null;
+  cost?: number | null;
+  findings?: string | null;
+  parts_used?: MaintenancePartUsage[];
+  next_scheduled?: string | null;
   asset?: Asset;
   technician?: Partial<User>;
   created_at?: string;
+}
+
+export interface MaintenanceSummary {
+  total: number;
+  scheduled_count: number;
+  in_progress_count: number;
+  completed_count: number;
+  failed_count: number;
+  deferred_count: number;
+  overdue_count: number;
+  total_cost: number;
+  total_downtime_hours: number;
 }
 
 // ── Planned Maintenance ───────────────────────────────────────────────────────
@@ -159,6 +226,17 @@ export interface PlannedMaintenanceTask {
   occurrenceDate?: string | null;
   isOccurrence?: boolean;
   exceptionType?: 'OVERRIDE' | 'DELETED' | null;
+}
+
+export interface PlannedMaintenanceSummary {
+  total_series: number;
+  active_series: number;
+  optional_series: number;
+  due_today_count: number;
+  due_today_todo: number;
+  month_total_occurrences: number;
+  month_done_occurrences: number;
+  month_completion_pct: number;
 }
 
 export interface CalendarIndicator {

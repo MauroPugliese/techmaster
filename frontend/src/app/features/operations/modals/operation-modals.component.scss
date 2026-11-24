@@ -1,0 +1,29 @@
+@import '../operations-shared';
+
+.ops-modal-wide {
+  max-width: 650px;
+}
+
+.ops-detail-modal {
+  max-width: 700px;
+  width: min(700px, calc(100vw - 24px));
+}
+
+.ops-textarea-sm {
+  min-height: 76px;
+}
+
+.ops-crew-picker {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ops-crew-select {
+  flex: 1 1 220px;
+}
+
+.ops-crew-role {
+  flex: 1 1 160px;
+}

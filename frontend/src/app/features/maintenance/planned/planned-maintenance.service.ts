@@ -2,7 +2,11 @@ import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { ApiService } from '../../../core/services/api.service';
-import { PlannedMaintenanceTask, CalendarIndicators } from '../../../core/models/interfaces';
+import {
+  PlannedMaintenanceTask,
+  PlannedMaintenanceSummary,
+  CalendarIndicators
+} from '../../../core/models/interfaces';
 
 type PlannedTasksPage = {
   items: PlannedMaintenanceTask[];
@@ -13,7 +17,6 @@ type PlannedTasksPage = {
 
 @Injectable({ providedIn: 'root' })
 export class PlannedMaintenanceService {
-
   private basePath = '/maintenance/planned';
 
   constructor(private api: ApiService) {}
@@ -44,18 +47,18 @@ export class PlannedMaintenanceService {
   private toApiPayload(task: Partial<PlannedMaintenanceTask>): Record<string, any> {
     const payload: Record<string, any> = {};
 
-    if (task.system !== undefined) payload.system = task.system;
-    if (task.subsystem !== undefined) payload.subsystem = task.subsystem;
-    if (task.task !== undefined) payload.task = task.task;
-    if (task.reference !== undefined) payload.reference = task.reference;
-    if (task.operationDateStart !== undefined) payload.operation_date_start = task.operationDateStart;
-    if (task.operationDateEnd !== undefined) payload.operation_date_end = task.operationDateEnd;
-    if (task.repeatTaskType !== undefined) payload.repeat_task_type = task.repeatTaskType;
-    if (task.repeatTaskNumber !== undefined) payload.repeat_task_number = task.repeatTaskNumber;
-    if (task.recurrenceEndDate !== undefined) payload.recurrence_end_date = task.recurrenceEndDate;
-    if (task.reportTemplate !== undefined) payload.report_template = task.reportTemplate;
-    if (task.status !== undefined) payload.status = task.status;
-    if (task.optional !== undefined) payload.optional = task.optional;
+    if (task.system !== undefined) payload['system'] = task.system;
+    if (task.subsystem !== undefined) payload['subsystem'] = task.subsystem;
+    if (task.task !== undefined) payload['task'] = task.task;
+    if (task.reference !== undefined) payload['reference'] = task.reference;
+    if (task.operationDateStart !== undefined) payload['operation_date_start'] = task.operationDateStart;
+    if (task.operationDateEnd !== undefined) payload['operation_date_end'] = task.operationDateEnd;
+    if (task.repeatTaskType !== undefined) payload['repeat_task_type'] = task.repeatTaskType;
+    if (task.repeatTaskNumber !== undefined) payload['repeat_task_number'] = task.repeatTaskNumber;
+    if (task.recurrenceEndDate !== undefined) payload['recurrence_end_date'] = task.recurrenceEndDate;
+    if (task.reportTemplate !== undefined) payload['report_template'] = task.reportTemplate;
+    if (task.status !== undefined) payload['status'] = task.status;
+    if (task.optional !== undefined) payload['optional'] = task.optional;
 
     return payload;
   }
@@ -71,6 +74,22 @@ export class PlannedMaintenanceService {
           limit: res.data?.limit ?? Number(params['limit'] || items.length || 1)
         };
       })
+    );
+  }
+
+  getSystems(): Observable<string[]> {
+    return this.api.get<any>(`${this.basePath}/systems`).pipe(
+      map(res => res?.data || [])
+    );
+  }
+
+  getSummary(year?: number, month?: number, today?: string): Observable<PlannedMaintenanceSummary> {
+    const params: Record<string, any> = {};
+    if (year) params['year'] = year;
+    if (month) params['month'] = month;
+    if (today) params['today'] = today;
+    return this.api.get<any>(`${this.basePath}/summary`, params).pipe(
+      map(res => res?.data)
     );
   }
 
@@ -96,6 +115,10 @@ export class PlannedMaintenanceService {
 
   update(id: number, task: Partial<PlannedMaintenanceTask>): Observable<PlannedMaintenanceTask> {
     return this.api.put<any>(`${this.basePath}/${id}`, this.toApiPayload(task)).pipe(map(res => this.normalizeTask(res.data)));
+  }
+
+  createWorkOrder(id: number, body: Record<string, any>): Observable<any> {
+    return this.api.post<any>(`${this.basePath}/${id}/work-order`, body);
   }
 
   updateOccurrence(id: number, occurrenceDate: string, task: Partial<PlannedMaintenanceTask>): Observable<PlannedMaintenanceTask> {

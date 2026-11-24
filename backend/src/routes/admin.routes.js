@@ -42,7 +42,7 @@ const UI_SECTION_CATALOG = {
   },
   maintenance: {
     table: ['title', 'asset', 'type', 'status', 'priority', 'scheduled_date', 'technician', 'cost'],
-    form: ['title', 'asset_id', 'type', 'priority', 'status', 'scheduled_date', 'downtime_hours', 'cost', 'description', 'findings']
+    form: ['title', 'asset_id', 'type', 'priority', 'status', 'scheduled_date', 'downtime_hours', 'cost', 'next_scheduled', 'parts_used', 'description', 'findings']
   },
   warehouse: {
     table: ['sku', 'part_number', 'name', 'category', 'location', 'quantity', 'stock_status', 'reorder_point', 'unit_cost', 'supplier'],

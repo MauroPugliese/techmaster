@@ -1,374 +1,110 @@
-<!-- ==========================================================================
-     maintenance.component.html — UPDATED
-     Changes vs original:
-      - Removed showDeleteConfirm / deleting modal (now handled by ConfirmService)
-      - Delete button calls deleteRecord(r) directly
-      - FAILED added to status dropdown
-      - [ngValue] on asset select
-      - Warning banner when no assets
-     ========================================================================== -->
+<div class="mnt-page fade-in">
 
-<div class="maintenance-page fade-in">
-
-  <!-- ── Toolbar ─────────────────────────────────────────────────────────── -->
-  <div class="flex items-center justify-between mb-6">
-    <div class="flex gap-2">
-      <div class="search-bar" style="width:260px">
-        <span class="search-icon">search</span>
-        <input placeholder="Search maintenance..." [(ngModel)]="searchQuery" (input)="applyFilters()">
-      </div>
-      <app-dropdown class="form-control select-w-160" [(ngModel)]="statusFilter" (change)="applyFilters()" placeholder="All Statuses">
-        <app-dropdown-option value="">All Statuses</app-dropdown-option>
-        <app-dropdown-option value="SCHEDULED">Scheduled</app-dropdown-option>
-        <app-dropdown-option value="IN_PROGRESS">In Progress</app-dropdown-option>
-        <app-dropdown-option value="COMPLETED">Completed</app-dropdown-option>
-        <app-dropdown-option value="FAILED">Failed</app-dropdown-option>
-        <app-dropdown-option value="DEFERRED">Deferred</app-dropdown-option>
-      </app-dropdown>
-      <app-dropdown class="form-control select-w-140" [(ngModel)]="priorityFilter" (change)="applyFilters()" placeholder="All Priorities">
-        <app-dropdown-option value="">All Priorities</app-dropdown-option>
-        <app-dropdown-option value="LOW">Low</app-dropdown-option>
-        <app-dropdown-option value="MEDIUM">Medium</app-dropdown-option>
-        <app-dropdown-option value="HIGH">High</app-dropdown-option>
-        <app-dropdown-option value="CRITICAL">Critical</app-dropdown-option>
-      </app-dropdown>
+  <!-- ── Unified Header ──────────────────────────────────────────────────── -->
+  <div class="mnt-page-head">
+    <div>
+      <h2>Maintenance &amp; Assets</h2>
+      <p>Work orders, recurring preventive schedules, calendar checklists, and equipment registry.</p>
     </div>
-    <div class="flex gap-2">
-      <button class="btn btn-secondary" routerLink="/maintenance/planned">
-        <span class="btn-icon">calendar_month</span> Planned Maintenance
-      </button>
-      <app-export-menu endpoint="maintenance" filename="Maintenance_Records"
-                       [params]="{ status: statusFilter, priority: priorityFilter, search: searchQuery }"></app-export-menu>
-      <button class="btn btn-primary" (click)="openModal()">
-        <span class="btn-icon">add</span> Log Maintenance
+
+    <div class="mnt-head-actions">
+      <app-export-menu *ngIf="activeTab !== 'planned'"
+                       endpoint="maintenance"
+                       filename="Maintenance_Records"
+                       [params]="workOrdersExportParams"></app-export-menu>
+      <app-export-menu *ngIf="activeTab === 'planned'"
+                       endpoint="planned-maintenance"
+                       filename="Planned_Maintenance"
+                       [params]="plannedExportParams"></app-export-menu>
+
+      <button type="button" class="btn btn-primary" (click)="triggerPrimaryAction()">
+        <span class="btn-icon">add</span> {{primaryActionLabel}}
       </button>
     </div>
   </div>
 
-  <!-- ── Stats Strip ─────────────────────────────────────────────────────── -->
-  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:24px">
-    <div *ngFor="let s of stats" class="kpi-card" [style]="'--kpi-color:'+s.color">
-      <div class="kpi-icon-wrap" style="font-size:20px">{{s.icon}}</div>
-      <div>
-        <div class="kpi-value" style="font-size:1.5rem">{{s.count}}</div>
-        <div class="kpi-label">{{s.label}}</div>
-      </div>
-    </div>
+  <!-- ── Unified 3-Tab Switcher ──────────────────────────────────────────── -->
+  <div class="mnt-tab-bar" role="tablist" aria-label="Maintenance sections">
+    <button type="button"
+            role="tab"
+            class="mnt-tab-btn"
+            [class.active]="activeTab === 'work-orders'"
+            [attr.aria-selected]="activeTab === 'work-orders'"
+            (click)="selectTab('work-orders')">
+      <span class="mat-i">build_circle</span>
+      <span>Work Orders</span>
+      <span class="mnt-tab-pill" [class.warn]="(maintSummary?.overdue_count ?? 0) > 0">
+        {{maintSummary?.total ?? 0}}
+      </span>
+    </button>
+
+    <button type="button"
+            role="tab"
+            class="mnt-tab-btn"
+            [class.active]="activeTab === 'planned'"
+            [attr.aria-selected]="activeTab === 'planned'"
+            (click)="selectTab('planned')">
+      <span class="mat-i">calendar_month</span>
+      <span>Planned Schedule</span>
+      <span class="mnt-tab-pill">{{plannedSummary?.active_series ?? 0}}</span>
+    </button>
+
+    <button type="button"
+            role="tab"
+            class="mnt-tab-btn"
+            [class.active]="activeTab === 'assets'"
+            [attr.aria-selected]="activeTab === 'assets'"
+            (click)="selectTab('assets')">
+      <span class="mat-i">devices</span>
+      <span>Assets Registry</span>
+      <span class="mnt-tab-pill">{{assets.length}}</span>
+    </button>
   </div>
 
-  <!-- ── No assets warning ───────────────────────────────────────────────── -->
-  <div *ngIf="!loading && assets.length === 0"
-       style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:var(--radius-md);
-              padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;
-              gap:10px;font-size:0.875rem">
-    <span style="font-family:'Material Icons Round';font-style:normal;color:#F59E0B;font-size:20px">warning</span>
-    <span>No assets found. Add assets before logging maintenance records.</span>
-  </div>
+  <!-- ── Active Tab Panel ────────────────────────────────────────────────── -->
+  <app-maintenance-work-orders
+    *ngIf="activeTab === 'work-orders'"
+    [assets]="assets"
+    [uiPrefs]="uiPrefs"
+    [refreshTick]="refreshTick"
+    (logWorkOrderRequested)="openAddWorkOrder()"
+    (editWorkOrderRequested)="openEditWorkOrder($event)"
+    (detailRequested)="openWorkOrderDetail($event)"
+    (statusChangeRequested)="changeWorkOrderStatus($event)"
+    (deleteRequested)="deleteWorkOrder($event)"
+    (openAssetsTabRequested)="selectTab('assets')"
+    (exportParamsChange)="workOrdersExportParams = $event"
+    (summaryChange)="maintSummary = $event"
+    (mutated)="onMutated()">
+  </app-maintenance-work-orders>
 
-  <!-- ── Table ───────────────────────────────────────────────────────────── -->
-  <div class="table-container">
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th *ngIf="showTableField('title')">{{fieldLabel('table','title','Title')}}</th>
-          <th *ngIf="showTableField('asset')">{{fieldLabel('table','asset','Asset')}}</th>
-          <th *ngIf="showTableField('type')">{{fieldLabel('table','type','Type')}}</th>
-          <th *ngIf="showTableField('status')">{{fieldLabel('table','status','Status')}}</th>
-          <th *ngIf="showTableField('priority')">{{fieldLabel('table','priority','Priority')}}</th>
-          <th *ngIf="showTableField('scheduled_date')">{{fieldLabel('table','scheduled_date','Scheduled')}}</th>
-          <th *ngIf="showTableField('technician')">{{fieldLabel('table','technician','Technician')}}</th>
-          <th *ngIf="showTableField('cost')">{{fieldLabel('table','cost','Cost')}}</th><th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr *ngFor="let r of records"
-            class="row-clickable"
-            (click)="openDetailModal(r)">
-          <td *ngIf="showTableField('title')">
-            <div class="font-bold">{{r.title}}</div>
-            <div class="text-sm text-muted truncate" style="max-width:180px">{{r.description}}</div>
-          </td>
-          <td *ngIf="showTableField('asset')">
-            <div class="font-bold text-sm">{{r.asset?.name || '—'}}</div>
-            <div class="text-sm text-muted">{{r.asset?.serial_number || ''}}</div>
-          </td>
-          <td *ngIf="showTableField('type')"><span class="badge badge-in-progress">{{r.type | titlecase}}</span></td>
-          <td *ngIf="showTableField('status')"><span class="badge" [ngClass]="getStatusBadge(r.status)">{{r.status | titlecase}}</span></td>
-          <td *ngIf="showTableField('priority')"><span class="badge" [ngClass]="getPriorityBadge(r.priority)">{{r.priority | titlecase}}</span></td>
-          <td class="text-sm" *ngIf="showTableField('scheduled_date')">{{r.scheduled_date | date:'MMM d, y'}}</td>
-          <td class="text-sm" *ngIf="showTableField('technician')">{{r.technician?.first_name}} {{r.technician?.last_name}}</td>
-          <td class="text-sm" *ngIf="showTableField('cost')">{{r.cost ? ('$' + r.cost) : '—'}}</td>
-          <td (click)="$event.stopPropagation()">
-            <div class="flex gap-1">
-              <!-- Edit -->
-              <button class="btn btn-ghost btn-icon-only btn-sm" (click)="editRecord(r)" title="Edit">
-                <span class="btn-icon" style="font-size:17px">edit</span>
-              </button>
-              <!-- Quick complete -->
-              <button class="btn btn-ghost btn-icon-only btn-sm"
-                      *ngIf="r.status==='IN_PROGRESS'"
-                      (click)="completeRecord(r)" title="Mark complete">
-                <span class="btn-icon" style="font-size:17px;color:#10B981">check_circle</span>
-              </button>
-              <!-- Delete — calls ConfirmService, no local modal needed -->
-              <button class="btn btn-ghost btn-icon-only btn-sm"
-                      (click)="deleteRecord(r)" title="Delete">
-                <span class="btn-icon" style="font-size:17px;color:#EF4444">delete</span>
-              </button>
-            </div>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+  <app-planned-maintenance-dashboard
+    *ngIf="activeTab === 'planned'"
+    [embedded]="true"
+    [refreshTick]="refreshTick"
+    (createWorkOrderRequested)="createWorkOrderFromPlanned($event)"
+    (summaryChange)="plannedSummary = $event"
+    (exportParamsChange)="plannedExportParams = $event">
+  </app-planned-maintenance-dashboard>
 
-    <div class="empty-state" *ngIf="!records.length && !loading">
-      <span class="empty-icon">build_circle</span>
-      <h3>No maintenance records</h3>
-      <button class="btn btn-primary mt-4" (click)="openModal()">Log First Record</button>
-    </div>
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-top:1px solid var(--border)"
-         *ngIf="total > 0">
-      <div class="table-page-size-control">
-        <span class="text-sm text-muted">Showing {{(page-1)*pageSize+1}}–{{Math.min(page*pageSize,total)}} of {{total}}</span>
-        <app-dropdown class="form-control table-page-size-select" [(ngModel)]="pageSize" (change)="onPageSizeChange()" ariaLabel="Rows per page">
-          <app-dropdown-option *ngFor="let size of pageSizeOptions" [ngValue]="size">{{size}}</app-dropdown-option>
-        </app-dropdown>
-      </div>
-      <div class="flex gap-2">
-        <button class="btn btn-secondary btn-sm" [disabled]="page <= 1" (click)="changePage(page-1)">
-          <span class="btn-icon">chevron_left</span>
-        </button>
-        <span style="padding:5px 12px;font-size:0.85rem;font-weight:600">{{page}} / {{totalPages}}</span>
-        <button class="btn btn-secondary btn-sm" [disabled]="page >= totalPages" (click)="changePage(page+1)">
-          <span class="btn-icon">chevron_right</span>
-        </button>
-      </div>
-    </div>
-  </div>
+  <app-maintenance-assets
+    *ngIf="activeTab === 'assets'"
+    [assetCategories]="assetCategories"
+    [refreshTick]="refreshTick"
+    (addAssetRequested)="openAddAsset()"
+    (editAssetRequested)="openEditAsset($event)"
+    (logMaintenanceRequested)="logWorkOrderForAsset($event)"
+    (assetsMutated)="onAssetsMutated()">
+  </app-maintenance-assets>
+
 </div>
 
-<!-- ── Create / Edit Modal ──────────────────────────────────────────────────── -->
-<div class="modal-overlay" *ngIf="showModal" (click)="closeModal($event)">
-  <div class="modal" style="max-width:620px" (click)="$event.stopPropagation()">
-
-    <div class="modal-header">
-      <h3>{{editing ? 'Edit Record' : 'Log Maintenance'}}</h3>
-      <button class="btn btn-ghost btn-icon-only" (click)="showModal=false">
-        <span class="btn-icon">close</span>
-      </button>
-    </div>
-
-    <div class="modal-body">
-      <div class="form-row">
-
-        <div class="form-group" style="grid-column:1/-1" *ngIf="showFormField('title')">
-          <label class="form-label">{{fieldLabel('form','title','Title')}} *</label>
-          <input class="form-control" [(ngModel)]="form.title"
-                 placeholder="e.g. Monthly server inspection">
-        </div>
-
-        <!-- Asset — [ngValue] preserves numeric type -->
-        <div class="form-group" *ngIf="showFormField('asset_id')">
-          <label class="form-label">{{fieldLabel('form','asset_id','Asset')}} *</label>
-          <app-dropdown class="form-control" [(ngModel)]="form.asset_id" placeholder="— Select asset —">
-            <app-dropdown-option [ngValue]="undefined">— Select asset —</app-dropdown-option>
-            <app-dropdown-option *ngFor="let a of assets" [ngValue]="a.id">
-              {{a.name}}<span *ngIf="a.serial_number"> — {{a.serial_number}}</span>
-            </app-dropdown-option>
-          </app-dropdown>
-          <div *ngIf="assets.length === 0"
-               style="font-size:0.75rem;color:#F59E0B;margin-top:4px">
-            ⚠ No assets in database.
-          </div>
-        </div>
-
-        <div class="form-group" *ngIf="showFormField('type')">
-          <label class="form-label">{{fieldLabel('form','type','Type')}} *</label>
-          <app-dropdown class="form-control" [(ngModel)]="form.type">
-            <app-dropdown-option value="PREVENTIVE">Preventive</app-dropdown-option>
-            <app-dropdown-option value="CORRECTIVE">Corrective</app-dropdown-option>
-            <app-dropdown-option value="PREDICTIVE">Predictive</app-dropdown-option>
-            <app-dropdown-option value="UPGRADE">Upgrade</app-dropdown-option>
-            <app-dropdown-option value="INSPECTION">Inspection</app-dropdown-option>
-          </app-dropdown>
-        </div>
-
-        <div class="form-group" *ngIf="showFormField('priority')">
-          <label class="form-label">{{fieldLabel('form','priority','Priority')}}</label>
-          <app-dropdown class="form-control" [(ngModel)]="form.priority">
-            <app-dropdown-option value="LOW">Low</app-dropdown-option>
-            <app-dropdown-option value="MEDIUM">Medium</app-dropdown-option>
-            <app-dropdown-option value="HIGH">High</app-dropdown-option>
-            <app-dropdown-option value="CRITICAL">Critical</app-dropdown-option>
-          </app-dropdown>
-        </div>
-
-        <div class="form-group" *ngIf="showFormField('status')">
-          <label class="form-label">{{fieldLabel('form','status','Status')}}</label>
-          <app-dropdown class="form-control" [(ngModel)]="form.status">
-            <app-dropdown-option value="SCHEDULED">Scheduled</app-dropdown-option>
-            <app-dropdown-option value="IN_PROGRESS">In Progress</app-dropdown-option>
-            <app-dropdown-option value="COMPLETED">Completed</app-dropdown-option>
-            <app-dropdown-option value="FAILED">Failed</app-dropdown-option>
-            <app-dropdown-option value="DEFERRED">Deferred</app-dropdown-option>
-          </app-dropdown>
-        </div>
-
-        <div class="form-group" *ngIf="showFormField('scheduled_date')">
-          <label class="form-label">{{fieldLabel('form','scheduled_date','Scheduled Date')}} *</label>
-          <app-datetime-picker
-            class="form-control"
-            mode="datetime"
-            [(ngModel)]="form.scheduled_date"
-            placeholder="Select scheduled date & time">
-          </app-datetime-picker>
-        </div>
-
-        <div class="form-group" *ngIf="showFormField('downtime_hours')">
-          <label class="form-label">{{fieldLabel('form','downtime_hours','Est. Downtime (hrs)')}}</label>
-          <input type="number" class="form-control" [(ngModel)]="form.downtime_hours"
-                 min="0" step="0.5">
-        </div>
-
-        <div class="form-group" *ngIf="showFormField('cost')">
-          <label class="form-label">{{fieldLabel('form','cost','Cost ($)')}}</label>
-          <input type="number" class="form-control" [(ngModel)]="form.cost"
-                 min="0" step="0.01">
-        </div>
-
-        <div class="form-group" style="grid-column:1/-1" *ngIf="showFormField('description')">
-          <label class="form-label">{{fieldLabel('form','description','Description')}} *</label>
-          <textarea class="form-control" [(ngModel)]="form.description"
-                    style="min-height:80px"
-                    placeholder="Describe what needs to be done…"></textarea>
-        </div>
-
-        <div class="form-group" style="grid-column:1/-1" *ngIf="showFormField('findings')">
-          <label class="form-label">{{fieldLabel('form','findings','Findings / Notes')}}</label>
-          <textarea class="form-control" [(ngModel)]="form.findings"
-                    style="min-height:72px"
-                    placeholder="Post-maintenance findings (optional)…"></textarea>
-        </div>
-
-      </div>
-    </div>
-
-    <div class="modal-footer">
-      <button class="btn btn-ghost" (click)="showModal=false">Cancel</button>
-      <button class="btn btn-primary" (click)="save()" [disabled]="saving">
-        <div class="spinner" *ngIf="saving"
-             style="width:16px;height:16px;border-width:2px;border-top-color:#fff;margin-right:6px"></div>
-        {{saving ? 'Saving…' : (editing ? 'Save Changes' : 'Log Record')}}
-      </button>
-    </div>
-
-  </div>
-</div>
-
-<!-- Maintenance Detail Info Modal -->
-<div class="modal-overlay" *ngIf="detailRecord" (click)="closeDetailModal($event)">
-  <div class="modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="maint-detail-title" (click)="$event.stopPropagation()">
-    <div class="modal-header">
-      <div class="detail-header-title">
-        <div class="detail-head-meta">
-          <span class="detail-id-pill">#{{detailRecord.id}}</span>
-          <span class="detail-type-chip" *ngIf="detailRecord.type">{{formatLabel(detailRecord.type) | titlecase}}</span>
-        </div>
-        <h2 id="maint-detail-title">{{detailRecord.title}}</h2>
-      </div>
-      <button type="button" class="btn btn-ghost btn-icon-only" (click)="detailRecord = null" title="Close">
-        <span class="btn-icon">close</span>
-      </button>
-    </div>
-
-    <div class="modal-body">
-      <div class="detail-badges">
-        <span class="badge" [ngClass]="getStatusBadge(detailRecord.status)">
-          {{formatLabel(detailRecord.status) | titlecase}}
-        </span>
-        <span class="badge" [ngClass]="getPriorityBadge(detailRecord.priority)">
-          Priority: {{detailRecord.priority | titlecase}}
-        </span>
-      </div>
-
-      <div class="detail-grid">
-        <div class="detail-field">
-          <span class="detail-label">Asset</span>
-          <span class="detail-value">{{detailRecord.asset?.name || '—'}}</span>
-          <span class="detail-sub" *ngIf="detailRecord.asset?.category?.name || detailRecord.asset?.serial_number || detailRecord.asset?.location">
-            {{detailRecord.asset?.category?.name}}<span *ngIf="detailRecord.asset?.category?.name && detailRecord.asset?.serial_number"> · </span><span *ngIf="detailRecord.asset?.serial_number">S/N {{detailRecord.asset?.serial_number}}</span><span *ngIf="(detailRecord.asset?.category?.name || detailRecord.asset?.serial_number) && detailRecord.asset?.location"> · </span>{{detailRecord.asset?.location}}
-          </span>
-        </div>
-        <div class="detail-field">
-          <span class="detail-label">Technician</span>
-          <span class="detail-value">
-            {{(detailRecord.technician?.first_name || detailRecord.technician?.last_name) ? ((detailRecord.technician?.first_name || '') + ' ' + (detailRecord.technician?.last_name || '')).trim() : (detailRecord.technician?.username || 'Unassigned')}}
-          </span>
-        </div>
-        <div class="detail-field">
-          <span class="detail-label">Scheduled Date &amp; Time</span>
-          <span class="detail-value">{{detailRecord.scheduled_date ? (detailRecord.scheduled_date | date:'dd MMM yyyy, HH:mm') : '—'}}</span>
-        </div>
-        <div class="detail-field">
-          <span class="detail-label">Completed Date &amp; Time</span>
-          <span class="detail-value">{{detailRecord.completed_date ? (detailRecord.completed_date | date:'dd MMM yyyy, HH:mm') : '—'}}</span>
-        </div>
-        <div class="detail-field">
-          <span class="detail-label">Downtime</span>
-          <span class="detail-value">{{detailRecord.downtime_hours != null ? (detailRecord.downtime_hours + ' hrs') : '—'}}</span>
-        </div>
-        <div class="detail-field">
-          <span class="detail-label">Cost</span>
-          <span class="detail-value">{{detailRecord.cost != null ? ('$' + (detailRecord.cost | number:'1.2-2')) : '—'}}</span>
-        </div>
-        <div class="detail-field">
-          <span class="detail-label">Maintenance Type</span>
-          <span class="detail-value">{{detailRecord.type ? (formatLabel(detailRecord.type) | titlecase) : '—'}}</span>
-        </div>
-        <div class="detail-field">
-          <span class="detail-label">Created At</span>
-          <span class="detail-value">{{detailRecord.created_at ? (detailRecord.created_at | date:'dd MMM yyyy, HH:mm') : '—'}}</span>
-        </div>
-      </div>
-
-      <div class="detail-section" *ngIf="detailRecord.description">
-        <span class="detail-section-title">Description</span>
-        <div class="detail-text-box">{{detailRecord.description}}</div>
-      </div>
-
-      <div class="detail-section" *ngIf="detailRecord.findings">
-        <span class="detail-section-title">Findings &amp; Resolution</span>
-        <div class="detail-text-box">{{detailRecord.findings}}</div>
-      </div>
-
-      <div class="detail-section" *ngIf="!detailRecord.description && !detailRecord.findings">
-        <span class="detail-section-title">Description &amp; Findings</span>
-        <div class="detail-text-box" style="color:var(--text-muted)">No description or findings recorded.</div>
-      </div>
-    </div>
-
-    <div class="modal-footer detail-footer">
-      <button type="button" class="btn btn-ghost detail-delete-btn" (click)="deleteFromDetail()">
-        <span class="btn-icon">delete</span>
-        Delete
-      </button>
-      <div class="detail-footer-actions">
-        <button type="button" class="btn btn-secondary" (click)="detailRecord = null">Close</button>
-        <button type="button"
-                class="btn btn-secondary"
-                *ngIf="detailRecord.status !== 'completed' && detailRecord.status !== 'cancelled'"
-                (click)="completeFromDetail()">
-          <span class="btn-icon" style="color:#10B981">check_circle</span>
-          Mark Complete
-        </button>
-        <button type="button" class="btn btn-primary" (click)="editFromDetail()">
-          <span class="btn-icon">edit</span>
-          Edit
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- NOTE: No local delete confirm modal here.
-     Deletion is handled globally by ConfirmComponent in the shell. -->
+<!-- ── Shared Modals ─────────────────────────────────────────────────────── -->
+<app-maintenance-modals
+  [assets]="assets"
+  [assetCategories]="assetCategories"
+  [warehouseItems]="warehouseItems"
+  [uiPrefs]="uiPrefs"
+  (mutated)="onMutated()"
+  (assetsMutated)="onAssetsMutated()">
+</app-maintenance-modals>
