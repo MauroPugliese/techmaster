@@ -97,6 +97,7 @@ router.get('/planned-maintenance-daily/:date/:template', authenticate, async (re
 
 // ── Discovery: list of available export modules ──────────────────────────────
 router.get('/', authenticate, (req, res) => {
+  const roleName = req.user?.role?.name;
   const list = Object.values(MODULES).map((m) => ({
     key: m.key,
     docCode: m.docCode,
@@ -105,7 +106,8 @@ router.get('/', authenticate, (req, res) => {
     subtitle: m.subtitle,
     category: m.category,
     formats: ['xlsx', 'pdf', 'docx', 'pptx'],
-    restricted: !!(m.roles && m.roles.length)
+    restricted: !!(m.roles && m.roles.length),
+    allowed: !m.roles || !m.roles.length || roleName === 'admin' || m.roles.includes(roleName)
   }));
   res.json({ success: true, data: list });
 });

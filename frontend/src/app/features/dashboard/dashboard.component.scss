@@ -1,532 +1,277 @@
-/* ==========================================================================
-   dashboard.component.scss — SMaRT Command Dashboard Component Styles
-   ========================================================================== */
-
-.dashboard-page {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  width: 100%;
-}
-
-/* ── Top Header Bar ──────────────────────────────────────────────────────── */
-.dashboard-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 16px;
-  padding-bottom: 4px;
-
-  .header-titles {
-    h2 {
-      margin: 0 0 4px 0;
-      font-size: 1.65rem;
-      font-weight: 800;
-      letter-spacing: -0.03em;
-      color: var(--blue-950);
-    }
-  }
-
-  .header-status-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 14px;
-    border-radius: 999px;
-    font-size: 0.82rem;
-    font-weight: 600;
-    background: #ECFDF5;
-    color: #065F46;
-    border: 1px solid #A7F3D0;
-
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #10B981;
-      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25);
-      animation: pulse 2s infinite;
-    }
-
-    &.has-alerts {
-      background: #FEF2F2;
-      color: #991B1B;
-      border-color: #FECACA;
-
-      .status-dot {
-        background: #EF4444;
-        box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.25);
-      }
-    }
-  }
-
-  .header-actions {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-}
-
-@keyframes pulse {
-  0% { transform: scale(0.95); opacity: 0.8; }
-  50% { transform: scale(1.15); opacity: 1; }
-  100% { transform: scale(0.95); opacity: 0.8; }
-}
-
-/* ── Interactive KPI Cards ───────────────────────────────────────────────── */
-.kpi-card {
-  cursor: pointer;
-  user-select: none;
-  position: relative;
-  text-decoration: none;
-
-  &:focus-visible {
-    outline: 2px solid var(--primary);
-    outline-offset: 2px;
-  }
-
-  .kpi-hover-arrow {
-    position: absolute;
-    top: 16px;
-    right: 16px;
-    font-size: 18px;
-    color: var(--text-subtle);
-    opacity: 0;
-    transform: translateX(-4px);
-    transition: all 0.2s ease;
-  }
-
-  &:hover .kpi-hover-arrow {
-    opacity: 1;
-    transform: translateX(0);
-    color: var(--kpi-color, var(--primary));
-  }
-}
-
-/* ── 2-Column Command Row ────────────────────────────────────────────────── */
-.command-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-
-  @media (max-width: 992px) {
-    grid-template-columns: 1fr;
-  }
-}
+@import './dashboard-shared';
 
 /* ── Fleet Readiness Card ────────────────────────────────────────────────── */
-.readiness-card {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-
-  .readiness-metrics {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 0 16px 0;
-    gap: 20px;
-  }
-
-  .readiness-score-block {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-
-    .score-num {
-      font-size: 2.5rem;
-      font-weight: 800;
-      letter-spacing: -0.03em;
-      line-height: 1;
-    }
-
-    .score-target {
-      font-size: 0.85rem;
-      color: var(--text-muted);
-      font-weight: 500;
-    }
-  }
-
-  .readiness-bar-track {
-    width: 100%;
-    height: 10px;
-    background: var(--border);
-    border-radius: 999px;
-    overflow: hidden;
-    display: flex;
-    margin-bottom: 16px;
-
-    .readiness-bar-fill {
-      height: 100%;
-      transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-  }
-
-  .asset-breakdown-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 12px;
-    padding-top: 14px;
-    border-top: 1px solid var(--border);
-
-    .asset-stat-box {
-      background: var(--blue-50);
-      padding: 10px 12px;
-      border-radius: var(--radius-md);
-      text-align: center;
-
-      .stat-val {
-        font-size: 1.25rem;
-        font-weight: 700;
-        color: var(--blue-950);
-        line-height: 1.2;
-      }
-
-      .stat-lbl {
-        font-size: 0.72rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        color: var(--text-muted);
-        margin-top: 2px;
-      }
-    }
-  }
-}
-
-/* ── Urgent Action Center ────────────────────────────────────────────────── */
-.urgent-center-card {
-  display: flex;
-  flex-direction: column;
-
-  .urgent-items-list {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    flex: 1;
-  }
-
-  .urgent-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 10px 14px;
-    border-radius: var(--radius-md);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-left: 4px solid #EF4444;
-    transition: background 0.15s ease, border-color 0.15s ease;
-
-    &:hover {
-      background: var(--surface-raised);
-      border-color: var(--border-strong);
-      border-left-color: #DC2626;
-    }
-
-    &.maint-type {
-      border-left-color: #F59E0B;
-    }
-
-    &.stock-type {
-      border-left-color: #DC2626;
-    }
-
-    .urgent-meta {
-      flex: 1;
-      min-width: 0;
-
-      .urgent-title {
-        font-size: 0.875rem;
-        font-weight: 700;
-        color: var(--blue-950);
-      }
-
-      .urgent-sub {
-        font-size: 0.75rem;
-        color: var(--text-muted);
-        margin-top: 2px;
-      }
-    }
-  }
-
-  .urgent-empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 28px 16px;
-    text-align: center;
-    color: #10B981;
-
-    .empty-shield-icon {
-      font-size: 40px;
-      margin-bottom: 8px;
-    }
-
-    h4 {
-      margin: 0 0 4px 0;
-      color: #065F46;
-      font-size: 0.95rem;
-      font-weight: 700;
-    }
-
-    p {
-      margin: 0;
-      font-size: 0.8rem;
-      color: var(--text-muted);
-    }
-  }
-}
-
-/* ── Activity Feed with Filter Tabs ──────────────────────────────────────── */
-.activity-card {
-  .feed-tabs {
-    display: flex;
-    gap: 6px;
-    overflow-x: auto;
-    padding-bottom: 4px;
-    border-bottom: 1px solid var(--border);
-    margin-bottom: 16px;
-
-    .feed-tab {
-      background: none;
-      border: none;
-      padding: 6px 12px;
-      border-radius: 999px;
-      font-family: var(--font-sans);
-      font-size: 0.8rem;
-      font-weight: 600;
-      color: var(--text-muted);
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      transition: all 0.2s ease;
-
-      &:hover {
-        background: var(--blue-50);
-        color: var(--blue-950);
-      }
-
-      &.active {
-        background: var(--primary);
-        color: #FFF;
-      }
-
-      .tab-count {
-        font-size: 0.7rem;
-        background: rgba(0, 0, 0, 0.08);
-        padding: 1px 6px;
-        border-radius: 999px;
-      }
-
-      &.active .tab-count {
-        background: rgba(255, 255, 255, 0.25);
-      }
-    }
-  }
-
-  .activity-feed-list {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    max-height: 400px;
-    overflow-y: auto;
-  }
-
-  .feed-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 12px;
-    border-radius: var(--radius-md);
-    background: var(--surface-raised);
-    border: 1px solid var(--border);
-    transition: background 0.15s ease;
-
-    &:hover {
-      background: var(--blue-50);
-    }
-
-    .feed-icon {
-      width: 36px;
-      height: 36px;
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: 'Material Icons Round';
-      font-style: normal;
-      font-size: 18px;
-      flex-shrink: 0;
-    }
-
-    .feed-content {
-      flex: 1;
-      min-width: 0;
-
-      .feed-title {
-        font-size: 0.875rem;
-        font-weight: 700;
-        color: var(--blue-950);
-        line-height: 1.3;
-      }
-
-      .feed-sub {
-        font-size: 0.75rem;
-        color: var(--text-muted);
-        margin-top: 2px;
-      }
-    }
-  }
-}
-
-/* ── Movement badges ─────────────────────────────────────────────────────── */
-.badge-movement-in {
-  background: #ECFDF5;
-  color: #059669;
-}
-.badge-movement-out {
-  background: #FEF2F2;
-  color: #DC2626;
-}
-.badge-movement-adj {
-  background: #EFF6FF;
-  color: #2563EB;
-}
-
-/* ── Quick Actions Grid ──────────────────────────────────────────────────── */
-.quick-actions-panel {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-
-  .quick-action-btn {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 12px 14px;
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border);
-    background: var(--surface);
-    font-family: var(--font-sans);
-    font-size: 0.825rem;
-    font-weight: 600;
-    color: var(--blue-950);
-    cursor: pointer;
-    text-decoration: none;
-    transition: all 0.2s ease;
-
-    &:hover {
-      background: var(--blue-50);
-      border-color: var(--primary);
-      transform: translateY(-1px);
-      box-shadow: var(--shadow-sm);
-    }
-
-    .action-icon {
-      font-family: 'Material Icons Round';
-      font-style: normal;
-      font-size: 20px;
-      line-height: 1;
-    }
-  }
-}
-
-/* ── Stock Health Summary Strip ──────────────────────────────────────────── */
-.stock-health-summary {
+.dash-fleet-hero {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 16px;
-  flex-wrap: wrap;
-  padding: 12px 16px;
-  background: var(--blue-50);
+}
+
+.dash-fleet-score {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.dash-fleet-pct {
+  font-size: 2.15rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.dash-fleet-caption {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.dash-readiness-track {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+  display: flex;
+}
+
+.dash-readiness-seg {
+  height: 100%;
+  transition: width 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.dash-asset-boxes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.dash-asset-box {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  margin-bottom: 14px;
+  padding: 9px 10px;
+  text-align: center;
 
-  .stock-metric-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.825rem;
-    color: var(--blue-900);
+  &.is-ok {
+    background: #ECFDF5;
+    border-color: #A7F3D0;
+    .dash-asset-val { color: #059669; }
+  }
 
-    strong {
-      font-size: 0.95rem;
-      color: var(--blue-950);
+  &.is-warn {
+    background: #FFFBEB;
+    border-color: #FDE68A;
+    .dash-asset-val { color: #D97706; }
+  }
+}
+
+.dash-asset-val {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--blue-950);
+  line-height: 1.15;
+}
+
+.dash-asset-lbl {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.dash-fleet-sublist {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.dash-sublist-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.dash-fleet-item {
+  text-decoration: none;
+  color: inherit;
+}
+
+/* ── Warehouse Health Snapshot ───────────────────────────────────────────── */
+.dash-wh-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+
+  @media (max-width: 720px) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.dash-wh-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+
+  strong {
+    font-size: 0.96rem;
+    font-weight: 800;
+    color: var(--blue-950);
+    line-height: 1.2;
+
+    &.text-danger {
+      color: #DC2626;
     }
   }
 }
 
-/* ── Shift Coverage Grid ─────────────────────────────────────────────────── */
-.shift-coverage-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 14px;
+.dash-wh-lbl {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
 
-  .shift-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    padding: 14px;
-    position: relative;
-    overflow: hidden;
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
+.dash-wh-table-wrap {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
 
-    &:hover {
-      transform: translateY(-1px);
-      box-shadow: var(--shadow-sm);
-    }
+.dash-compact-table {
+  width: 100%;
+  table-layout: fixed;
 
-    .shift-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 8px;
-
-      .shift-type-name {
-        font-size: 0.875rem;
-        font-weight: 700;
-        color: var(--blue-950);
-      }
-    }
-
-    .shift-time {
-      font-size: 0.78rem;
-      color: var(--text-muted);
-      display: flex;
-      align-items: center;
-      gap: 4px;
-    }
-
-    .shift-assignee {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-top: 12px;
-      padding-top: 10px;
-      border-top: 1px solid var(--border);
-
-      .assignee-avatar {
-        width: 28px;
-        height: 28px;
-        border-radius: 50%;
-        background: var(--blue-100);
-        color: var(--primary);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 0.72rem;
-        font-weight: 700;
-      }
-
-      .assignee-name {
-        font-size: 0.825rem;
-        font-weight: 600;
-        color: var(--blue-900);
-      }
-    }
+  th,
+  td {
+    padding: 8px 10px;
+    font-size: 0.8rem;
   }
+}
+
+.dash-td-item {
+  max-width: 180px;
+}
+
+.dash-table-link {
+  display: block;
+  font-weight: 700;
+  color: var(--blue-950);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  &:hover {
+    color: var(--primary);
+    text-decoration: underline;
+  }
+}
+
+.dash-qty-warn {
+  font-weight: 800;
+  color: #DC2626;
+}
+
+.dash-wh-bar {
+  width: 100%;
+  max-width: 74px;
+}
+
+/* ── Quick Dispatch Grid ─────────────────────────────────────────────────── */
+.dash-quick-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.dash-quick-btn {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 11px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--blue-950);
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition: var(--transition);
+
+  .mat-i {
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+
+  &:hover {
+    background: var(--blue-50);
+    border-color: var(--primary);
+  }
+}
+
+/* ── On-Duty Roster Card ─────────────────────────────────────────────────── */
+.dash-shift-summary-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dash-shift-type-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--blue-900);
+
+  strong {
+    font-weight: 800;
+    color: var(--blue-950);
+  }
+}
+
+.dash-shift-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dash-roster-scroll {
+  max-height: 290px;
+  overflow-y: auto;
+}
+
+.dash-roster-row {
+  border-left-width: 3px;
+}
+
+.dash-roster-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 800;
+  flex-shrink: 0;
 }

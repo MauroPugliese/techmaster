@@ -10,9 +10,9 @@ import {
 } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subject } from 'rxjs';
-import { debounceTime, distinctUntilChanged, takeUntil } from 'rxjs/operators';
+import { debounceTime, distinctUntilChanged, skip, takeUntil } from 'rxjs/operators';
 import {
   ApiService,
   ConfirmService,
@@ -65,6 +65,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
 
   private destroy$ = new Subject<void>();
   private search$ = new Subject<string>();
+  private actionHandled = false;
   Math = Math;
 
   operations: Operation[] = [];
@@ -106,10 +107,18 @@ export class OperationsComponent implements OnInit, OnDestroy {
     private uiCustomization: UiCustomizationService,
     private toast: ToastService,
     private confirm: ConfirmService,
+    private route: ActivatedRoute,
+    private router: Router,
     private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
+    this.applyQueryParams(this.route.snapshot.queryParams, false);
+
+    this.route.queryParams.pipe(skip(1), takeUntil(this.destroy$)).subscribe(qp => {
+      this.applyQueryParams(qp, true);
+    });
+
     this.uiCustomization.load('operations').pipe(takeUntil(this.destroy$)).subscribe(p => {
       this.uiPrefs = p;
       this.cdr.markForCheck();
@@ -166,6 +175,42 @@ export class OperationsComponent implements OnInit, OnDestroy {
       e.preventDefault();
       this.searchInput.nativeElement.focus();
     }
+  }
+
+  private applyQueryParams(qp: Record<string, any>, reload: boolean): void {
+    let changed = false;
+    if (qp['status'] !== undefined) {
+      const st = String(qp['status'] || '').toUpperCase();
+      const allowed = ['', 'PLANNED', 'IN_PROGRESS', 'ON_HOLD', 'COMPLETED', 'CANCELLED', 'OVERDUE'];
+      if (allowed.includes(st) && this.statusFilter !== st) {
+        this.statusFilter = st;
+        changed = true;
+      }
+    }
+    if (qp['search'] !== undefined) {
+      const q = String(qp['search'] || '');
+      if (this.searchQuery !== q) {
+        this.searchQuery = q;
+        changed = true;
+      }
+    }
+    if (qp['action'] === 'new' && !this.actionHandled) {
+      this.actionHandled = true;
+      setTimeout(() => {
+        this.openModal();
+        this.router.navigate([], {
+          relativeTo: this.route,
+          queryParams: { action: null },
+          queryParamsHandling: 'merge',
+          replaceUrl: true
+        });
+      }, 0);
+    }
+    if (reload && changed) {
+      this.page = 1;
+      this.loadOperations();
+    }
+    this.cdr.markForCheck();
   }
 
   loadSummary(): void {

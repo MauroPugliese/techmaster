@@ -1,45 +1,496 @@
 const router = require('express').Router();
 const { sequelize } = require('../models');
 const { parseDateFilter } = require('../middleware/error.middleware');
+const {
+  parseGranularity,
+  resolveAnalyticsWindow,
+  computePeriodDelta,
+  aggregateMaintenanceSummary,
+  aggregateTaskCadence,
+  fillContinuousBuckets,
+  formatPeakHour,
+  buildExecutiveInsights,
+  toDateKey
+} = require('../services/analytics-helpers.service');
 
+function buildSqlDateRange(col, from, to, prefix, replacements) {
+  let sql = '';
+  if (from) {
+    replacements[`${prefix}From`] = from;
+    sql += ` AND ${col} >= :${prefix}From`;
+  }
+  if (to) {
+    replacements[`${prefix}To`] = to;
+    sql += ` AND ${col} <= :${prefix}To`;
+  }
+  return sql;
+}
+
+async function fetchWindowSnapshotKpis(from, to) {
+  const replacements = {};
+  const opsRange = buildSqlDateRange('start_date', from, to, 'ops', replacements);
+  const maintRange = buildSqlDateRange('scheduled_date', from, to, 'maint', replacements);
+  const stockRange = buildSqlDateRange('movement_date', from, to, 'stock', replacements);
+  const taskRange = buildSqlDateRange('created_at', from, to, 'task', replacements);
+  const shiftRange = buildSqlDateRange('s.date', from, to, 'shift', replacements);
+
+  const [[opsRows], [maintRows], [stockRows], [taskRows], [shiftRows], [assetRows]] = await Promise.all([
+    sequelize.query(
+      `SELECT
+         COUNT(*) AS totalOps,
+         SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) AS completedOps,
+         SUM(CASE WHEN status IN ('PLANNED', 'IN_PROGRESS', 'ON_HOLD') AND end_date IS NOT NULL AND end_date < NOW() THEN 1 ELSE 0 END) AS overdueOps
+       FROM operations WHERE 1=1 ${opsRange}`,
+      { replacements }
+    ),
+    sequelize.query(
+      `SELECT
+         COUNT(*) AS totalRecords,
+         SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) AS completedRecords,
+         COALESCE(SUM(cost), 0) AS totalCost,
+         COALESCE(SUM(downtime_hours), 0) AS totalDowntime,
+         COALESCE(AVG(downtime_hours), 0) AS avgDowntime
+       FROM maintenance_records WHERE deleted_at IS NULL ${maintRange}`,
+      { replacements }
+    ),
+    sequelize.query(
+      `SELECT
+         COALESCE(SUM(CASE WHEN type IN ('IN', 'RETURN') THEN quantity ELSE 0 END), 0) AS stockIn,
+         COALESCE(SUM(CASE WHEN type = 'OUT' THEN quantity ELSE 0 END), 0) AS stockOut,
+         COUNT(*) AS totalMoves
+       FROM stock_movements WHERE 1=1 ${stockRange}`,
+      { replacements }
+    ),
+    sequelize.query(
+      `SELECT
+         COUNT(*) AS totalTasks,
+         SUM(CASE WHEN status = 'DONE' THEN 1 ELSE 0 END) AS completedTasks,
+         SUM(CASE WHEN status IN ('TODO', 'IN_PROGRESS', 'REVIEW', 'OVERDUE') AND due_date IS NOT NULL AND due_date < NOW() THEN 1 ELSE 0 END) AS overdueTasks
+       FROM tasks WHERE 1=1 ${taskRange}`,
+      { replacements }
+    ),
+    sequelize.query(
+      `SELECT
+         COUNT(s.id) AS totalShifts,
+         SUM(CASE WHEN s.status != 'ON_LEAVE' AND COALESCE(st.category, 'WORK') = 'WORK' THEN 1 ELSE 0 END) AS workShifts,
+         SUM(CASE WHEN s.status = 'ABSENT' THEN 1 ELSE 0 END) AS totalAbsences
+       FROM shifts s
+       LEFT JOIN shift_types st ON s.shift_type_id = st.id
+       WHERE s.deleted_at IS NULL ${shiftRange}`,
+      { replacements }
+    ),
+    sequelize.query(
+      `SELECT
+         COUNT(*) AS totalAssets,
+         SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) AS activeAssets,
+         SUM(CASE WHEN status = 'UNDER_MAINTENANCE' THEN 1 ELSE 0 END) AS maintAssets
+       FROM assets WHERE status != 'RETIRED'`
+    )
+  ]);
+
+  const ops = opsRows[0] || {};
+  const maint = maintRows[0] || {};
+  const stock = stockRows[0] || {};
+  const task = taskRows[0] || {};
+  const shift = shiftRows[0] || {};
+  const asset = assetRows[0] || {};
+
+  const totalOperations = Number(ops.totalOps) || 0;
+  const completedOperations = Number(ops.completedOps) || 0;
+  const overdueOperations = Number(ops.overdueOps) || 0;
+
+  const totalTasks = Number(task.totalTasks) || 0;
+  const completedTasks = Number(task.completedTasks) || 0;
+  const overdueTasks = Number(task.overdueTasks) || 0;
+
+  const workShifts = Number(shift.workShifts ?? shift.totalShifts) || 0;
+  const totalAbsences = Number(shift.totalAbsences) || 0;
+
+  const totalAssets = Number(asset.totalAssets) || 0;
+  const activeAssets = Number(asset.activeAssets) || 0;
+
+  const stockIn = Number(stock.stockIn) || 0;
+  const stockOut = Number(stock.stockOut) || 0;
+
+  return {
+    totalOperations,
+    completedOperations,
+    overdueOperations,
+    operationCompletionRate: totalOperations > 0 ? Math.round((completedOperations / totalOperations) * 100) : 0,
+    totalMaintenanceRecords: Number(maint.totalRecords) || 0,
+    completedMaintenanceRecords: Number(maint.completedRecords) || 0,
+    totalMaintenanceCost: Number(maint.totalCost) || 0,
+    totalDowntimeHours: Math.round((Number(maint.totalDowntime) || 0) * 10) / 10,
+    avgDowntimeHours: Math.round((Number(maint.avgDowntime) || 0) * 10) / 10,
+    totalAssets,
+    activeAssets,
+    fleetReadinessPct: totalAssets > 0 ? Math.round((activeAssets / totalAssets) * 100) : 100,
+    stockIn,
+    stockOut,
+    totalMovements: Number(stock.totalMoves) || 0,
+    netStockFlow: stockIn - stockOut,
+    totalTasks,
+    completedTasks,
+    overdueTasks,
+    taskCompletionRate: totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0,
+    workShifts,
+    totalAbsences,
+    shiftAttendanceRate: workShifts > 0 ? Math.round(((workShifts - totalAbsences) / workShifts) * 100) : 100
+  };
+}
+
+// ── Consolidated Operational Intelligence Overview ──────────────────────────
+router.get('/overview', parseDateFilter, async (req, res, next) => {
+  try {
+    const now = new Date();
+    const granularity = parseGranularity(req.query.granularity);
+    const window = resolveAnalyticsWindow(req.dateRange, req.query.period, now);
+
+    const replacements = {
+      seriesStart: window.seriesStartDate,
+      seriesEnd: window.seriesEndDate,
+      seriesStartStr: window.seriesStartStr,
+      seriesEndStr: window.seriesEndStr
+    };
+
+    const opsJoinCond = [];
+    if (window.from) {
+      replacements.winFrom = window.from;
+      opsJoinCond.push('o.start_date >= :winFrom');
+    }
+    if (window.to) {
+      replacements.winTo = window.to;
+      opsJoinCond.push('o.start_date <= :winTo');
+    }
+    const opsJoinSql = opsJoinCond.length ? `AND ${opsJoinCond.join(' AND ')}` : '';
+    const opsWhereSql = buildSqlDateRange('o.start_date', window.from, window.to, 'oWin', replacements);
+    const maintWhereSql = buildSqlDateRange('scheduled_date', window.from, window.to, 'mWin', replacements);
+    const topAssetWhereSql = buildSqlDateRange('mr.scheduled_date', window.from, window.to, 'taWin', replacements);
+    const stockWhereSql = buildSqlDateRange('movement_date', window.from, window.to, 'stWin', replacements);
+    const taskWhereSql = buildSqlDateRange('created_at', window.from, window.to, 'tkWin', replacements);
+
+    const [
+      kpis,
+      prevKpis,
+      [opsByType],
+      [opsByStatus],
+      [maintRawRows],
+      [topAssetsRaw],
+      [opsSeriesRows],
+      [maintSeriesRows],
+      [taskSeriesRows],
+      [stockDailyRows],
+      [stockByTypeRows],
+      [taskCadenceRows],
+      [shiftCoverageRows],
+      [peakRows]
+    ] = await Promise.all([
+      fetchWindowSnapshotKpis(window.from, window.to),
+      window.hasComparison ? fetchWindowSnapshotKpis(window.prevFrom, window.prevTo) : Promise.resolve(null),
+
+      sequelize.query(
+        `SELECT
+           ot.id AS type_id,
+           ot.name AS type,
+           COALESCE(ot.color, '#1565C0') AS color,
+           COUNT(o.id) AS count,
+           SUM(CASE WHEN o.status = 'COMPLETED' THEN 1 ELSE 0 END) AS completed,
+           SUM(CASE WHEN o.status = 'IN_PROGRESS' THEN 1 ELSE 0 END) AS in_progress,
+           SUM(CASE WHEN o.status = 'PLANNED' THEN 1 ELSE 0 END) AS planned,
+           COALESCE(SUM(CASE WHEN COALESCE(o.actual_end_date, o.end_date) IS NOT NULL
+             THEN GREATEST(0, TIMESTAMPDIFF(MINUTE, o.start_date, COALESCE(o.actual_end_date, o.end_date)))
+             ELSE 0 END), 0) AS total_minutes
+         FROM operation_types ot
+         LEFT JOIN operations o ON o.type_id = ot.id ${opsJoinSql}
+         GROUP BY ot.id, ot.name, ot.color
+         ORDER BY count DESC`,
+        { replacements }
+      ),
+      sequelize.query(
+        `SELECT o.status, COUNT(*) AS count
+         FROM operations o
+         WHERE 1=1 ${opsWhereSql}
+         GROUP BY o.status`,
+        { replacements }
+      ),
+      sequelize.query(
+        `SELECT
+           type,
+           status,
+           COUNT(*) AS count,
+           COALESCE(SUM(downtime_hours), 0) AS total_downtime,
+           COALESCE(AVG(downtime_hours), 0) AS avg_downtime,
+           COALESCE(SUM(cost), 0) AS total_cost
+         FROM maintenance_records
+         WHERE deleted_at IS NULL ${maintWhereSql}
+         GROUP BY type, status
+         ORDER BY count DESC`,
+        { replacements }
+      ),
+      sequelize.query(
+        `SELECT
+           a.id,
+           a.name,
+           a.serial_number,
+           ac.name AS category_name,
+           COUNT(mr.id) AS records_count,
+           COALESCE(SUM(mr.cost), 0) AS total_cost,
+           COALESCE(SUM(mr.downtime_hours), 0) AS total_downtime
+         FROM maintenance_records mr
+         JOIN assets a ON mr.asset_id = a.id
+         LEFT JOIN asset_categories ac ON a.category_id = ac.id
+         WHERE mr.deleted_at IS NULL ${topAssetWhereSql}
+         GROUP BY a.id, a.name, a.serial_number, ac.name
+         ORDER BY total_cost DESC, total_downtime DESC
+         LIMIT 6`,
+        { replacements }
+      ),
+
+      sequelize.query(
+        `SELECT DATE(start_date) AS date, COUNT(*) AS count
+         FROM operations
+         WHERE start_date BETWEEN :seriesStart AND :seriesEnd
+         GROUP BY DATE(start_date)
+         ORDER BY date ASC`,
+        { replacements }
+      ),
+      sequelize.query(
+        `SELECT DATE(scheduled_date) AS date, COUNT(*) AS count
+         FROM maintenance_records
+         WHERE deleted_at IS NULL AND scheduled_date BETWEEN :seriesStart AND :seriesEnd
+         GROUP BY DATE(scheduled_date)
+         ORDER BY date ASC`,
+        { replacements }
+      ),
+      sequelize.query(
+        `SELECT DATE(created_at) AS date, COUNT(*) AS count
+         FROM tasks
+         WHERE created_at BETWEEN :seriesStart AND :seriesEnd
+         GROUP BY DATE(created_at)
+         ORDER BY date ASC`,
+        { replacements }
+      ),
+
+      sequelize.query(
+        `SELECT DATE(movement_date) AS date, type, COALESCE(SUM(quantity), 0) AS total_qty, COUNT(*) AS count
+         FROM stock_movements
+         WHERE movement_date BETWEEN :seriesStart AND :seriesEnd
+         GROUP BY DATE(movement_date), type
+         ORDER BY date ASC`,
+        { replacements }
+      ),
+      sequelize.query(
+        `SELECT type, COUNT(*) AS moves, COALESCE(SUM(quantity), 0) AS total_qty
+         FROM stock_movements
+         WHERE 1=1 ${stockWhereSql}
+         GROUP BY type`,
+        { replacements }
+      ),
+
+      sequelize.query(
+        `SELECT
+           interval_type,
+           status,
+           COUNT(*) AS count,
+           COALESCE(AVG(CASE WHEN completed_at IS NOT NULL THEN TIMESTAMPDIFF(HOUR, created_at, completed_at) ELSE NULL END), 0) AS avg_completion_hours
+         FROM tasks
+         WHERE 1=1 ${taskWhereSql}
+         GROUP BY interval_type, status
+         ORDER BY interval_type`,
+        { replacements }
+      ),
+
+      sequelize.query(
+        `SELECT
+           s.date,
+           st.name AS shift_name,
+           COALESCE(st.color, '#1565C0') AS color,
+           COUNT(s.id) AS employees,
+           SUM(CASE WHEN s.status = 'ABSENT' THEN 1 ELSE 0 END) AS absences
+         FROM shifts s
+         JOIN shift_types st ON s.shift_type_id = st.id
+         WHERE s.deleted_at IS NULL
+           AND s.status != 'ON_LEAVE'
+           AND COALESCE(st.category, 'WORK') = 'WORK'
+           AND s.date BETWEEN :seriesStartStr AND :seriesEndStr
+         GROUP BY s.date, st.id, st.name, st.color
+         ORDER BY s.date ASC`,
+        { replacements }
+      ),
+
+      sequelize.query(
+        `SELECT DAYNAME(o.start_date) AS dayName, HOUR(o.start_date) AS hour, COUNT(*) AS count
+         FROM operations o
+         WHERE 1=1 ${opsWhereSql}
+         GROUP BY DAYNAME(o.start_date), HOUR(o.start_date)
+         ORDER BY count DESC
+         LIMIT 1`,
+        { replacements }
+      )
+    ]);
+
+    const deltas = prevKpis ? {
+      totalOperations: computePeriodDelta(kpis.totalOperations, prevKpis.totalOperations),
+      operationCompletionRate: kpis.operationCompletionRate - prevKpis.operationCompletionRate,
+      totalMaintenanceCost: computePeriodDelta(kpis.totalMaintenanceCost, prevKpis.totalMaintenanceCost),
+      totalDowntimeHours: computePeriodDelta(kpis.totalDowntimeHours, prevKpis.totalDowntimeHours),
+      netStockFlow: computePeriodDelta(kpis.netStockFlow, prevKpis.netStockFlow),
+      taskCompletionRate: kpis.taskCompletionRate - prevKpis.taskCompletionRate,
+      shiftAttendanceRate: kpis.shiftAttendanceRate - prevKpis.shiftAttendanceRate
+    } : null;
+
+    const opsBuckets = fillContinuousBuckets(window.seriesStartStr, window.seriesEndStr, opsSeriesRows);
+    const maintBuckets = fillContinuousBuckets(window.seriesStartStr, window.seriesEndStr, maintSeriesRows);
+    const taskBuckets = fillContinuousBuckets(window.seriesStartStr, window.seriesEndStr, taskSeriesRows);
+
+    const stockInFilled = fillContinuousBuckets(
+      window.seriesStartStr,
+      window.seriesEndStr,
+      stockDailyRows.filter((r) => r.type === 'IN' || r.type === 'RETURN'),
+      (r) => Number(r.total_qty) || 0
+    );
+    const stockOutFilled = fillContinuousBuckets(
+      window.seriesStartStr,
+      window.seriesEndStr,
+      stockDailyRows.filter((r) => r.type === 'OUT'),
+      (r) => Number(r.total_qty) || 0
+    );
+
+    const shiftTypeMeta = new Map();
+    for (const r of shiftCoverageRows) {
+      if (r.shift_name && !shiftTypeMeta.has(r.shift_name)) {
+        shiftTypeMeta.set(r.shift_name, r.color || '#1565C0');
+      }
+    }
+    const shiftSeries = Array.from(shiftTypeMeta.entries()).map(([name, color]) => {
+      const filled = fillContinuousBuckets(
+        window.seriesStartStr,
+        window.seriesEndStr,
+        shiftCoverageRows.filter((r) => r.shift_name === name),
+        (r) => Number(r.employees) || 0
+      );
+      return { name, color, data: filled.values };
+    });
+    const shiftAbsenceFilled = fillContinuousBuckets(
+      window.seriesStartStr,
+      window.seriesEndStr,
+      shiftCoverageRows,
+      (r) => Number(r.absences) || 0
+    );
+
+    const maintSummary = aggregateMaintenanceSummary(maintRawRows);
+    const taskCadence = aggregateTaskCadence(taskCadenceRows);
+    const topAssets = topAssetsRaw.map((a) => ({
+      id: a.id,
+      name: a.name,
+      serial_number: a.serial_number,
+      category_name: a.category_name || null,
+      records_count: Number(a.records_count) || 0,
+      total_cost: Math.round((Number(a.total_cost) || 0) * 100) / 100,
+      total_downtime: Math.round((Number(a.total_downtime) || 0) * 100) / 100
+    }));
+
+    const peakData = peakRows[0] || {};
+    const peak = {
+      dayName: peakData.dayName || 'N/A',
+      hour: peakData.hour !== undefined && peakData.hour !== null ? Number(peakData.hour) : null,
+      peakHourFormatted: formatPeakHour(peakData.hour),
+      count: Number(peakData.count) || 0
+    };
+
+    const insights = buildExecutiveInsights({
+      opsByType,
+      maintSummary,
+      topAssets,
+      kpis,
+      peak
+    });
+
+    res.json({
+      success: true,
+      data: {
+        generatedAt: now.toISOString(),
+        period: window.period,
+        granularity,
+        hasComparison: window.hasComparison,
+        seriesStartDate: window.seriesStartStr,
+        seriesEndDate: window.seriesEndStr,
+        kpis,
+        deltas,
+        insights,
+        opsByType: opsByType.map((r) => ({
+          type_id: r.type_id,
+          type: r.type,
+          color: r.color,
+          count: Number(r.count) || 0,
+          completed: Number(r.completed) || 0,
+          in_progress: Number(r.in_progress) || 0,
+          planned: Number(r.planned) || 0,
+          total_minutes: Number(r.total_minutes) || 0
+        })),
+        opsByStatus: opsByStatus.map((r) => ({
+          status: r.status,
+          count: Number(r.count) || 0
+        })),
+        activityTrend: {
+          dates: opsBuckets.dates,
+          operations: opsBuckets.values,
+          maintenance: maintBuckets.values,
+          tasks: taskBuckets.values
+        },
+        maintSummary,
+        topAssets,
+        stockFlow: {
+          dates: stockInFilled.dates,
+          in: stockInFilled.values,
+          out: stockOutFilled.values
+        },
+        stockByType: stockByTypeRows.map((r) => ({
+          type: r.type,
+          moves: Number(r.moves) || 0,
+          total_qty: Number(r.total_qty) || 0
+        })),
+        shiftCoverage: {
+          dates: shiftAbsenceFilled.dates,
+          series: shiftSeries,
+          absences: shiftAbsenceFilled.values
+        },
+        taskCadence,
+        peak
+      }
+    });
+  } catch (err) { next(err); }
+});
+
+// ── Detailed Operations Metrics (Used by Operations Deep-Dive) ──────────────
 router.get('/operations-metrics', parseDateFilter, async (req, res, next) => {
   try {
-    const { from, to } = req.dateRange;
-    const period = req.query.period || 'all';
+    const now = new Date();
+    const granularity = parseGranularity(req.query.granularity);
+    const window = resolveAnalyticsWindow(req.dateRange, req.query.period, now);
 
-    // Calculate date ranges based on period
-    let dateFilter = '';
     const replacements = {};
+    const dateFilter = buildSqlDateRange('o.start_date', window.from, window.to, 'op', replacements);
 
-    if (period === 'daily') {
-      dateFilter = `AND DATE(o.start_date) = CURDATE()`;
-    } else if (period === 'weekly') {
-      dateFilter = `AND YEARWEEK(o.start_date, 1) = YEARWEEK(CURDATE(), 1)`;
-    } else if (period === 'monthly') {
-      dateFilter = `AND YEAR(o.start_date) = YEAR(CURDATE()) AND MONTH(o.start_date) = MONTH(CURDATE())`;
-    } else if (period === 'yearly') {
-      dateFilter = `AND YEAR(o.start_date) = YEAR(CURDATE())`;
-    } else if (from && to) {
-      dateFilter = `AND o.start_date >= :startDate AND o.start_date <= :endDate`;
-      replacements.startDate = from;
-      replacements.endDate = to;
-    }
+    const durationExpr = `GREATEST(0, TIMESTAMPDIFF(MINUTE, o.start_date, COALESCE(o.actual_end_date, o.end_date)))`;
+    const hasEndExpr = `COALESCE(o.actual_end_date, o.end_date) IS NOT NULL`;
 
-    // Main metrics query
     const metricsQuery = `
       SELECT
-        COUNT(*) as totalOperations,
-        COALESCE(SUM(CASE WHEN o.end_date IS NOT NULL THEN TIMESTAMPDIFF(MINUTE, o.start_date, o.end_date) ELSE 0 END), 0) as totalMinutes,
-        COALESCE(AVG(CASE WHEN o.end_date IS NOT NULL THEN TIMESTAMPDIFF(MINUTE, o.start_date, o.end_date) ELSE NULL END), 0) as avgDuration,
-        COALESCE(MAX(CASE WHEN o.end_date IS NOT NULL THEN TIMESTAMPDIFF(MINUTE, o.start_date, o.end_date) ELSE NULL END), 0) as maxDuration,
-        COALESCE(MIN(CASE WHEN o.end_date IS NOT NULL THEN TIMESTAMPDIFF(MINUTE, o.start_date, o.end_date) ELSE NULL END), 0) as minDuration,
-        ROUND((SUM(CASE WHEN o.status = 'COMPLETED' THEN 1 ELSE 0 END) / COUNT(*)) * 100, 2) as completionRate
+        COUNT(*) AS totalOperations,
+        COALESCE(SUM(CASE WHEN ${hasEndExpr} THEN ${durationExpr} ELSE 0 END), 0) AS totalMinutes,
+        COALESCE(AVG(CASE WHEN ${hasEndExpr} THEN ${durationExpr} ELSE NULL END), 0) AS avgDuration,
+        COALESCE(MAX(CASE WHEN ${hasEndExpr} THEN ${durationExpr} ELSE NULL END), 0) AS maxDuration,
+        COALESCE(MIN(CASE WHEN ${hasEndExpr} THEN ${durationExpr} ELSE NULL END), 0) AS minDuration,
+        SUM(CASE WHEN o.status IN ('PLANNED', 'IN_PROGRESS', 'ON_HOLD') AND o.end_date IS NOT NULL AND o.end_date < NOW() THEN 1 ELSE 0 END) AS overdueCount,
+        CASE WHEN COUNT(*) > 0
+          THEN ROUND((SUM(CASE WHEN o.status = 'COMPLETED' THEN 1 ELSE 0 END) / COUNT(*)) * 100, 1)
+          ELSE 0
+        END AS completionRate
       FROM operations o
       WHERE 1=1 ${dateFilter}
     `;
 
-    // Trend data for charts with dynamic granularity
-    const granularity = req.query.granularity || 'day';
     let selectExpr = 'DATE(o.start_date)';
     let groupExpr = 'DATE(o.start_date)';
 
@@ -48,7 +499,7 @@ router.get('/operations-metrics', parseDateFilter, async (req, res, next) => {
       groupExpr = "DATE_FORMAT(o.start_date, '%Y-%m-%d %H:00:00')";
     } else if (granularity === 'week') {
       selectExpr = "DATE_FORMAT(DATE_SUB(o.start_date, INTERVAL WEEKDAY(o.start_date) DAY), '%Y-%m-%d')";
-      groupExpr = "YEARWEEK(o.start_date, 1)";
+      groupExpr = 'YEARWEEK(o.start_date, 1)';
     } else if (granularity === 'month') {
       selectExpr = "DATE_FORMAT(o.start_date, '%Y-%m-01')";
       groupExpr = "DATE_FORMAT(o.start_date, '%Y-%m')";
@@ -56,56 +507,37 @@ router.get('/operations-metrics', parseDateFilter, async (req, res, next) => {
 
     const trendQuery = `
       SELECT
-        ${selectExpr} as date,
-        COUNT(*) as count,
-        COALESCE(AVG(TIMESTAMPDIFF(MINUTE, o.start_date, o.end_date)), 0) as avgDuration
+        ${selectExpr} AS date,
+        COUNT(*) AS count,
+        COALESCE(AVG(CASE WHEN ${hasEndExpr} THEN ${durationExpr} ELSE NULL END), 0) AS avgDuration
       FROM operations o
-      WHERE o.end_date IS NOT NULL ${dateFilter}
+      WHERE 1=1 ${dateFilter}
       GROUP BY ${groupExpr}
-      ORDER BY date
+      ORDER BY date ASC
     `;
 
-    // Time distribution by operation type
     const timeDistQuery = `
       SELECT
-        ot.name as type,
-        ot.color,
-        COUNT(*) as count,
-        COALESCE(SUM(TIMESTAMPDIFF(MINUTE, o.start_date, o.end_date)), 0) as totalMinutes
+        ot.name AS type,
+        COALESCE(ot.color, '#1565C0') AS color,
+        COUNT(*) AS count,
+        COALESCE(SUM(CASE WHEN ${hasEndExpr} THEN ${durationExpr} ELSE 0 END), 0) AS totalMinutes
       FROM operations o
       JOIN operation_types ot ON o.type_id = ot.id
-      WHERE o.end_date IS NOT NULL ${dateFilter}
+      WHERE 1=1 ${dateFilter}
       GROUP BY ot.id, ot.name, ot.color
-      ORDER BY totalMinutes DESC
+      ORDER BY totalMinutes DESC, count DESC
     `;
 
-    // Status breakdown
     const statusQuery = `
-      SELECT
-        o.status,
-        COUNT(*) as count
+      SELECT o.status, COUNT(*) AS count
       FROM operations o
       WHERE 1=1 ${dateFilter}
       GROUP BY o.status
     `;
 
-    const [metricsRows] = await sequelize.query(metricsQuery, { replacements });
-    const [trendRows] = await sequelize.query(trendQuery, { replacements });
-    const [timeDistRows] = await sequelize.query(timeDistQuery, { replacements });
-    const [statusRows] = await sequelize.query(statusQuery, { replacements });
-
-    const metrics = metricsRows[0] || {};
-
-    // Calculate hours from minutes
-    metrics.totalHours = Math.floor(metrics.totalMinutes / 60);
-    metrics.remainingMinutes = metrics.totalMinutes % 60;
-
-    // Peak analysis
     const peakQuery = `
-      SELECT
-        DAYNAME(o.start_date) as dayName,
-        HOUR(o.start_date) as hour,
-        COUNT(*) as count
+      SELECT DAYNAME(o.start_date) AS dayName, HOUR(o.start_date) AS hour, COUNT(*) AS count
       FROM operations o
       WHERE 1=1 ${dateFilter}
       GROUP BY DAYNAME(o.start_date), HOUR(o.start_date)
@@ -113,23 +545,76 @@ router.get('/operations-metrics', parseDateFilter, async (req, res, next) => {
       LIMIT 1
     `;
 
-    const [peakRows] = await sequelize.query(peakQuery, { replacements });
+    const [[metricsRows], [rawTrendRows], [timeDistRows], [statusRows], [peakRows]] = await Promise.all([
+      sequelize.query(metricsQuery, { replacements }),
+      sequelize.query(trendQuery, { replacements }),
+      sequelize.query(timeDistQuery, { replacements }),
+      sequelize.query(statusQuery, { replacements }),
+      sequelize.query(peakQuery, { replacements })
+    ]);
+
+    const m = metricsRows[0] || {};
+    const totalOps = Number(m.totalOperations) || 0;
+    const overdueCount = Number(m.overdueCount) || 0;
+    const totalMinutes = Number(m.totalMinutes) || 0;
+
+    const metrics = {
+      totalOperations: totalOps,
+      totalMinutes,
+      totalHours: Math.floor(totalMinutes / 60),
+      remainingMinutes: totalMinutes % 60,
+      avgDuration: Math.round(Number(m.avgDuration) || 0),
+      maxDuration: Math.round(Number(m.maxDuration) || 0),
+      minDuration: Math.round(Number(m.minDuration) || 0),
+      overdueCount,
+      overdueRate: totalOps > 0 ? Math.round((overdueCount / totalOps) * 100) : 0,
+      completionRate: Number(m.completionRate) || 0
+    };
+
+    // For day granularity over a bounded period, fill gaps continuously
+    let trend = rawTrendRows.map((r) => ({
+      date: r.date instanceof Date ? toDateKey(r.date) : String(r.date),
+      count: Number(r.count) || 0,
+      avgDuration: Math.round(Number(r.avgDuration) || 0)
+    }));
+
+    if (granularity === 'day' && window.period !== 'all') {
+      const countFill = fillContinuousBuckets(window.seriesStartStr, window.seriesEndStr, rawTrendRows, (r) => Number(r.count) || 0);
+      const avgFill = fillContinuousBuckets(window.seriesStartStr, window.seriesEndStr, rawTrendRows, (r) => Number(r.avgDuration) || 0);
+      trend = countFill.dates.map((d, idx) => ({
+        date: d,
+        count: countFill.values[idx],
+        avgDuration: Math.round(avgFill.values[idx])
+      }));
+    }
+
     const peakData = peakRows[0] || {};
+    const peakHourVal = peakData.hour !== undefined && peakData.hour !== null ? Number(peakData.hour) : null;
 
     res.json({
       success: true,
       data: {
-        period,
-        dateRange: { from, to },
+        period: window.period,
+        granularity,
+        dateRange: { from: window.from, to: window.to },
         metrics,
         charts: {
-          trend: trendRows,
-          timeDistribution: timeDistRows,
-          statusBreakdown: statusRows
+          trend,
+          timeDistribution: timeDistRows.map((r) => ({
+            type: r.type,
+            color: r.color,
+            count: Number(r.count) || 0,
+            totalMinutes: Number(r.totalMinutes) || 0
+          })),
+          statusBreakdown: statusRows.map((r) => ({
+            status: r.status,
+            count: Number(r.count) || 0
+          }))
         },
         insights: {
           peakDay: peakData.dayName || 'N/A',
-          peakHour: peakData.hour || 'N/A',
+          peakHour: peakHourVal,
+          peakHourFormatted: formatPeakHour(peakHourVal),
           mostActiveType: timeDistRows[0]?.type || 'N/A'
         }
       }
@@ -137,76 +622,22 @@ router.get('/operations-metrics', parseDateFilter, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// ── Cross-Module KPIs for Analytics Dashboard ──────────────────────────────
+// ── Cross-Module KPIs (Backwards-Compatible Endpoint) ───────────────────────
 router.get('/kpis', parseDateFilter, async (req, res, next) => {
   try {
-    const { from, to } = req.dateRange;
-    const dateCond = (col) => {
-      let cond = '';
-      if (from) cond += ` AND ${col} >= :startDate`;
-      if (to) cond += ` AND ${col} <= :endDate`;
-      return cond;
-    };
-    const replacements = {};
-    if (from) replacements.startDate = from;
-    if (to) replacements.endDate = to;
-
-    const [opsKpis] = await sequelize.query(`
-      SELECT 
-        COUNT(*) as totalOps,
-        SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) as completedOps
-      FROM operations WHERE 1=1 ${dateCond('start_date')}`, { replacements });
-
-    const [maintKpis] = await sequelize.query(`
-      SELECT 
-        COALESCE(SUM(cost), 0) as totalCost,
-        COALESCE(SUM(downtime_hours), 0) as totalDowntime,
-        COALESCE(AVG(downtime_hours), 0) as avgDowntime
-      FROM maintenance_records WHERE deleted_at IS NULL ${dateCond('scheduled_date')}`, { replacements });
-
-    const [stockKpis] = await sequelize.query(`
-      SELECT 
-        COALESCE(SUM(CASE WHEN type = 'IN' THEN quantity ELSE 0 END), 0) as stockIn,
-        COALESCE(SUM(CASE WHEN type = 'OUT' THEN quantity ELSE 0 END), 0) as stockOut
-      FROM stock_movements WHERE 1=1 ${dateCond('movement_date')}`, { replacements });
-
-    const [taskKpis] = await sequelize.query(`
-      SELECT 
-        COUNT(*) as totalTasks,
-        SUM(CASE WHEN status = 'DONE' THEN 1 ELSE 0 END) as completedTasks
-      FROM tasks WHERE 1=1 ${dateCond('created_at')}`, { replacements });
-
-    const [shiftKpis] = await sequelize.query(`
-      SELECT 
-        COUNT(*) as totalShifts,
-        SUM(CASE WHEN status != 'ON_LEAVE' THEN 1 ELSE 0 END) as workShifts,
-        SUM(CASE WHEN status = 'ABSENT' THEN 1 ELSE 0 END) as totalAbsences
-      FROM shifts WHERE deleted_at IS NULL ${dateCond('date')}`, { replacements });
-
-    const ops = opsKpis[0] || {};
-    const maint = maintKpis[0] || {};
-    const stock = stockKpis[0] || {};
-    const task = taskKpis[0] || {};
-    const shift = shiftKpis[0] || {};
-
-    const opsTotal = Number(ops.totalOps) || 0;
-    const opsComp = Number(ops.completedOps) || 0;
-    const tasksTotal = Number(task.totalTasks) || 0;
-    const tasksComp = Number(task.completedTasks) || 0;
-    const shiftsTotal = Number(shift.workShifts ?? shift.totalShifts) || 0;
-    const shiftsAbs = Number(shift.totalAbsences) || 0;
-
+    const { from, to } = req.dateRange || {};
+    const kpis = await fetchWindowSnapshotKpis(from || null, to || null);
     res.json({
       success: true,
       data: {
-        totalOperations: opsTotal,
-        operationCompletionRate: opsTotal > 0 ? Math.round((opsComp / opsTotal) * 100) : 0,
-        totalMaintenanceCost: Number(maint.totalCost) || 0,
-        totalDowntimeHours: Number(Number(maint.totalDowntime).toFixed(1)) || 0,
-        avgDowntimeHours: Number(Number(maint.avgDowntime).toFixed(1)) || 0,
-        netStockFlow: (Number(stock.stockIn) || 0) - (Number(stock.stockOut) || 0),
-        taskCompletionRate: tasksTotal > 0 ? Math.round((tasksComp / tasksTotal) * 100) : 0,
-        shiftAttendanceRate: shiftsTotal > 0 ? Math.round(((shiftsTotal - shiftsAbs) / shiftsTotal) * 100) : 100
+        totalOperations: kpis.totalOperations,
+        operationCompletionRate: kpis.operationCompletionRate,
+        totalMaintenanceCost: kpis.totalMaintenanceCost,
+        totalDowntimeHours: kpis.totalDowntimeHours,
+        avgDowntimeHours: kpis.avgDowntimeHours,
+        netStockFlow: kpis.netStockFlow,
+        taskCompletionRate: kpis.taskCompletionRate,
+        shiftAttendanceRate: kpis.shiftAttendanceRate
       }
     });
   } catch (err) { next(err); }
@@ -215,34 +646,31 @@ router.get('/kpis', parseDateFilter, async (req, res, next) => {
 // ── Operations by Type (Volume, Completion, Categories) ─────────────────────
 router.get('/operations-by-type', parseDateFilter, async (req, res, next) => {
   try {
-    const { from, to } = req.dateRange;
+    const { from, to } = req.dateRange || {};
     let query = `
-      SELECT 
-        ot.id as type_id,
-        ot.name as type,
-        COALESCE(ot.color, '#1565C0') as color,
-        COUNT(o.id) as count,
-        SUM(CASE WHEN o.status = 'COMPLETED' THEN 1 ELSE 0 END) as completed,
-        SUM(CASE WHEN o.status = 'IN_PROGRESS' THEN 1 ELSE 0 END) as in_progress,
-        SUM(CASE WHEN o.status = 'PLANNED' THEN 1 ELSE 0 END) as planned
+      SELECT
+        ot.id AS type_id,
+        ot.name AS type,
+        COALESCE(ot.color, '#1565C0') AS color,
+        COUNT(o.id) AS count,
+        SUM(CASE WHEN o.status = 'COMPLETED' THEN 1 ELSE 0 END) AS completed,
+        SUM(CASE WHEN o.status = 'IN_PROGRESS' THEN 1 ELSE 0 END) AS in_progress,
+        SUM(CASE WHEN o.status = 'PLANNED' THEN 1 ELSE 0 END) AS planned
       FROM operation_types ot
       LEFT JOIN operations o ON o.type_id = ot.id`;
     const replacements = {};
-    const conditions = [];
+    const conds = [];
 
     if (from) {
-      conditions.push(`o.start_date >= :startDate`);
+      conds.push('o.start_date >= :startDate');
       replacements.startDate = from;
     }
     if (to) {
-      conditions.push(`o.start_date <= :endDate`);
+      conds.push('o.start_date <= :endDate');
       replacements.endDate = to;
     }
-
-    if (conditions.length) {
-      query += ` AND ${conditions.join(' AND ')}`;
-    }
-    query += ` GROUP BY ot.id, ot.name, ot.color ORDER BY count DESC`;
+    if (conds.length) query += ` AND ${conds.join(' AND ')}`;
+    query += ' GROUP BY ot.id, ot.name, ot.color ORDER BY count DESC';
 
     const [rows] = await sequelize.query(query, { replacements });
     res.json({ success: true, data: rows });
@@ -252,23 +680,13 @@ router.get('/operations-by-type', parseDateFilter, async (req, res, next) => {
 // ── Operations Status Breakdown ─────────────────────────────────────────────
 router.get('/operations-by-status', parseDateFilter, async (req, res, next) => {
   try {
-    const { from, to } = req.dateRange;
-    let query = `
-      SELECT status, COUNT(*) as count
-      FROM operations WHERE 1=1`;
+    const { from, to } = req.dateRange || {};
     const replacements = {};
-
-    if (from) {
-      query += ` AND start_date >= :startDate`;
-      replacements.startDate = from;
-    }
-    if (to) {
-      query += ` AND start_date <= :endDate`;
-      replacements.endDate = to;
-    }
-    query += ` GROUP BY status`;
-
-    const [rows] = await sequelize.query(query, { replacements });
+    const cond = buildSqlDateRange('start_date', from, to, 'op', replacements);
+    const [rows] = await sequelize.query(
+      `SELECT status, COUNT(*) AS count FROM operations WHERE 1=1 ${cond} GROUP BY status`,
+      { replacements }
+    );
     res.json({ success: true, data: rows });
   } catch (err) { next(err); }
 });
@@ -276,29 +694,23 @@ router.get('/operations-by-status', parseDateFilter, async (req, res, next) => {
 // ── Maintenance Overview ────────────────────────────────────────────────────
 router.get('/maintenance-overview', parseDateFilter, async (req, res, next) => {
   try {
-    const { from, to } = req.dateRange;
-    let query = `
-      SELECT 
-        type, 
-        status, 
-        COUNT(*) as count, 
-        COALESCE(AVG(downtime_hours), 0) as avg_downtime, 
-        COALESCE(SUM(cost), 0) as total_cost
-      FROM maintenance_records 
-      WHERE deleted_at IS NULL`;
+    const { from, to } = req.dateRange || {};
     const replacements = {};
-    
-    if (from) {
-      query += ` AND scheduled_date >= :startDate`;
-      replacements.startDate = from;
-    }
-    if (to) {
-      query += ` AND scheduled_date <= :endDate`;
-      replacements.endDate = to;
-    }
-    query += ` GROUP BY type, status ORDER BY count DESC`;
-    
-    const [rows] = await sequelize.query(query, { replacements });
+    const cond = buildSqlDateRange('scheduled_date', from, to, 'm', replacements);
+    const [rows] = await sequelize.query(
+      `SELECT
+         type,
+         status,
+         COUNT(*) AS count,
+         COALESCE(SUM(downtime_hours), 0) AS total_downtime,
+         COALESCE(AVG(downtime_hours), 0) AS avg_downtime,
+         COALESCE(SUM(cost), 0) AS total_cost
+       FROM maintenance_records
+       WHERE deleted_at IS NULL ${cond}
+       GROUP BY type, status
+       ORDER BY count DESC`,
+      { replacements }
+    );
     res.json({ success: true, data: rows });
   } catch (err) { next(err); }
 });
@@ -306,24 +718,24 @@ router.get('/maintenance-overview', parseDateFilter, async (req, res, next) => {
 // ── Stock Movements (IN vs OUT flow) ────────────────────────────────────────
 router.get('/stock-movements', parseDateFilter, async (req, res, next) => {
   try {
-    const { from, to } = req.dateRange;
+    const { from, to } = req.dateRange || {};
     let query = `
-      SELECT DATE(movement_date) as date, type, SUM(quantity) as total_qty, COUNT(*) as count
+      SELECT DATE(movement_date) AS date, type, SUM(quantity) AS total_qty, COUNT(*) AS count
       FROM stock_movements WHERE 1=1`;
     const replacements = {};
-    
+
     if (from) {
-      query += ` AND movement_date >= :startDate`;
+      query += ' AND movement_date >= :startDate';
       replacements.startDate = from;
     } else {
-      query += ` AND movement_date >= DATE_SUB(NOW(), INTERVAL 30 DAY)`;
+      query += ' AND movement_date >= DATE_SUB(NOW(), INTERVAL 30 DAY)';
     }
     if (to) {
-      query += ` AND movement_date <= :endDate`;
+      query += ' AND movement_date <= :endDate';
       replacements.endDate = to;
     }
-    query += ` GROUP BY DATE(movement_date), type ORDER BY date ASC`;
-    
+    query += ' GROUP BY DATE(movement_date), type ORDER BY date ASC';
+
     const [rows] = await sequelize.query(query, { replacements });
     res.json({ success: true, data: rows });
   } catch (err) { next(err); }
@@ -332,28 +744,21 @@ router.get('/stock-movements', parseDateFilter, async (req, res, next) => {
 // ── Task Completion Performance ─────────────────────────────────────────────
 router.get('/task-completion', parseDateFilter, async (req, res, next) => {
   try {
-    const { from, to } = req.dateRange;
-    let query = `
-      SELECT 
-        interval_type, 
-        status, 
-        COUNT(*) as count,
-        COALESCE(AVG(CASE WHEN completed_at IS NOT NULL THEN TIMESTAMPDIFF(HOUR, created_at, completed_at) ELSE NULL END), 0) as avg_completion_hours
-      FROM tasks 
-      WHERE 1=1`;
+    const { from, to } = req.dateRange || {};
     const replacements = {};
-
-    if (from) {
-      query += ` AND created_at >= :startDate`;
-      replacements.startDate = from;
-    }
-    if (to) {
-      query += ` AND created_at <= :endDate`;
-      replacements.endDate = to;
-    }
-    query += ` GROUP BY interval_type, status ORDER BY interval_type`;
-
-    const [rows] = await sequelize.query(query, { replacements });
+    const cond = buildSqlDateRange('created_at', from, to, 'tk', replacements);
+    const [rows] = await sequelize.query(
+      `SELECT
+         interval_type,
+         status,
+         COUNT(*) AS count,
+         COALESCE(AVG(CASE WHEN completed_at IS NOT NULL THEN TIMESTAMPDIFF(HOUR, created_at, completed_at) ELSE NULL END), 0) AS avg_completion_hours
+       FROM tasks
+       WHERE 1=1 ${cond}
+       GROUP BY interval_type, status
+       ORDER BY interval_type`,
+      { replacements }
+    );
     res.json({ success: true, data: rows });
   } catch (err) { next(err); }
 });
@@ -361,32 +766,31 @@ router.get('/task-completion', parseDateFilter, async (req, res, next) => {
 // ── Shift Workforce & Coverage ──────────────────────────────────────────────
 router.get('/shift-coverage', parseDateFilter, async (req, res, next) => {
   try {
-    const { from, to } = req.dateRange;
+    const { from, to } = req.dateRange || {};
     let query = `
-      SELECT 
-        s.date, 
-        st.name as shift_name, 
-        COALESCE(st.color, '#1565C0') as color, 
-        COUNT(s.id) as employees,
-        SUM(CASE WHEN s.status = 'ABSENT' THEN 1 ELSE 0 END) as absences
-      FROM shifts s 
+      SELECT
+        s.date,
+        st.name AS shift_name,
+        COALESCE(st.color, '#1565C0') AS color,
+        COUNT(s.id) AS employees,
+        SUM(CASE WHEN s.status = 'ABSENT' THEN 1 ELSE 0 END) AS absences
+      FROM shifts s
       JOIN shift_types st ON s.shift_type_id = st.id
       WHERE s.deleted_at IS NULL AND s.status != 'ON_LEAVE' AND COALESCE(st.category, 'WORK') = 'WORK'`;
     const replacements = {};
-    
+
     if (from) {
-      query += ` AND s.date >= :startDate`;
+      query += ' AND s.date >= :startDate';
       replacements.startDate = from;
     } else {
-      query += ` AND s.date >= DATE_SUB(NOW(), INTERVAL 30 DAY)`;
+      query += ' AND s.date >= DATE_SUB(NOW(), INTERVAL 30 DAY)';
     }
-    
     if (to) {
-      query += ` AND s.date <= :endDate`;
+      query += ' AND s.date <= :endDate';
       replacements.endDate = to;
     }
-    query += ` GROUP BY s.date, st.id, st.name, st.color ORDER BY s.date ASC`;
-    
+    query += ' GROUP BY s.date, st.id, st.name, st.color ORDER BY s.date ASC';
+
     const [rows] = await sequelize.query(query, { replacements });
     res.json({ success: true, data: rows });
   } catch (err) { next(err); }

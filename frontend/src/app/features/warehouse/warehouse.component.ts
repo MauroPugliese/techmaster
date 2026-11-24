@@ -60,6 +60,7 @@ export class WarehouseComponent implements OnInit, OnDestroy {
   externalStatusFilter: 'all' | WarehouseStockStatus = 'all';
   externalLocationFilter: string | number = '';
   exportParams: Record<string, any> = {};
+  private actionHandled = false;
 
   constructor(
     private api: ApiService,
@@ -91,11 +92,35 @@ export class WarehouseComponent implements OnInit, OnDestroy {
       const st = qp['status'];
       if (st === 'all' || st === 'healthy' || st === 'low' || st === 'out' || st === 'overstock') {
         this.externalStatusFilter = st;
+      } else if (qp['filter'] === 'low_stock' || st === 'LOW_STOCK') {
+        this.externalStatusFilter = 'low';
       }
 
       if (qp['location_id'] !== undefined) {
         const rawLoc = qp['location_id'];
         this.externalLocationFilter = rawLoc === 'unassigned' ? 'unassigned' : (Number(rawLoc) || '');
+      }
+
+      const act = qp['action'];
+      if (act === 'movement') {
+        this.activeTab = 'movements';
+        this.router.navigate([], {
+          relativeTo: this.route,
+          queryParams: { action: null, tab: 'movements' },
+          queryParamsHandling: 'merge',
+          replaceUrl: true
+        });
+      } else if (act === 'new' && !this.actionHandled) {
+        this.actionHandled = true;
+        setTimeout(() => {
+          this.openAddItem();
+          this.router.navigate([], {
+            relativeTo: this.route,
+            queryParams: { action: null },
+            queryParamsHandling: 'merge',
+            replaceUrl: true
+          });
+        }, 0);
       }
 
       this.cdr.markForCheck();

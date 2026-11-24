@@ -1,0 +1,35 @@
+@import '../../analytics-shared';
+
+.an-ww-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.an-move-pills {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.an-move-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  font-size: 0.74rem;
+
+  strong {
+    font-weight: 800;
+    color: var(--blue-950);
+  }
+}
+
+.an-move-lbl {
+  font-weight: 600;
+  color: var(--blue-900);
+}

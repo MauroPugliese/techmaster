@@ -1,0 +1,78 @@
+<div class="an-ww-section">
+
+  <div class="an-grid-2">
+    <!-- ── Continuous Stock Movement Velocity ────────────────────────────── -->
+    <div class="card an-card">
+      <div class="an-card-head">
+        <div>
+          <h3>Inventory Movement Velocity</h3>
+          <p>Continuous daily Stock IN vs Stock OUT units</p>
+        </div>
+        <span class="an-badge-pill">Warehouse Flow</span>
+      </div>
+
+      <div class="an-move-pills" *ngIf="stockByType.length > 0">
+        <span *ngFor="let m of stockByType" class="an-move-pill an-num">
+          <span class="an-move-lbl">{{label(m.type)}}</span>
+          <strong>{{m.total_qty | number}}</strong>
+          <span class="text-muted">({{m.moves}})</span>
+        </span>
+      </div>
+
+      <div class="an-canvas-wrap">
+        <canvas #stockCanvas></canvas>
+        <div class="an-empty-overlay" *ngIf="!loading && !hasStockData">
+          <span class="mat-i">swap_horiz</span>
+          <span>No stock movements recorded in this window</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Task Cadence Completion (All Open Statuses Combined) ─────────── -->
+    <div class="card an-card">
+      <div class="an-card-head">
+        <div>
+          <h3>Task Cadence Performance</h3>
+          <p>Completed vs all open tasks (TODO, In Progress, Review, Overdue)</p>
+        </div>
+        <span class="an-badge-pill">Task Velocity</span>
+      </div>
+
+      <div class="an-move-pills" *ngIf="taskCadence.length > 0">
+        <span *ngFor="let tc of taskCadence" class="an-move-pill an-num">
+          <span class="an-move-lbl">{{tc.label}}</span>
+          <strong>{{tc.completion_rate}}%</strong>
+          <span class="text-muted">({{tc.completed}}/{{tc.completed + tc.pending}})</span>
+        </span>
+      </div>
+
+      <div class="an-canvas-wrap">
+        <canvas #taskCanvas></canvas>
+        <div class="an-empty-overlay" *ngIf="!loading && !hasTaskData">
+          <span class="mat-i">fact_check</span>
+          <span>No task activity recorded in this window</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Full-Period Shift Coverage & Attendance ─────────────────────────── -->
+  <div class="card an-card">
+    <div class="an-card-head">
+      <div>
+        <h3>Shift Coverage &amp; Attendance</h3>
+        <p>Daily workforce distribution by shift type and absence trend over full window</p>
+      </div>
+      <span class="an-badge-pill">Workforce</span>
+    </div>
+
+    <div class="an-canvas-wrap tall">
+      <canvas #shiftCanvas></canvas>
+      <div class="an-empty-overlay" *ngIf="!loading && !hasShiftData">
+        <span class="mat-i">event_busy</span>
+        <span>No shift schedules recorded for this window</span>
+      </div>
+    </div>
+  </div>
+
+</div>

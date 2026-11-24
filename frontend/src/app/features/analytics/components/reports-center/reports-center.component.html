@@ -1,0 +1,87 @@
+<div class="an-reports-center">
+
+  <!-- ── Reports Controls Bar ────────────────────────────────────────────── -->
+  <div class="card an-reports-toolbar">
+    <div class="an-reports-toolbar-top">
+      <div>
+        <h3>Executive Report Hub</h3>
+        <p class="an-num">
+          Official vector PDF, Excel (with formulas), Word, and PowerPoint decks · Active date filter: {{dateLabel}}
+        </p>
+      </div>
+
+      <button type="button"
+              class="btn btn-secondary btn-sm"
+              [disabled]="!overview"
+              (click)="exportJsonRequested.emit()">
+        <span class="btn-icon">data_object</span> Raw Dataset JSON
+      </button>
+    </div>
+
+    <div class="an-reports-filters">
+      <div class="an-search-wrap">
+        <span class="mat-i an-search-icon">search</span>
+        <input type="text"
+               class="form-control an-search-input"
+               [(ngModel)]="searchQuery"
+               placeholder="Search report name or doc code…">
+        <button *ngIf="searchQuery"
+                type="button"
+                class="an-search-clear"
+                (click)="searchQuery = ''"
+                title="Clear search">
+          <span class="mat-i">close</span>
+        </button>
+      </div>
+
+      <div class="an-seg-group" role="tablist" aria-label="Filter report category">
+        <button *ngFor="let cat of categories"
+                type="button"
+                class="an-seg-btn"
+                [class.active]="activeCategory === cat"
+                (click)="activeCategory = cat">
+          {{cat === 'ALL' ? 'All Categories' : (cat | titlecase)}}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Loading Skeleton ────────────────────────────────────────────────── -->
+  <div *ngIf="loading" class="card an-empty-box">
+    <div class="spinner" style="width:24px;height:24px"></div>
+    <p>Loading export catalog…</p>
+  </div>
+
+  <!-- ── Catalog Grid ────────────────────────────────────────────────────── -->
+  <div class="an-reports-grid" *ngIf="!loading && filteredModules.length > 0">
+    <div *ngFor="let mod of filteredModules" class="card an-report-card">
+      <div class="an-report-head">
+        <span class="an-badge-pill an-num">{{mod.docCode}}</span>
+        <span class="an-report-cat">{{mod.category}}</span>
+      </div>
+
+      <div class="an-report-body">
+        <h4>{{mod.title}}</h4>
+        <p>{{mod.subtitle}}</p>
+      </div>
+
+      <div class="an-report-actions">
+        <button *ngFor="let item of formatMeta"
+                type="button"
+                class="btn btn-secondary btn-sm an-fmt-btn"
+                [ngClass]="'fmt-' + item.fmt"
+                [disabled]="busyKey !== null"
+                (click)="downloadModule(mod, item.fmt)">
+          <span>{{isBusy(mod.key, item.fmt) ? '…' : item.label}}</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card an-empty-box" *ngIf="!loading && !filteredModules.length">
+    <span class="mat-i">folder_off</span>
+    <h4>No Matching Reports</h4>
+    <p>Try clearing your search or selecting All Categories.</p>
+  </div>
+
+</div>

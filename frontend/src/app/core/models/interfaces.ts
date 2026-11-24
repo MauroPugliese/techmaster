@@ -54,21 +54,152 @@ export interface RegisterPayload {
 export interface DashboardKPIs {
   totalOps: number;
   activeOps: number;
+  overdueOps?: number;
   pendingMaint: number;
   lowStockCount: number;
+  outOfStockCount?: number;
+  totalSkus?: number;
+  inventoryValue?: number;
   openTasks: number;
+  completedTasks?: number;
   activeUsers: number;
   totalAssets?: number;
   activeAssets?: number;
   maintenanceAssets?: number;
   overdueTasks?: number;
   criticalMaint?: number;
+  overdueMaint?: number;
+  shiftsToday?: number;
+  shiftsLiveNow?: number;
+  plannedDueToday?: number;
 }
 
 export interface DashboardUrgentAlerts {
+  overdueOperations?: Operation[];
   overdueTasks: Task[];
   criticalMaintenance: MaintenanceRecord[];
   outOfStock: InventoryItem[];
+}
+
+export interface DashboardAlertCounts {
+  overdueOperations: number;
+  criticalMaintenance: number;
+  overdueTasks: number;
+  outOfStock: number;
+  total: number;
+}
+
+export interface DashboardFleetHealth {
+  totalAssets: number;
+  activeAssets: number;
+  maintenanceAssets: number;
+  inactiveAssets: number;
+  readinessPct: number;
+  status: 'OPTIMAL' | 'ATTENTION' | 'CRITICAL';
+  assetsInMaintenance?: Asset[];
+}
+
+export interface DashboardWarehouseCriticalItem {
+  id: number;
+  sku: string;
+  name: string;
+  unit: string;
+  quantity: number;
+  reorder_point: number;
+  min_stock: number;
+  unit_cost: number;
+  supplier?: string | null;
+  location?: { id: number; code: string; name: string } | null;
+  category?: { id: number; name: string; color?: string } | null;
+  deficit: number;
+  stockRatioPct: number;
+}
+
+export interface DashboardWarehouseHealth {
+  totalSkus: number;
+  healthySkus: number;
+  lowStockCount: number;
+  outOfStockCount: number;
+  totalValue: number;
+  movements7d: number;
+  criticalItems: DashboardWarehouseCriticalItem[];
+}
+
+export interface DashboardTrendSeries {
+  dates: string[];
+  operations: number[];
+  maintenance: number[];
+  tasks: number[];
+  totals: {
+    operations: number;
+    maintenance: number;
+    tasks: number;
+  };
+  startDate: string;
+  endDate: string;
+  daysCount: number;
+}
+
+export interface DashboardCountBucket {
+  label: string;
+  count: number;
+}
+
+export interface DashboardBreakdowns {
+  taskByInterval: DashboardCountBucket[];
+  opsByStatus: DashboardCountBucket[];
+  maintByStatus: DashboardCountBucket[];
+  taskByStatus: DashboardCountBucket[];
+}
+
+export interface DashboardPlannedDueItem extends PlannedMaintenanceTask {
+  isToday?: boolean;
+}
+
+export interface DashboardTodaySchedule {
+  operations: Operation[];
+  upcomingWorkOrders: MaintenanceRecord[];
+  plannedDue: {
+    todayTotal: number;
+    todayDone: number;
+    pendingNext7d: number;
+    items: DashboardPlannedDueItem[];
+  };
+}
+
+export interface DashboardShiftItem extends Shift {
+  is_live?: boolean;
+}
+
+export interface DashboardShiftSummary {
+  totalToday: number;
+  liveNow: number;
+  workShifts: number;
+  leaveCount: number;
+  byType: Array<{ name: string; color: string; count: number }>;
+}
+
+export interface DashboardRecentActivity {
+  operations: Operation[];
+  maintenance: MaintenanceRecord[];
+  tasks: Task[];
+  movements: StockMovement[];
+}
+
+export interface DashboardOverview {
+  generatedAt: string;
+  trendDays: 7 | 30 | 90;
+  kpis: DashboardKPIs;
+  fleet: DashboardFleetHealth;
+  warehouse: DashboardWarehouseHealth;
+  trends: DashboardTrendSeries;
+  breakdowns: DashboardBreakdowns;
+  urgentAlerts: DashboardUrgentAlerts;
+  alertCounts: DashboardAlertCounts;
+  todaySchedule: DashboardTodaySchedule;
+  todayShifts: DashboardShiftItem[];
+  shiftSummary: DashboardShiftSummary;
+  recentActivity: DashboardRecentActivity;
 }
 
 export interface TrendPoint { date: string; count: number; status: string; }

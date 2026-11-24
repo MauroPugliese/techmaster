@@ -1,0 +1,58 @@
+<div class="card dash-card">
+  <div class="dash-card-head">
+    <div class="dash-head-title-row">
+      <div class="dash-head-icon" [class.danger]="totalCount > 0" [class.ok]="totalCount === 0">
+        <span class="mat-i">{{totalCount > 0 ? 'notification_important' : 'verified_user'}}</span>
+      </div>
+      <div>
+        <h3>Urgent Action Center</h3>
+        <p class="dash-num">{{totalCount > 0 ? (totalCount + ' items needing immediate intervention') : 'All systems operating within nominal limits'}}</p>
+      </div>
+    </div>
+
+    <div class="dash-seg-group" role="tablist" aria-label="Filter urgent alerts">
+      <button type="button" class="dash-seg-btn" [class.active]="activeTab === 'ALL'" (click)="setTab('ALL')">
+        All <span class="dash-seg-count">{{totalCount}}</span>
+      </button>
+      <button type="button" class="dash-seg-btn" [class.active]="activeTab === 'OPS'" (click)="setTab('OPS')">
+        Ops <span class="dash-seg-count">{{opsCount}}</span>
+      </button>
+      <button type="button" class="dash-seg-btn" [class.active]="activeTab === 'MAINT'" (click)="setTab('MAINT')">
+        Maint <span class="dash-seg-count">{{maintCount}}</span>
+      </button>
+      <button type="button" class="dash-seg-btn" [class.active]="activeTab === 'TASKS'" (click)="setTab('TASKS')">
+        Tasks <span class="dash-seg-count">{{tasksCount}}</span>
+      </button>
+      <button type="button" class="dash-seg-btn" [class.active]="activeTab === 'STOCK'" (click)="setTab('STOCK')">
+        Stock <span class="dash-seg-count">{{stockCount}}</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="dash-list dash-urgent-scroll" *ngIf="visibleRows.length > 0">
+    <div *ngFor="let row of visibleRows"
+         class="dash-row-item dash-urgent-row"
+         [style.border-left-color]="row.accentColor">
+      <div class="dash-row-main">
+        <div class="dash-urgent-title-line">
+          <span class="dash-row-title">{{row.title}}</span>
+          <span class="dash-sku-pill" *ngIf="row.sku">{{row.sku}}</span>
+        </div>
+        <div class="dash-row-sub">{{row.subtitle}}</div>
+      </div>
+
+      <div class="dash-row-end">
+        <span class="badge" [ngClass]="row.badgeClass">{{row.badgeText}}</span>
+        <a class="btn btn-secondary btn-sm" [routerLink]="row.routerLink" [queryParams]="row.queryParams">
+          {{row.ctaLabel}}
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="dash-empty-box ok" *ngIf="visibleRows.length === 0 && !loading">
+    <span class="mat-i">check_circle</span>
+    <h4>{{activeTab === 'ALL' ? 'Zero Critical Escalations' : 'No Urgent Items Here'}}</h4>
+    <p>{{activeTab === 'ALL' ? 'No overdue sorties, critical maintenance, past-due tasks, or zero-stock SKUs.' : 'Everything in this domain is currently clear.'}}</p>
+  </div>
+</div>

@@ -1,0 +1,62 @@
+<div class="card dash-card">
+  <div class="dash-card-head">
+    <div>
+      <h3>Live Facility Activity</h3>
+      <p>Cross-departmental operational stream</p>
+    </div>
+
+    <div class="dash-seg-group" role="tablist" aria-label="Filter activity events">
+      <button type="button" class="dash-seg-btn" [class.active]="activeTab === 'ALL'" (click)="setTab('ALL')">
+        All
+      </button>
+      <button type="button" class="dash-seg-btn" [class.active]="activeTab === 'OPS'" (click)="setTab('OPS')">
+        Sorties <span class="dash-seg-count">{{recentOps.length}}</span>
+      </button>
+      <button type="button" class="dash-seg-btn" [class.active]="activeTab === 'MAINT'" (click)="setTab('MAINT')">
+        Maint <span class="dash-seg-count">{{recentMaintenance.length}}</span>
+      </button>
+      <button type="button" class="dash-seg-btn" [class.active]="activeTab === 'TASKS'" (click)="setTab('TASKS')">
+        Tasks <span class="dash-seg-count">{{recentTasks.length}}</span>
+      </button>
+      <button type="button" class="dash-seg-btn" [class.active]="activeTab === 'STOCK'" (click)="setTab('STOCK')">
+        Stock <span class="dash-seg-count">{{recentMovements.length}}</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Only show spinner on very first load when feed has no items yet -->
+  <div *ngIf="loading && !feedItems.length" class="dash-empty-box">
+    <div class="spinner" style="width:20px;height:20px"></div>
+    <p>Loading recent events…</p>
+  </div>
+
+  <div class="dash-list dash-activity-scroll" *ngIf="feedItems.length > 0">
+    <a *ngFor="let item of feedItems"
+       class="dash-row-item dash-activity-row"
+       [routerLink]="item.routerLink"
+       [queryParams]="item.queryParams">
+      <div class="dash-feed-icon" [style.background]="item.color + '15'" [style.color]="item.color">
+        <span class="mat-i">{{item.icon}}</span>
+      </div>
+
+      <div class="dash-row-main">
+        <div class="dash-row-title">{{item.title}}</div>
+        <div class="dash-row-sub">
+          {{item.subtitle}}
+          · <span [title]="(item.timestamp | date:'medium') || ''">{{item.relativeTime}}</span>
+        </div>
+      </div>
+
+      <div class="dash-row-end">
+        <span class="badge" [ngClass]="item.badgeClass">{{item.statusText}}</span>
+        <span class="mat-i dash-chevron">chevron_right</span>
+      </div>
+    </a>
+  </div>
+
+  <div class="dash-empty-box" *ngIf="!loading && !feedItems.length">
+    <span class="mat-i">history</span>
+    <h4>No Recent Activity</h4>
+    <p>No recent events recorded in this category.</p>
+  </div>
+</div>

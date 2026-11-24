@@ -1,297 +1,247 @@
 <!-- ==========================================================================
-     analytics.component.html — Executive Operational Intelligence Dashboard
+     analytics.component.html — Unified Operational Intelligence & Reports
      ========================================================================== -->
 
-<div class="analytics-page fade-in" id="analytics-dashboard">
+<div class="an-page fade-in">
 
-  <!-- ── Section Header ──────────────────────────────────────────────────── -->
-  <div class="flex items-center justify-between mb-6">
+  <!-- ── Page Header ─────────────────────────────────────────────────────── -->
+  <div class="an-page-head">
     <div>
-      <h2 style="margin-bottom:4px; font-weight:700">Analytics & Reports</h2>
-      <p class="text-muted text-sm">Operational performance & data visualization for {{dateLabel}}</p>
+      <h2>Analytics &amp; Reports</h2>
+      <p class="an-num">Operational intelligence, cross-module metrics &amp; executive exports · Scope: {{dateLabel}}</p>
     </div>
-    <div class="flex items-center gap-2">
-      <app-export-menu endpoint="analytics" filename="Analytics" label="Export Report"></app-export-menu>
-      <button class="btn btn-secondary" (click)="exportReport()" title="Export raw JSON dataset">
-        <span class="btn-icon">download</span> Export JSON
+
+    <div class="an-head-actions">
+      <div class="an-seg-group" role="group" aria-label="Quick time window">
+        <button *ngFor="let opt of periodOptions"
+                type="button"
+                class="an-seg-btn"
+                [class.active]="period === opt.value"
+                (click)="selectPeriod(opt.value)">
+          {{opt.label}}
+        </button>
+      </div>
+
+      <app-export-menu endpoint="analytics"
+                       filename="Analytics_Intelligence"
+                       label="Export Report"
+                       [params]="exportMenuParams">
+      </app-export-menu>
+
+      <button type="button"
+              class="btn btn-secondary btn-sm"
+              [disabled]="!overview"
+              (click)="exportJson()"
+              title="Download raw JSON analytics snapshot">
+        <span class="btn-icon">download</span> JSON
       </button>
-      <button class="btn btn-primary" (click)="exportPdf()" title="Download browser snapshot PDF">
-        <span class="btn-icon">picture_as_pdf</span> Snapshot PDF
-      </button>
     </div>
   </div>
 
-  <!-- ── Top KPI Stat Cards ───────────────────────────────────────────────── -->
-  <div class="kpi-grid" *ngIf="kpis">
-    <div class="kpi-card">
-      <div class="kpi-icon-wrapper blue">
-        <span class="btn-icon">rocket_launch</span>
-      </div>
-      <div class="kpi-info">
-        <div class="kpi-label">Operations</div>
-        <div class="kpi-value-row">
-          <span class="kpi-value">{{kpis.totalOperations | number}}</span>
-          <span class="kpi-sub success" *ngIf="kpis.operationCompletionRate > 0">
-            {{kpis.operationCompletionRate}}% Done
-          </span>
-        </div>
-      </div>
-    </div>
+  <!-- ── 5-Tab Intelligence Switcher ─────────────────────────────────────── -->
+  <div class="an-tab-bar" role="tablist" aria-label="Analytics domains">
+    <button type="button"
+            role="tab"
+            class="an-tab-btn"
+            [class.active]="activeTab === 'overview'"
+            [attr.aria-selected]="activeTab === 'overview'"
+            (click)="selectTab('overview')">
+      <span class="mat-i">insights</span>
+      <span>Executive Overview</span>
+    </button>
 
-    <div class="kpi-card">
-      <div class="kpi-icon-wrapper amber">
-        <span class="btn-icon">build</span>
-      </div>
-      <div class="kpi-info">
-        <div class="kpi-label">Maintenance Cost</div>
-        <div class="kpi-value-row">
-          <span class="kpi-value">${{kpis.totalMaintenanceCost | number:'1.0-0'}}</span>
-          <span class="kpi-sub neutral" *ngIf="kpis.totalDowntimeHours > 0">
-            {{kpis.totalDowntimeHours}}h downtime
-          </span>
-        </div>
-      </div>
-    </div>
+    <button type="button"
+            role="tab"
+            class="an-tab-btn"
+            [class.active]="activeTab === 'operations'"
+            [attr.aria-selected]="activeTab === 'operations'"
+            (click)="selectTab('operations')">
+      <span class="mat-i">rocket_launch</span>
+      <span>Operations Deep-Dive</span>
+      <span class="an-tab-pill">{{kpis?.totalOperations ?? 0}}</span>
+    </button>
 
-    <div class="kpi-card">
-      <div class="kpi-icon-wrapper green">
-        <span class="btn-icon">inventory_2</span>
-      </div>
-      <div class="kpi-info">
-        <div class="kpi-label">Net Stock Delta</div>
-        <div class="kpi-value-row">
-          <span class="kpi-value" [style.color]="kpis.netStockFlow >= 0 ? '#10B981' : '#EF4444'">
-            {{kpis.netStockFlow >= 0 ? '+' : ''}}{{kpis.netStockFlow | number}}
-          </span>
-          <span class="kpi-sub neutral">Items Flow</span>
-        </div>
-      </div>
-    </div>
+    <button type="button"
+            role="tab"
+            class="an-tab-btn"
+            [class.active]="activeTab === 'maintenance'"
+            [attr.aria-selected]="activeTab === 'maintenance'"
+            (click)="selectTab('maintenance')">
+      <span class="mat-i">build_circle</span>
+      <span>Maintenance &amp; Assets</span>
+      <span class="an-tab-pill">{{kpis?.totalMaintenanceRecords ?? 0}}</span>
+    </button>
 
-    <div class="kpi-card">
-      <div class="kpi-icon-wrapper purple">
-        <span class="btn-icon">task_alt</span>
-      </div>
-      <div class="kpi-info">
-        <div class="kpi-label">Task Velocity</div>
-        <div class="kpi-value-row">
-          <span class="kpi-value">{{kpis.taskCompletionRate}}%</span>
-          <span class="kpi-sub success">Fulfilled</span>
-        </div>
-      </div>
-    </div>
+    <button type="button"
+            role="tab"
+            class="an-tab-btn"
+            [class.active]="activeTab === 'workforce'"
+            [attr.aria-selected]="activeTab === 'workforce'"
+            (click)="selectTab('workforce')">
+      <span class="mat-i">groups</span>
+      <span>Stock &amp; Workforce</span>
+      <span class="an-tab-pill">{{kpis?.totalMovements ?? 0}}</span>
+    </button>
 
-    <div class="kpi-card">
-      <div class="kpi-icon-wrapper rose">
-        <span class="btn-icon">groups</span>
-      </div>
-      <div class="kpi-info">
-        <div class="kpi-label">Workforce Attendance</div>
-        <div class="kpi-value-row">
-          <span class="kpi-value">{{kpis.shiftAttendanceRate}}%</span>
-          <span class="kpi-sub" [ngClass]="kpis.shiftAttendanceRate >= 90 ? 'success' : 'warning'">
-            On-duty
-          </span>
-        </div>
-      </div>
-    </div>
+    <button type="button"
+            role="tab"
+            class="an-tab-btn"
+            [class.active]="activeTab === 'reports'"
+            [attr.aria-selected]="activeTab === 'reports'"
+            (click)="selectTab('reports')">
+      <span class="mat-i">summarize</span>
+      <span>Reports Center</span>
+    </button>
   </div>
 
-  <!-- ── Loading Indicator Overlay ────────────────────────────────────────── -->
-  <div class="loading-overlay" *ngIf="loading">
-    <div class="spinner"></div>
-    <span class="text-sm text-muted">Aggregating analytics data...</span>
-  </div>
+  <!-- ── Tab 1: Executive Overview ───────────────────────────────────────── -->
+  <ng-container *ngIf="activeTab === 'overview'">
 
-  <!-- ── Charts Row 1: Operations by Type & Status Lifecycle ──────────────── -->
-  <div class="charts-grid-2">
-
-    <!-- Operations by Category (Grouped Bar) -->
-    <div class="chart-card">
-      <div class="chart-header">
-        <div class="title-group">
-          <h3>Operations by Category</h3>
-          <p>Volume & completion distribution per operational type</p>
-        </div>
-        <span class="chart-badge">Categorical</span>
-      </div>
-      <div class="chart-wrapper">
-        <canvas id="opsByTypeChart"></canvas>
-        <div class="chart-empty-state" *ngIf="!loading && !hasChartData('opsByType')">
-          <span class="material-icons-round">query_stats</span>
-          <span>No operations recorded for selected period</span>
+    <!-- 6 Horizontal KPIs with Period Deltas -->
+    <div class="an-kpi-grid">
+      <div class="kpi-card an-kpi-card" style="--kpi-color: #1565C0">
+        <div class="kpi-icon-wrap">rocket_launch</div>
+        <div class="an-kpi-body">
+          <div class="an-kpi-top">
+            <span class="an-kpi-value">{{kpis?.totalOperations ?? '—'}}</span>
+            <span *ngIf="overview?.hasComparison && deltas?.totalOperations !== null"
+                  class="an-delta-pill"
+                  [ngClass]="deltaClass(deltas?.totalOperations)">
+              {{deltaLabel(deltas?.totalOperations)}}
+            </span>
+          </div>
+          <div class="an-kpi-title">Operations</div>
+          <div class="an-kpi-sub">{{kpis?.operationCompletionRate ?? 0}}% completion rate</div>
         </div>
       </div>
-    </div>
 
-    <!-- Operation Status Lifecycle (Donut) -->
-    <div class="chart-card">
-      <div class="chart-header">
-        <div class="title-group">
-          <h3>Operation Status Lifecycle</h3>
-          <p>Active status breakdown across sorties & missions</p>
-        </div>
-        <span class="chart-badge">Status</span>
-      </div>
-      <div class="chart-wrapper">
-        <canvas id="statusDonutChart"></canvas>
-        <div class="chart-empty-state" *ngIf="!loading && !hasChartData('statusDonut')">
-          <span class="material-icons-round">pie_chart_outline</span>
-          <span>No status data available for selected period</span>
+      <div class="kpi-card an-kpi-card" style="--kpi-color: #D97706">
+        <div class="kpi-icon-wrap">build_circle</div>
+        <div class="an-kpi-body">
+          <div class="an-kpi-top">
+            <span class="an-kpi-value">{{kpis ? money(kpis.totalMaintenanceCost) : '—'}}</span>
+            <span *ngIf="overview?.hasComparison && deltas?.totalMaintenanceCost !== null"
+                  class="an-delta-pill"
+                  [ngClass]="deltaClass(deltas?.totalMaintenanceCost, true)">
+              {{deltaLabel(deltas?.totalMaintenanceCost)}}
+            </span>
+          </div>
+          <div class="an-kpi-title">Maintenance Spend</div>
+          <div class="an-kpi-sub">{{kpis ? (downtimeLabel(kpis.totalDowntimeHours) + ' total down') : 'No data'}}</div>
         </div>
       </div>
-    </div>
 
-  </div>
-
-  <!-- ── Charts Row 2: Maintenance Expenditure & Inventory Velocity ───────── -->
-  <div class="charts-grid-2">
-
-    <!-- Maintenance Overview & Costs (Dual Axis Bar) -->
-    <div class="chart-card">
-      <div class="chart-header">
-        <div class="title-group">
-          <h3>Maintenance Overview & Costs</h3>
-          <p>Financial expense and equipment downtime by maintenance type</p>
-        </div>
-        <span class="chart-badge">Cost & Downtime</span>
-      </div>
-      <div class="chart-wrapper">
-        <canvas id="maintOverviewChart"></canvas>
-        <div class="chart-empty-state" *ngIf="!loading && !hasChartData('maintOverview')">
-          <span class="material-icons-round">build_circle</span>
-          <span>No maintenance records found</span>
+      <div class="kpi-card an-kpi-card" style="--kpi-color: #10B981">
+        <div class="kpi-icon-wrap">precision_manufacturing</div>
+        <div class="an-kpi-body">
+          <div class="an-kpi-top">
+            <span class="an-kpi-value">{{kpis ? (kpis.fleetReadinessPct + '%') : '—'}}</span>
+          </div>
+          <div class="an-kpi-title">Fleet Availability</div>
+          <div class="an-kpi-sub">{{kpis?.activeAssets ?? 0}} / {{kpis?.totalAssets ?? 0}} active assets</div>
         </div>
       </div>
-    </div>
 
-    <!-- Stock Movements Velocity (IN vs OUT) -->
-    <div class="chart-card">
-      <div class="chart-header">
-        <div class="title-group">
-          <h3>Inventory Movement Velocity</h3>
-          <p>Daily Stock IN (received) vs Stock OUT (dispatched)</p>
-        </div>
-        <span class="chart-badge">Stock Flow</span>
-      </div>
-      <div class="chart-wrapper">
-        <canvas id="stockChart"></canvas>
-        <div class="chart-empty-state" *ngIf="!loading && !hasChartData('stock')">
-          <span class="material-icons-round">swap_horiz</span>
-          <span>No inventory movements in this period</span>
+      <div class="kpi-card an-kpi-card" style="--kpi-color: #0288D1">
+        <div class="kpi-icon-wrap">inventory_2</div>
+        <div class="an-kpi-body">
+          <div class="an-kpi-top">
+            <span class="an-kpi-value"
+                  [style.color]="(kpis?.netStockFlow ?? 0) >= 0 ? '#059669' : '#DC2626'">
+              {{kpis ? (((kpis.netStockFlow >= 0) ? '+' : '') + kpis.netStockFlow) : '—'}}
+            </span>
+          </div>
+          <div class="an-kpi-title">Net Stock Flow</div>
+          <div class="an-kpi-sub">+{{kpis?.stockIn ?? 0}} in / -{{kpis?.stockOut ?? 0}} out</div>
         </div>
       </div>
-    </div>
 
-  </div>
-
-  <!-- ── Charts Row 3: Workforce Coverage & Task Velocity ─────────────────── -->
-  <div class="charts-grid-3">
-
-    <!-- Shift Workforce & Absences (Stacked Bar) -->
-    <div class="chart-card">
-      <div class="chart-header">
-        <div class="title-group">
-          <h3>Shift Coverage & Attendance</h3>
-          <p>Daily personnel staffing and recorded absences (last 14 days)</p>
+      <div class="kpi-card an-kpi-card" style="--kpi-color: #7C3AED">
+        <div class="kpi-icon-wrap">task_alt</div>
+        <div class="an-kpi-body">
+          <div class="an-kpi-top">
+            <span class="an-kpi-value">{{kpis ? (kpis.taskCompletionRate + '%') : '—'}}</span>
+            <span *ngIf="overview?.hasComparison && deltas?.taskCompletionRate !== null"
+                  class="an-delta-pill"
+                  [ngClass]="deltaClass(deltas?.taskCompletionRate)">
+              {{deltaLabel(deltas?.taskCompletionRate, 'pp')}}
+            </span>
+          </div>
+          <div class="an-kpi-title">Task Completion</div>
+          <div class="an-kpi-sub">{{kpis?.completedTasks ?? 0}} / {{kpis?.totalTasks ?? 0}} fulfilled</div>
         </div>
-        <span class="chart-badge">Workforce</span>
       </div>
-      <div class="chart-wrapper">
-        <canvas id="shiftCoverageChart"></canvas>
-        <div class="chart-empty-state" *ngIf="!loading && !hasChartData('shiftCoverage')">
-          <span class="material-icons-round">event_busy</span>
-          <span>No shift records found for this period</span>
+
+      <div class="kpi-card an-kpi-card" style="--kpi-color: #0F766E">
+        <div class="kpi-icon-wrap">groups</div>
+        <div class="an-kpi-body">
+          <div class="an-kpi-top">
+            <span class="an-kpi-value">{{kpis ? (kpis.shiftAttendanceRate + '%') : '—'}}</span>
+            <span *ngIf="overview?.hasComparison && deltas?.shiftAttendanceRate !== null"
+                  class="an-delta-pill"
+                  [ngClass]="deltaClass(deltas?.shiftAttendanceRate)">
+              {{deltaLabel(deltas?.shiftAttendanceRate, 'pp')}}
+            </span>
+          </div>
+          <div class="an-kpi-title">Shift Attendance</div>
+          <div class="an-kpi-sub">{{kpis?.workShifts ?? 0}} shifts · {{kpis?.totalAbsences ?? 0}} absences</div>
         </div>
       </div>
     </div>
 
-    <!-- Task Completion Performance (Radar) -->
-    <div class="chart-card">
-      <div class="chart-header">
-        <div class="title-group">
-          <h3>Task Cadence Performance</h3>
-          <p>Completed vs pending tasks across schedules</p>
-        </div>
-        <span class="chart-badge">Cadence</span>
-      </div>
-      <div class="chart-wrapper">
-        <canvas id="taskCompChart"></canvas>
-        <div class="chart-empty-state" *ngIf="!loading && !hasChartData('taskComp')">
-          <span class="material-icons-round">fact_check</span>
-          <span>No tasks found</span>
-        </div>
+    <!-- Automated Executive Insights -->
+    <div class="an-insights-grid" *ngIf="overview?.insights?.length">
+      <div *ngFor="let ins of overview?.insights"
+           class="an-insight-card"
+           [ngClass]="'tone-' + ins.tone">
+        <div class="an-insight-domain">{{ins.domain}} · {{ins.title}}</div>
+        <div class="an-insight-val">{{ins.value}}</div>
+        <div class="an-insight-detail">{{ins.detail}}</div>
       </div>
     </div>
 
-  </div>
+    <!-- Executive Overview Charts -->
+    <app-executive-overview-charts
+      [activityTrend]="overview?.activityTrend ?? null"
+      [opsByType]="overview?.opsByType ?? []"
+      [opsByStatus]="overview?.opsByStatus ?? []"
+      [loading]="loading">
+    </app-executive-overview-charts>
 
-  <!-- ── Summary Table: Maintenance & Downtime ────────────────────────────── -->
-  <div class="card mb-6">
-    <div class="card-header">
-      <div>
-        <h3>Maintenance Financial & Operational Summary</h3>
-        <p>Detailed expenditure, downtime hours, and completion rates by maintenance category</p>
-      </div>
-    </div>
-    <div class="table-container" style="border:none;box-shadow:none">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th *ngIf="showTableField('type')">{{fieldLabel('table','type','Category')}}</th>
-            <th *ngIf="showTableField('count')">{{fieldLabel('table','count','Records')}}</th>
-            <th *ngIf="showTableField('avg_downtime')">{{fieldLabel('table','avg_downtime','Avg Downtime (hrs)')}}</th>
-            <th *ngIf="showTableField('total_cost')">{{fieldLabel('table','total_cost','Total Cost')}}</th>
-            <th *ngIf="showTableField('completion_rate')">{{fieldLabel('table','completion_rate','Completion Rate')}}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr *ngFor="let row of pagedMaintSummary">
-            <td *ngIf="showTableField('type')">
-              <span class="badge badge-in-progress">{{row.type | titlecase}}</span>
-            </td>
-            <td *ngIf="showTableField('count')" style="font-weight:600">{{row.count}}</td>
-            <td *ngIf="showTableField('avg_downtime')">{{row.avg_downtime | number:'1.1-1'}}h</td>
-            <td *ngIf="showTableField('total_cost')" style="font-weight:600">${{row.total_cost | number:'1.2-2'}}</td>
-            <td *ngIf="showTableField('completion_rate')">
-              <div class="flex items-center gap-2">
-                <div class="progress-bar" style="flex:1">
-                  <div class="progress-fill" [style.width.%]="row.completion_rate" 
-                       [style.background]="row.completion_rate > 80 ? '#10B981' : row.completion_rate > 50 ? '#F59E0B' : '#EF4444'"></div>
-                </div>
-                <span class="text-sm font-bold">{{row.completion_rate | number:'1.0-0'}}%</span>
-              </div>
-            </td>
-          </tr>
-          <tr *ngIf="!maintSummary?.length">
-            <td colspan="5" style="text-align:center;padding:28px;color:#94A3B8">
-              No maintenance data recorded for the selected period
-            </td>
-          </tr>
-        </tbody>
-      </table>
+  </ng-container>
 
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-top:1px solid var(--border)"
-           *ngIf="maintSummary.length > 0">
-        <div class="table-page-size-control">
-          <span class="text-sm text-muted">
-            Showing {{(summaryPage-1)*summaryPageSize+1}}–{{Math.min(summaryPage*summaryPageSize, maintSummary.length)}} of {{maintSummary.length}}
-          </span>
-          <app-dropdown class="form-control table-page-size-select" [(ngModel)]="summaryPageSize" (change)="onSummaryPageSizeChange()" ariaLabel="Summary rows per page">
-            <app-dropdown-option *ngFor="let size of summaryPageSizeOptions" [ngValue]="size">{{size}}</app-dropdown-option>
-          </app-dropdown>
-        </div>
-        <div class="flex gap-2">
-          <button class="btn btn-secondary btn-sm" [disabled]="summaryPage <= 1" (click)="changeSummaryPage(summaryPage-1)">
-            <span class="btn-icon">chevron_left</span>
-          </button>
-          <span style="padding:5px 12px;font-size:0.85rem;font-weight:600">{{summaryPage}} / {{summaryTotalPages}}</span>
-          <button class="btn btn-secondary btn-sm" [disabled]="summaryPage >= summaryTotalPages" (click)="changeSummaryPage(summaryPage+1)">
-            <span class="btn-icon">chevron_right</span>
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
+  <!-- ── Tab 2: Operations Deep-Dive ─────────────────────────────────────── -->
+  <app-operations-deep-dive
+    *ngIf="activeTab === 'operations'"
+    [period]="period"
+    [embedded]="true">
+  </app-operations-deep-dive>
+
+  <!-- ── Tab 3: Maintenance & Assets ─────────────────────────────────────── -->
+  <app-maintenance-analytics
+    *ngIf="activeTab === 'maintenance'"
+    [maintSummary]="overview?.maintSummary ?? []"
+    [topAssets]="overview?.topAssets ?? []"
+    [uiPrefs]="uiPrefs"
+    [loading]="loading">
+  </app-maintenance-analytics>
+
+  <!-- ── Tab 4: Stock & Workforce ────────────────────────────────────────── -->
+  <app-workforce-warehouse-analytics
+    *ngIf="activeTab === 'workforce'"
+    [stockFlow]="overview?.stockFlow ?? null"
+    [stockByType]="overview?.stockByType ?? []"
+    [taskCadence]="overview?.taskCadence ?? []"
+    [shiftCoverage]="overview?.shiftCoverage ?? null"
+    [loading]="loading">
+  </app-workforce-warehouse-analytics>
+
+  <!-- ── Tab 5: Reports Center ───────────────────────────────────────────── -->
+  <app-reports-center
+    *ngIf="activeTab === 'reports'"
+    [dateLabel]="dateLabel"
+    [overview]="overview"
+    (exportJsonRequested)="exportJson()">
+  </app-reports-center>
 
 </div>

@@ -1,0 +1,17 @@
+@import '../dashboard-shared';
+
+.dash-urgent-scroll {
+  max-height: 292px;
+  overflow-y: auto;
+}
+
+.dash-urgent-row {
+  border-left-width: 3px;
+}
+
+.dash-urgent-title-line {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}

@@ -1,0 +1,30 @@
+@import '../dashboard-shared';
+
+.dash-activity-scroll {
+  max-height: 440px;
+  overflow-y: auto;
+}
+
+.dash-activity-row {
+  text-decoration: none;
+  color: inherit;
+}
+
+.dash-feed-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+
+  .mat-i {
+    font-size: 18px;
+  }
+}
+
+.dash-chevron {
+  font-size: 16px;
+  color: var(--text-subtle);
+}

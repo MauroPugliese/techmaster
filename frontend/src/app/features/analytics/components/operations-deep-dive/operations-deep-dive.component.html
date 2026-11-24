@@ -1,0 +1,168 @@
+<div class="an-deep-dive">
+
+  <!-- ── 6 Horizontal Operations KPIs ────────────────────────────────────── -->
+  <div class="an-kpi-grid">
+    <div class="kpi-card an-kpi-card" style="--kpi-color: #1565C0">
+      <div class="kpi-icon-wrap">rocket_launch</div>
+      <div class="an-kpi-body">
+        <div class="an-kpi-value">{{metrics?.totalOperations ?? '—'}}</div>
+        <div class="an-kpi-title">Total Sorties</div>
+        <div class="an-kpi-sub">In active scope</div>
+      </div>
+    </div>
+
+    <div class="kpi-card an-kpi-card" style="--kpi-color: #0288D1">
+      <div class="kpi-icon-wrap">schedule</div>
+      <div class="an-kpi-body">
+        <div class="an-kpi-value">{{totalTimeLabel}}</div>
+        <div class="an-kpi-title">Total Mission Time</div>
+        <div class="an-kpi-sub">Cumulative flight/ops hours</div>
+      </div>
+    </div>
+
+    <div class="kpi-card an-kpi-card" style="--kpi-color: #5C6BC0">
+      <div class="kpi-icon-wrap">timer</div>
+      <div class="an-kpi-body">
+        <div class="an-kpi-value">{{metrics ? dur(metrics.avgDuration) : '—'}}</div>
+        <div class="an-kpi-title">Avg Duration</div>
+        <div class="an-kpi-sub">Per timed sortie</div>
+      </div>
+    </div>
+
+    <div class="kpi-card an-kpi-card" style="--kpi-color: #10B981">
+      <div class="kpi-icon-wrap">check_circle</div>
+      <div class="an-kpi-body">
+        <div class="an-kpi-value">{{metrics ? (metrics.completionRate + '%') : '—'}}</div>
+        <div class="an-kpi-title">Completion Rate</div>
+        <div class="an-kpi-sub">Closed successfully</div>
+      </div>
+    </div>
+
+    <div class="kpi-card an-kpi-card" style="--kpi-color: #D97706">
+      <div class="kpi-icon-wrap">warning</div>
+      <div class="an-kpi-body">
+        <div class="an-kpi-value">{{metrics?.overdueCount ?? '—'}}</div>
+        <div class="an-kpi-title">Overdue Sorties</div>
+        <div class="an-kpi-sub">{{metrics ? (metrics.overdueRate + '% of scope') : 'Past scheduled end'}}</div>
+      </div>
+    </div>
+
+    <div class="kpi-card an-kpi-card" style="--kpi-color: #7C3AED">
+      <div class="kpi-icon-wrap">speed</div>
+      <div class="an-kpi-body">
+        <div class="an-kpi-value an-range-val">{{rangeSpanLabel}}</div>
+        <div class="an-kpi-title">Duration Span</div>
+        <div class="an-kpi-sub">Shortest to longest</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Peak & Category Insights ────────────────────────────────────────── -->
+  <div class="an-ops-insights">
+    <div class="an-insight-card">
+      <div class="an-insight-domain">Most Active Category</div>
+      <div class="an-insight-val">{{insights?.mostActiveType || 'N/A'}}</div>
+      <div class="an-insight-detail">Highest cumulative mission hours</div>
+    </div>
+
+    <div class="an-insight-card tone-ok">
+      <div class="an-insight-domain">Peak Operational Day</div>
+      <div class="an-insight-val">{{insights?.peakDay || 'N/A'}}</div>
+      <div class="an-insight-detail">Highest sortie launch volume</div>
+    </div>
+
+    <div class="an-insight-card">
+      <div class="an-insight-domain">Peak Launch Window</div>
+      <div class="an-insight-val">{{insights?.peakHourFormatted || 'N/A'}}</div>
+      <div class="an-insight-detail">Busiest hourly dispatch slot</div>
+    </div>
+  </div>
+
+  <!-- ── Volume & Avg Duration Trend ─────────────────────────────────────── -->
+  <div class="card an-card">
+    <div class="an-card-head">
+      <div>
+        <h3>Operations Volume &amp; Average Duration</h3>
+        <p>Count vs average mission duration by {{granularity}} bucket</p>
+      </div>
+
+      <div class="an-seg-group" role="group" aria-label="Trend granularity">
+        <button *ngFor="let g of granularities"
+                type="button"
+                class="an-seg-btn"
+                [class.active]="granularity === g.value"
+                (click)="setGranularity(g.value)">
+          {{g.label}}
+        </button>
+      </div>
+    </div>
+
+    <div class="an-canvas-wrap tall">
+      <canvas #trendCanvas></canvas>
+      <div class="an-empty-overlay" *ngIf="!loading && !hasTrendData">
+        <span class="mat-i">timeline</span>
+        <span>No operations match the current filter</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Category Time & Status Distribution ─────────────────────────────── -->
+  <div class="an-grid-2">
+    <div class="card an-card">
+      <div class="an-card-head">
+        <div>
+          <h3>Time Distribution by Type</h3>
+          <p>Cumulative hours &amp; minutes per operation category</p>
+        </div>
+        <span class="an-badge-pill">Duration</span>
+      </div>
+
+      <div class="an-canvas-wrap">
+        <canvas #timeDistCanvas></canvas>
+        <div class="an-empty-overlay" *ngIf="!loading && !hasTimeDistData">
+          <span class="mat-i">bar_chart</span>
+          <span>No category durations recorded</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card an-card">
+      <div class="an-card-head">
+        <div>
+          <h3>Status Breakdown</h3>
+          <p>Lifecycle distribution in active window</p>
+        </div>
+        <span class="an-badge-pill">Lifecycle</span>
+      </div>
+
+      <div class="an-ops-donut-layout">
+        <div class="an-ops-donut-box">
+          <canvas #statusCanvas></canvas>
+          <div class="an-ops-donut-center">
+            <div class="an-ops-donut-num an-num">{{statusTotal}}</div>
+            <div class="an-ops-donut-lbl">Total</div>
+          </div>
+        </div>
+
+        <div class="an-ops-legend" *ngIf="statusLegend.length > 0">
+          <div *ngFor="let item of statusLegend" class="an-legend-row">
+            <span class="an-legend-left">
+              <span class="an-legend-dot" [style.background]="item.color"></span>
+              <span>{{item.label}}</span>
+            </span>
+            <span class="an-legend-right an-num">
+              <strong>{{item.count}}</strong>
+              <span class="text-muted">({{item.pct}}%)</span>
+            </span>
+          </div>
+        </div>
+
+        <div class="an-empty-overlay" *ngIf="!loading && !hasStatusData">
+          <span class="mat-i">pie_chart_outline</span>
+          <span>No status data available</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>

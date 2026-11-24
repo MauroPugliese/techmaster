@@ -53,6 +53,8 @@ export class MaintenanceWorkOrdersComponent implements OnInit, OnChanges, OnDest
   @Input() assets: Asset[] = [];
   @Input() uiPrefs: UiSectionPreferences | null = null;
   @Input() refreshTick = 0;
+  @Input() externalStatusFilter = '';
+  @Input() externalSearch = '';
 
   @Output() logWorkOrderRequested = new EventEmitter<void>();
   @Output() editWorkOrderRequested = new EventEmitter<MaintenanceRecord>();
@@ -101,6 +103,13 @@ export class MaintenanceWorkOrdersComponent implements OnInit, OnChanges, OnDest
   ) {}
 
   ngOnInit(): void {
+    if (this.externalStatusFilter) {
+      this.statusFilter = this.externalStatusFilter;
+    }
+    if (this.externalSearch) {
+      this.searchQuery = this.externalSearch;
+    }
+
     this.searchInput$
       .pipe(debounceTime(280), distinctUntilChanged(), takeUntil(this.destroy$))
       .subscribe(val => {
@@ -121,8 +130,24 @@ export class MaintenanceWorkOrdersComponent implements OnInit, OnChanges, OnDest
   }
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (this.initialized && changes['refreshTick'] && !changes['refreshTick'].firstChange) {
+    if (!this.initialized) return;
+
+    let shouldReload = false;
+    if (changes['refreshTick'] && !changes['refreshTick'].firstChange) {
       this.loadSummary();
+      shouldReload = true;
+    }
+    if (changes['externalStatusFilter'] && this.statusFilter !== this.externalStatusFilter) {
+      this.statusFilter = this.externalStatusFilter;
+      this.page = 1;
+      shouldReload = true;
+    }
+    if (changes['externalSearch'] && this.searchQuery !== this.externalSearch) {
+      this.searchQuery = this.externalSearch;
+      this.page = 1;
+      shouldReload = true;
+    }
+    if (shouldReload) {
       this.load();
     }
   }

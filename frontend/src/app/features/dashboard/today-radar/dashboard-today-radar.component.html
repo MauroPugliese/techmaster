@@ -1,0 +1,119 @@
+<div class="card dash-card">
+  <div class="dash-card-head">
+    <div class="dash-head-title-row">
+      <div class="dash-head-icon">
+        <span class="mat-i">radar</span>
+      </div>
+      <div>
+        <h3>Today's Operations &amp; Schedule Radar</h3>
+        <p class="dash-num" *ngIf="activeTab === 'sorties'">Active &amp; scheduled sorties for today</p>
+        <p class="dash-num" *ngIf="activeTab === 'planned'">{{plannedTodaySummary}}</p>
+        <p class="dash-num" *ngIf="activeTab === 'workorders'">Next scheduled &amp; in-progress work orders</p>
+      </div>
+    </div>
+
+    <div class="dash-seg-group" role="tablist" aria-label="Schedule radar tabs">
+      <button type="button" class="dash-seg-btn" [class.active]="activeTab === 'sorties'" (click)="setTab('sorties')">
+        Sorties <span class="dash-seg-count">{{operations.length}}</span>
+      </button>
+      <button type="button" class="dash-seg-btn" [class.active]="activeTab === 'planned'" (click)="setTab('planned')">
+        Planned Due <span class="dash-seg-count">{{todaySchedule?.plannedDue?.pendingNext7d ?? plannedItems.length}}</span>
+      </button>
+      <button type="button" class="dash-seg-btn" [class.active]="activeTab === 'workorders'" (click)="setTab('workorders')">
+        Work Orders <span class="dash-seg-count">{{workOrders.length}}</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Sorties Tab ──────────────────────────────────────────────────────── -->
+  <ng-container *ngIf="activeTab === 'sorties'">
+    <div class="dash-list dash-radar-scroll" *ngIf="operations.length > 0">
+      <a *ngFor="let op of operations"
+         class="dash-row-item dash-radar-link"
+         [routerLink]="['/operations']"
+         [queryParams]="{ search: op.title }">
+        <span class="dash-type-dot" [style.background]="op.type?.color || '#1565C0'"></span>
+        <div class="dash-row-main">
+          <div class="dash-row-title">{{op.title}}</div>
+          <div class="dash-row-sub">
+            {{op.type?.name || 'Sortie'}}
+            · {{op.start_date | date:'HH:mm'}}<ng-container *ngIf="op.end_date">–{{op.end_date | date:'HH:mm'}}</ng-container>
+            <ng-container *ngIf="op.location"> · {{op.location}}</ng-container>
+            <ng-container *ngIf="op.members?.length"> · {{op.members!.length}} crew</ng-container>
+          </div>
+        </div>
+        <div class="dash-row-end">
+          <span class="badge badge-cancelled" *ngIf="isOperationOverdue(op)">OVERDUE</span>
+          <span class="badge" [ngClass]="opBadge(op.status)">{{label(op.status)}}</span>
+          <span class="mat-i dash-chevron">chevron_right</span>
+        </div>
+      </a>
+    </div>
+
+    <div class="dash-empty-box" *ngIf="operations.length === 0 && !loading">
+      <span class="mat-i">flight_land</span>
+      <h4>No Active or Today Sorties</h4>
+      <p>Launch a new operation or adjust filters to plan sorties.</p>
+    </div>
+  </ng-container>
+
+  <!-- ── Planned Maintenance Due Tab ──────────────────────────────────────── -->
+  <ng-container *ngIf="activeTab === 'planned'">
+    <div class="dash-list dash-radar-scroll" *ngIf="plannedItems.length > 0">
+      <a *ngFor="let occ of plannedItems"
+         class="dash-row-item dash-radar-link"
+         [routerLink]="['/maintenance']"
+         [queryParams]="{ tab: 'planned' }">
+        <div class="dash-row-main">
+          <div class="dash-row-title">{{occ.task}}</div>
+          <div class="dash-row-sub">
+            {{occ.system}} · {{occ.subsystem}}
+            <ng-container *ngIf="occ.reference"> · Ref: {{occ.reference}}</ng-container>
+          </div>
+        </div>
+        <div class="dash-row-end">
+          <span class="badge" [ngClass]="occ.isToday ? 'badge-in-progress' : 'badge-planned'">
+            {{occ.isToday ? 'Today' : (occ.operationDateStart | date:'MMM d')}}
+          </span>
+          <span class="mat-i dash-chevron">chevron_right</span>
+        </div>
+      </a>
+    </div>
+
+    <div class="dash-empty-box ok" *ngIf="plannedItems.length === 0 && !loading">
+      <span class="mat-i">event_available</span>
+      <h4>Planned Checklist Clear</h4>
+      <p>No pending recurring tasks scheduled across the next 7 days.</p>
+    </div>
+  </ng-container>
+
+  <!-- ── Upcoming Work Orders Tab ─────────────────────────────────────────── -->
+  <ng-container *ngIf="activeTab === 'workorders'">
+    <div class="dash-list dash-radar-scroll" *ngIf="workOrders.length > 0">
+      <a *ngFor="let m of workOrders"
+         class="dash-row-item dash-radar-link"
+         [routerLink]="['/maintenance']"
+         [queryParams]="{ search: m.title }">
+        <div class="dash-row-main">
+          <div class="dash-row-title">{{m.title}}</div>
+          <div class="dash-row-sub">
+            {{m.asset?.name || 'Equipment'}} · {{m.scheduled_date | date:'MMM d, HH:mm'}}
+            <ng-container *ngIf="m.technician"> · {{m.technician.first_name}} {{m.technician.last_name}}</ng-container>
+          </div>
+        </div>
+        <div class="dash-row-end">
+          <span class="badge badge-cancelled" *ngIf="isWorkOrderOverdue(m)">OVERDUE</span>
+          <span class="badge" [ngClass]="priorityBadge(m.priority)">{{m.priority}}</span>
+          <span class="badge" [ngClass]="maintBadge(m.status)">{{label(m.status)}}</span>
+          <span class="mat-i dash-chevron">chevron_right</span>
+        </div>
+      </a>
+    </div>
+
+    <div class="dash-empty-box ok" *ngIf="workOrders.length === 0 && !loading">
+      <span class="mat-i">build_circle</span>
+      <h4>No Pending Work Orders</h4>
+      <p>All maintenance records are closed.</p>
+    </div>
+  </ng-container>
+</div>

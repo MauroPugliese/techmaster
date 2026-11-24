@@ -62,6 +62,9 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
   plannedSummary: PlannedMaintenanceSummary | null = null;
   workOrdersExportParams: Record<string, any> = {};
   plannedExportParams: Record<string, any> = {};
+  externalStatusFilter = '';
+  externalSearch = '';
+  private actionHandled = false;
 
   constructor(
     private api: ApiService,
@@ -79,6 +82,27 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
       const tab = qp['tab'];
       if (tab === 'work-orders' || tab === 'planned' || tab === 'assets') {
         this.activeTab = tab;
+      }
+      if (qp['status'] !== undefined) {
+        const st = String(qp['status'] || '').toUpperCase();
+        if (['', 'SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'FAILED', 'DEFERRED', 'OVERDUE'].includes(st)) {
+          this.externalStatusFilter = st;
+        }
+      }
+      if (qp['search'] !== undefined) {
+        this.externalSearch = String(qp['search'] || '');
+      }
+      if (qp['action'] === 'new' && !this.actionHandled) {
+        this.actionHandled = true;
+        setTimeout(() => {
+          this.openAddWorkOrder();
+          this.router.navigate([], {
+            relativeTo: this.route,
+            queryParams: { action: null },
+            queryParamsHandling: 'merge',
+            replaceUrl: true
+          });
+        }, 0);
       }
       this.cdr.markForCheck();
     });

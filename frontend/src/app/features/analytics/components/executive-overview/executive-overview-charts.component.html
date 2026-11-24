@@ -1,0 +1,83 @@
+<div class="an-overview-charts">
+
+  <!-- ── Continuous Cross-Domain Activity Velocity ────────────────────────── -->
+  <div class="card an-card">
+    <div class="an-card-head">
+      <div>
+        <h3>Cross-Module Activity Velocity</h3>
+        <p class="an-num">Daily continuous timeline of Sorties, Maintenance &amp; Tasks</p>
+      </div>
+      <span class="an-badge-pill">Continuous Stream</span>
+    </div>
+
+    <div class="an-canvas-wrap">
+      <canvas #velocityCanvas></canvas>
+      <div class="an-empty-overlay" *ngIf="!loading && !hasVelocityData">
+        <span class="mat-i">show_chart</span>
+        <span>No cross-module activity recorded in this window</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Category Performance + Status Lifecycle ──────────────────────────── -->
+  <div class="an-grid-2">
+
+    <div class="card an-card">
+      <div class="an-card-head">
+        <div>
+          <h3>Operations by Category</h3>
+          <p>Total sorties vs completed by operation type</p>
+        </div>
+        <span class="an-badge-pill">Categorical</span>
+      </div>
+
+      <div class="an-canvas-wrap">
+        <canvas #opsTypeCanvas></canvas>
+        <div class="an-empty-overlay" *ngIf="!loading && !hasOpsTypeData">
+          <span class="mat-i">query_stats</span>
+          <span>No operations recorded for selected period</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card an-card">
+      <div class="an-card-head">
+        <div>
+          <h3>Operation Status Lifecycle</h3>
+          <p>Distribution across execution states</p>
+        </div>
+        <span class="an-badge-pill">Status</span>
+      </div>
+
+      <div class="an-donut-layout">
+        <div class="an-donut-box">
+          <canvas #statusCanvas></canvas>
+          <div class="an-donut-center">
+            <div class="an-donut-total an-num">{{statusTotal}}</div>
+            <div class="an-donut-sub">Operations</div>
+          </div>
+        </div>
+
+        <div class="an-donut-legend" *ngIf="statusLegend.length > 0">
+          <div *ngFor="let item of statusLegend" class="an-legend-row">
+            <span class="an-legend-left">
+              <span class="an-legend-dot" [style.background]="item.color"></span>
+              <span class="an-legend-lbl">{{item.label}}</span>
+            </span>
+            <span class="an-legend-val an-num">
+              <strong>{{item.count}}</strong>
+              <span class="text-muted">({{item.pct}}%)</span>
+            </span>
+          </div>
+        </div>
+
+        <div class="an-empty-overlay" *ngIf="!loading && !hasStatusData">
+          <span class="mat-i">pie_chart_outline</span>
+          <span>No status distribution available</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</div>

@@ -1,0 +1,118 @@
+<div class="dash-grid-2">
+
+  <!-- ── Activity Velocity Line Chart ─────────────────────────────────────── -->
+  <div class="card dash-card">
+    <div class="dash-card-head">
+      <div>
+        <h3>Activity Velocity</h3>
+        <p class="dash-num">
+          {{hasGlobalDateFilter ? ('Filtered: ' + dateFilterLabel) : ('Last ' + (trends?.daysCount ?? trendDays) + ' days continuous stream')}}
+        </p>
+      </div>
+
+      <div class="dash-chart-controls">
+        <div class="dash-seg-group" *ngIf="!hasGlobalDateFilter" role="group" aria-label="Trend time range">
+          <button *ngFor="let d of windowOptions"
+                  type="button"
+                  class="dash-seg-btn"
+                  [class.active]="trendDays === d"
+                  (click)="selectWindow(d)">
+            {{d}}D
+          </button>
+        </div>
+
+        <a class="btn btn-secondary btn-sm" routerLink="/analytics">
+          <span class="btn-icon">analytics</span> Analytics
+        </a>
+      </div>
+    </div>
+
+    <!-- Interactive Series Toggle Pills -->
+    <div class="dash-series-pills">
+      <button type="button"
+              class="dash-series-pill"
+              [class.muted]="!visibleSeries.operations"
+              (click)="toggleSeries('operations')">
+        <span class="dash-series-dot" style="background:#1565C0"></span>
+        <span>Operations</span>
+        <strong class="dash-num">{{trends?.totals?.operations ?? 0}}</strong>
+      </button>
+
+      <button type="button"
+              class="dash-series-pill"
+              [class.muted]="!visibleSeries.maintenance"
+              (click)="toggleSeries('maintenance')">
+        <span class="dash-series-dot" style="background:#D97706"></span>
+        <span>Maintenance</span>
+        <strong class="dash-num">{{trends?.totals?.maintenance ?? 0}}</strong>
+      </button>
+
+      <button type="button"
+              class="dash-series-pill"
+              [class.muted]="!visibleSeries.tasks"
+              (click)="toggleSeries('tasks')">
+        <span class="dash-series-dot" style="background:#7C3AED"></span>
+        <span>Tasks</span>
+        <strong class="dash-num">{{trends?.totals?.tasks ?? 0}}</strong>
+      </button>
+    </div>
+
+    <div class="dash-canvas-wrap">
+      <canvas #velocityCanvas></canvas>
+    </div>
+  </div>
+
+  <!-- ── Operational Workload Breakdown ───────────────────────────────────── -->
+  <div class="card dash-card">
+    <div class="dash-card-head">
+      <div>
+        <h3>Workload Breakdown</h3>
+        <p>{{breakdownMode === 'tasks' ? 'Tasks grouped by recurrence interval' : 'Operations & work order execution status'}}</p>
+      </div>
+
+      <div class="dash-seg-group" role="group" aria-label="Breakdown mode">
+        <button type="button"
+                class="dash-seg-btn"
+                [class.active]="breakdownMode === 'tasks'"
+                (click)="setBreakdownMode('tasks')">
+          Task Intervals
+        </button>
+        <button type="button"
+                class="dash-seg-btn"
+                [class.active]="breakdownMode === 'status'"
+                (click)="setBreakdownMode('status')">
+          Ops &amp; Maint
+        </button>
+      </div>
+    </div>
+
+    <div class="dash-breakdown-body">
+      <div class="dash-doughnut-wrap">
+        <canvas #breakdownCanvas></canvas>
+        <div class="dash-doughnut-center">
+          <div class="dash-doughnut-num dash-num">{{breakdownTotal}}</div>
+          <div class="dash-doughnut-lbl">{{breakdownMode === 'tasks' ? 'Tasks' : 'Records'}}</div>
+        </div>
+      </div>
+
+      <div class="dash-breakdown-legend">
+        <div *ngFor="let item of legendItems" class="dash-legend-row">
+          <div class="dash-legend-left">
+            <span class="dash-series-dot" [style.background]="item.color"></span>
+            <span class="dash-legend-name">{{item.label}}</span>
+          </div>
+          <div class="dash-legend-right dash-num">
+            <strong>{{item.count}}</strong>
+            <span class="text-muted">({{item.pct}}%)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dash-card-foot">
+      <a class="btn btn-ghost btn-sm" routerLink="/tasks" *ngIf="breakdownMode === 'tasks'">Open Task Manager</a>
+      <a class="btn btn-ghost btn-sm" routerLink="/operations" *ngIf="breakdownMode === 'status'">Open Operations</a>
+    </div>
+  </div>
+
+</div>

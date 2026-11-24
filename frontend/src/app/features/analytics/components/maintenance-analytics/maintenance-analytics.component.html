@@ -1,0 +1,128 @@
+<div class="an-maint-section">
+
+  <!-- ── Maintenance Charts Row ──────────────────────────────────────────── -->
+  <div class="an-grid-2">
+    <div class="card an-card">
+      <div class="an-card-head">
+        <div>
+          <h3>Spend &amp; Weighted Avg Downtime</h3>
+          <p>True record-weighted downtime &amp; cost by maintenance category</p>
+        </div>
+        <span class="an-badge-pill">Cost &amp; Downtime</span>
+      </div>
+
+      <div class="an-canvas-wrap">
+        <canvas #costDowntimeCanvas></canvas>
+        <div class="an-empty-overlay" *ngIf="!loading && !hasSummaryData">
+          <span class="mat-i">build_circle</span>
+          <span>No maintenance expenditure recorded in this period</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card an-card">
+      <div class="an-card-head">
+        <div>
+          <h3>Top Costly Equipment &amp; Assets</h3>
+          <p>Assets generating the highest cumulative maintenance spend</p>
+        </div>
+        <span class="an-badge-pill">Asset Load</span>
+      </div>
+
+      <div class="an-canvas-wrap">
+        <canvas #topAssetsCanvas></canvas>
+        <div class="an-empty-overlay" *ngIf="!loading && !hasAssetsData">
+          <span class="mat-i">precision_manufacturing</span>
+          <span>No asset-linked maintenance charges found</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Sortable Maintenance Financial & Downtime Summary Table ─────────── -->
+  <div class="card an-card">
+    <div class="an-card-head">
+      <div>
+        <h3>Maintenance Financial &amp; Operational Summary</h3>
+        <p>Click column headers to sort categories</p>
+      </div>
+      <span class="an-badge-pill an-num">{{maintSummary.length}} categories</span>
+    </div>
+
+    <div class="an-table-wrap">
+      <table class="data-table an-maint-table">
+        <thead>
+          <tr>
+            <th *ngIf="showTableField('type')" class="an-sort-th" (click)="toggleSort('type')">
+              {{fieldLabel('type', 'Category')}}
+              <span class="mat-i an-sort-icon">{{sortIcon('type')}}</span>
+            </th>
+            <th *ngIf="showTableField('count')" class="an-sort-th" (click)="toggleSort('count')">
+              {{fieldLabel('count', 'Work Orders')}}
+              <span class="mat-i an-sort-icon">{{sortIcon('count')}}</span>
+            </th>
+            <th *ngIf="showTableField('avg_downtime')" class="an-sort-th" (click)="toggleSort('avg_downtime')">
+              {{fieldLabel('avg_downtime', 'Avg Downtime')}}
+              <span class="mat-i an-sort-icon">{{sortIcon('avg_downtime')}}</span>
+            </th>
+            <th *ngIf="showTableField('total_cost')" class="an-sort-th" (click)="toggleSort('total_cost')">
+              {{fieldLabel('total_cost', 'Total Cost')}}
+              <span class="mat-i an-sort-icon">{{sortIcon('total_cost')}}</span>
+            </th>
+            <th *ngIf="showTableField('completion_rate')" class="an-sort-th" (click)="toggleSort('completion_rate')">
+              {{fieldLabel('completion_rate', 'Completion Rate')}}
+              <span class="mat-i an-sort-icon">{{sortIcon('completion_rate')}}</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let row of sortedSummary">
+            <td *ngIf="showTableField('type')">
+              <span class="badge badge-in-progress">{{enumLabel(row.type)}}</span>
+            </td>
+            <td *ngIf="showTableField('count')" class="an-num">
+              <strong>{{row.count}}</strong>
+              <span class="an-sub-muted"> ({{row.open_count}} open)</span>
+            </td>
+            <td *ngIf="showTableField('avg_downtime')" class="an-num">
+              {{downtimeLabel(row.avg_downtime)}}
+              <span class="an-sub-muted"> · {{downtimeLabel(row.total_downtime)}} total</span>
+            </td>
+            <td *ngIf="showTableField('total_cost')" class="an-num">
+              <strong>{{money(row.total_cost)}}</strong>
+            </td>
+            <td *ngIf="showTableField('completion_rate')">
+              <div class="an-rate-cell">
+                <div class="progress-bar an-rate-bar">
+                  <div class="progress-fill"
+                       [style.width.%]="row.completion_rate"
+                       [style.background]="row.completion_rate >= 80 ? '#10B981' : (row.completion_rate >= 50 ? '#D97706' : '#DC2626')">
+                  </div>
+                </div>
+                <span class="an-num an-rate-num">{{row.completion_rate | number:'1.0-0'}}%</span>
+              </div>
+            </td>
+          </tr>
+
+          <tr *ngIf="!sortedSummary.length">
+            <td colspan="5" class="an-empty-cell">
+              No maintenance records recorded for the selected period
+            </td>
+          </tr>
+        </tbody>
+        <tfoot *ngIf="sortedSummary.length > 0">
+          <tr class="an-total-row">
+            <td *ngIf="showTableField('type')"><strong>All Categories</strong></td>
+            <td *ngIf="showTableField('count')" class="an-num"><strong>{{totalRecords}}</strong></td>
+            <td *ngIf="showTableField('avg_downtime')" class="an-num">
+              <strong>{{downtimeLabel(overallAvgDowntimeHours)}} avg</strong>
+            </td>
+            <td *ngIf="showTableField('total_cost')" class="an-num"><strong>{{money(totalCost)}}</strong></td>
+            <td *ngIf="showTableField('completion_rate')" class="an-num"><strong>{{overallCompletionRate}}%</strong></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+
+</div>
