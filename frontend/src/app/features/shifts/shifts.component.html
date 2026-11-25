@@ -3,11 +3,15 @@
   <!-- ── Unified Page Header ─────────────────────────────────────────────── -->
   <div class="sh-page-head">
     <div>
-      <h2>Shifts &amp; Roster</h2>
-      <p>Weekly workforce coverage, shift patterns, attendance, and leave management.</p>
+      <h2>Shifts &amp; Engineering Roster</h2>
+      <p>Certified simulator engineer coverage, shift rotations, labor rest compliance &amp; handovers.</p>
     </div>
 
     <div class="sh-head-actions">
+      <button type="button" class="btn btn-secondary btn-sm" (click)="showHandoverModal = true" title="Open engineering shift handover log">
+        <span class="btn-icon">assignment_turned_in</span> Handover Log
+      </button>
+
       <button type="button" class="btn btn-secondary btn-sm" (click)="openCopyWeekModal()" title="Copy previous week roster">
         <span class="btn-icon">content_copy</span> Copy Week
       </button>
@@ -165,6 +169,17 @@
     </div>
   </div>
 
+  <!-- ── Sortie Coverage Alert Banner ──────────────────────────────────── -->
+  <div class="sh-coverage-alert" *ngIf="coverageAlerts.length > 0">
+    <span class="mat-i">warning_amber</span>
+    <div class="sh-coverage-body">
+      <strong>Sortie Coverage Alert ({{coverageAlerts.length}} day{{coverageAlerts.length > 1 ? 's' : ''}} without active engineer shifts)</strong>
+      <div class="sh-coverage-items">
+        <span *ngFor="let a of coverageAlerts">{{a.message}}</span>
+      </div>
+    </div>
+  </div>
+
   <!-- ── Unified Roster Table Container ───────────────────────────────────── -->
   <div class="table-container">
     <!-- Week Navigation Header -->
@@ -264,6 +279,9 @@
                   <div class="emp-meta">
                     <div class="emp-name">{{emp.first_name}} {{emp.last_name}}</div>
                     <div class="emp-dept">{{emp.department || emp.job_title || 'Unassigned'}}</div>
+                    <div class="sh-cert-row" *ngIf="emp.certifications?.length">
+                      <span class="sh-cert-pill" *ngFor="let c of emp.certifications?.slice(0, 3)">{{c}}</span>
+                    </div>
                   </div>
                 </div>
               </td>
@@ -612,3 +630,9 @@
   (close)="showShiftTypesModal = false"
   (changed)="onShiftTypesUpdated()">
 </app-shift-types-modal>
+
+<!-- ── Shift Engineering Handover Log Modal ────────────────────────────── -->
+<app-shift-handover-modal
+  [visible]="showHandoverModal"
+  (closed)="showHandoverModal = false">
+</app-shift-handover-modal>

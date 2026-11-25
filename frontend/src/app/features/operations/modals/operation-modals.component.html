@@ -1,10 +1,10 @@
 <!-- ==========================================================================
-     CREATE / EDIT OPERATION MODAL
+     CREATE / EDIT FLIGHT SORTIE MODAL
      ========================================================================== -->
 <div class="modal-overlay" *ngIf="showFormModal" (click)="closeFormModal($event)">
   <div class="modal ops-modal-wide" (click)="$event.stopPropagation()">
     <div class="modal-header">
-      <h3>{{editingOp ? 'Edit Operation' : 'New Operation / Sortie'}}</h3>
+      <h3>{{editingOp ? 'Edit Flight Sortie' : 'Schedule Flight Sortie'}}</h3>
       <button type="button" class="btn btn-ghost btn-icon-only" (click)="showFormModal = false">
         <span class="btn-icon">close</span>
       </button>
@@ -16,18 +16,84 @@
         <span>{{formError}}</span>
       </div>
 
+      <!-- Simulator MEL / Bay Advisory -->
+      <div class="ops-conflict-banner"
+           *ngIf="selectedSimulator && (selectedSimulator.status === 'AOG' || selectedSimulator.status === 'DEGRADED' || selectedSimulator.status === 'MAINTENANCE' || selectedSimulator.limitations_mel)"
+           [class.is-severe]="selectedSimulator.status === 'AOG'">
+        <span class="mat-i">warning_amber</span>
+        <div>
+          <strong>{{selectedSimulator.bay_code}} ({{selectedSimulator.code}}) — {{selectedSimulator.status}}</strong>
+          <div *ngIf="selectedSimulator.limitations_mel">MEL: {{selectedSimulator.limitations_mel}}</div>
+        </div>
+      </div>
+
+      <!-- Live Bay Slot Conflict Detection -->
+      <div class="ops-conflict-banner is-severe"
+           *ngIf="conflictWarning && (conflictWarning.hasOverlap || (conflictWarning.warnings && conflictWarning.warnings.length > 0))">
+        <span class="mat-i">event_busy</span>
+        <div>
+          <strong *ngIf="conflictWarning.hasOverlap">Bay Slot Conflict Detected ({{conflictWarning.overlappingSorties.length}} overlapping sortie)</strong>
+          <strong *ngIf="!conflictWarning.hasOverlap">Simulator Bay Advisory</strong>
+          <ul *ngIf="conflictWarning.warnings && conflictWarning.warnings.length > 0">
+            <li *ngFor="let w of conflictWarning.warnings">{{w}}</li>
+          </ul>
+        </div>
+      </div>
+
       <div class="form-row">
         <div class="form-group" style="grid-column:1 / -1" *ngIf="showFormField('title')">
-          <label class="form-label">{{fieldLabel('form','title','Title')}} *</label>
-          <input class="form-control" [(ngModel)]="form.title" placeholder="e.g. Night Telemetry Sortie — Sector B">
+          <label class="form-label">{{fieldLabel('form','title','Sortie Title / Training Session')}} *</label>
+          <input class="form-control" [(ngModel)]="form.title" placeholder="e.g. A320 Type Rating — LOFT 04 / Cat III Approaches">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Simulator Bay (FSTD)</label>
+          <app-dropdown class="form-control"
+                        [(ngModel)]="form.simulator_id"
+                        (ngModelChange)="checkBayConflict()"
+                        placeholder="— Select FSTD Bay —">
+            <app-dropdown-option [ngValue]="null">— Unassigned —</app-dropdown-option>
+            <app-dropdown-option *ngFor="let s of simulators" [ngValue]="s.id">
+              {{s.bay_code}} · {{s.code}} ({{s.aircraft_type}} · {{s.status}})
+            </app-dropdown-option>
+          </app-dropdown>
         </div>
 
         <div class="form-group" *ngIf="showFormField('type_id')">
-          <label class="form-label">{{fieldLabel('form','type_id','Type')}} *</label>
-          <app-dropdown class="form-control" [(ngModel)]="form.type_id" placeholder="— Select type —">
-            <app-dropdown-option [ngValue]="undefined">— Select type —</app-dropdown-option>
+          <label class="form-label">{{fieldLabel('form','type_id','Training Profile')}} *</label>
+          <app-dropdown class="form-control" [(ngModel)]="form.type_id" placeholder="— Select profile —">
+            <app-dropdown-option [ngValue]="undefined">— Select profile —</app-dropdown-option>
             <app-dropdown-option *ngFor="let t of opTypes" [ngValue]="t.id">{{t.name}}</app-dropdown-option>
           </app-dropdown>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Customer / Airline Operator</label>
+          <input class="form-control" [(ngModel)]="form.customer_operator" placeholder="e.g. ITA Airways / Lufthansa / Italian Air Force">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Sortie Code (Auto if blank)</label>
+          <input class="form-control ops-num" [(ngModel)]="form.sortie_code" placeholder="e.g. SRT-A320-104">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Scenario / ICAO Route</label>
+          <input class="form-control ops-num" [(ngModel)]="form.scenario_code" placeholder="e.g. LIRF-LIML RNAV + OEI">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Weather &amp; RVR Profile</label>
+          <input class="form-control" [(ngModel)]="form.weather_profile" placeholder="e.g. CAT IIIB / RVR 75m">
+          <div class="ops-preset-chips">
+            <button *ngFor="let wp of weatherPresets"
+                    type="button"
+                    class="ops-preset-chip"
+                    [class.active]="form.weather_profile === wp"
+                    (click)="form.weather_profile = wp">
+              {{wp}}
+            </button>
+          </div>
         </div>
 
         <div class="form-group" *ngIf="showFormField('priority')">
@@ -41,33 +107,29 @@
         </div>
 
         <div class="form-group" *ngIf="showFormField('status')">
-          <label class="form-label">{{fieldLabel('form','status','Status')}}</label>
+          <label class="form-label">{{fieldLabel('form','status','Workflow Status')}}</label>
           <app-dropdown class="form-control" [(ngModel)]="form.status">
             <app-dropdown-option value="PLANNED">Planned</app-dropdown-option>
-            <app-dropdown-option value="IN_PROGRESS">In Progress</app-dropdown-option>
+            <app-dropdown-option value="IN_PROGRESS">In Simulator</app-dropdown-option>
             <app-dropdown-option value="ON_HOLD">On Hold</app-dropdown-option>
             <app-dropdown-option value="COMPLETED">Completed</app-dropdown-option>
             <app-dropdown-option value="CANCELLED">Cancelled</app-dropdown-option>
           </app-dropdown>
         </div>
 
-        <div class="form-group" *ngIf="showFormField('location')">
-          <label class="form-label">{{fieldLabel('form','location','Location')}}</label>
-          <input class="form-control" [(ngModel)]="form.location" placeholder="e.g. Hangar 2 / Runway East">
-        </div>
-
         <div class="form-group" *ngIf="showFormField('start_date')">
-          <label class="form-label">{{fieldLabel('form','start_date','Start Date & Time')}} *</label>
+          <label class="form-label">{{fieldLabel('form','start_date','Slot Start (Local)')}} *</label>
           <app-datetime-picker class="form-control"
                                mode="datetime"
                                [(ngModel)]="form.start_date"
-                               placeholder="Select start date & time">
+                               (ngModelChange)="checkBayConflict()"
+                               placeholder="Select slot start">
           </app-datetime-picker>
         </div>
 
         <div class="form-group" *ngIf="showFormField('end_date')">
           <label class="form-label">
-            {{fieldLabel('form','end_date','Planned End Date')}}
+            {{fieldLabel('form','end_date','Slot End (Local)')}}
             <span class="ops-subtext" style="display:inline;margin-left:6px" *ngIf="plannedFormDuration !== '—'">
               · {{plannedFormDuration}}
             </span>
@@ -75,7 +137,8 @@
           <app-datetime-picker class="form-control"
                                mode="datetime"
                                [(ngModel)]="form.end_date"
-                               placeholder="Select end date & time">
+                               (ngModelChange)="checkBayConflict()"
+                               placeholder="Select slot end">
           </app-datetime-picker>
           <div class="ops-quick-presets">
             <button *ngFor="let p of durationPresets"
@@ -85,6 +148,35 @@
               {{p.label}}
             </button>
           </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Sortie Outcome</label>
+          <app-dropdown class="form-control" [(ngModel)]="form.outcome">
+            <app-dropdown-option *ngFor="let o of outcomeOptions" [value]="o.value">{{o.label}}</app-dropdown-option>
+          </app-dropdown>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">6-DOF Motion Platform</label>
+          <label class="flex items-center gap-2" style="padding:8px 0;cursor:pointer;font-size:0.84rem">
+            <input type="checkbox" [(ngModel)]="form.motion_required" (ngModelChange)="checkBayConflict()" />
+            <span>Motion System Required (Level D Wet/Full Motion)</span>
+          </label>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Scheduled / Actual / Lost Min</label>
+          <div class="flex items-center gap-2">
+            <input type="number" step="0.5" min="0" class="form-control ops-num" [(ngModel)]="form.scheduled_hours" placeholder="Sched h" title="Scheduled Hours" />
+            <input type="number" step="0.5" min="0" class="form-control ops-num" [(ngModel)]="form.actual_flight_hours" placeholder="Actual h" title="Actual Flown Hours" />
+            <input type="number" min="0" class="form-control ops-num" [(ngModel)]="form.lost_training_minutes" placeholder="Lost min" title="Lost Training Minutes" />
+          </div>
+        </div>
+
+        <div class="form-group" *ngIf="showFormField('location')">
+          <label class="form-label">{{fieldLabel('form','location','Bay / Briefing Room')}}</label>
+          <input class="form-control" [(ngModel)]="form.location" placeholder="Auto-filled from bay or Briefing Room B">
         </div>
 
         <!-- Initial Crew Assignment -->
@@ -154,21 +246,24 @@
     <div class="modal-footer">
       <button type="button" class="btn btn-ghost" (click)="showFormModal = false">Cancel</button>
       <button type="button" class="btn btn-primary" (click)="saveOperation()" [disabled]="saving">
-        {{saving ? 'Saving…' : (editingOp ? 'Save Changes' : 'Create Operation')}}
+        {{saving ? 'Saving…' : (editingOp ? 'Save Changes' : 'Schedule Sortie')}}
       </button>
     </div>
   </div>
 </div>
 
 <!-- ==========================================================================
-     MISSION BRIEF DETAIL MODAL (Roster + Live Mission Log + Workflow)
+     SORTIE BRIEF DETAIL MODAL (Simulator Bay + Crew + Snag DR + Log)
      ========================================================================== -->
 <div class="modal-overlay" *ngIf="detailOp" (click)="closeDetailModal($event)">
   <div class="modal detail-modal ops-detail-modal" role="dialog" aria-modal="true" aria-labelledby="op-detail-title" (click)="$event.stopPropagation()">
     <div class="modal-header">
       <div class="detail-header-title">
         <div class="detail-head-meta">
-          <span class="detail-id-pill">#{{detailOp.id}}</span>
+          <span class="detail-id-pill ops-num">{{detailOp.sortie_code || ('#' + detailOp.id)}}</span>
+          <span class="ops-bay-pill" *ngIf="detailOp.simulator?.bay_code">
+            {{detailOp.simulator?.bay_code}} · {{detailOp.simulator?.code}}
+          </span>
           <span class="detail-type-chip" *ngIf="detailOp.type">
             <span class="detail-type-dot" [style.background]="detailOp.type.color || 'var(--primary)'"></span>
             {{detailOp.type.name}}
@@ -185,36 +280,60 @@
     <div class="modal-body">
       <div class="detail-badges">
         <span class="badge" [ngClass]="statusBadge(detailOp.status)">{{label(detailOp.status)}}</span>
+        <span
+          class="ops-outcome-pill"
+          *ngIf="detailOp.outcome"
+          [style.background]="outcomeMeta(detailOp.outcome).bg"
+          [style.color]="outcomeMeta(detailOp.outcome).color">
+          {{outcomeMeta(detailOp.outcome).label}}
+        </span>
         <span class="badge" [ngClass]="priorityBadge(detailOp.priority)">Priority: {{label(detailOp.priority)}}</span>
         <span class="detail-type-chip ops-num">
           Planned: {{duration(detailOp.start_date, detailOp.end_date)}}
         </span>
-        <span class="detail-type-chip ops-num" *ngIf="detailOp.actual_end_date">
-          Actual: {{duration(detailOp.start_date, detailOp.actual_end_date)}}
+        <span class="detail-type-chip ops-num" *ngIf="detailOp.lost_training_minutes && detailOp.lost_training_minutes > 0" style="background:#fee2e2;color:#b91c1c">
+          {{detailOp.lost_training_minutes}}m lost
         </span>
       </div>
 
       <div class="detail-grid">
         <div class="detail-field">
-          <span class="detail-label">Start Date &amp; Time</span>
-          <span class="detail-value ops-num">{{detailOp.start_date ? (detailOp.start_date | date:'dd MMM yyyy, HH:mm') : '—'}}</span>
+          <span class="detail-label">Simulator Bay &amp; Aircraft</span>
+          <span class="detail-value ops-num">
+            {{detailOp.simulator ? (detailOp.simulator.bay_code + ' · ' + detailOp.simulator.code + ' (' + detailOp.simulator.aircraft_type + ')') : (detailOp.location || 'Unassigned')}}
+          </span>
         </div>
         <div class="detail-field">
-          <span class="detail-label">Planned End</span>
-          <span class="detail-value ops-num">{{detailOp.end_date ? (detailOp.end_date | date:'dd MMM yyyy, HH:mm') : '—'}}</span>
+          <span class="detail-label">Customer / Operator</span>
+          <span class="detail-value">{{detailOp.customer_operator || '—'}}</span>
         </div>
         <div class="detail-field">
-          <span class="detail-label">Location</span>
-          <span class="detail-value">{{detailOp.location || '—'}}</span>
+          <span class="detail-label">Slot Window (Start → End)</span>
+          <span class="detail-value ops-num">
+            {{detailOp.start_date ? (detailOp.start_date | date:'dd MMM, HH:mm') : '—'}} → {{detailOp.end_date ? (detailOp.end_date | date:'HH:mm') : '—'}}
+          </span>
         </div>
         <div class="detail-field">
-          <span class="detail-label">Created By</span>
+          <span class="detail-label">Scenario / Weather / Motion</span>
+          <span class="detail-value ops-num">
+            {{detailOp.scenario_code || 'Standard'}} · {{detailOp.weather_profile || 'CAVOK'}} · {{detailOp.motion_required !== false ? 'Motion ON' : 'Fixed-Base'}}
+          </span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Scheduled vs Actual Hrs</span>
+          <span class="detail-value ops-num">
+            {{detailOp.scheduled_hours ?? '—'}}h sched · {{detailOp.actual_flight_hours ?? '—'}}h flown
+          </span>
+        </div>
+        <div class="detail-field">
+          <span class="detail-label">Dispatcher / Lead</span>
           <span class="detail-value">{{userName(detailOp.creator)}}</span>
         </div>
-        <div class="detail-field full-span" *ngIf="detailOp.actual_end_date">
-          <span class="detail-label">Actual Completion Time</span>
-          <span class="detail-value ops-num">{{detailOp.actual_end_date | date:'dd MMM yyyy, HH:mm'}}</span>
-        </div>
+      </div>
+
+      <div class="detail-section" *ngIf="detailOp.snag_summary">
+        <span class="detail-section-title">Technical Snag Summary</span>
+        <div class="detail-text-box" style="background:#fff7ed;border-color:#fdba74;color:#9a3412">{{detailOp.snag_summary}}</div>
       </div>
 
       <div class="detail-section" *ngIf="detailOp.description">
@@ -273,7 +392,63 @@
 
       <!-- Interactive Mission Log Timeline -->
       <div class="detail-section mt-4">
-        <span class="detail-section-title">Mission Log ({{detailLogs.length}})</span>
+        <div class="flex items-center justify-between gap-2">
+          <span class="detail-section-title">Sortie Log ({{detailLogs.length}})</span>
+          <button type="button"
+                  class="btn btn-secondary btn-sm"
+                  *ngIf="detailOp.simulator_id || detailOp.simulator?.id"
+                  (click)="toggleSnagForm()">
+            <span class="btn-icon">report_problem</span>
+            {{ showSnagForm ? 'Cancel Snag DR' : 'Report Simulator Snag (DR)' }}
+          </button>
+        </div>
+
+        <!-- 1-Click Report Simulator Snag (DR) -->
+        <div class="ops-snag-panel" *ngIf="showSnagForm">
+          <div class="ops-snag-panel-head">
+            <strong>
+              <span class="mat-i">report_problem</span>
+              Report Technical Snag / Discrepancy Report (DR)
+            </strong>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Snag Title <span class="req">*</span></label>
+              <input class="form-control" [(ngModel)]="snagForm.title" placeholder="e.g. Left projector channel edge-blend drift" />
+            </div>
+            <div class="form-group">
+              <label>Affected Subsystem</label>
+              <app-dropdown class="form-control" [(ngModel)]="snagForm.subsystem_code" ariaLabel="Affected Subsystem">
+                <app-dropdown-option *ngFor="let sub of subsystemOptions" [value]="sub.code">{{sub.label}}</app-dropdown-option>
+              </app-dropdown>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Severity</label>
+              <app-dropdown class="form-control" [(ngModel)]="snagForm.severity" ariaLabel="Severity">
+                <app-dropdown-option value="MINOR">Minor (No Impact)</app-dropdown-option>
+                <app-dropdown-option value="DEGRADED">Degraded (MEL Training)</app-dropdown-option>
+                <app-dropdown-option value="AOG">AOG (Bay Down)</app-dropdown-option>
+              </app-dropdown>
+            </div>
+            <div class="form-group">
+              <label>Lost Training Minutes</label>
+              <input type="number" min="0" class="form-control ops-num" [(ngModel)]="snagForm.lost_training_minutes" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Technical Description / Crew Notes</label>
+            <textarea class="form-control" rows="2" [(ngModel)]="snagForm.description" placeholder="Symptoms, fault codes, or instructor observations..."></textarea>
+          </div>
+          <div class="flex justify-end gap-2">
+            <button type="button" class="btn btn-ghost btn-sm" (click)="toggleSnagForm()">Cancel</button>
+            <button type="button" class="btn btn-primary btn-sm" [disabled]="submittingSnag || !snagForm.title.trim()" (click)="submitSnag()">
+              {{ submittingSnag ? 'Submitting DR…' : 'Submit DR &amp; Notify Engineering' }}
+            </button>
+          </div>
+        </div>
+
         <div class="ops-crew-picker">
           <input class="form-control ops-crew-select"
                  [(ngModel)]="newLogAction"

@@ -24,12 +24,13 @@ test('escapeLikePattern escapes LIKE wildcards safely', () => {
 });
 
 test('normalizeNavBadges clamps negatives and invalid values to 0 without mutating input', () => {
-  const input = { operations: 5.9, maintenance: -3, warehouse: '12', tasks: NaN, notifications: undefined };
+  const input = { simulators: '2', operations: 5.9, maintenance: -3, warehouse: '12', tasks: NaN, notifications: undefined };
   const snapshot = { ...input };
   const result = normalizeNavBadges(input);
 
   assert.deepEqual(input, snapshot);
   assert.deepEqual(result, {
+    simulators: 2,
     operations: 5,
     maintenance: 0,
     warehouse: 12,

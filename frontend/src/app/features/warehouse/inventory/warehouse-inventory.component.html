@@ -56,6 +56,25 @@
       <app-dropdown-option [ngValue]="'overstock'">Overstock</app-dropdown-option>
     </app-dropdown>
 
+    <app-dropdown class="form-control wh-filter-select"
+                  [(ngModel)]="partClassificationFilter"
+                  (change)="applyFilters()"
+                  placeholder="All Classifications">
+      <app-dropdown-option [ngValue]="''">All Classifications</app-dropdown-option>
+      <app-dropdown-option [ngValue]="'ROTATABLE_LRU'">Rotatable LRU</app-dropdown-option>
+      <app-dropdown-option [ngValue]="'CONSUMABLE'">Consumable</app-dropdown-option>
+      <app-dropdown-option [ngValue]="'TOOL_CALIBRATED'">Calibrated Tooling</app-dropdown-option>
+    </app-dropdown>
+
+    <button type="button"
+            class="btn btn-sm wh-aog-toggle"
+            [class.active]="aogOnly"
+            (click)="toggleAogFilter()"
+            title="Show only AOG-critical aviation spares">
+      <span class="mat-i" style="font-size:16px">priority_high</span>
+      AOG Critical
+    </button>
+
     <button *ngIf="hasActiveFilters"
             type="button"
             class="btn btn-ghost btn-sm"
@@ -180,8 +199,18 @@
         </td>
 
         <td *ngIf="showTableField('name') || showTableField('sku') || showTableField('part_number') || showTableField('supplier')">
-          <div class="wh-item-name" *ngIf="showTableField('name')">{{item.name}}</div>
-          <div class="wh-subtext" *ngIf="itemSubline(item)">{{itemSubline(item)}}</div>
+          <div class="wh-item-title-line" *ngIf="showTableField('name')">
+            <span class="wh-aog-badge" *ngIf="item.aog_critical">AOG</span>
+            <span class="wh-cls-pill" *ngIf="item.part_classification === 'ROTATABLE_LRU'">LRU</span>
+            <span class="wh-cls-pill is-tool" *ngIf="item.part_classification === 'TOOL_CALIBRATED'">CAL TOOL</span>
+            <span class="wh-item-name">{{item.name}}</span>
+          </div>
+          <div class="wh-subtext" *ngIf="itemSubline(item) || item.compatible_models?.length || (item.unserviceable_qty && item.unserviceable_qty > 0)">
+            <span *ngIf="itemSubline(item)">{{itemSubline(item)}}</span>
+            <span *ngIf="item.lead_time_days" class="wh-num"> · {{item.lead_time_days}}d lead</span>
+            <span *ngIf="item.unserviceable_qty && item.unserviceable_qty > 0" class="wh-us-tag wh-num"> · U/S: {{item.unserviceable_qty}}</span>
+            <span *ngFor="let m of item.compatible_models?.slice(0, 3)" class="wh-compat-chip">{{m}}</span>
+          </div>
         </td>
 
         <td *ngIf="showTableField('category')">

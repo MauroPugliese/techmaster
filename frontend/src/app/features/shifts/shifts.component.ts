@@ -35,6 +35,7 @@ import { DropdownComponent, DropdownOptionComponent } from '../../shared/compone
 import { ShiftDetailModalComponent } from './shift-detail-modal/shift-detail-modal.component';
 import { ShiftFormModalComponent, ShiftFormMode } from './shift-form-modal/shift-form-modal.component';
 import { ShiftTypesModalComponent } from './shift-types-modal/shift-types-modal.component';
+import { ShiftHandoverModalComponent } from './shift-handover-modal/shift-handover-modal.component';
 import {
   addDays,
   buildWeekDays,
@@ -72,6 +73,7 @@ export type ShiftViewMode = 'grid' | 'list';
     ShiftDetailModalComponent,
     ShiftFormModalComponent,
     ShiftTypesModalComponent,
+    ShiftHandoverModalComponent,
   ],
   templateUrl: './shifts.component.html',
   styleUrl: './shifts.component.scss',
@@ -140,6 +142,8 @@ export class ShiftsComponent implements OnInit, OnDestroy {
   copyIncludeLeave = false;
   copyOverwrite = false;
   showShiftTypesModal = false;
+  showHandoverModal = false;
+  coverageAlerts: Array<{ date: string; sortieCount: number; shiftCount: number; message: string }> = [];
 
   constructor(
     private readonly api: ApiService,
@@ -306,6 +310,19 @@ export class ShiftsComponent implements OnInit, OnDestroy {
     const from = formatLocalYmd(this.weekStart);
     const to = formatLocalYmd(this.weekEnd);
     this.loading = true;
+
+    this.api
+      .get<any>('/shifts/coverage-alerts', { from, to })
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: r => {
+          this.coverageAlerts = r?.data?.alerts || [];
+          this.cdr.markForCheck();
+        },
+        error: () => {
+          this.coverageAlerts = [];
+        }
+      });
 
     this.api
       .get<any>('/shifts', { from, to, limit: 1000 })

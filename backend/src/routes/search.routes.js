@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const { Op, col, fn, where } = require('sequelize');
 const {
+  Simulator,
   Operation,
   MaintenanceRecord,
   Asset,
@@ -31,16 +32,31 @@ router.get('/', async (req, res, next) => {
     const pattern = `%${escapeLikePattern(query)}%`;
     const limit = 5;
 
-    const [operations, maintenance, assets, inventory, tasks, wiki] = await Promise.all([
+    const [simulators, operations, maintenance, assets, inventory, tasks, wiki] = await Promise.all([
+      Simulator.findAll({
+        where: {
+          [Op.or]: [
+            { code: { [Op.like]: pattern } },
+            { name: { [Op.like]: pattern } },
+            { bay_code: { [Op.like]: pattern } },
+            { aircraft_type: { [Op.like]: pattern } }
+          ]
+        },
+        attributes: ['id', 'code', 'name', 'bay_code', 'aircraft_type', 'qualification_level', 'status'],
+        order: [['bay_code', 'ASC']],
+        limit
+      }),
       Operation.findAll({
         where: {
           [Op.or]: [
             { title: { [Op.like]: pattern } },
+            { sortie_code: { [Op.like]: pattern } },
+            { customer_operator: { [Op.like]: pattern } },
             { location: { [Op.like]: pattern } },
             { description: { [Op.like]: pattern } }
           ]
         },
-        attributes: ['id', 'title', 'status', 'priority', 'location'],
+        attributes: ['id', 'sortie_code', 'title', 'customer_operator', 'status', 'priority', 'location'],
         order: [['updated_at', 'DESC']],
         limit
       }),
@@ -107,6 +123,7 @@ router.get('/', async (req, res, next) => {
     ]);
 
     const groups = buildSearchGroups({
+      simulators: simulators.map((r) => r.get({ plain: true })),
       operations: operations.map((r) => r.get({ plain: true })),
       maintenance: maintenance.map((r) => r.get({ plain: true })),
       assets: assets.map((r) => r.get({ plain: true })),
@@ -129,7 +146,10 @@ router.get('/', async (req, res, next) => {
 // GET /api/search/nav-badges
 router.get('/nav-badges', async (req, res, next) => {
   try {
-    const [operations, maintenance, warehouse, tasks, notifications] = await Promise.all([
+    const [simulators, operations, maintenance, warehouse, tasks, notifications] = await Promise.all([
+      Simulator.count({
+        where: { status: { [Op.in]: ['AOG', 'DEGRADED'] } }
+      }),
       Operation.count({
         where: { status: { [Op.in]: ['PLANNED', 'IN_PROGRESS'] } }
       }),
@@ -153,6 +173,7 @@ router.get('/nav-badges', async (req, res, next) => {
     res.json({
       success: true,
       data: normalizeNavBadges({
+        simulators,
         operations,
         maintenance,
         warehouse,

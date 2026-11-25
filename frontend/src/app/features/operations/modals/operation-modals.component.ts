@@ -17,6 +17,9 @@ import {
   OperationStatus,
   OperationType,
   Priority,
+  Simulator,
+  SimulatorSubsystemCode,
+  SortieOutcome,
   User
 } from '../../../core/models/interfaces';
 import { DateTimePickerComponent } from '../../../shared/components/datetime-picker/datetime-picker.component';
@@ -24,15 +27,19 @@ import { DropdownComponent, DropdownOptionComponent } from '../../../shared/comp
 import {
   CREW_ROLE_SUGGESTIONS,
   DURATION_PRESETS,
+  SORTIE_OUTCOME_META,
+  WEATHER_PRESETS,
   addHoursToDate,
   formatDurationRange,
   formatEnumLabel,
+  getOutcomeMeta,
   getPriorityBadgeClass,
   getStatusBadgeClass,
   getUserDisplayName,
   getUserInitials,
   isOperationOverdue
 } from '../operation-helpers';
+import { SUBSYSTEM_OPTIONS } from '../../simulators/simulator-helpers';
 
 interface DraftMember {
   user_id: number;
@@ -50,6 +57,7 @@ interface DraftMember {
 })
 export class OperationModalsComponent {
   @Input() opTypes: OperationType[] = [];
+  @Input() simulators: Simulator[] = [];
   @Input() staffUsers: Partial<User>[] = [];
   @Input() uiPrefs: UiSectionPreferences | null = null;
 
@@ -57,6 +65,16 @@ export class OperationModalsComponent {
 
   readonly durationPresets = DURATION_PRESETS;
   readonly roleSuggestions = CREW_ROLE_SUGGESTIONS;
+  readonly weatherPresets = WEATHER_PRESETS;
+  readonly subsystemOptions = SUBSYSTEM_OPTIONS;
+  readonly outcomeOptions: Array<{ value: SortieOutcome; label: string }> = [
+    { value: 'PENDING', label: SORTIE_OUTCOME_META.PENDING.label },
+    { value: 'CLEAN', label: SORTIE_OUTCOME_META.CLEAN.label },
+    { value: 'COMPLETED_WITH_SNAGS', label: SORTIE_OUTCOME_META.COMPLETED_WITH_SNAGS.label },
+    { value: 'INTERRUPTED_TECH', label: SORTIE_OUTCOME_META.INTERRUPTED_TECH.label },
+    { value: 'NO_SHOW', label: SORTIE_OUTCOME_META.NO_SHOW.label },
+    { value: 'CANCELLED', label: SORTIE_OUTCOME_META.CANCELLED.label }
+  ];
 
   // ── Create / Edit Modal ────────────────────────────────────────────────────
   showFormModal = false;
@@ -67,8 +85,9 @@ export class OperationModalsComponent {
   draftMembers: DraftMember[] = [];
   selectedDraftUserId: number | null = null;
   selectedDraftRole = '';
+  conflictWarning: { hasOverlap: boolean; overlappingSorties: any[]; warnings: string[] } | null = null;
 
-  // ── Mission Brief (Detail) Modal ───────────────────────────────────────────
+  // ── Mission Brief (Detail) Modal & 1-Click Snag DR ─────────────────────────
   detailOp: Operation | null = null;
   detailLogs: OperationLog[] = [];
   detailMembers: OperationMember[] = [];
@@ -81,6 +100,22 @@ export class OperationModalsComponent {
   newLogAction = '';
   newLogDetails = '';
   logBusy = false;
+
+  showSnagForm = false;
+  submittingSnag = false;
+  snagForm: {
+    title: string;
+    subsystem_code: SimulatorSubsystemCode;
+    severity: 'MINOR' | 'DEGRADED' | 'AOG';
+    lost_training_minutes: number;
+    description: string;
+  } = {
+    title: '',
+    subsystem_code: 'VISUAL',
+    severity: 'MINOR',
+    lost_training_minutes: 0,
+    description: ''
+  };
 
   constructor(
     private api: ApiService,
@@ -115,11 +150,22 @@ export class OperationModalsComponent {
     return {
       title: '',
       type_id: undefined as number | undefined,
+      simulator_id: null as number | null,
+      sortie_code: '',
+      customer_operator: '',
+      scenario_code: '',
+      weather_profile: 'CAVOK / Day',
+      motion_required: true,
+      scheduled_hours: 4,
+      actual_flight_hours: null as number | null,
+      lost_training_minutes: 0,
+      outcome: 'PENDING' as SortieOutcome,
+      snag_summary: '',
       priority: 'MEDIUM' as Priority,
       status: 'PLANNED' as OperationStatus,
       location: '',
       start_date: new Date() as Date | null,
-      end_date: null as Date | null,
+      end_date: addHoursToDate(new Date(), 4) as Date | null,
       description: '',
       notes: ''
     };
@@ -127,6 +173,7 @@ export class OperationModalsComponent {
 
   openFormModal(op?: Operation): void {
     this.formError = '';
+    this.conflictWarning = null;
     this.selectedDraftUserId = null;
     this.selectedDraftRole = '';
 
@@ -135,6 +182,17 @@ export class OperationModalsComponent {
       this.form = {
         title: op.title,
         type_id: op.type_id ?? op.type?.id,
+        simulator_id: op.simulator_id ?? op.simulator?.id ?? null,
+        sortie_code: op.sortie_code ?? '',
+        customer_operator: op.customer_operator ?? '',
+        scenario_code: op.scenario_code ?? '',
+        weather_profile: op.weather_profile ?? 'CAVOK / Day',
+        motion_required: op.motion_required !== false,
+        scheduled_hours: op.scheduled_hours ?? 4,
+        actual_flight_hours: op.actual_flight_hours ?? null,
+        lost_training_minutes: op.lost_training_minutes ?? 0,
+        outcome: (op.outcome || 'PENDING') as SortieOutcome,
+        snag_summary: op.snag_summary ?? '',
         priority: op.priority || 'MEDIUM',
         status: op.status || 'PLANNED',
         location: op.location ?? '',
@@ -148,6 +206,7 @@ export class OperationModalsComponent {
         role_in_op: m.role_in_op || '',
         user: m.user
       }));
+      this.checkBayConflict();
     } else {
       this.editingOp = null;
       this.form = this.emptyForm();
@@ -161,6 +220,57 @@ export class OperationModalsComponent {
     this.cdr.markForCheck();
   }
 
+  openFormWithSlot(simulatorId: number, startDate: Date, endDate?: Date): void {
+    this.openFormModal(undefined);
+    this.form.simulator_id = simulatorId;
+    this.form.start_date = startDate;
+    this.form.end_date = endDate || addHoursToDate(startDate, 2);
+    this.form.scheduled_hours = Math.max(
+      0.5,
+      Math.round(((this.form.end_date.getTime() - startDate.getTime()) / 3600000) * 10) / 10
+    );
+    this.checkBayConflict();
+    this.cdr.markForCheck();
+  }
+
+  get selectedSimulator(): Simulator | null {
+    if (!this.form?.simulator_id) return null;
+    return this.simulators.find(s => Number(s.id) === Number(this.form.simulator_id)) || null;
+  }
+
+  checkBayConflict(): void {
+    const simId = this.form?.simulator_id;
+    const startObj = this.form?.start_date ? new Date(this.form.start_date) : null;
+    if (!simId || !startObj || Number.isNaN(startObj.getTime())) {
+      this.conflictWarning = null;
+      this.cdr.markForCheck();
+      return;
+    }
+    const endObj = this.form?.end_date ? new Date(this.form.end_date) : addHoursToDate(startObj, 2);
+    if (startObj && endObj && !Number.isNaN(endObj.getTime())) {
+      const hrs = Math.round(((endObj.getTime() - startObj.getTime()) / 3600000) * 10) / 10;
+      if (hrs > 0) this.form.scheduled_hours = hrs;
+    }
+
+    const params: Record<string, any> = {
+      simulator_id: simId,
+      start_date: startObj.toISOString(),
+      end_date: endObj.toISOString(),
+      motion_required: this.form.motion_required !== false
+    };
+    if (this.editingOp?.id) params['exclude_id'] = this.editingOp.id;
+
+    this.api.get<any>('/operations/check-conflict', params).subscribe({
+      next: res => {
+        this.conflictWarning = res?.data || null;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.conflictWarning = null;
+      }
+    });
+  }
+
   closeFormModal(e: MouseEvent): void {
     if ((e.target as HTMLElement).classList.contains('modal-overlay')) {
       this.showFormModal = false;
@@ -171,7 +281,9 @@ export class OperationModalsComponent {
     const start = this.form.start_date ? new Date(this.form.start_date) : new Date();
     this.form.start_date = start;
     this.form.end_date = addHoursToDate(start, hours);
+    this.form.scheduled_hours = hours;
     this.formError = '';
+    this.checkBayConflict();
     this.cdr.markForCheck();
   }
 
@@ -231,6 +343,11 @@ export class OperationModalsComponent {
 
     const payload: Record<string, any> = {
       ...this.form,
+      simulator_id: this.form.simulator_id ? Number(this.form.simulator_id) : null,
+      scheduled_hours: this.form.scheduled_hours !== null && this.form.scheduled_hours !== '' ? Number(this.form.scheduled_hours) : null,
+      actual_flight_hours: this.form.actual_flight_hours !== null && this.form.actual_flight_hours !== '' ? Number(this.form.actual_flight_hours) : null,
+      lost_training_minutes: Number(this.form.lost_training_minutes || 0),
+      motion_required: this.form.motion_required !== false,
       start_date: startObj ? startObj.toISOString() : null,
       end_date: endObj ? endObj.toISOString() : null,
       members: this.draftMembers.map(m => ({
@@ -268,6 +385,15 @@ export class OperationModalsComponent {
     this.detailMembers = [...(op.members || [])];
     this.detailLogs = [];
     this.detailLoading = true;
+    this.showSnagForm = false;
+    this.submittingSnag = false;
+    this.snagForm = {
+      title: '',
+      subsystem_code: 'VISUAL',
+      severity: 'MINOR',
+      lost_training_minutes: 0,
+      description: ''
+    };
     this.newMemberUserId = null;
     this.newMemberRole = '';
     this.newLogAction = '';
@@ -387,6 +513,56 @@ export class OperationModalsComponent {
     const op: Operation = { ...this.detailOp, members: [...this.detailMembers] };
     this.detailOp = null;
     this.openFormModal(op);
+  }
+
+  toggleSnagForm(): void {
+    this.showSnagForm = !this.showSnagForm;
+    this.cdr.markForCheck();
+  }
+
+  submitSnag(): void {
+    if (!this.detailOp || this.submittingSnag) return;
+    if (!this.snagForm.title.trim()) {
+      this.toast.error('Snag title is required.');
+      return;
+    }
+
+    const simId = this.detailOp.simulator_id ?? this.detailOp.simulator?.id;
+    if (!simId) {
+      this.toast.error('Assign a simulator bay to this sortie before raising a DR.');
+      return;
+    }
+
+    this.submittingSnag = true;
+    this.cdr.markForCheck();
+
+    this.api.post<any>(`/operations/${this.detailOp.id}/snag`, {
+      simulator_id: simId,
+      title: this.snagForm.title.trim(),
+      subsystem_code: this.snagForm.subsystem_code,
+      severity: this.snagForm.severity,
+      lost_training_minutes: Number(this.snagForm.lost_training_minutes || 0),
+      description: this.snagForm.description.trim() || this.snagForm.title.trim()
+    }).subscribe({
+      next: () => {
+        this.submittingSnag = false;
+        this.showSnagForm = false;
+        this.toast.success('Discrepancy Report (DR) created and linked to Maintenance & Simulator.');
+        this.mutated.emit();
+        if (this.detailOp) {
+          this.openDetailModal(this.detailOp);
+        }
+      },
+      error: (err: any) => {
+        this.submittingSnag = false;
+        this.toast.error(err?.error?.message || 'Failed to report simulator snag.');
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  outcomeMeta(outcome?: SortieOutcome | string | null) {
+    return getOutcomeMeta(outcome);
   }
 
   // ── Shared Actions (Called from Shell or Mission Brief) ────────────────────

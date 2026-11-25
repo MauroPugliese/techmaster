@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS users (
     job_title       VARCHAR(100),
     phone           VARCHAR(30),
     is_active       BOOLEAN DEFAULT TRUE,
+    certifications  JSON,
     last_login      TIMESTAMP NULL,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -70,7 +71,134 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================================================
--- OPERATION TYPES
+-- FLIGHT SIMULATORS, SUBSYSTEMS & QTG COMPLIANCE
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS simulators (
+    id                    INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    code                  VARCHAR(40)  NOT NULL UNIQUE,
+    name                  VARCHAR(200) NOT NULL,
+    bay_code              VARCHAR(40)  NOT NULL,
+    station_kind          ENUM('FFS_BAY','TEST_PLACE','IOS_CONSOLE') NOT NULL DEFAULT 'FFS_BAY',
+    sort_order            INT          NOT NULL DEFAULT 0,
+    platform_category     ENUM('COMMERCIAL_FIXED_WING','ROTORCRAFT','DEFENSE_FMS','FTD_FNPT') NOT NULL DEFAULT 'COMMERCIAL_FIXED_WING',
+    aircraft_type         VARCHAR(120) NOT NULL,
+    manufacturer          VARCHAR(120) DEFAULT 'CAE',
+    serial_number         VARCHAR(100),
+    authority             VARCHAR(60)  DEFAULT 'EASA',
+    qualification_level   VARCHAR(60)  DEFAULT 'CS-FSTD Level D',
+    certificate_code      VARCHAR(100),
+    certificate_expiry    DATE,
+    last_eval_date        DATE,
+    daily_available_hours DECIMAL(4,1) DEFAULT 20.0,
+    engine_avionics       VARCHAR(200),
+    software_load         VARCHAR(120),
+    airac_cycle           VARCHAR(60),
+    visual_system         VARCHAR(160),
+    motion_system         VARCHAR(120),
+    control_loading       VARCHAR(120),
+    ios_config            VARCHAR(120),
+    status                ENUM('READY','IN_SORTIE','PRE_FLIGHT','MAINTENANCE','DEGRADED','AOG') NOT NULL DEFAULT 'READY',
+    power_on_hours        DECIMAL(10,1) DEFAULT 0.0,
+    motion_hours          DECIMAL(10,1) DEFAULT 0.0,
+    visual_lamp_hours     DECIMAL(10,1) DEFAULT 0.0,
+    limitations_mel       TEXT,
+    notes                 TEXT,
+    asset_id              INT UNSIGNED NULL,
+    created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_sim_status (status),
+    INDEX idx_sim_bay (bay_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS simulator_subsystems (
+    id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    simulator_id         INT UNSIGNED NOT NULL,
+    subsystem_code       ENUM('VISUAL','MOTION','CONTROL_LOADING','AVIONICS_COCKPIT','IOS','HOST_COMPUTE','SOUND','HVAC_POWER') NOT NULL,
+    name                 VARCHAR(150) NOT NULL,
+    part_number          VARCHAR(100),
+    serial_number        VARCHAR(100),
+    firmware_version     VARCHAR(80),
+    status               ENUM('NOMINAL','DEGRADED','FAULT','MAINTENANCE') NOT NULL DEFAULT 'NOMINAL',
+    operating_hours      DECIMAL(10,1) DEFAULT 0.0,
+    last_calibrated_at   DATE,
+    next_calibration_due DATE,
+    notes                TEXT,
+    created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_sim_sub_sim (simulator_id),
+    CONSTRAINT fk_sim_sub_sim FOREIGN KEY (simulator_id) REFERENCES simulators(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS simulator_qtg_records (
+    id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    simulator_id   INT UNSIGNED NOT NULL,
+    test_code      VARCHAR(60)  NOT NULL,
+    title          VARCHAR(220) NOT NULL,
+    category       ENUM('PERFORMANCE','HANDLING','MOTION_CUEING','VISUAL_SYSTEM','SOUND','IOS_NAV') NOT NULL DEFAULT 'PERFORMANCE',
+    quarter        ENUM('Q1','Q2','Q3','Q4') NOT NULL DEFAULT 'Q1',
+    year           INT          NOT NULL,
+    mode           ENUM('AUTO','MANUAL') NOT NULL DEFAULT 'AUTO',
+    status         ENUM('PENDING','PASSED','TOLERANCE_WARN','FAILED') NOT NULL DEFAULT 'PENDING',
+    due_date       DATE,
+    executed_at    DATETIME,
+    executed_by    INT UNSIGNED NULL,
+    measured_delta VARCHAR(120),
+    notes          TEXT,
+    created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_qtg_sim_yr (simulator_id, year, quarter),
+    CONSTRAINT fk_qtg_sim  FOREIGN KEY (simulator_id) REFERENCES simulators(id) ON DELETE CASCADE,
+    CONSTRAINT fk_qtg_user FOREIGN KEY (executed_by)  REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS simulator_daily_logs (
+    id                    INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    log_date              DATE NOT NULL,
+    station_kind          ENUM('FFS_BAY','TEST_PLACE','IOS_CONSOLE') NOT NULL DEFAULT 'TEST_PLACE',
+    system_readiness_time VARCHAR(8) DEFAULT '06:30',
+    post_testing_time     VARCHAR(8) DEFAULT '17:00',
+    logout_time           VARCHAR(8) DEFAULT '18:00',
+    general_notes         TEXT NULL,
+    updated_by            INT UNSIGNED NULL,
+    created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_sim_daily_log_date_kind (log_date, station_kind),
+    CONSTRAINT fk_sim_daily_log_user FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS simulator_daily_shifts (
+    id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    daily_log_id         INT UNSIGNED NOT NULL,
+    shift_number         INT NOT NULL DEFAULT 1,
+    shift_name           VARCHAR(40) NOT NULL DEFAULT 'SHIFT 1',
+    pre_flight_test_time VARCHAR(8) DEFAULT '06:40',
+    lead_user_id         INT UNSIGNED NULL,
+    created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_sim_daily_shift_num (daily_log_id, shift_number),
+    CONSTRAINT fk_sim_shift_log  FOREIGN KEY (daily_log_id) REFERENCES simulator_daily_logs(id) ON DELETE CASCADE,
+    CONSTRAINT fk_sim_shift_lead FOREIGN KEY (lead_user_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS simulator_shift_entries (
+    id                INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    shift_id          INT UNSIGNED NOT NULL,
+    simulator_id      INT UNSIGNED NOT NULL,
+    usage_status      ENUM('READY','IN_USE','NA') NOT NULL DEFAULT 'READY',
+    sim_testing_start VARCHAR(8) NOT NULL DEFAULT '00:00',
+    sim_testing_end   VARCHAR(8) NOT NULL DEFAULT '00:00',
+    notes             TEXT NULL,
+    updated_by        INT UNSIGNED NULL,
+    created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_sim_shift_entry (shift_id, simulator_id),
+    CONSTRAINT fk_sim_entry_shift   FOREIGN KEY (shift_id)     REFERENCES simulator_daily_shifts(id) ON DELETE CASCADE,
+    CONSTRAINT fk_sim_entry_sim     FOREIGN KEY (simulator_id) REFERENCES simulators(id) ON DELETE CASCADE,
+    CONSTRAINT fk_sim_entry_updater FOREIGN KEY (updated_by)   REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =============================================================================
+-- SORTIE TYPES & FLIGHT SORTIES
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS operation_types (
     id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -80,29 +208,39 @@ CREATE TABLE IF NOT EXISTS operation_types (
     description TEXT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- =============================================================================
--- OPERATIONS
--- =============================================================================
 CREATE TABLE IF NOT EXISTS operations (
-    id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    type_id         INT UNSIGNED NOT NULL,
-    created_by      INT UNSIGNED NOT NULL,
-    title           VARCHAR(200) NOT NULL,
-    description     TEXT,
-    status          ENUM('PLANNED','IN_PROGRESS','COMPLETED','CANCELLED','ON_HOLD') DEFAULT 'PLANNED',
-    priority        ENUM('LOW','MEDIUM','HIGH','CRITICAL') DEFAULT 'MEDIUM',
-    location        VARCHAR(200),
-    start_date      DATETIME     NOT NULL,
-    end_date        DATETIME,
-    actual_end_date DATETIME,
-    notes           TEXT,
-    metadata        JSON,
-    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    id                    INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    sortie_code           VARCHAR(50),
+    type_id               INT UNSIGNED NOT NULL,
+    simulator_id          INT UNSIGNED NULL,
+    created_by            INT UNSIGNED NOT NULL,
+    title                 VARCHAR(200) NOT NULL,
+    customer_operator     VARCHAR(120),
+    scenario_code         VARCHAR(120),
+    weather_profile       VARCHAR(80),
+    motion_required       BOOLEAN DEFAULT TRUE,
+    scheduled_hours       DECIMAL(5,2),
+    actual_flight_hours   DECIMAL(5,2),
+    lost_training_minutes INT DEFAULT 0,
+    outcome               ENUM('PENDING','CLEAN','COMPLETED_WITH_SNAGS','INTERRUPTED_TECH','NO_SHOW','CANCELLED') DEFAULT 'PENDING',
+    snag_summary          TEXT,
+    description           TEXT,
+    status                ENUM('PLANNED','IN_PROGRESS','COMPLETED','CANCELLED','ON_HOLD') DEFAULT 'PLANNED',
+    priority              ENUM('LOW','MEDIUM','HIGH','CRITICAL') DEFAULT 'MEDIUM',
+    location              VARCHAR(200),
+    start_date            DATETIME     NOT NULL,
+    end_date              DATETIME,
+    actual_end_date       DATETIME,
+    notes                 TEXT,
+    metadata              JSON,
+    created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_operations_status     (status),
     INDEX idx_operations_start_date (start_date),
-    CONSTRAINT fk_ops_type    FOREIGN KEY (type_id)    REFERENCES operation_types(id),
-    CONSTRAINT fk_ops_creator FOREIGN KEY (created_by) REFERENCES users(id)
+    INDEX idx_operations_simulator  (simulator_id),
+    CONSTRAINT fk_ops_type    FOREIGN KEY (type_id)      REFERENCES operation_types(id),
+    CONSTRAINT fk_ops_sim     FOREIGN KEY (simulator_id) REFERENCES simulators(id) ON DELETE SET NULL,
+    CONSTRAINT fk_ops_creator FOREIGN KEY (created_by)   REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS operation_members (
@@ -160,28 +298,36 @@ CREATE TABLE IF NOT EXISTS assets (
 -- MAINTENANCE
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS maintenance_records (
-    id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    asset_id        INT UNSIGNED NOT NULL,
-    performed_by    INT UNSIGNED NOT NULL,
-    type            ENUM('PREVENTIVE','CORRECTIVE','PREDICTIVE','UPGRADE','INSPECTION') NOT NULL,
-    title           VARCHAR(200) NOT NULL,
-    description     TEXT         NOT NULL,
-    status          ENUM('SCHEDULED','IN_PROGRESS','COMPLETED','FAILED','DEFERRED') DEFAULT 'SCHEDULED',
-    priority        ENUM('LOW','MEDIUM','HIGH','CRITICAL') DEFAULT 'MEDIUM',
-    scheduled_date  DATETIME     NOT NULL,
-    completed_date  DATETIME,
-    downtime_hours  DECIMAL(6,2),
-    cost            DECIMAL(10,2),
-    parts_used      JSON,
-    findings        TEXT,
-    next_scheduled  DATETIME,
-    deleted_at      DATETIME NULL,
-    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    id                  INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    asset_id            INT UNSIGNED NULL,
+    simulator_id        INT UNSIGNED NULL,
+    sortie_id           INT UNSIGNED NULL,
+    subsystem_code      VARCHAR(60),
+    severity            ENUM('MINOR','DEGRADED','AOG') DEFAULT 'MINOR',
+    lost_training_hours DECIMAL(5,2) DEFAULT 0,
+    is_snag             BOOLEAN DEFAULT FALSE,
+    performed_by        INT UNSIGNED NOT NULL,
+    type                ENUM('PREVENTIVE','CORRECTIVE','PREDICTIVE','UPGRADE','INSPECTION') NOT NULL,
+    title               VARCHAR(200) NOT NULL,
+    description         TEXT         NOT NULL,
+    status              ENUM('SCHEDULED','IN_PROGRESS','COMPLETED','FAILED','DEFERRED') DEFAULT 'SCHEDULED',
+    priority            ENUM('LOW','MEDIUM','HIGH','CRITICAL') DEFAULT 'MEDIUM',
+    scheduled_date      DATETIME     NOT NULL,
+    completed_date      DATETIME,
+    downtime_hours      DECIMAL(6,2),
+    cost                DECIMAL(10,2),
+    parts_used          JSON,
+    findings            TEXT,
+    next_scheduled      DATETIME,
+    deleted_at          DATETIME NULL,
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_maint_asset     (asset_id),
+    INDEX idx_maint_simulator (simulator_id),
     INDEX idx_maint_scheduled (scheduled_date),
     INDEX idx_maint_status    (status),
     CONSTRAINT fk_maint_asset FOREIGN KEY (asset_id)     REFERENCES assets(id),
+    CONSTRAINT fk_maint_sim   FOREIGN KEY (simulator_id) REFERENCES simulators(id) ON DELETE SET NULL,
     CONSTRAINT fk_maint_user  FOREIGN KEY (performed_by) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -190,6 +336,7 @@ CREATE TABLE IF NOT EXISTS maintenance_records (
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS planned_maintenance_tasks (
     id                   INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    simulator_id         INT UNSIGNED NULL,
     `system`             VARCHAR(150) NOT NULL,
     subsystem            VARCHAR(150) NOT NULL,
     task                 TEXT NOT NULL,
@@ -272,8 +419,13 @@ CREATE TABLE IF NOT EXISTS inventory_items (
     part_number     VARCHAR(120),
     name            VARCHAR(200) NOT NULL,
     description     TEXT,
-    unit            VARCHAR(30)  DEFAULT 'pcs',
-    quantity        INT          DEFAULT 0,
+    unit                VARCHAR(30)  DEFAULT 'pcs',
+    part_classification ENUM('CONSUMABLE','ROTATABLE_LRU','TOOL_CALIBRATED') DEFAULT 'CONSUMABLE',
+    aog_critical        BOOLEAN DEFAULT FALSE,
+    lead_time_days      INT DEFAULT 7,
+    compatible_models   JSON,
+    unserviceable_qty   INT DEFAULT 0,
+    quantity            INT          DEFAULT 0,
     min_stock       INT          DEFAULT 0,
     max_stock       INT,
     reorder_point   INT          DEFAULT 0,
@@ -365,6 +517,25 @@ CREATE TABLE IF NOT EXISTS shift_swap_requests (
     CONSTRAINT fk_swap_approver FOREIGN KEY (approved_by)   REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS shift_handovers (
+    id                        INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    shift_date                DATE         NOT NULL,
+    from_shift_code           VARCHAR(20)  NOT NULL,
+    to_shift_code             VARCHAR(20)  NOT NULL,
+    authored_by               INT UNSIGNED NOT NULL,
+    acknowledged_by           INT UNSIGNED NULL,
+    acknowledged_at           DATETIME     NULL,
+    simulators_status_summary TEXT,
+    open_drs_summary          TEXT,
+    pending_actions           TEXT,
+    safety_loto_notes         TEXT,
+    created_at                TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at                TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_handover_date (shift_date),
+    CONSTRAINT fk_handover_author FOREIGN KEY (authored_by)     REFERENCES users(id),
+    CONSTRAINT fk_handover_ack    FOREIGN KEY (acknowledged_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- =============================================================================
 -- TASKS (recursive / self-referencing)
 -- =============================================================================
@@ -379,6 +550,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     id               INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     parent_id        INT UNSIGNED,
     category_id      INT UNSIGNED,
+    simulator_id     INT UNSIGNED NULL,
     created_by       INT UNSIGNED NOT NULL,
     assigned_to      INT UNSIGNED,
     title            VARCHAR(300) NOT NULL,
@@ -560,7 +732,10 @@ INSERT IGNORE INTO schema_migrations (id, name) VALUES
 (1, '001_baseline_schema'),
 (2, '002_add_part_number_to_inventory_items'),
 (3, '003_create_planned_maintenance_tasks'),
-(4, '004_create_ui_preferences');
+(4, '004_create_ui_preferences'),
+(5, '005_enhance_shifts_custom_and_leave'),
+(6, '006_flight_simulator_domain'),
+(7, '007_station_daily_ops');
 
 -- Roles
 INSERT IGNORE INTO roles (id, name, description, permissions) VALUES
@@ -569,13 +744,14 @@ INSERT IGNORE INTO roles (id, name, description, permissions) VALUES
 (3, 'tech',    'Technician',            '["read","write"]'),
 (4, 'viewer',  'Read-only access',      '["read"]');
 
--- Operation types
+-- Sortie profiles (Operation types)
 INSERT IGNORE INTO operation_types (id, name, color, icon, description) VALUES
-(1, 'Deployment',  '#1565C0', 'rocket',      'System or hardware deployment'),
-(2, 'Maintenance', '#E65100', 'build',       'Scheduled maintenance window'),
-(3, 'Incident',    '#B71C1C', 'warning',     'Incident response operation'),
-(4, 'Training',    '#1B5E20', 'school',      'Team training activity'),
-(5, 'Audit',       '#4A148C', 'fact_check',  'Security or compliance audit');
+(1, 'Type Rating',               '#1565C0', 'flight_takeoff', 'Initial or transition aircraft type rating training sortie'),
+(2, 'Recurrent LPC / OPC',       '#0288D1', 'verified',       'Proficiency check and recurrent airline regulatory sortie'),
+(3, 'LOFT Mission',              '#0F766E', 'alt_route',      'Line-Oriented Flight Training full scenario sortie'),
+(4, 'Checkride / Exam',          '#7C3AED', 'school',         'Authority examiner skill test and ZFT qualification'),
+(5, 'Mission Rehearsal',         '#4338CA', 'military_tech',  'Tactical, helicopter NVG/SAR, or defense mission training'),
+(6, 'QTG & Engineering Fly-Out', '#D97706', 'tune',           'Morning readiness fly-out or QTG validation flight');
 
 -- Shift types
 INSERT IGNORE INTO shift_types (id, name, code, start_time, end_time, color, category, description) VALUES
@@ -644,6 +820,16 @@ VALUES
   (8, 2, 'IT Workstation #2',      'WS-002',       'OptiPlex 7090',    'Dell',    'IT Office',     'ACTIVE'),
   (9, 4, 'NAS Storage Array',      'STR-001-NAS',  'DS1823xs+',        'Synology','Server Room B', 'ACTIVE'),
   (10,4, 'Tape Library',           'STR-002-TAPE', 'StoreEver MSL3040','HP',      'Server Room B', 'INACTIVE');
+
+-- Default CAE Flight Simulators
+INSERT IGNORE INTO simulators
+  (id, code, name, bay_code, platform_category, aircraft_type, manufacturer, serial_number, authority, qualification_level, certificate_code, daily_available_hours, engine_avionics, software_load, airac_cycle, visual_system, motion_system, control_loading, ios_config, status, power_on_hours, motion_hours, visual_lamp_hours, limitations_mel, notes)
+VALUES
+  (1, 'FFS-A320-01', 'Airbus A320neo Full Flight Simulator #1', 'BAY-01', 'COMMERCIAL_FIXED_WING', 'Airbus A320neo / CEO', 'CAE 7000XR', 'CAE-7000XR-A320-104', 'EASA', 'CS-FSTD Level D', 'EASA.IT.FSTD.014', 20.0, 'CFM LEAP-1A26 / Thales FMS R2', 'Host Load v4.18.2', 'AIRAC 2611', 'CAE Tropos 6000XR · 200x40 Laser 3ch', 'CAE 6-DOF Electric eMotion', 'Moog/CAE Digital CLS-500', 'Dual-Screen Instructor Console v8', 'IN_SORTIE', 18420.5, 14210.0, 3120.4, NULL, 'Primary commercial narrowbody bay. Cat IIIB LVP qualified.'),
+  (2, 'FFS-B737-02', 'Boeing 737 MAX 8 Full Flight Simulator #2', 'BAY-02', 'COMMERCIAL_FIXED_WING', 'Boeing 737 MAX 8 / 800', 'CAE 7000XR', 'CAE-7000XR-B737-209', 'EASA', 'CS-FSTD Level D', 'EASA.IT.FSTD.022', 20.0, 'CFM LEAP-1B / Rockwell Collins ProLine', 'Host Load v5.04.1', 'AIRAC 2611', 'CAE Medallion-6000XR · 220x40 LED', 'CAE 6-DOF Electric eMotion', 'CAE Digital CLS-500', 'Mobile Tablet + Desk IOS', 'READY', 15290.0, 11845.5, 2410.0, NULL, 'Annual EASA re-evaluation tracking active.'),
+  (3, 'FFS-A350-03', 'Airbus A350-900 Full Flight Simulator #3', 'BAY-03', 'COMMERCIAL_FIXED_WING', 'Airbus A350-900 XWB', 'CAE 7000XR', 'CAE-7000XR-A350-312', 'EASA / FAA', 'Level D Dual-Qual', 'EASA.FAA.350.008', 20.0, 'Trent XWB-84 / Honeywell Primus Epic', 'Host Load v3.22.0', 'AIRAC 2611', 'CAE Tropos 6000XR · 4K Laser Array', 'CAE 6-DOF Hydraulic-Free', 'Active Side-Stick CLS', 'CAE Rise IOS + Debrief Pod', 'DEGRADED', 9840.2, 7610.8, 1890.0, 'Visual Ch.3 right peripheral projector dimmed by 12% (MEL Cat B pending laser module swap).', 'Long-haul widebody fleet bay.'),
+  (4, 'FFS-AW139-04', 'Leonardo AW139 Rotorcraft FFS #4', 'BAY-04', 'ROTORCRAFT', 'Leonardo AW139', 'CAE 3000 Series', 'CAE-3000-AW139-077', 'EASA / ENAC', 'CS-FSTD(H) Level D', 'ENAC.FSTD.H.005', 18.0, 'PT6C-67C / Honeywell Phase 8', 'RotorHost v6.1.4', 'AIRAC 2611', '8-Channel Extreme FOV Chin-Window Dome', 'CAE 6-DOF High-Frequency Rotor', '4-Axis Helicopter AFCS CLS', 'HEMS / SAR Mission IOS', 'READY', 11340.0, 9450.0, 2105.5, NULL, 'Offshore Oil&Gas, HEMS & NVG Level D certified.'),
+  (5, 'FMS-M346-05', 'Leonardo M-346 Full Mission Simulator #5', 'BAY-05', 'DEFENSE_FMS', 'Leonardo M-346 Master AJT', 'CAE FMS-5000', 'CAE-FMS-M346-019', 'MAA / AER(EP)', 'Level D Tactical', 'MAA.IFTS.FMS.005', 16.0, 'F124-GA-200 / Embedded ETTS', 'TacCore v7.3.0', 'Tactical DB 26-B', '360 Partial Dome 9ch LCoS', 'Fixed-Base G-Seat + G-Suit', 'Fighter HOTAS Force-Feel', 'LVC Tactical White-Force IOS', 'READY', 7620.0, 0.0, 1480.0, NULL, 'LVC networked for multi-ship BFM/ACM & EW sorties.');
 
 -- Planned maintenance tasks
 INSERT IGNORE INTO planned_maintenance_tasks

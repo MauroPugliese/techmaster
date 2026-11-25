@@ -16,8 +16,8 @@
         <span>{{recordError}}</span>
       </div>
 
-      <div class="mnt-warn-banner mb-4" *ngIf="assets.length === 0">
-        <span>No active assets found in registry.</span>
+      <div class="mnt-warn-banner mb-4" *ngIf="simulators.length === 0 && assets.length === 0">
+        <span>No simulators or active assets found.</span>
         <button type="button" class="btn btn-secondary btn-sm" (click)="showRecordModal = false; openAssetModal()">
           <span class="btn-icon">add</span> Create Asset First
         </button>
@@ -25,18 +25,58 @@
 
       <div class="form-row">
         <div class="form-group" style="grid-column:1 / -1" *ngIf="showFormField('title')">
-          <label class="form-label">{{fieldLabel('form','title','Title')}} *</label>
-          <input class="form-control" [(ngModel)]="recordForm.title" placeholder="e.g. Monthly UPS battery inspection">
+          <label class="form-label">{{fieldLabel('form','title','Work Order / Discrepancy Title')}} *</label>
+          <input class="form-control" [(ngModel)]="recordForm.title" placeholder="e.g. Collimated visual projector #2 edge-blend calibration">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Flight Simulator Bay</label>
+          <app-dropdown class="form-control" [(ngModel)]="recordForm.simulator_id" placeholder="— Select FSTD Bay —">
+            <app-dropdown-option [ngValue]="null">— None / Facility Asset —</app-dropdown-option>
+            <app-dropdown-option *ngFor="let s of simulators" [ngValue]="s.id">
+              {{s.bay_code}} · {{s.code}} ({{s.aircraft_type}})
+            </app-dropdown-option>
+          </app-dropdown>
         </div>
 
         <div class="form-group" *ngIf="showFormField('asset_id')">
-          <label class="form-label">{{fieldLabel('form','asset_id','Asset')}} *</label>
+          <label class="form-label">{{fieldLabel('form','asset_id','Facility / IT Asset (Optional if Bay selected)')}}</label>
           <app-dropdown class="form-control" [(ngModel)]="recordForm.asset_id" placeholder="— Select asset —">
-            <app-dropdown-option [ngValue]="undefined">— Select asset —</app-dropdown-option>
+            <app-dropdown-option [ngValue]="undefined">— None / Bay-level Work —</app-dropdown-option>
             <app-dropdown-option *ngFor="let a of assets" [ngValue]="a.id">
               {{a.name}}{{a.serial_number ? ' — ' + a.serial_number : ''}}
             </app-dropdown-option>
           </app-dropdown>
+        </div>
+
+        <div class="form-group" *ngIf="recordForm.simulator_id">
+          <label class="form-label">Affected Subsystem</label>
+          <app-dropdown class="form-control" [(ngModel)]="recordForm.subsystem_code" placeholder="— Select subsystem —">
+            <app-dropdown-option value="">— General Bay —</app-dropdown-option>
+            <app-dropdown-option *ngFor="let sub of subsystemOptions" [value]="sub.code">{{sub.label}}</app-dropdown-option>
+          </app-dropdown>
+        </div>
+
+        <div class="form-group" *ngIf="recordForm.simulator_id">
+          <label class="form-label">Operational Severity</label>
+          <app-dropdown class="form-control" [(ngModel)]="recordForm.severity">
+            <app-dropdown-option value="MINOR">Minor (No Impact)</app-dropdown-option>
+            <app-dropdown-option value="DEGRADED">Degraded (MEL Training)</app-dropdown-option>
+            <app-dropdown-option value="AOG">AOG (Bay Grounded)</app-dropdown-option>
+          </app-dropdown>
+        </div>
+
+        <div class="form-group" *ngIf="recordForm.simulator_id">
+          <label class="form-label">Lost Training Hours</label>
+          <input type="number" step="0.5" min="0" class="form-control mnt-num" [(ngModel)]="recordForm.lost_training_hours" placeholder="0.0">
+        </div>
+
+        <div class="form-group" *ngIf="recordForm.simulator_id">
+          <label class="form-label">Discrepancy Report (DR)</label>
+          <label class="mnt-check-label" style="padding:8px 0">
+            <input type="checkbox" class="mnt-checkbox" [(ngModel)]="recordForm.is_snag">
+            <span>Mark as Crew/Tech Snag (DR)</span>
+          </label>
         </div>
 
         <div class="form-group" *ngIf="showFormField('type')">
@@ -161,7 +201,7 @@
               </div>
             </div>
 
-            <label class="mnt-check-label" *ngIf="!editingRecord" style="margin-top:4px;align-self:flex-start">
+            <label class="mnt-check-label" style="margin-top:4px;align-self:flex-start">
               <input type="checkbox" class="mnt-checkbox" [(ngModel)]="deductStock">
               <span>Deduct part quantities from Warehouse stock automatically</span>
             </label>
@@ -216,9 +256,19 @@
       <div class="detail-badges">
         <span class="badge" [ngClass]="statusBadge(detailRecord.status)">{{label(detailRecord.status)}}</span>
         <span class="badge" [ngClass]="priorityBadge(detailRecord.priority)">Priority: {{label(detailRecord.priority)}}</span>
+        <span class="detail-type-chip" *ngIf="detailRecord.is_snag" style="background:#fff7ed;color:#c2410c;border-color:#fdba74">Snag DR</span>
+        <span class="detail-type-chip" *ngIf="detailRecord.severity" [style.color]="detailRecord.severity === 'AOG' ? '#b91c1c' : '#b45309'">
+          Severity: {{detailRecord.severity}}
+        </span>
       </div>
 
       <div class="detail-grid">
+        <div class="detail-field" *ngIf="detailRecord.simulator">
+          <span class="detail-label">Simulator Bay</span>
+          <span class="detail-value mnt-num">{{detailRecord.simulator.bay_code}} · {{detailRecord.simulator.code}}</span>
+          <span class="detail-sub" *ngIf="detailRecord.subsystem_code">Subsystem: {{detailRecord.subsystem_code}}</span>
+        </div>
+
         <div class="detail-field">
           <span class="detail-label">Asset</span>
           <span class="detail-value">{{detailRecord.asset?.name || '—'}}</span>

@@ -85,6 +85,8 @@ export class WarehouseInventoryComponent implements OnInit, OnChanges, OnDestroy
   locationFilter: number | string = '';
   supplierFilter = '';
   stockStatusFilter: 'all' | WarehouseStockStatus = 'all';
+  partClassificationFilter: '' | 'CONSUMABLE' | 'ROTATABLE_LRU' | 'TOOL_CALIBRATED' = '';
+  aogOnly = false;
 
   sortBy = '';
   sortDir: 'ASC' | 'DESC' = 'ASC';
@@ -191,6 +193,8 @@ export class WarehouseInventoryComponent implements OnInit, OnChanges, OnDestroy
       supplier: this.supplierFilter || '',
       stock_status: this.stockStatusFilter !== 'all' ? this.stockStatusFilter : '',
       low_stock: (this.stockStatusFilter === 'low' || this.stockStatusFilter === 'out') ? 'true' : '',
+      part_classification: this.partClassificationFilter || '',
+      aog_critical: this.aogOnly ? 'true' : '',
       sort_by: this.sortBy || '',
       sort_dir: this.sortDir,
       page: this.page,
@@ -202,6 +206,8 @@ export class WarehouseInventoryComponent implements OnInit, OnChanges, OnDestroy
       location_id: this.locationFilter || '',
       stock_status: this.stockStatusFilter !== 'all' ? this.stockStatusFilter : '',
       low_stock: (this.stockStatusFilter === 'low' || this.stockStatusFilter === 'out') ? 'true' : '',
+      part_classification: this.partClassificationFilter || '',
+      aog_critical: this.aogOnly ? 'true' : '',
       search: this.search.trim()
     });
 
@@ -250,8 +256,15 @@ export class WarehouseInventoryComponent implements OnInit, OnChanges, OnDestroy
       this.locationFilter !== '' ||
       this.supplierFilter !== '' ||
       this.stockStatusFilter !== 'all' ||
+      this.partClassificationFilter !== '' ||
+      this.aogOnly ||
       this.sortBy !== ''
     );
+  }
+
+  toggleAogFilter(): void {
+    this.aogOnly = !this.aogOnly;
+    this.applyFilters();
   }
 
   resetFilters(): void {
@@ -260,6 +273,8 @@ export class WarehouseInventoryComponent implements OnInit, OnChanges, OnDestroy
     this.locationFilter = '';
     this.supplierFilter = '';
     this.stockStatusFilter = 'all';
+    this.partClassificationFilter = '';
+    this.aogOnly = false;
     this.sortBy = '';
     this.sortDir = 'ASC';
     this.statusFilterChanged.emit('all');

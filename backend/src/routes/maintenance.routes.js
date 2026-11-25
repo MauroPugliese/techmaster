@@ -7,6 +7,7 @@ const {
   MaintenanceRecord,
   Asset,
   AssetCategory,
+  Simulator,
   InventoryItem,
   StockMovement,
   User,
@@ -23,7 +24,8 @@ const {
 } = require('../services/maintenance-helpers.service');
 
 const RECORD_INCLUDES = [
-  { model: Asset, as: 'asset', include: [{ model: AssetCategory, as: 'category' }] },
+  { model: Asset, as: 'asset', include: [{ model: AssetCategory, as: 'category' }], required: false },
+  { model: Simulator, as: 'simulator', attributes: ['id', 'code', 'name', 'bay_code', 'aircraft_type', 'status'], required: false },
   { model: User, as: 'technician', attributes: ['id', 'first_name', 'last_name', 'username'] }
 ];
 
@@ -155,12 +157,22 @@ router.get('/summary', parseDateFilter, async (req, res, next) => {
 
     const rows = await MaintenanceRecord.findAll({
       where,
-      attributes: ['id', 'status', 'scheduled_date', 'cost', 'downtime_hours']
+      attributes: ['id', 'status', 'scheduled_date', 'cost', 'downtime_hours', 'is_snag', 'severity', 'lost_training_hours']
     });
+
+    const plain = rows.map(r => r.get({ plain: true }));
+    const openSnags = plain.filter(r => r.is_snag && ['SCHEDULED', 'IN_PROGRESS', 'DEFERRED'].includes(r.status));
+    const aogSnags = openSnags.filter(r => r.severity === 'AOG');
+    const lostTrainingHours = plain.reduce((acc, r) => acc + (Number(r.lost_training_hours) || 0), 0);
 
     res.json({
       success: true,
-      data: summarizeMaintenanceRows(rows.map(r => r.get({ plain: true })))
+      data: {
+        ...summarizeMaintenanceRows(plain),
+        open_snags_count: openSnags.length,
+        aog_snags_count: aogSnags.length,
+        lost_training_hours: Number(lostTrainingHours.toFixed(2))
+      }
     });
   } catch (err) { next(err); }
 });
@@ -207,6 +219,10 @@ router.get('/', parseDateFilter, async (req, res, next) => {
       priority,
       type,
       asset_id,
+      simulator_id,
+      subsystem_code,
+      severity,
+      is_snag,
       search,
       sort_by,
       sort_dir,
@@ -241,6 +257,18 @@ router.get('/', parseDateFilter, async (req, res, next) => {
     if (asset_id && Number.isInteger(Number(asset_id)) && Number(asset_id) > 0) {
       where.asset_id = Number(asset_id);
     }
+    if (simulator_id && Number.isInteger(Number(simulator_id)) && Number(simulator_id) > 0) {
+      where.simulator_id = Number(simulator_id);
+    }
+    if (subsystem_code && String(subsystem_code).trim()) {
+      where.subsystem_code = String(subsystem_code).trim().toUpperCase();
+    }
+    if (severity && String(severity).trim()) {
+      where.severity = String(severity).trim().toUpperCase();
+    }
+    if (is_snag === 'true') {
+      where.is_snag = true;
+    }
 
     if (search?.trim()) {
       const searchTerm = `%${search.trim()}%`;
@@ -250,7 +278,10 @@ router.get('/', parseDateFilter, async (req, res, next) => {
           { description: { [Op.like]: searchTerm } },
           { findings: { [Op.like]: searchTerm } },
           sqlWhere(col('asset.name'), { [Op.like]: searchTerm }),
-          sqlWhere(col('asset.serial_number'), { [Op.like]: searchTerm })
+          sqlWhere(col('asset.serial_number'), { [Op.like]: searchTerm }),
+          sqlWhere(col('simulator.name'), { [Op.like]: searchTerm }),
+          sqlWhere(col('simulator.code'), { [Op.like]: searchTerm }),
+          sqlWhere(col('simulator.bay_code'), { [Op.like]: searchTerm })
         ]
       });
     }
@@ -341,29 +372,76 @@ router.get('/:id', validateIdParam, async (req, res, next) => {
 });
 
 router.put('/:id', validateIdParam, async (req, res, next) => {
+  const shouldDeduct = req.body?.deduct_stock === true && Array.isArray(req.body?.parts_used) && req.body.parts_used.length > 0;
+  const transaction = shouldDeduct ? await sequelize.transaction() : null;
+
   try {
-    const rec = await MaintenanceRecord.findByPk(req.params.id);
-    if (!rec) return res.status(404).json({ success: false, message: 'Not found' });
+    const rec = await MaintenanceRecord.findByPk(req.params.id, transaction ? { transaction } : undefined);
+    if (!rec) {
+      if (transaction) await transaction.rollback();
+      return res.status(404).json({ success: false, message: 'Not found' });
+    }
 
     const { data, error } = sanitizeMaintenancePayload(req.body, { isCreate: false });
-    if (error) return res.status(400).json({ success: false, message: error });
+    if (error) {
+      if (transaction) await transaction.rollback();
+      return res.status(400).json({ success: false, message: error });
+    }
 
     const previousStatus = rec.status;
-    await rec.update(data);
+    await rec.update(data, transaction ? { transaction } : undefined);
+
+    if (shouldDeduct && data.parts_used?.length) {
+      for (const part of data.parts_used) {
+        if (!part.item_id) continue;
+        const item = await InventoryItem.findByPk(part.item_id, { transaction, lock: transaction.LOCK.UPDATE });
+        if (!item) {
+          await transaction.rollback();
+          return res.status(404).json({ success: false, message: `Warehouse item #${part.item_id} not found.` });
+        }
+        const qtyBefore = Number(item.quantity) || 0;
+        const qtyAfter = qtyBefore - part.quantity;
+        if (qtyAfter < 0) {
+          await transaction.rollback();
+          return res.status(400).json({
+            success: false,
+            message: `Insufficient warehouse stock for "${item.name}" (${item.sku}): available ${qtyBefore}, requested ${part.quantity}.`
+          });
+        }
+        await StockMovement.create({
+          item_id: item.id,
+          user_id: req.user.id,
+          type: 'OUT',
+          quantity: part.quantity,
+          quantity_before: qtyBefore,
+          quantity_after: qtyAfter,
+          reference: `MAINT-#${rec.id}`,
+          reason: `Used in maintenance: ${rec.title}`
+        }, { transaction });
+        await item.update({ quantity: qtyAfter }, { transaction });
+      }
+    }
 
     // Cyclic maintenance: auto-generate next scheduled record upon completion
     if (rec.status === 'COMPLETED' && previousStatus !== 'COMPLETED' && rec.next_scheduled) {
+      const cycleWhere = {
+        scheduled_date: rec.next_scheduled,
+        status: 'SCHEDULED'
+      };
+      if (rec.simulator_id) cycleWhere.simulator_id = rec.simulator_id;
+      else cycleWhere.asset_id = rec.asset_id;
+
       const alreadyScheduled = await MaintenanceRecord.findOne({
-        where: {
-          asset_id: rec.asset_id,
-          scheduled_date: rec.next_scheduled,
-          status: 'SCHEDULED'
-        }
+        where: cycleWhere,
+        ...(transaction ? { transaction } : {})
       });
 
       if (!alreadyScheduled) {
         await MaintenanceRecord.create({
           asset_id: rec.asset_id,
+          simulator_id: rec.simulator_id,
+          subsystem_code: rec.subsystem_code,
+          severity: rec.severity || 'MINOR',
           performed_by: rec.performed_by || req.user.id,
           type: rec.type,
           title: rec.title,
@@ -373,13 +451,18 @@ router.put('/:id', validateIdParam, async (req, res, next) => {
           scheduled_date: rec.next_scheduled,
           cost: 0.00,
           parts_used: []
-        });
+        }, transaction ? { transaction } : undefined);
       }
     }
 
+    if (transaction) await transaction.commit();
+
     const full = await MaintenanceRecord.findByPk(rec.id, { include: RECORD_INCLUDES });
     res.json({ success: true, data: full || rec });
-  } catch (err) { next(err); }
+  } catch (err) {
+    if (transaction) await transaction.rollback();
+    next(err);
+  }
 });
 
 router.delete('/:id', validateIdParam, async (req, res, next) => {

@@ -3,7 +3,7 @@
 // =============================================================================
 const router = require('express').Router();
 const { Op } = require('sequelize');
-const { Task, User, TaskComment, Notification } = require('../models');
+const { Task, Simulator, User, TaskComment, Notification } = require('../models');
 const { parseDateFilter } = require('../middleware/error.middleware');
 const {
   sanitizeTaskPayload,
@@ -13,6 +13,12 @@ const {
 
 const TASK_INCLUDES = [
   { model: Task, as: 'subtasks' },
+  {
+    model: Simulator,
+    as: 'simulator',
+    attributes: ['id', 'code', 'name', 'bay_code', 'aircraft_type', 'status'],
+    required: false
+  },
   {
     model: User,
     as: 'assignee',
@@ -96,9 +102,12 @@ router.patch('/bulk', async (req, res, next) => {
 router.get('/', parseDateFilter, async (req, res, next) => {
   try {
     const { from, to } = req.dateRange;
-    const { interval_type, status, priority, assigned_to, page = 1, limit = 100 } = req.query;
+    const { interval_type, status, priority, assigned_to, simulator_id, page = 1, limit = 100 } = req.query;
 
     const where = { parent_id: null }; // top-level only
+    if (simulator_id && Number.isInteger(Number(simulator_id)) && Number(simulator_id) > 0) {
+      where.simulator_id = Number(simulator_id);
+    }
     if (from || to) {
       const dateCond = {};
       if (from) dateCond[Op.gte] = from;

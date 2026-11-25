@@ -35,6 +35,12 @@ const appRoutes: Routes = [
         data: { sectionKey: 'dashboard' }
       },
       {
+        path: 'simulators',
+        loadComponent: () => import('./features/simulators/simulators.component').then(m => m.SimulatorsComponent),
+        canActivate: [sectionAccessGuard],
+        data: { sectionKey: 'simulators' }
+      },
+      {
         path: 'operations',
         loadComponent: () => import('./features/operations/operations.component').then(m => m.OperationsComponent),
         canActivate: [sectionAccessGuard],

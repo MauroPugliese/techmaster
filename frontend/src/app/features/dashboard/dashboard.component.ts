@@ -17,8 +17,12 @@ import {
 } from '../../core/services/services';
 import {
   DashboardOverview,
-  DashboardShiftItem
+  DashboardShiftItem,
+  Simulator,
+  SimulatorDashboardSummary,
+  SimulatorStatus
 } from '../../core/models/interfaces';
+import { SIM_STATUS_META } from '../simulators/simulator-helpers';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
 import { DashboardChartsComponent } from './charts/dashboard-charts.component';
 import { DashboardUrgentCenterComponent } from './urgent-center/dashboard-urgent-center.component';
@@ -157,6 +161,18 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   get warehouse() {
     return this.overview?.warehouse;
+  }
+
+  get simulators(): Simulator[] {
+    return this.overview?.simulators || [];
+  }
+
+  get simSummary(): SimulatorDashboardSummary | undefined {
+    return this.overview?.simulatorSummary;
+  }
+
+  simStatusMeta(st?: SimulatorStatus) {
+    return SIM_STATUS_META[st || 'READY'] || SIM_STATUS_META.READY;
   }
 
   get fleetReadinessPct(): number {

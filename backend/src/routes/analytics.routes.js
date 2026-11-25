@@ -591,6 +591,78 @@ router.get('/operations-metrics', parseDateFilter, async (req, res, next) => {
     const peakData = peakRows[0] || {};
     const peakHourVal = peakData.hour !== undefined && peakData.hour !== null ? Number(peakData.hour) : null;
 
+    const simScorecardQuery = `
+      SELECT
+        s.id AS simulator_id,
+        s.code AS simulator_code,
+        s.bay_code,
+        s.aircraft_type,
+        s.status AS bay_status,
+        s.daily_available_hours,
+        COUNT(o.id) AS sortie_count,
+        COALESCE(SUM(COALESCE(o.scheduled_hours, CASE WHEN ${hasEndExpr} THEN ${durationExpr} / 60 ELSE 0 END)), 0) AS scheduled_hours,
+        COALESCE(SUM(COALESCE(o.actual_flight_hours, CASE WHEN o.status = 'COMPLETED' AND ${hasEndExpr} THEN ${durationExpr} / 60 ELSE 0 END)), 0) AS actual_hours,
+        COALESCE(SUM(COALESCE(o.lost_training_minutes, 0)), 0) AS lost_minutes
+      FROM simulators s
+      LEFT JOIN operations o ON o.simulator_id = s.id AND o.status != 'CANCELLED' ${dateFilter}
+      GROUP BY s.id, s.code, s.bay_code, s.aircraft_type, s.status, s.daily_available_hours
+      ORDER BY s.bay_code ASC
+    `;
+
+    const snagsBySubsystemQuery = `
+      SELECT
+        COALESCE(subsystem_code, 'GENERAL') AS subsystem,
+        COUNT(*) AS count,
+        SUM(CASE WHEN severity = 'AOG' THEN 1 ELSE 0 END) AS aog_count,
+        COALESCE(SUM(COALESCE(lost_training_hours, 0)), 0) AS lost_hours
+      FROM maintenance_records
+      WHERE deleted_at IS NULL AND (simulator_id IS NOT NULL OR is_snag = 1)
+      GROUP BY COALESCE(subsystem_code, 'GENERAL')
+      ORDER BY count DESC
+      LIMIT 8
+    `;
+
+    const hoursByCustomerQuery = `
+      SELECT
+        COALESCE(NULLIF(TRIM(o.customer_operator), ''), 'Internal / Unassigned') AS customer,
+        COUNT(*) AS sorties,
+        COALESCE(SUM(COALESCE(o.scheduled_hours, CASE WHEN ${hasEndExpr} THEN ${durationExpr} / 60 ELSE 0 END)), 0) AS scheduled_hours,
+        COALESCE(SUM(COALESCE(o.lost_training_minutes, 0)), 0) AS lost_minutes
+      FROM operations o
+      WHERE o.status != 'CANCELLED' ${dateFilter}
+      GROUP BY COALESCE(NULLIF(TRIM(o.customer_operator), ''), 'Internal / Unassigned')
+      ORDER BY scheduled_hours DESC, sorties DESC
+      LIMIT 8
+    `;
+
+    const [[simScorecardRows], [snagSubRows], [custRows]] = await Promise.all([
+      sequelize.query(simScorecardQuery, { replacements }).catch(() => [[]]),
+      sequelize.query(snagsBySubsystemQuery).catch(() => [[]]),
+      sequelize.query(hoursByCustomerQuery, { replacements }).catch(() => [[]])
+    ]);
+
+    const bySimulator = simScorecardRows.map((r) => {
+      const schedH = Math.round((Number(r.scheduled_hours) || 0) * 10) / 10;
+      const actualH = Math.round((Number(r.actual_hours) || 0) * 10) / 10;
+      const lostMin = Math.max(0, Number(r.lost_minutes) || 0);
+      const schedMin = schedH * 60;
+      const reliabilityPct = schedMin > 0
+        ? Math.max(0, Math.min(100, Math.round(((schedMin - lostMin) / schedMin) * 1000) / 10))
+        : 100;
+      return {
+        simulator_id: Number(r.simulator_id),
+        simulator_code: r.simulator_code,
+        bay_code: r.bay_code,
+        aircraft_type: r.aircraft_type,
+        bay_status: r.bay_status,
+        sortie_count: Number(r.sortie_count) || 0,
+        scheduled_hours: schedH,
+        actual_hours: actualH,
+        lost_minutes: lostMin,
+        reliability_pct: reliabilityPct
+      };
+    });
+
     res.json({
       success: true,
       data: {
@@ -616,6 +688,21 @@ router.get('/operations-metrics', parseDateFilter, async (req, res, next) => {
           peakHour: peakHourVal,
           peakHourFormatted: formatPeakHour(peakHourVal),
           mostActiveType: timeDistRows[0]?.type || 'N/A'
+        },
+        simulatorMetrics: {
+          bySimulator,
+          snagsBySubsystem: snagSubRows.map((r) => ({
+            subsystem: r.subsystem,
+            count: Number(r.count) || 0,
+            aog_count: Number(r.aog_count) || 0,
+            lost_hours: Math.round((Number(r.lost_hours) || 0) * 10) / 10
+          })),
+          hoursByCustomer: custRows.map((r) => ({
+            customer: r.customer,
+            sorties: Number(r.sorties) || 0,
+            scheduled_hours: Math.round((Number(r.scheduled_hours) || 0) * 10) / 10,
+            lost_minutes: Number(r.lost_minutes) || 0
+          }))
         }
       }
     });

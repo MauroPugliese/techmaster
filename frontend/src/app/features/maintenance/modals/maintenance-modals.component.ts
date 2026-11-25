@@ -22,11 +22,14 @@ import {
   MaintenanceRecord,
   MaintenanceStatus,
   MaintenanceType,
-  Priority
+  Priority,
+  Simulator,
+  SimulatorSubsystemCode
 } from '../../../core/models/interfaces';
 import { DateTimePickerComponent } from '../../../shared/components/datetime-picker/datetime-picker.component';
 import { formatLocalYmd } from '../../../shared/components/datetime-picker/datetime-picker.utils';
 import { DropdownComponent, DropdownOptionComponent } from '../../../shared/components/dropdown/dropdown.component';
+import { SUBSYSTEM_OPTIONS } from '../../simulators/simulator-helpers';
 import {
   combineDowntimeHours,
   computeNextCycleDate,
@@ -50,10 +53,13 @@ import {
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class MaintenanceModalsComponent {
+  @Input() simulators: Simulator[] = [];
   @Input() assets: Asset[] = [];
   @Input() assetCategories: AssetCategory[] = [];
   @Input() warehouseItems: InventoryItem[] = [];
   @Input() uiPrefs: UiSectionPreferences | null = null;
+
+  readonly subsystemOptions = SUBSYSTEM_OPTIONS;
 
   @Output() mutated = new EventEmitter<void>();
   @Output() assetsMutated = new EventEmitter<void>();
@@ -122,7 +128,12 @@ export class MaintenanceModalsComponent {
   // ── Work Order Create / Edit ───────────────────────────────────────────────
   private emptyRecordForm() {
     return {
+      simulator_id: null as number | null,
       asset_id: undefined as number | undefined,
+      subsystem_code: '' as '' | SimulatorSubsystemCode,
+      severity: 'MINOR' as 'MINOR' | 'DEGRADED' | 'AOG',
+      lost_training_hours: 0,
+      is_snag: false,
       type: 'PREVENTIVE' as MaintenanceType,
       priority: 'MEDIUM' as Priority,
       status: 'SCHEDULED' as MaintenanceStatus,
@@ -139,12 +150,17 @@ export class MaintenanceModalsComponent {
     this.recordError = '';
     this.selectedWarehouseItemId = null;
     this.selectedPartQty = 1;
-    this.deductStock = true;
+    this.deductStock = !record;
 
     if (record) {
       this.editingRecord = record;
       this.recordForm = {
-        asset_id: record.asset_id,
+        simulator_id: record.simulator_id ?? record.simulator?.id ?? null,
+        asset_id: record.asset_id ?? undefined,
+        subsystem_code: (record.subsystem_code || '') as '' | SimulatorSubsystemCode,
+        severity: (record.severity || 'MINOR') as 'MINOR' | 'DEGRADED' | 'AOG',
+        lost_training_hours: record.lost_training_hours ?? 0,
+        is_snag: Boolean(record.is_snag),
         type: record.type,
         priority: record.priority,
         status: record.status,
@@ -164,7 +180,12 @@ export class MaintenanceModalsComponent {
       const base = this.emptyRecordForm();
       this.recordForm = {
         ...base,
+        simulator_id: prefill?.simulator_id ?? null,
         asset_id: prefill?.asset_id ?? undefined,
+        subsystem_code: (prefill?.subsystem_code || '') as '' | SimulatorSubsystemCode,
+        severity: (prefill?.severity || 'MINOR') as 'MINOR' | 'DEGRADED' | 'AOG',
+        lost_training_hours: prefill?.lost_training_hours ?? 0,
+        is_snag: Boolean(prefill?.is_snag),
         type: prefill?.type ?? 'PREVENTIVE',
         priority: prefill?.priority ?? 'MEDIUM',
         status: prefill?.status ?? 'SCHEDULED',
@@ -237,8 +258,8 @@ export class MaintenanceModalsComponent {
       this.recordError = 'Title is required.';
       return;
     }
-    if (this.showFormField('asset_id') && !this.recordForm.asset_id) {
-      this.recordError = 'Please select an asset.';
+    if (!this.recordForm.simulator_id && !this.recordForm.asset_id) {
+      this.recordError = 'Please select a Simulator Bay or an Asset.';
       return;
     }
     if (this.showFormField('scheduled_date') && !this.recordForm.scheduled_date) {
@@ -253,6 +274,11 @@ export class MaintenanceModalsComponent {
     const downtime = combineDowntimeHours(this.downtimeHoursPart, this.downtimeMinutesPart);
     const payload: Record<string, any> = {
       ...this.recordForm,
+      simulator_id: this.recordForm.simulator_id ? Number(this.recordForm.simulator_id) : null,
+      asset_id: this.recordForm.asset_id ? Number(this.recordForm.asset_id) : null,
+      subsystem_code: this.recordForm.subsystem_code || null,
+      lost_training_hours: Number(this.recordForm.lost_training_hours || 0),
+      is_snag: Boolean(this.recordForm.is_snag),
       downtime_hours: downtime,
       parts_used: this.partsList,
       next_scheduled: this.recordForm.next_scheduled ? new Date(this.recordForm.next_scheduled).toISOString() : null
@@ -264,7 +290,7 @@ export class MaintenanceModalsComponent {
     if (payload['status'] === 'COMPLETED') {
       payload['completed_date'] = new Date().toISOString();
     }
-    if (!this.editingRecord && this.deductStock && this.partsList.some(p => p.item_id)) {
+    if (this.deductStock && this.partsList.some(p => p.item_id)) {
       payload['deduct_stock'] = true;
     }
 

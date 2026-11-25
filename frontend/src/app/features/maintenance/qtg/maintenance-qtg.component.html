@@ -1,0 +1,177 @@
+<div class="qtg-wrap">
+
+  <!-- KPI Strip (Matches SMaRT Horizontal KPI Cards) -->
+  <div class="qtg-kpi-grid">
+    <button type="button"
+            class="kpi-card qtg-kpi-card"
+            [class.active]="statusFilter === 'ALL'"
+            style="--kpi-color:#1565C0"
+            (click)="statusFilter = 'ALL'; applyFilters()">
+      <div class="kpi-icon-wrap">fact_check</div>
+      <div class="qtg-kpi-body">
+        <div class="qtg-kpi-val qtg-num">{{ kpis.total }}</div>
+        <div class="kpi-label">Scheduled QTG Runs</div>
+      </div>
+    </button>
+
+    <button type="button"
+            class="kpi-card qtg-kpi-card"
+            [class.active]="statusFilter === 'PASSED'"
+            style="--kpi-color:#16A34A"
+            (click)="statusFilter = statusFilter === 'PASSED' ? 'ALL' : 'PASSED'; applyFilters()">
+      <div class="kpi-icon-wrap">check_circle</div>
+      <div class="qtg-kpi-body">
+        <div class="qtg-kpi-val qtg-num">{{ kpis.passed }}</div>
+        <div class="kpi-label">Passed</div>
+      </div>
+    </button>
+
+    <button type="button"
+            class="kpi-card qtg-kpi-card"
+            [class.active]="statusFilter === 'PENDING'"
+            style="--kpi-color:#5C6BC0"
+            (click)="statusFilter = statusFilter === 'PENDING' ? 'ALL' : 'PENDING'; applyFilters()">
+      <div class="kpi-icon-wrap">pending_actions</div>
+      <div class="qtg-kpi-body">
+        <div class="qtg-kpi-val qtg-num">{{ kpis.pending }}</div>
+        <div class="kpi-label">Pending Verification</div>
+      </div>
+    </button>
+
+    <button type="button"
+            class="kpi-card qtg-kpi-card"
+            [class.active]="statusFilter === 'FAILED' || statusFilter === 'TOLERANCE_WARN'"
+            style="--kpi-color:#D97706"
+            (click)="statusFilter = statusFilter === 'FAILED' ? 'TOLERANCE_WARN' : (statusFilter === 'TOLERANCE_WARN' ? 'ALL' : 'FAILED'); applyFilters()">
+      <div class="kpi-icon-wrap">warning_amber</div>
+      <div class="qtg-kpi-body">
+        <div class="qtg-kpi-val qtg-num">{{ kpis.issues }}</div>
+        <div class="kpi-label">Tolerance Warn / Failed</div>
+      </div>
+    </button>
+  </div>
+
+  <!-- Filter Toolbar (Solid SMaRT Card + .search-bar + app-dropdown.form-control) -->
+  <div class="qtg-toolbar">
+    <div class="qtg-filter-row">
+      <div class="qtg-search-wrap">
+        <div class="search-bar">
+          <span class="search-icon">search</span>
+          <input type="text"
+                 [(ngModel)]="searchQuery"
+                 (ngModelChange)="applyFilters()"
+                 placeholder="Search QTG code, test name, simulator bay…" />
+        </div>
+      </div>
+
+      <app-dropdown class="form-control qtg-filter-select" [(ngModel)]="simulatorFilter" (ngModelChange)="applyFilters()" placeholder="All Bays">
+        <app-dropdown-option [ngValue]="''">All Simulators</app-dropdown-option>
+        <app-dropdown-option *ngFor="let s of simulators" [ngValue]="s.id">{{ s.bay_code }} · {{ s.code }}</app-dropdown-option>
+      </app-dropdown>
+
+      <app-dropdown class="form-control qtg-filter-select" [(ngModel)]="quarterFilter" (ngModelChange)="applyFilters()" placeholder="Quarter">
+        <app-dropdown-option value="ALL">All Quarters</app-dropdown-option>
+        <app-dropdown-option value="Q1">Q1</app-dropdown-option>
+        <app-dropdown-option value="Q2">Q2</app-dropdown-option>
+        <app-dropdown-option value="Q3">Q3</app-dropdown-option>
+        <app-dropdown-option value="Q4">Q4</app-dropdown-option>
+      </app-dropdown>
+
+      <app-dropdown class="form-control qtg-filter-select" [(ngModel)]="statusFilter" (ngModelChange)="applyFilters()" placeholder="Status">
+        <app-dropdown-option value="ALL">All Statuses</app-dropdown-option>
+        <app-dropdown-option value="PENDING">Pending</app-dropdown-option>
+        <app-dropdown-option value="PASSED">Passed</app-dropdown-option>
+        <app-dropdown-option value="TOLERANCE_WARN">Tolerance Warn</app-dropdown-option>
+        <app-dropdown-option value="FAILED">Failed</app-dropdown-option>
+      </app-dropdown>
+
+      <button type="button" class="btn btn-ghost btn-sm" *ngIf="simulatorFilter !== '' || quarterFilter !== 'ALL' || statusFilter !== 'ALL' || searchQuery" (click)="resetFilters()">
+        <span class="btn-icon">filter_alt_off</span> Reset
+      </button>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="table-container">
+    <div *ngIf="loading" style="padding:36px;text-align:center;color:var(--text-muted)">
+      Loading EASA / FAA QTG compliance records...
+    </div>
+
+    <table class="data-table qtg-table" *ngIf="!loading && filteredRecords.length > 0">
+      <thead>
+        <tr>
+          <th>Simulator Bay</th>
+          <th>QTG Code</th>
+          <th>Test Description</th>
+          <th>Quarter / Mode</th>
+          <th>Measured Delta</th>
+          <th>Due / Executed</th>
+          <th>Status</th>
+          <th class="text-right">Quick Verify</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let r of filteredRecords; trackBy: trackById">
+          <td>
+            <a class="bay-link" routerLink="/simulators" [queryParams]="{ id: r.simulator_id, tab: 'qtg' }">
+              <span class="bay-pill qtg-num">{{ r.simulator?.bay_code || ('BAY-' + r.simulator_id) }}</span>
+              <span class="sim-code qtg-num">{{ r.simulator?.code || '' }}</span>
+            </a>
+          </td>
+          <td class="qtg-num font-bold">{{ r.test_code }}</td>
+          <td>
+            <div class="font-bold">{{ r.title }}</div>
+            <div class="sub-line">{{ r.category }}</div>
+          </td>
+          <td class="qtg-num">{{ r.quarter }} {{ r.year }} · {{ r.mode }}</td>
+          <td class="qtg-num">{{ r.measured_delta || '—' }}</td>
+          <td class="qtg-num">
+            <div *ngIf="r.executed_at">Exec: {{ r.executed_at | date:'MMM d, y' }}</div>
+            <div class="sub-line" *ngIf="r.due_date">Due: {{ r.due_date | date:'MMM d, y' }}</div>
+          </td>
+          <td>
+            <span
+              class="qtg-status-pill"
+              [style.background]="statusMeta(r.status).bg"
+              [style.color]="statusMeta(r.status).color">
+              {{ statusMeta(r.status).label }}
+            </span>
+          </td>
+          <td class="text-right">
+            <div class="qtg-actions">
+              <button
+                type="button"
+                class="btn btn-secondary btn-sm"
+                [disabled]="updatingId === r.id || r.status === 'PASSED'"
+                (click)="setStatus(r, 'PASSED')"
+                title="Mark QTG Passed">
+                Pass
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm"
+                [disabled]="updatingId === r.id || r.status === 'TOLERANCE_WARN'"
+                (click)="setStatus(r, 'TOLERANCE_WARN')"
+                title="Flag Tolerance Warning">
+                Warn
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm text-danger"
+                [disabled]="updatingId === r.id || r.status === 'FAILED'"
+                (click)="setStatus(r, 'FAILED')"
+                title="Mark Failed">
+                Fail
+              </button>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div *ngIf="!loading && filteredRecords.length === 0" style="padding:36px;text-align:center;color:var(--text-muted)">
+      No QTG test records match your filter criteria.
+    </div>
+  </div>
+
+</div>

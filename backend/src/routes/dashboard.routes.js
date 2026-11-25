@@ -2,6 +2,9 @@ const router = require('express').Router();
 const { parseDateFilter } = require('../middleware/error.middleware');
 const {
   sequelize,
+  Simulator,
+  SimulatorSubsystem,
+  SimulatorQtgRecord,
   Operation,
   OperationType,
   OperationMember,
@@ -19,6 +22,7 @@ const {
 } = require('../models');
 const { Op, fn, col, literal } = require('sequelize');
 const { expandOccurrencesInRange, formatDateOnly } = require('../services/planned-recurrence.service');
+const { computeSimulatorTelemetry } = require('../services/simulator-helpers.service');
 const {
   DAY_MS,
   parseTrendDays,
@@ -162,7 +166,12 @@ router.get('/overview', parseDateFilter, async (req, res, next) => {
       recentOps,
       recentMaint,
       recentTasks,
-      recentMovements
+      recentMovements,
+      allSimulators,
+      simSorties,
+      simMaint,
+      simQtg,
+      simSubsystems
     ] = await Promise.all([
       Operation.count({ where: opsDateWhere }),
       Operation.count({ where: { status: 'IN_PROGRESS' } }),
@@ -355,7 +364,18 @@ router.get('/overview', parseDateFilter, async (req, res, next) => {
           { model: InventoryItem, as: 'item', attributes: ['id', 'name', 'sku', 'unit'] },
           { model: User, as: 'user', attributes: ['id', 'first_name', 'last_name'] }
         ]
-      })
+      }),
+      Simulator.findAll({ order: [['bay_code', 'ASC'], ['code', 'ASC']] }),
+      Operation.findAll({
+        where: { simulator_id: { [Op.ne]: null }, status: { [Op.ne]: 'CANCELLED' } },
+        attributes: ['id', 'simulator_id', 'sortie_code', 'title', 'customer_operator', 'status', 'start_date', 'end_date', 'scheduled_hours', 'lost_training_minutes']
+      }),
+      MaintenanceRecord.findAll({
+        where: { simulator_id: { [Op.ne]: null } },
+        attributes: ['id', 'simulator_id', 'status', 'severity', 'is_snag']
+      }),
+      SimulatorQtgRecord.findAll({ attributes: ['id', 'simulator_id', 'status'] }),
+      SimulatorSubsystem.findAll({ attributes: ['id', 'simulator_id', 'subsystem_code', 'status'] })
     ]);
 
     const fleet = {
@@ -425,11 +445,54 @@ router.get('/overview', parseDateFilter, async (req, res, next) => {
       return new Date(a.start_date).getTime() - new Date(b.start_date).getTime();
     });
 
+    const simulators = allSimulators.map((simRow) => {
+      const plain = simRow.toJSON();
+      const simId = Number(plain.id);
+      return {
+        ...plain,
+        telemetry: computeSimulatorTelemetry(plain, {
+          sorties: simSorties.filter(x => Number(x.simulator_id) === simId).map(x => x.toJSON()),
+          maintenance: simMaint.filter(x => Number(x.simulator_id) === simId).map(x => x.toJSON()),
+          qtgRecords: simQtg.filter(x => Number(x.simulator_id) === simId).map(x => x.toJSON()),
+          subsystems: simSubsystems.filter(x => Number(x.simulator_id) === simId).map(x => x.toJSON()),
+          now
+        })
+      };
+    });
+
+    const totalSimulators = simulators.length;
+    const readyBays = simulators.filter(s => s.status === 'READY' || s.status === 'PRE_FLIGHT').length;
+    const inSortieBays = simulators.filter(s => s.status === 'IN_SORTIE').length;
+    const degradedBays = simulators.filter(s => s.status === 'DEGRADED' || s.status === 'MAINTENANCE').length;
+    const aogBays = simulators.filter(s => s.status === 'AOG').length;
+    const simTodayHours = Math.round(simulators.reduce((acc, s) => acc + (s.telemetry?.todayFlightHours || 0), 0) * 10) / 10;
+    const simDispatchRel = totalSimulators > 0
+      ? Math.round((simulators.reduce((acc, s) => acc + (s.telemetry?.dispatchReliabilityPct ?? 100), 0) / totalSimulators) * 10) / 10
+      : 100;
+    const openSnagsCount = simulators.reduce((acc, s) => acc + (s.telemetry?.openSnagsCount || 0), 0);
+    const qtgCompliancePct = totalSimulators > 0
+      ? Math.round(simulators.reduce((acc, s) => acc + (s.telemetry?.qtgSummary?.completionPct ?? 100), 0) / totalSimulators)
+      : 100;
+
+    const simulatorSummary = {
+      totalSimulators,
+      readyBays,
+      inSortieBays,
+      degradedBays,
+      aogBays,
+      todayFlightHours: simTodayHours,
+      dispatchReliabilityPct: simDispatchRel,
+      openSnagsCount,
+      qtgCompliancePct
+    };
+
     res.json({
       success: true,
       data: {
         generatedAt: now.toISOString(),
         trendDays,
+        simulators,
+        simulatorSummary,
         kpis: {
           totalOps,
           activeOps,
@@ -610,7 +673,18 @@ router.get('/recent-activity', async (req, res, next) => {
           { model: InventoryItem, as: 'item', attributes: ['id', 'name', 'sku', 'unit'] },
           { model: User, as: 'user', attributes: ['id', 'first_name', 'last_name'] }
         ]
-      })
+      }),
+      Simulator.findAll({ order: [['bay_code', 'ASC'], ['code', 'ASC']] }),
+      Operation.findAll({
+        where: { simulator_id: { [Op.ne]: null }, status: { [Op.ne]: 'CANCELLED' } },
+        attributes: ['id', 'simulator_id', 'sortie_code', 'title', 'customer_operator', 'status', 'start_date', 'end_date', 'scheduled_hours', 'lost_training_minutes']
+      }),
+      MaintenanceRecord.findAll({
+        where: { simulator_id: { [Op.ne]: null } },
+        attributes: ['id', 'simulator_id', 'status', 'severity', 'is_snag']
+      }),
+      SimulatorQtgRecord.findAll({ attributes: ['id', 'simulator_id', 'status'] }),
+      SimulatorSubsystem.findAll({ attributes: ['id', 'simulator_id', 'subsystem_code', 'status'] })
     ]);
 
     res.json({

@@ -11,7 +11,7 @@ import { takeUntil } from 'rxjs/operators';
 
 import { ApiService, ToastService, UiCustomizationService, UiSectionPreferences } from '../../../../core/services/services';
 import {
-  IntervalType, Priority, Task, TaskAssignee, TaskComment, TaskStatus, User
+  IntervalType, Priority, Simulator, Task, TaskAssignee, TaskComment, TaskStatus, User
 } from '../../../../core/models/interfaces';
 import { DateTimePickerComponent } from '../../../../shared/components/datetime-picker/datetime-picker.component';
 import { DropdownComponent, DropdownOptionComponent } from '../../../../shared/components/dropdown/dropdown.component';
@@ -49,6 +49,7 @@ export class TaskDetailDrawerComponent implements OnChanges, OnDestroy {
   @Input() defaultInterval: IntervalType = 'ONCE';
   @Input() defaultTitle = '';
   @Input() assignees: TaskAssignee[] = [];
+  @Input() simulators: Simulator[] = [];
   @Input() allTasks: Task[] = [];
   @Input() currentUser: User | null = null;
   @Input() uiPrefs: UiSectionPreferences | null = null;
@@ -140,6 +141,7 @@ export class TaskDetailDrawerComponent implements OnChanges, OnDestroy {
         interval_type:   this.task.interval_type || 'ONCE',
         status:          this.task.status || 'TODO',
         priority:        this.task.priority || 'MEDIUM',
+        simulator_id:    this.task.simulator_id ?? this.task.simulator?.id ?? null,
         assigned_to:     this.task.assigned_to ?? this.task.assignee?.id ?? null,
         estimated_hours: this.task.estimated_hours ?? null,
         actual_hours:    this.task.actual_hours ?? null,
@@ -165,6 +167,7 @@ export class TaskDetailDrawerComponent implements OnChanges, OnDestroy {
       interval_type:   this.defaultInterval || 'ONCE',
       status:          this.defaultStatus || 'TODO',
       priority:        'MEDIUM' as Priority,
+      simulator_id:    null,
       assigned_to:     null,
       estimated_hours: null,
       actual_hours:    null,
@@ -194,6 +197,7 @@ export class TaskDetailDrawerComponent implements OnChanges, OnDestroy {
       interval_type:   this.form.interval_type,
       status:          this.form.status,
       priority:        this.form.priority,
+      simulator_id:    this.form.simulator_id ? Number(this.form.simulator_id) : null,
       assigned_to:     this.form.assigned_to || null,
       estimated_hours: this.form.estimated_hours === '' ? null : this.form.estimated_hours,
       actual_hours:    this.form.actual_hours === '' ? null : this.form.actual_hours,

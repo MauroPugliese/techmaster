@@ -5,6 +5,7 @@ const { literal } = require('sequelize');
 
 const VALID_MOVEMENT_TYPES = new Set(['IN', 'OUT', 'TRANSFER', 'ADJUSTMENT', 'RETURN']);
 const VALID_BULK_ACTIONS = new Set(['category', 'location', 'deactivate']);
+const VALID_PART_CLASSIFICATIONS = new Set(['CONSUMABLE', 'ROTATABLE_LRU', 'TOOL_CALIBRATED']);
 
 /**
  * Returns the effective low-stock alert threshold for an inventory item.
@@ -207,6 +208,49 @@ function sanitizeInventoryPayload(body = {}, { isCreate = false } = {}) {
 
   if (body.is_active !== undefined) {
     payload.is_active = Boolean(body.is_active);
+  }
+
+  if (body.part_classification !== undefined) {
+    const cls = String(body.part_classification || 'CONSUMABLE').trim().toUpperCase();
+    if (!VALID_PART_CLASSIFICATIONS.has(cls)) {
+      return { error: 'Invalid part_classification.' };
+    }
+    payload.part_classification = cls;
+  }
+
+  if (body.aog_critical !== undefined) {
+    payload.aog_critical = Boolean(body.aog_critical);
+  }
+
+  if (body.lead_time_days !== undefined) {
+    const lt = toNonNegativeInt(body.lead_time_days, 7);
+    if (Number.isNaN(lt)) return { error: 'lead_time_days must be a non-negative integer.' };
+    payload.lead_time_days = lt;
+  }
+
+  if (body.unserviceable_qty !== undefined) {
+    const uq = toNonNegativeInt(body.unserviceable_qty, 0);
+    if (Number.isNaN(uq)) return { error: 'unserviceable_qty must be a non-negative integer.' };
+    payload.unserviceable_qty = uq;
+  }
+
+  if (body.compatible_models !== undefined) {
+    if (body.compatible_models === null || body.compatible_models === '') {
+      payload.compatible_models = [];
+    } else if (Array.isArray(body.compatible_models)) {
+      payload.compatible_models = body.compatible_models
+        .map(m => String(m || '').trim())
+        .filter(Boolean)
+        .slice(0, 30);
+    } else if (typeof body.compatible_models === 'string') {
+      payload.compatible_models = body.compatible_models
+        .split(',')
+        .map(m => m.trim())
+        .filter(Boolean)
+        .slice(0, 30);
+    } else {
+      return { error: 'compatible_models must be an array or comma-separated string.' };
+    }
   }
 
   return { data: payload };

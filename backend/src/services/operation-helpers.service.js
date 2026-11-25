@@ -5,6 +5,7 @@ const VALID_OP_STATUSES = new Set(['PLANNED', 'IN_PROGRESS', 'COMPLETED', 'CANCE
 const VALID_OP_PRIORITIES = new Set(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']);
 const VALID_BULK_ACTIONS = new Set(['status', 'priority', 'delete']);
 const OPEN_OP_STATUSES = new Set(['PLANNED', 'IN_PROGRESS', 'ON_HOLD']);
+const VALID_SORTIE_OUTCOMES = new Set(['PENDING', 'CLEAN', 'COMPLETED_WITH_SNAGS', 'INTERRUPTED_TECH', 'NO_SHOW', 'CANCELLED']);
 
 /**
  * Returns true if an open operation's planned end_date has passed.
@@ -156,6 +157,66 @@ function sanitizeOperationPayload(body = {}, { isCreate = false, existing = null
     payload.metadata = body.metadata;
   }
 
+  if (body.simulator_id !== undefined) {
+    if (body.simulator_id === null || body.simulator_id === '') {
+      payload.simulator_id = null;
+    } else {
+      const simId = Number(body.simulator_id);
+      if (!Number.isInteger(simId) || simId < 1) {
+        return { error: 'Invalid simulator_id.' };
+      }
+      payload.simulator_id = simId;
+    }
+  }
+
+  if (body.sortie_code !== undefined) {
+    const sc = String(body.sortie_code ?? '').trim().toUpperCase();
+    if (sc.length > 50) return { error: 'sortie_code max 50 characters.' };
+    payload.sortie_code = sc || null;
+  }
+
+  for (const [k, len] of [['customer_operator', 120], ['scenario_code', 120], ['weather_profile', 80], ['snag_summary', 2000]]) {
+    if (body[k] !== undefined) {
+      const val = String(body[k] ?? '').trim();
+      if (val.length > len) return { error: `${k} max ${len} characters.` };
+      payload[k] = val || null;
+    }
+  }
+
+  if (body.motion_required !== undefined) {
+    payload.motion_required = Boolean(body.motion_required);
+  }
+
+  for (const hKey of ['scheduled_hours', 'actual_flight_hours']) {
+    if (body[hKey] !== undefined) {
+      if (body[hKey] === null || body[hKey] === '') {
+        payload[hKey] = null;
+      } else {
+        const hrs = Number(body[hKey]);
+        if (!Number.isFinite(hrs) || hrs < 0 || hrs > 24) {
+          return { error: `${hKey} must be between 0 and 24.` };
+        }
+        payload[hKey] = Math.round(hrs * 100) / 100;
+      }
+    }
+  }
+
+  if (body.lost_training_minutes !== undefined) {
+    const mins = Number(body.lost_training_minutes ?? 0);
+    if (!Number.isFinite(mins) || mins < 0 || mins > 1440) {
+      return { error: 'lost_training_minutes must be between 0 and 1440.' };
+    }
+    payload.lost_training_minutes = Math.round(mins);
+  }
+
+  if (body.outcome !== undefined) {
+    const out = String(body.outcome || 'PENDING').trim().toUpperCase();
+    if (!VALID_SORTIE_OUTCOMES.has(out)) {
+      return { error: 'Invalid sortie outcome.' };
+    }
+    payload.outcome = out;
+  }
+
   return { data: payload };
 }
 
@@ -243,6 +304,9 @@ function buildOperationSortOrder(sortBy, sortDir, { OperationType, User } = {}) 
 /**
  * Aggregates global Operations KPI metrics.
  */
+/**
+ * Aggregates global Operations KPI metrics.
+ */
 function summarizeOperationRows(rows = [], now = new Date()) {
   let planned_count = 0;
   let in_progress_count = 0;
@@ -291,6 +355,47 @@ function summarizeOperationRows(rows = [], now = new Date()) {
   };
 }
 
+/**
+ * Computes flight simulator sortie hours, lost training time, and dispatch reliability.
+ */
+function summarizeSortieFleetMetrics(rows = []) {
+  let totalScheduledMinutes = 0;
+  let totalActualHours = 0;
+  let totalLostMinutes = 0;
+  let snag_sorties_count = 0;
+
+  for (const row of rows) {
+    const mins = calculateDurationMinutes(row.start_date, row.actual_end_date || row.end_date);
+    if (row.status !== 'CANCELLED') {
+      const schedMin = Number(row.scheduled_hours) > 0
+        ? Math.round(Number(row.scheduled_hours) * 60)
+        : (mins || 0);
+      totalScheduledMinutes += schedMin;
+      const actH = row.actual_flight_hours !== null && row.actual_flight_hours !== undefined
+        ? Number(row.actual_flight_hours) || 0
+        : (row.status === 'COMPLETED' && mins ? mins / 60 : 0);
+      totalActualHours += actH;
+      totalLostMinutes += Math.max(0, Number(row.lost_training_minutes) || 0);
+    }
+
+    if (row.outcome === 'COMPLETED_WITH_SNAGS' || row.outcome === 'INTERRUPTED_TECH' || (Number(row.lost_training_minutes) || 0) > 0) {
+      snag_sorties_count += 1;
+    }
+  }
+
+  const dispatch_reliability_pct = totalScheduledMinutes > 0
+    ? Math.max(0, Math.min(100, Math.round(((totalScheduledMinutes - totalLostMinutes) / totalScheduledMinutes) * 1000) / 10))
+    : 100;
+
+  return {
+    total_scheduled_hours: Math.round((totalScheduledMinutes / 60) * 10) / 10,
+    total_actual_hours: Math.round(totalActualHours * 10) / 10,
+    total_lost_minutes: totalLostMinutes,
+    dispatch_reliability_pct,
+    snag_sorties_count
+  };
+}
+
 module.exports = {
   isOperationOverdue,
   calculateDurationMinutes,
@@ -299,5 +404,6 @@ module.exports = {
   sanitizeBulkOperationAction,
   sanitizeOperationLogPayload,
   buildOperationSortOrder,
-  summarizeOperationRows
+  summarizeOperationRows,
+  summarizeSortieFleetMetrics
 };

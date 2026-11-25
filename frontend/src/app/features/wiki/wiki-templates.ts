@@ -27,6 +27,81 @@ export const WIKI_ICON_CHOICES: string[] = [
 
 export const WIKI_TEMPLATES: WikiTemplateOption[] = [
   {
+    id: 'cae-morning-readiness-sop',
+    name: 'Morning FSTD Bay Readiness & Pre-Flight SOP',
+    description: 'Daily pre-sortie engineering verification checklist for CAE Level D Flight Simulators.',
+    icon: 'flight_takeoff',
+    badge: 'CAE SOP',
+    tags: ['FSTD', 'Pre-Flight', 'Readiness', 'CAE'],
+    content: `# Morning FSTD Bay Readiness & Pre-Flight SOP
+
+**Document ID:** CAE-SOP-FSTD-01 · **Applies to:** All Full Flight Simulators (Level D) & FTDs
+
+## 1. Bay Safety & Power-Up Sequence
+- [ ] Verify bay doors clear, visual dome emergency stops reset, and no active **LOTO** tags present.
+- [ ] Inspect HPU fluid level and chilled water supply temperature (18°C – 22°C).
+- [ ] Power ON Host Computing Cluster (SimCore / avionics racks) and confirm green health status on IOS.
+
+## 2. 6-DOF Motion & Control Loading Checks
+- [ ] Engage Hydraulic Power Unit and run automated **Motion System Warm-up & Settling Check**.
+- [ ] Verify Control Loading System (CLS) feel forces on captain/FO columns, rudder pedals, and tiller.
+
+## 3. Visual, Sound & Navigation Database
+- [ ] Power ON Medallion / Barco projectors; confirm cross-channel luminance, warp, and edge-blend alignment.
+- [ ] Confirm current **AIRAC cycle** loaded and IOS weather/runway presets responsive.
+- [ ] Record any anomaly as a Discrepancy Report (DR) in **SMaRT Maintenance** and update Bay MEL status before 06:00 UTC Dispatch.
+`
+  },
+  {
+    id: 'cae-quarterly-qtg-runbook',
+    name: 'EASA CS-FSTD(A) Quarterly QTG Runbook',
+    description: 'Standard procedure for executing automated & manual QTG tests across Q1–Q4 regulatory blocks.',
+    icon: 'fact_check',
+    badge: 'QTG',
+    tags: ['QTG', 'EASA', 'FAA', 'Compliance'],
+    content: `# EASA CS-FSTD(A) / FAA Part 60 Quarterly QTG Execution Runbook
+
+## 1. Preparation & Trim Conditions
+- Reserve a minimum **3-hour engineering slot** on the Bay Gantt Timeline.
+- Ensure simulator configuration matches the **Master QTG Baseline** (Software Load, Aerodynamic Model, Motion Filter set).
+
+## 2. Test Execution Matrix
+1. Navigate to **Flight Simulators → Workspace → QTG & Qualification** or **Maintenance → QTG Compliance**.
+2. Execute the quarterly **25% automatic QTG batch** (Performance, Handling Qualities, Motion Cueing, Visual & Sound).
+3. Complete functional & subjective evaluation checks in cockpit with TRI/Engineer sign-off.
+
+## 3. Tolerance Analysis & Disposition
+- **PASSED:** All traces fall strictly within CS-FSTD(A) tolerances; record executed date & delta in SMaRT.
+- **TOLERANCE_WARN:** Approaching limit or minor transducer drift — log corrective tuning work order within 7 days.
+- **FAILED:** Open an immediate Discrepancy Report (DR), assess MEL dispatch impact, and notify Authority Liaison if recurring.
+`
+  },
+  {
+    id: 'cae-motion-visual-loto',
+    name: '6-DOF Motion & Visual LOTO Safety Procedure',
+    description: 'Lockout/Tagout (LOTO) safety isolation protocol before entering motion envelope or projector gantry.',
+    icon: 'security',
+    badge: 'LOTO',
+    tags: ['LOTO', 'Safety', 'Motion', 'HPU'],
+    content: `# 6-DOF Motion & Collimated Visual LOTO Safety Procedure
+
+> **CRITICAL SAFETY NOTICE:** Never enter the motion platform underside envelope or drawbridge perimeter while HPU accumulators remain pressurized.
+
+## 1. Motion Envelope Isolation (Lockout/Tagout)
+1. Park simulator cockpit cleanly at **Ref / Parked attitude** and disengage motion on IOS.
+2. Trip main **HPU Isolation Breaker** on Bay Power Panel and bleed accumulator pressure gauge to **0 bar**.
+3. Apply personal **LOTO padlock + tag** and log the active Lockout in the **Shifts Handover Log**.
+4. Engage physical access gate interlock switch before crossing yellow hazard line.
+
+## 2. Visual Projector & Laser Optics Safety
+- Allow projector lamp/laser assemblies 15 minutes cool-down before opening optical housing.
+- Wear ESD wrist strap when handling image generator (IG) cards or collimator mirror mounts.
+
+## 3. Return to Service
+- Account for all tools & calibrated equipment, remove personal LOTO locks, run dry-cycle motion check from IOS before releasing bay to **READY**.
+`
+  },
+  {
     id: 'sop',
     name: 'Standard Operating Procedure (SOP + LOTO)',
     description: 'Safety prerequisites, LOTO callout, step checklist, and approval diagram.',

@@ -26,23 +26,25 @@ interface NavPage {
   group: string;
   title: string;
   subtitle: string;
+  showDateFilter?: boolean;
 }
 
 const SIDEBAR_STORAGE_KEY = 'smart_sidebar_collapsed';
 
 const PAGE_MAP: Record<string, NavPage> = {
-  '/admin':                 { path: '/admin',                 group: 'Administration', title: 'Admin Settings',       subtitle: 'Platform configuration and user management' },
-  '/dashboard':             { path: '/dashboard',             group: 'Overview',       title: 'Dashboard',            subtitle: 'Real-time operational overview' },
-  '/operations':            { path: '/operations',            group: 'Operations',     title: 'Operations & Sorties', subtitle: 'Deployments, sorties and team rosters' },
-  '/maintenance/planned':   { path: '/maintenance/planned',   group: 'Operations',     title: 'Planned Maintenance',  subtitle: 'Recurring preventive calendar' },
-  '/maintenance':           { path: '/maintenance',           group: 'Operations',     title: 'Maintenance & Assets', subtitle: 'Work orders and hardware registry' },
-  '/warehouse':             { path: '/warehouse',             group: 'Operations',     title: 'Warehouse',            subtitle: 'Inventory control and stock movements' },
-  '/shifts':                { path: '/shifts',                group: 'Operations',     title: 'Shifts & Roster',      subtitle: 'Employee scheduling and rotations' },
-  '/analytics/operations':  { path: '/analytics/operations',  group: 'Intelligence',   title: 'Operations Analytics', subtitle: 'Mission tempo and efficiency deep dive' },
-  '/analytics':             { path: '/analytics',             group: 'Intelligence',   title: 'Analytics & Reports',  subtitle: 'Executive reporting and data visualization' },
-  '/tasks':                 { path: '/tasks',                 group: 'Intelligence',   title: 'Task Manager',         subtitle: 'Recurring tasks and execution queues' },
-  '/wiki':                  { path: '/wiki',                  group: 'Knowledge',      title: 'Wiki & Docs',          subtitle: 'Internal knowledge base and SOPs' },
-  '/profile':               { path: '/profile',               group: 'Account',        title: 'My Profile',           subtitle: 'Personal info, password and active sessions' },
+  '/admin':                 { path: '/admin',                 group: 'Administration',    title: 'Admin Settings',       subtitle: 'Platform configuration and user management',      showDateFilter: false },
+  '/dashboard':             { path: '/dashboard',             group: 'Overview',          title: 'Control Room',         subtitle: 'Live simulator bays, sorties & center health',    showDateFilter: true  },
+  '/simulators':            { path: '/simulators',            group: 'Simulator Center',  title: 'Flight Simulators',    subtitle: 'CAE FSTD bays, subsystems, QTG & airworthiness',  showDateFilter: false },
+  '/operations':            { path: '/operations',            group: 'Simulator Center',  title: 'Sorties & Dispatch',   subtitle: '24h bay timeline, sorties & crew dispatch',       showDateFilter: true  },
+  '/maintenance/planned':   { path: '/maintenance/planned',   group: 'Engineering',       title: 'Planned Maintenance',  subtitle: 'Recurring preventive calendar',                   showDateFilter: false },
+  '/maintenance':           { path: '/maintenance',           group: 'Engineering',       title: 'Maintenance & QTG',    subtitle: 'Work orders, snags (DR), QTG & assets',           showDateFilter: true  },
+  '/warehouse':             { path: '/warehouse',             group: 'Logistics',         title: 'Warehouse & Spares',   subtitle: 'Aviation LRUs, AOG stock & movements',            showDateFilter: true  },
+  '/shifts':                { path: '/shifts',                group: 'Workforce',         title: 'Shifts & Roster',      subtitle: 'Certified sim engineers & handover log',          showDateFilter: false },
+  '/analytics/operations':  { path: '/analytics/operations',  group: 'Intelligence',      title: 'Sorties Analytics',    subtitle: 'Dispatch reliability, bay utilization & snags',   showDateFilter: true  },
+  '/analytics':             { path: '/analytics',             group: 'Intelligence',      title: 'Analytics & Reports',  subtitle: 'Executive reporting and data visualization',      showDateFilter: true  },
+  '/tasks':                 { path: '/tasks',                 group: 'Intelligence',      title: 'Task Manager',         subtitle: 'Engineering tasks and recurring checklists',      showDateFilter: true  },
+  '/wiki':                  { path: '/wiki',                  group: 'Knowledge',         title: 'Wiki & Docs',          subtitle: 'CAE SOPs, QTG runbooks & LOTO guides',            showDateFilter: false },
+  '/profile':               { path: '/profile',               group: 'Account',           title: 'My Profile',           subtitle: 'Personal info, password and active sessions',     showDateFilter: false },
 };
 
 @Component({
@@ -75,16 +77,20 @@ export class ShellComponent implements OnInit, OnDestroy {
   pageGroup = 'Overview';
   pageTitle = 'Dashboard';
   pageSubtitle = '';
+  showGlobalDateFilter = true;
   dateLabel = 'All time';
   hasDateFilter = false;
   activePreset: string | null = null;
   pickerFrom: Date | null = null;
   pickerTo: Date | null = null;
 
+  simulatorsAlertCount = 0;
   activeOpsCount = 0;
   pendingMaintCount = 0;
   lowStockCount = 0;
   openTasksCount = 0;
+  utcClock = '';
+  localClock = '';
   notifications: Notification[] = [];
   unreadNotifications = 0;
   navSections: NavSectionAccess[] = [];
@@ -136,6 +142,11 @@ export class ShellComponent implements OnInit, OnDestroy {
       this.unreadNotifications = this.notifications.filter(n => !n.is_read).length;
       this.loadNavBadges();
       this.cdr.markForCheck();
+    });
+
+    this.updateAviationClocks();
+    interval(15_000).pipe(takeUntil(this.destroy$)).subscribe(() => {
+      this.updateAviationClocks();
     });
 
     interval(60_000).pipe(takeUntil(this.destroy$)).subscribe(() => {
@@ -347,6 +358,7 @@ export class ShellComponent implements OnInit, OnDestroy {
       this.pageGroup = page.group;
       this.pageTitle = page.title;
       this.pageSubtitle = page.subtitle;
+      this.showGlobalDateFilter = page.showDateFilter !== false;
     }
   }
 
@@ -365,11 +377,19 @@ export class ShellComponent implements OnInit, OnDestroy {
     });
   }
 
+  private updateAviationClocks(): void {
+    const now = new Date();
+    this.utcClock = `${String(now.getUTCHours()).padStart(2, '0')}:${String(now.getUTCMinutes()).padStart(2, '0')}`;
+    this.localClock = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    this.cdr.markForCheck();
+  }
+
   private loadNavBadges(): void {
     this.api.get<any>('/search/nav-badges').subscribe({
       next: (res) => {
         const d = res?.data;
         if (!d) return;
+        this.simulatorsAlertCount = Number(d.simulators) || 0;
         this.activeOpsCount = Number(d.operations) || 0;
         this.pendingMaintCount = Number(d.maintenance) || 0;
         this.lowStockCount = Number(d.warehouse) || 0;

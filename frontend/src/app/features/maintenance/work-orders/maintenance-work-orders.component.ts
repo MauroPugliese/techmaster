@@ -26,9 +26,11 @@ import {
   Asset,
   MaintenanceRecord,
   MaintenanceStatus,
-  MaintenanceSummary
+  MaintenanceSummary,
+  Simulator
 } from '../../../core/models/interfaces';
 import { DropdownComponent, DropdownOptionComponent } from '../../../shared/components/dropdown/dropdown.component';
+import { SUBSYSTEM_META } from '../../simulators/simulator-helpers';
 import {
   formatDowntime,
   formatEnumLabel,
@@ -50,11 +52,13 @@ import {
 export class MaintenanceWorkOrdersComponent implements OnInit, OnChanges, OnDestroy {
   @ViewChild('searchInput') searchInput?: ElementRef<HTMLInputElement>;
 
+  @Input() simulators: Simulator[] = [];
   @Input() assets: Asset[] = [];
   @Input() uiPrefs: UiSectionPreferences | null = null;
   @Input() refreshTick = 0;
   @Input() externalStatusFilter = '';
   @Input() externalSearch = '';
+  @Input() externalSimulatorId: number | null = null;
 
   @Output() logWorkOrderRequested = new EventEmitter<void>();
   @Output() editWorkOrderRequested = new EventEmitter<MaintenanceRecord>();
@@ -84,6 +88,7 @@ export class MaintenanceWorkOrdersComponent implements OnInit, OnChanges, OnDest
   priorityFilter = '';
   typeFilter = '';
   assetFilter: number | '' = '';
+  simulatorFilter: number | '' = '';
   sortBy = 'scheduled_date';
   sortDir: 'ASC' | 'DESC' = 'ASC';
 
@@ -108,6 +113,9 @@ export class MaintenanceWorkOrdersComponent implements OnInit, OnChanges, OnDest
     }
     if (this.externalSearch) {
       this.searchQuery = this.externalSearch;
+    }
+    if (this.externalSimulatorId) {
+      this.simulatorFilter = this.externalSimulatorId;
     }
 
     this.searchInput$
@@ -144,6 +152,11 @@ export class MaintenanceWorkOrdersComponent implements OnInit, OnChanges, OnDest
     }
     if (changes['externalSearch'] && this.searchQuery !== this.externalSearch) {
       this.searchQuery = this.externalSearch;
+      this.page = 1;
+      shouldReload = true;
+    }
+    if (changes['externalSimulatorId'] && (this.simulatorFilter || null) !== this.externalSimulatorId) {
+      this.simulatorFilter = this.externalSimulatorId || '';
       this.page = 1;
       shouldReload = true;
     }
@@ -200,6 +213,7 @@ export class MaintenanceWorkOrdersComponent implements OnInit, OnChanges, OnDest
       priority: this.priorityFilter,
       type: this.typeFilter,
       asset_id: this.assetFilter || '',
+      simulator_id: this.simulatorFilter || '',
       sort_by: this.sortBy,
       sort_dir: this.sortDir,
       page: this.page,
@@ -211,6 +225,7 @@ export class MaintenanceWorkOrdersComponent implements OnInit, OnChanges, OnDest
       priority: this.priorityFilter,
       type: this.typeFilter,
       asset_id: this.assetFilter || '',
+      simulator_id: this.simulatorFilter || '',
       search: this.searchQuery.trim()
     });
 
@@ -258,7 +273,8 @@ export class MaintenanceWorkOrdersComponent implements OnInit, OnChanges, OnDest
       this.statusFilter ||
       this.priorityFilter ||
       this.typeFilter ||
-      this.assetFilter !== ''
+      this.assetFilter !== '' ||
+      this.simulatorFilter !== ''
     );
   }
 
@@ -268,6 +284,7 @@ export class MaintenanceWorkOrdersComponent implements OnInit, OnChanges, OnDest
     this.priorityFilter = '';
     this.typeFilter = '';
     this.assetFilter = '';
+    this.simulatorFilter = '';
     this.applyFilters();
   }
 
@@ -390,12 +407,22 @@ export class MaintenanceWorkOrdersComponent implements OnInit, OnChanges, OnDest
 
   recordSubline(r: MaintenanceRecord): string {
     const parts: string[] = [];
+    if (r.simulator) {
+      parts.push(`${r.simulator.bay_code || r.simulator.code}`);
+    }
+    if (r.subsystem_code) {
+      const sub = (SUBSYSTEM_META as any)[r.subsystem_code];
+      parts.push(sub ? sub.label : r.subsystem_code);
+    }
     if (this.showTableField('asset') && r.asset?.name) {
       parts.push(r.asset.name);
       if (r.asset.serial_number) parts.push(`S/N ${r.asset.serial_number}`);
     }
     if (this.showTableField('type') && r.type) {
       parts.push(formatEnumLabel(r.type));
+    }
+    if (r.lost_training_hours && Number(r.lost_training_hours) > 0) {
+      parts.push(`${r.lost_training_hours}h lost training`);
     }
     return parts.join(' · ');
   }

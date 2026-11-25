@@ -20,6 +20,7 @@ function clampCount(value) {
 function normalizeNavBadges(rawCounts = {}) {
   const src = rawCounts && typeof rawCounts === 'object' ? rawCounts : {};
   return {
+    simulators: clampCount(src.simulators),
     operations: clampCount(src.operations),
     maintenance: clampCount(src.maintenance),
     warehouse: clampCount(src.warehouse),
@@ -30,10 +31,10 @@ function normalizeNavBadges(rawCounts = {}) {
 
 function statusToTone(status) {
   const key = String(status || '').toUpperCase();
-  if (['COMPLETED', 'DONE', 'PUBLISHED', 'ACTIVE', 'IN STOCK'].includes(key)) return 'success';
-  if (['IN_PROGRESS', 'SCHEDULED', 'PLANNED', 'REVIEW'].includes(key)) return 'info';
-  if (['ON_HOLD', 'DEFERRED', 'UNDER_MAINTENANCE', 'LOW STOCK', 'DRAFT'].includes(key)) return 'warning';
-  if (['FAILED', 'OVERDUE', 'OUT OF STOCK', 'CANCELLED', 'LOST', 'RETIRED'].includes(key)) return 'danger';
+  if (['COMPLETED', 'DONE', 'PUBLISHED', 'ACTIVE', 'READY', 'IN STOCK'].includes(key)) return 'success';
+  if (['IN_PROGRESS', 'IN_SORTIE', 'PRE_FLIGHT', 'SCHEDULED', 'PLANNED', 'REVIEW'].includes(key)) return 'info';
+  if (['ON_HOLD', 'DEFERRED', 'UNDER_MAINTENANCE', 'MAINTENANCE', 'DEGRADED', 'LOW STOCK', 'DRAFT'].includes(key)) return 'warning';
+  if (['FAILED', 'OVERDUE', 'OUT OF STOCK', 'CANCELLED', 'LOST', 'RETIRED', 'AOG'].includes(key)) return 'danger';
   return 'neutral';
 }
 
@@ -49,18 +50,33 @@ function buildSearchGroups(payload = {}) {
 
   const groups = [
     {
+      key: 'simulators',
+      label: 'Flight Simulators',
+      sectionKey: 'simulators',
+      items: (src.simulators || []).map((sim) => ({
+        id: sim.id,
+        kind: 'simulator',
+        title: `${sim.bay_code || ''} · ${sim.code || sim.name}`.replace(/^\s*·\s*/, ''),
+        subtitle: joinSubtitle([sim.aircraft_type, sim.qualification_level]),
+        badge: sim.status || 'READY',
+        badgeTone: statusToTone(sim.status),
+        route: '/simulators',
+        queryParams: { id: sim.id }
+      }))
+    },
+    {
       key: 'operations',
-      label: 'Operations',
+      label: 'Sorties & Dispatch',
       sectionKey: 'operations',
       items: (src.operations || []).map((op) => ({
         id: op.id,
         kind: 'operation',
-        title: op.title || `Operation #${op.id}`,
-        subtitle: joinSubtitle([op.location, op.priority]),
+        title: op.sortie_code ? `${op.sortie_code} · ${op.title}` : (op.title || `Sortie #${op.id}`),
+        subtitle: joinSubtitle([op.customer_operator, op.location, op.priority]),
         badge: op.status || 'PLANNED',
         badgeTone: statusToTone(op.status),
         route: '/operations',
-        queryParams: { search: op.title || String(op.id) }
+        queryParams: { search: op.sortie_code || op.title || String(op.id) }
       }))
     },
     {

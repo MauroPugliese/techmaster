@@ -356,6 +356,7 @@
     <div class="priority-stripe" [style.background]="priorityColor(task.priority)"></div>
 
     <div class="card-tags">
+      <span class="tag bay-tag" *ngIf="task.simulator?.bay_code || task.simulator?.code">{{task.simulator?.bay_code || task.simulator?.code}}</span>
       <span class="tag interval-tag">{{task.interval_type}}</span>
       <span class="tag priority-tag"
             [style.background]="priorityColor(task.priority) + '1A'"
@@ -442,6 +443,7 @@
   [defaultInterval]="activeInterval || 'ONCE'"
   [defaultTitle]="drawerPreTitle"
   [assignees]="assignees"
+  [simulators]="simulators"
   [allTasks]="allTasks"
   [currentUser]="currentUser"
   [uiPrefs]="uiPrefs"

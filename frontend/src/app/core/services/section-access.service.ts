@@ -15,12 +15,13 @@ export interface NavSectionAccess {
 
 const DEFAULT_SECTIONS: NavSectionAccess[] = [
   { section_key: 'dashboard', path: '/dashboard', label: 'Dashboard', group: 'Overview', icon: 'dashboard', is_visible: true, source: 'default' },
-  { section_key: 'operations', path: '/operations', label: 'Operations & Sorties', group: 'Operations', icon: 'rocket_launch', is_visible: true, source: 'default' },
+  { section_key: 'simulators', path: '/simulators', label: 'Flight Simulators', group: 'Operations', icon: 'flight', is_visible: true, source: 'default' },
+  { section_key: 'operations', path: '/operations', label: 'Sorties & Dispatch', group: 'Operations', icon: 'flight_takeoff', is_visible: true, source: 'default' },
   { section_key: 'maintenance', path: '/maintenance', label: 'Maintenance', group: 'Operations', icon: 'build_circle', is_visible: true, source: 'default' },
   { section_key: 'warehouse', path: '/warehouse', label: 'Warehouse', group: 'Operations', icon: 'inventory_2', is_visible: true, source: 'default' },
   { section_key: 'shifts', path: '/shifts', label: 'Shifts', group: 'Operations', icon: 'schedule', is_visible: true, source: 'default' },
   { section_key: 'analytics', path: '/analytics', label: 'Analytics & Reports', group: 'Intelligence', icon: 'insights', is_visible: true, source: 'default' },
-  { section_key: 'operations_analytics', path: '/analytics/operations', label: 'Operations Analytics', group: 'Intelligence', icon: 'analytics', is_visible: true, source: 'default' },
+  { section_key: 'operations_analytics', path: '/analytics/operations', label: 'Sorties Analytics', group: 'Intelligence', icon: 'analytics', is_visible: true, source: 'default' },
   { section_key: 'tasks', path: '/tasks', label: 'Task Manager', group: 'Intelligence', icon: 'task_alt', is_visible: true, source: 'default' },
   { section_key: 'wiki', path: '/wiki', label: 'Wiki & Docs', group: 'Knowledge', icon: 'menu_book', is_visible: true, source: 'default' },
   { section_key: 'admin', path: '/admin', label: 'Admin Settings', group: 'Administration', icon: 'admin_panel_settings', is_visible: true, source: 'default' }

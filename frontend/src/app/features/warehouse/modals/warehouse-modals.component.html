@@ -101,9 +101,45 @@
         </div>
 
         <div class="form-group" *ngIf="showFormField('supplier')">
-          <label class="form-label">{{fieldLabel('form','supplier','Supplier')}}</label>
-          <input class="form-control" [(ngModel)]="itemForm.supplier" placeholder="e.g. Acme Corp">
+          <label class="form-label">{{fieldLabel('form','supplier','Supplier / OEM')}}</label>
+          <input class="form-control" [(ngModel)]="itemForm.supplier" placeholder="e.g. CAE Montreal / Honeywell">
         </div>
+      </div>
+
+      <!-- Aviation Spares & LRU Metadata -->
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Spare Classification</label>
+          <app-dropdown class="form-control" [(ngModel)]="itemForm.part_classification">
+            <app-dropdown-option value="CONSUMABLE">Consumable</app-dropdown-option>
+            <app-dropdown-option value="ROTATABLE_LRU">Rotatable LRU</app-dropdown-option>
+            <app-dropdown-option value="TOOL_CALIBRATED">Calibrated Tooling</app-dropdown-option>
+          </app-dropdown>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Compatible FSTD Platforms</label>
+          <input class="form-control" [(ngModel)]="itemForm.compatible_models_text" placeholder="e.g. A320neo, B737-8200, A350">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Lead Time (Days)</label>
+          <input type="number" class="form-control" [(ngModel)]="itemForm.lead_time_days" min="0" placeholder="7">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Unserviceable / Repair Qty (U/S)</label>
+          <input type="number" class="form-control" [(ngModel)]="itemForm.unserviceable_qty" min="0" placeholder="0">
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-bottom:10px">
+        <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:0.84rem;font-weight:600;color:#b91c1c">
+          <input type="checkbox" [(ngModel)]="itemForm.aog_critical">
+          <span>AOG Critical Part (Expedited Priority Dispatch Required)</span>
+        </label>
       </div>
 
       <div class="form-group" *ngIf="showFormField('description')">
@@ -377,6 +413,26 @@
         <div class="detail-field">
           <span class="detail-label">Total Valuation</span>
           <span class="detail-value wh-num">{{totalValue(detailItem)}}</span>
+        </div>
+
+        <div class="detail-field">
+          <span class="detail-label">Aviation Classification</span>
+          <span class="detail-value">
+            {{detailItem.part_classification || 'CONSUMABLE'}}
+            <span *ngIf="detailItem.aog_critical" style="color:#b91c1c;font-weight:700"> · AOG CRITICAL</span>
+          </span>
+        </div>
+
+        <div class="detail-field">
+          <span class="detail-label">Lead Time &amp; U/S Pool</span>
+          <span class="detail-value wh-num">
+            {{detailItem.lead_time_days ?? 7}}d lead · {{detailItem.unserviceable_qty ?? 0}} U/S in repair
+          </span>
+        </div>
+
+        <div class="detail-field full-span" *ngIf="detailItem.compatible_models?.length">
+          <span class="detail-label">Compatible Simulator Platforms</span>
+          <span class="detail-value">{{detailItem.compatible_models?.join(', ')}}</span>
         </div>
       </div>
 

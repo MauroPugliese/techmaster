@@ -436,3 +436,44 @@
     font-size: 0.76rem;
   }
 }
+
+
+/* ── Live Aviation UTC / Local Clock Pill ────────────────────────────────── */
+.aviation-clock-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--blue-950);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.76rem;
+  font-weight: 700;
+  white-space: nowrap;
+  flex-shrink: 0;
+
+  .clock-ico {
+    font-family: 'Material Icons Round';
+    font-size: 16px;
+    color: var(--primary);
+  }
+
+  .clock-sep {
+    color: var(--text-subtle);
+  }
+
+  .is-local {
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+}
+
+@media (max-width: 1180px) {
+  .aviation-clock-pill {
+    display: none;
+  }
+}

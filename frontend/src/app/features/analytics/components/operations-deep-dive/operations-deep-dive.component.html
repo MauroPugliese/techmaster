@@ -165,4 +165,101 @@
     </div>
   </div>
 
+  <!-- ── CAE Simulator Telemetry: Reliability Scorecard, Subsystems & Customers -->
+  <div class="card an-card" *ngIf="simulatorMetrics.bySimulator.length > 0">
+    <div class="an-card-head">
+      <div>
+        <h3>Simulator Bay Dispatch Reliability &amp; Utilization Scorecard</h3>
+        <p>Per-bay training delivery, lost training minutes &amp; technical dispatch rate</p>
+      </div>
+      <span class="an-badge-pill">FSTD Fleet</span>
+    </div>
+
+    <div class="an-sim-table-wrap">
+      <table class="data-table an-sim-table">
+        <thead>
+          <tr>
+            <th>Bay</th>
+            <th>Simulator</th>
+            <th>Aircraft</th>
+            <th>Sorties</th>
+            <th>Scheduled vs Actual Hrs</th>
+            <th>Lost Min</th>
+            <th>Dispatch Reliability</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let row of simulatorMetrics.bySimulator">
+            <td><span class="an-bay-badge an-num">{{row.bay_code}}</span></td>
+            <td class="an-num font-bold">{{row.simulator_code}}</td>
+            <td>{{row.aircraft_type}}</td>
+            <td class="an-num">{{row.sortie_count}}</td>
+            <td class="an-num">{{row.scheduled_hours}}h / {{row.actual_hours}}h</td>
+            <td class="an-num" [style.color]="row.lost_minutes > 0 ? '#b91c1c' : '#475569'">{{row.lost_minutes}}m</td>
+            <td>
+              <div class="an-rel-cell">
+                <div class="an-rel-track">
+                  <div class="an-rel-fill" [style.width.%]="row.reliability_pct" [style.background]="row.reliability_pct >= 98 ? '#16a34a' : (row.reliability_pct >= 93 ? '#d97706' : '#dc2626')"></div>
+                </div>
+                <strong class="an-num">{{row.reliability_pct}}%</strong>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="an-grid-2" *ngIf="simulatorMetrics.snagsBySubsystem.length > 0 || simulatorMetrics.hoursByCustomer.length > 0">
+    <div class="card an-card">
+      <div class="an-card-head">
+        <div>
+          <h3>Technical Snags by Simulator Subsystem</h3>
+          <p>DR frequency, AOG counts &amp; lost training hours</p>
+        </div>
+        <span class="an-badge-pill">Pareto</span>
+      </div>
+
+      <div class="an-bar-list" *ngIf="simulatorMetrics.snagsBySubsystem.length > 0; else noSubSnags">
+        <div class="an-bar-row" *ngFor="let s of simulatorMetrics.snagsBySubsystem">
+          <div class="an-bar-top">
+            <strong>{{s.subsystem}}</strong>
+            <span class="an-num text-muted">{{s.count}} DRs · {{s.lost_hours}}h lost<ng-container *ngIf="s.aog_count > 0"> · <span style="color:#dc2626">{{s.aog_count}} AOG</span></ng-container></span>
+          </div>
+          <div class="an-bar-track">
+            <div class="an-bar-fill" style="background:#f59e0b" [style.width.%]="(s.count / maxSubSnags) * 100"></div>
+          </div>
+        </div>
+      </div>
+      <ng-template #noSubSnags>
+        <div class="an-empty-sub">No simulator subsystem snags logged.</div>
+      </ng-template>
+    </div>
+
+    <div class="card an-card">
+      <div class="an-card-head">
+        <div>
+          <h3>Training Hours by Airline / Customer</h3>
+          <p>Scheduled simulator bay hours delivered per operator</p>
+        </div>
+        <span class="an-badge-pill">Operators</span>
+      </div>
+
+      <div class="an-bar-list" *ngIf="simulatorMetrics.hoursByCustomer.length > 0; else noCustHrs">
+        <div class="an-bar-row" *ngFor="let c of simulatorMetrics.hoursByCustomer">
+          <div class="an-bar-top">
+            <strong>{{c.customer}}</strong>
+            <span class="an-num text-muted">{{c.scheduled_hours}}h · {{c.sorties}} sorties<ng-container *ngIf="c.lost_minutes > 0"> · {{c.lost_minutes}}m lost</ng-container></span>
+          </div>
+          <div class="an-bar-track">
+            <div class="an-bar-fill" style="background:#2563eb" [style.width.%]="(c.scheduled_hours / maxCustomerHours) * 100"></div>
+          </div>
+        </div>
+      </div>
+      <ng-template #noCustHrs>
+        <div class="an-empty-sub">No customer operator hours recorded yet.</div>
+      </ng-template>
+    </div>
+  </div>
+
 </div>

@@ -1,0 +1,318 @@
+.sim-modal-wide {
+  max-width: 780px;
+  font-family: var(--font-sans);
+}
+
+.sim-modal-sub {
+  margin: 2px 0 0;
+  font-size: 0.79rem;
+  color: var(--text-muted);
+}
+
+.sim-num {
+  font-variant-numeric: tabular-nums;
+}
+
+.sim-error-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border-radius: var(--radius-md);
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  color: #B91C1C;
+  font-size: 0.83rem;
+  font-weight: 600;
+
+  .mat-i {
+    font-size: 18px;
+  }
+}
+
+/* ── Top Visual Kind Selector ─────────────────────────────────────────── */
+.kind-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.kind-card-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  color: var(--blue-950);
+  text-align: left;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: var(--transition);
+
+  .mat-i {
+    font-size: 22px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  .kind-txt {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+
+    strong {
+      font-size: 0.83rem;
+      font-weight: 800;
+      color: var(--blue-950);
+    }
+
+    span {
+      font-size: 0.71rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  }
+
+  &:hover:not(.active) {
+    border-color: var(--blue-300);
+    background: var(--surface-raised);
+  }
+
+  &.active {
+    border-color: var(--primary);
+    background: var(--blue-50);
+    box-shadow: 0 0 0 2px rgba(21, 101, 192, 0.14);
+
+    .mat-i { color: var(--primary); }
+    .kind-txt strong { color: var(--primary); }
+  }
+}
+
+/* ── Always-Active Essential Setup Card ───────────────────────────────── */
+.essential-card {
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  border: 1px solid var(--blue-200);
+  margin-bottom: 14px;
+
+  .form-group {
+    margin-bottom: 0;
+  }
+}
+
+.essential-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.ess-tag {
+  font-size: 0.71rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--primary);
+}
+
+.ess-hint {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #15803D;
+}
+
+.sim-grid-4-ess {
+  display: grid;
+  grid-template-columns: 0.95fr 1.55fr 0.95fr 1.05fr;
+  gap: 10px;
+}
+
+/* ── Optional Modular Subsections Bar ─────────────────────────────────── */
+.opt-sections-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.opt-bar-lbl {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.opt-bar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.opt-link-btn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--primary);
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+
+  &:hover { text-decoration: underline; }
+}
+
+/* ── Checkbox-Toggleable Subsection Cards ─────────────────────────────── */
+.sec-card {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  margin-bottom: 8px;
+  transition: border-color 0.14s ease, background 0.14s ease;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+
+  &.is-enabled {
+    border-color: var(--blue-300);
+    box-shadow: var(--shadow-sm);
+  }
+}
+
+.sec-toggle-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  user-select: none;
+
+  &:hover {
+    background: var(--surface-raised);
+    border-radius: var(--radius-md);
+  }
+}
+
+.sec-checkbox {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--primary);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.sec-head-txt {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+
+  strong {
+    font-size: 0.82rem;
+    font-weight: 800;
+    color: var(--blue-950);
+  }
+
+  span {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+.sec-state-pill {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #F1F5F9;
+  color: #64748B;
+  font-size: 0.69rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  flex-shrink: 0;
+
+  &.on {
+    background: #DBEAFE;
+    color: #1D4ED8;
+  }
+}
+
+.sec-fieldset {
+  border: none;
+  margin: 0;
+  padding: 12px 12px 2px;
+  border-top: 1px solid var(--border);
+  min-width: 0;
+
+  .form-group {
+    margin-bottom: 12px;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+}
+
+.sim-modal-wide input.form-control:not([type="checkbox"]) {
+  height: 40px;
+  padding: 8px 12px;
+}
+
+.sim-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.sim-textarea-sm {
+  min-height: 62px;
+  resize: vertical;
+}
+
+.sim-scaffold-box {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--blue-50);
+  border: 1px solid var(--blue-200);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.sim-check-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--blue-950);
+  cursor: pointer;
+
+  input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    accent-color: var(--primary);
+  }
+}
+
+@media (max-width: 720px) {
+  .kind-picker-grid,
+  .sim-grid-4-ess,
+  .sim-grid-3 {
+    grid-template-columns: 1fr;
+  }
+}

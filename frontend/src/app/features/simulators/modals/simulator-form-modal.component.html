@@ -1,0 +1,315 @@
+<div class="modal-overlay" *ngIf="visible" (click)="onOverlayClick($event)">
+  <div class="modal sim-modal-wide" role="dialog" aria-modal="true" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <div>
+        <h3>{{ modalTitle }}</h3>
+        <p class="sim-modal-sub">Fill in the essential station fields below. Check optional sections only when needed.</p>
+      </div>
+      <button type="button" class="btn btn-ghost btn-icon-only" (click)="close()" title="Close">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="sim-error-banner" *ngIf="errorMsg">
+        <span class="mat-i">error_outline</span>
+        <span>{{ errorMsg }}</span>
+      </div>
+
+      <!-- ══ QUICK STATION TYPE PICKER ═════════════════════════════════════ -->
+      <div class="kind-picker-grid" role="group" aria-label="Station kind">
+        <button
+          type="button"
+          class="kind-card-btn"
+          [class.active]="form.station_kind === 'TEST_PLACE'"
+          (click)="selectKind('TEST_PLACE')">
+          <span class="mat-i">developer_board</span>
+          <div class="kind-txt">
+            <strong>Test Place (TP)</strong>
+            <span>Daily TP-01..12 bench</span>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          class="kind-card-btn"
+          [class.active]="form.station_kind === 'IOS_CONSOLE'"
+          (click)="selectKind('IOS_CONSOLE')">
+          <span class="mat-i">desktop_windows</span>
+          <div class="kind-txt">
+            <strong>IOS Console</strong>
+            <span>Instructor console IOS-01..10</span>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          class="kind-card-btn"
+          [class.active]="form.station_kind === 'FFS_BAY'"
+          (click)="selectKind('FFS_BAY')">
+          <span class="mat-i">flight_takeoff</span>
+          <div class="kind-txt">
+            <strong>FFS Simulator Bay</strong>
+            <span>Full flight simulator bay</span>
+          </div>
+        </button>
+      </div>
+
+      <!-- ══ ESSENTIAL FIELDS (ALWAYS ACTIVE — ALL YOU NEED TO SAVE) ═══════ -->
+      <div class="essential-card">
+        <div class="essential-head">
+          <span class="ess-tag">Required · Quick Setup</span>
+          <span class="ess-hint">Ready to create immediately</span>
+        </div>
+
+        <div class="sim-grid-4-ess">
+          <div class="form-group">
+            <label class="form-label">Code *</label>
+            <input class="form-control sim-num" [(ngModel)]="form.code" placeholder="TP-11">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Station Name *</label>
+            <input class="form-control" [(ngModel)]="form.name" placeholder="TEST PLACE 11">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Bay / Hall *</label>
+            <input class="form-control sim-num" [(ngModel)]="form.bay_code" placeholder="TPS-11">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Status</label>
+            <app-dropdown class="form-control" [(ngModel)]="form.status">
+              <app-dropdown-option value="READY">Ready</app-dropdown-option>
+              <app-dropdown-option value="IN_SORTIE">In Sortie</app-dropdown-option>
+              <app-dropdown-option value="PRE_FLIGHT">Pre-Flight</app-dropdown-option>
+              <app-dropdown-option value="DEGRADED">Degraded</app-dropdown-option>
+              <app-dropdown-option value="MAINTENANCE">Maintenance</app-dropdown-option>
+              <app-dropdown-option value="AOG">AOG / Down</app-dropdown-option>
+            </app-dropdown>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ OPTIONAL MODULAR SUBSECTIONS (CHECK TO ENABLE / UNCHECK TO DISABLE) ══ -->
+      <div class="opt-sections-bar">
+        <span class="opt-bar-lbl">
+          Optional Technical Sections ({{ enabledSectionsCount }} / 4 enabled)
+        </span>
+        <div class="opt-bar-actions">
+          <button type="button" class="opt-link-btn" (click)="setAllSections(true)" *ngIf="enabledSectionsCount < 4">
+            Enable all
+          </button>
+          <button type="button" class="opt-link-btn" (click)="setAllSections(false)" *ngIf="enabledSectionsCount > 0">
+            Essential only
+          </button>
+        </div>
+      </div>
+
+      <!-- SECTION 1: Identity & Platform Details -->
+      <div class="sec-card" [class.is-enabled]="sections.identity">
+        <label class="sec-toggle-header" title="Check to enable or uncheck to disable this section">
+          <input type="checkbox" class="sec-checkbox" [(ngModel)]="sections.identity" />
+          <div class="sec-head-txt">
+            <strong>1. Identity &amp; Platform Assignment</strong>
+            <span>Aircraft / station type, platform category, manufacturer, serial, daily hours &amp; sort order</span>
+          </div>
+          <span class="sec-state-pill" [class.on]="sections.identity">
+            {{ sections.identity ? 'Enabled' : 'Disabled' }}
+          </span>
+        </label>
+
+        <fieldset class="sec-fieldset" *ngIf="sections.identity" [disabled]="!sections.identity">
+          <div class="sim-grid-3">
+            <div class="form-group">
+              <label class="form-label">Platform Category</label>
+              <app-dropdown class="form-control" [(ngModel)]="form.platform_category">
+                <app-dropdown-option value="COMMERCIAL_FIXED_WING">Commercial Fixed-Wing</app-dropdown-option>
+                <app-dropdown-option value="ROTORCRAFT">Rotorcraft / Helicopter</app-dropdown-option>
+                <app-dropdown-option value="DEFENSE_FMS">Defense / Full Mission</app-dropdown-option>
+                <app-dropdown-option value="FTD_FNPT">FTD / FNPT Fixed-Base</app-dropdown-option>
+              </app-dropdown>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Aircraft / Station Type</label>
+              <input class="form-control" [(ngModel)]="form.aircraft_type" placeholder="Airbus A320neo / CAE Test Place">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Manufacturer</label>
+              <input class="form-control" [(ngModel)]="form.manufacturer" placeholder="CAE 7000XR">
+            </div>
+          </div>
+
+          <div class="sim-grid-3">
+            <div class="form-group">
+              <label class="form-label">Serial Number</label>
+              <input class="form-control sim-num" [(ngModel)]="form.serial_number" placeholder="CAE-7000XR-xxx">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Daily Available Hours</label>
+              <input type="number" class="form-control sim-num" [(ngModel)]="form.daily_available_hours" min="1" max="24" step="0.5">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Display Sort Order</label>
+              <input type="number" class="form-control sim-num" [(ngModel)]="form.sort_order" min="0" max="999">
+            </div>
+          </div>
+        </fieldset>
+      </div>
+
+      <!-- SECTION 2: Qualification & Authority Compliance -->
+      <div class="sec-card" [class.is-enabled]="sections.qualification">
+        <label class="sec-toggle-header" title="Check to enable or uncheck to disable this section">
+          <input type="checkbox" class="sec-checkbox" [(ngModel)]="sections.qualification" />
+          <div class="sec-head-txt">
+            <strong>2. Qualification &amp; Authority Compliance</strong>
+            <span>Authority (EASA/FAA), qualification level, certificate code, expiry &amp; last evaluation</span>
+          </div>
+          <span class="sec-state-pill" [class.on]="sections.qualification">
+            {{ sections.qualification ? 'Enabled' : 'Disabled' }}
+          </span>
+        </label>
+
+        <fieldset class="sec-fieldset" *ngIf="sections.qualification" [disabled]="!sections.qualification">
+          <div class="sim-grid-3">
+            <div class="form-group">
+              <label class="form-label">Authority</label>
+              <input class="form-control" [(ngModel)]="form.authority" placeholder="EASA / FAA / ENAC">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Qualification Level</label>
+              <input class="form-control" [(ngModel)]="form.qualification_level" placeholder="CS-FSTD Level D">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Certificate Code</label>
+              <input class="form-control sim-num" [(ngModel)]="form.certificate_code" placeholder="EASA.IT.FSTD.025">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Certificate Expiry</label>
+              <app-datetime-picker class="form-control" mode="date" [(ngModel)]="form.certificate_expiry" placeholder="Select expiry date"></app-datetime-picker>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Last Recurrent Evaluation</label>
+              <app-datetime-picker class="form-control" mode="date" [(ngModel)]="form.last_eval_date" placeholder="Select eval date"></app-datetime-picker>
+            </div>
+          </div>
+        </fieldset>
+      </div>
+
+      <!-- SECTION 3: Technical Hardware / Software Baseline -->
+      <div class="sec-card" [class.is-enabled]="sections.hardware">
+        <label class="sec-toggle-header" title="Check to enable or uncheck to disable this section">
+          <input type="checkbox" class="sec-checkbox" [(ngModel)]="sections.hardware" />
+          <div class="sec-head-txt">
+            <strong>3. Avionics, Visual, Motion &amp; Software Baseline</strong>
+            <span>Engine/avionics fit, host SW load, AIRAC cycle, visual display, motion, CLS &amp; IOS</span>
+          </div>
+          <span class="sec-state-pill" [class.on]="sections.hardware">
+            {{ sections.hardware ? 'Enabled' : 'Disabled' }}
+          </span>
+        </label>
+
+        <fieldset class="sec-fieldset" *ngIf="sections.hardware" [disabled]="!sections.hardware">
+          <div class="sim-grid-3">
+            <div class="form-group">
+              <label class="form-label">Engine &amp; Avionics</label>
+              <input class="form-control" [(ngModel)]="form.engine_avionics" placeholder="CFM LEAP-1A / Thales R2">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Software Load</label>
+              <input class="form-control sim-num" [(ngModel)]="form.software_load" placeholder="Host Load v4.18.2">
+            </div>
+            <div class="form-group">
+              <label class="form-label">AIRAC Cycle</label>
+              <input class="form-control sim-num" [(ngModel)]="form.airac_cycle" placeholder="AIRAC 2611">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Visual System</label>
+              <input class="form-control" [(ngModel)]="form.visual_system" placeholder="CAE Tropos 6000XR · Laser">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Motion Platform</label>
+              <input class="form-control" [(ngModel)]="form.motion_system" placeholder="CAE 6-DOF Electric eMotion">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Control Loading (CLS)</label>
+              <input class="form-control" [(ngModel)]="form.control_loading" placeholder="CAE Digital CLS-500">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Instructor Station (IOS)</label>
+              <input class="form-control" [(ngModel)]="form.ios_config" placeholder="Dual-Screen IOS v8">
+            </div>
+          </div>
+        </fieldset>
+      </div>
+
+      <!-- SECTION 4: Counters, MEL & Notes -->
+      <div class="sec-card" [class.is-enabled]="sections.opsNotes">
+        <label class="sec-toggle-header" title="Check to enable or uncheck to disable this section">
+          <input type="checkbox" class="sec-checkbox" [(ngModel)]="sections.opsNotes" />
+          <div class="sec-head-txt">
+            <strong>4. Counters, MEL Limitations &amp; Notes</strong>
+            <span>Cumulative power/motion/visual hours, MEL restrictions, notes &amp; subsystem templates</span>
+          </div>
+          <span class="sec-state-pill" [class.on]="sections.opsNotes">
+            {{ sections.opsNotes ? 'Enabled' : 'Disabled' }}
+          </span>
+        </label>
+
+        <fieldset class="sec-fieldset" *ngIf="sections.opsNotes" [disabled]="!sections.opsNotes">
+          <div class="sim-grid-3">
+            <div class="form-group">
+              <label class="form-label">Power-On Hours</label>
+              <input type="number" class="form-control sim-num" [(ngModel)]="form.power_on_hours" min="0" step="0.5">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Motion Hours</label>
+              <input type="number" class="form-control sim-num" [(ngModel)]="form.motion_hours" min="0" step="0.5">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Visual Lamp/Laser Hrs</label>
+              <input type="number" class="form-control sim-num" [(ngModel)]="form.visual_lamp_hours" min="0" step="0.5">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Active MEL / Limitations</label>
+              <textarea class="form-control sim-textarea-sm" [(ngModel)]="form.limitations_mel" placeholder="Optional training restrictions…"></textarea>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Engineering Notes</label>
+              <textarea class="form-control sim-textarea-sm" [(ngModel)]="form.notes" placeholder="Optional hangar or configuration notes…"></textarea>
+            </div>
+          </div>
+
+          <div class="sim-scaffold-box" *ngIf="!editingSim">
+            <label class="sim-check-item">
+              <input type="checkbox" [(ngModel)]="form.scaffold_subsystems">
+              <span>Auto-create 8 standard FSTD subsystems (Visual, Motion, CLS, Avionics, IOS, Host, Sound, HVAC)</span>
+            </label>
+            <label class="sim-check-item">
+              <input type="checkbox" [(ngModel)]="form.scaffold_qtg">
+              <span>Initialize quarterly Q1–Q4 QTG baseline checks</span>
+            </label>
+          </div>
+        </fieldset>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button type="button" class="btn btn-ghost" (click)="close()">Cancel</button>
+      <button type="button" class="btn btn-primary" [disabled]="saving" (click)="save()">
+        <span class="btn-icon">{{ saving ? 'hourglass_top' : 'save' }}</span>
+        {{ submitLabel }}
+      </button>
+    </div>
+  </div>
+</div>

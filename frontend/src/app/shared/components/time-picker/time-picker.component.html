@@ -1,0 +1,77 @@
+<div #triggerOrigin
+     class="tp-shell"
+     [class.open]="open"
+     [class.compact]="compact"
+     [class.borderless]="borderless"
+     [class.disabled]="disabled">
+  <button type="button"
+          class="tp-trigger"
+          [class.is-zero]="dimZero && isZero"
+          [disabled]="disabled"
+          [attr.aria-expanded]="open"
+          [attr.aria-label]="ariaLabel"
+          (click)="togglePopover()">
+    <span class="mat-i tp-ic" *ngIf="showIcon">schedule</span>
+    <span class="tp-val">{{ value }}</span>
+    <span class="mat-i tp-caret">expand_more</span>
+  </button>
+</div>
+
+<ng-template #popoverTpl>
+  <div class="tp-popover" role="dialog" [attr.aria-label]="ariaLabel">
+    <div class="tp-head">
+      <input type="text"
+             class="tp-num-input"
+             maxlength="2"
+             inputmode="numeric"
+             aria-label="Hours (24h)"
+             [(ngModel)]="hourText"
+             (blur)="onHourInputCommit(false)"
+             (keydown.enter)="onHourInputCommit(true)" />
+      <span class="tp-sep">:</span>
+      <input type="text"
+             class="tp-num-input"
+             maxlength="2"
+             inputmode="numeric"
+             aria-label="Minutes"
+             [(ngModel)]="minuteText"
+             (blur)="onMinuteInputCommit(false)"
+             (keydown.enter)="onMinuteInputCommit(true)" />
+    </div>
+
+    <div class="tp-cols-head">
+      <span>HH</span>
+      <span>MM</span>
+    </div>
+
+    <div class="tp-cols">
+      <div #hourList class="tp-col" role="listbox" aria-label="Hour">
+        <button *ngFor="let h of hours24"
+                type="button"
+                class="tp-opt"
+                [class.active]="h === activeHour"
+                (click)="selectHour(h)">
+          {{ pad2(h) }}
+        </button>
+      </div>
+
+      <div #minuteList class="tp-col" role="listbox" aria-label="Minute">
+        <button *ngFor="let m of minuteOptions"
+                type="button"
+                class="tp-opt"
+                [class.active]="m === activeMinute"
+                (click)="selectMinute(m)">
+          {{ pad2(m) }}
+        </button>
+      </div>
+    </div>
+
+    <div class="tp-foot">
+      <div class="tp-foot-left">
+        <button type="button" class="tp-foot-link" (click)="setNow()">Now</button>
+        <button type="button" class="tp-foot-link danger" *ngIf="allowReset" (click)="resetZero()">00:00</button>
+      </div>
+      <button type="button" class="tp-done-btn" (click)="closePopover()">Done</button>
+    </div>
+  </div>
+</ng-template>

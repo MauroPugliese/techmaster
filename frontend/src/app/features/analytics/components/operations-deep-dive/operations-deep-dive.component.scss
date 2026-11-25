@@ -109,3 +109,16 @@
     color: var(--blue-950);
   }
 }
+
+
+.an-sim-table-wrap { overflow-x: auto; }
+.an-bay-badge { display: inline-flex; padding: 2px 7px; border-radius: 5px; background: #0f172a; color: #f8fafc; font-size: 0.7rem; font-weight: 700; }
+.an-rel-cell { display: flex; align-items: center; gap: 8px; }
+.an-rel-track { flex: 1; height: 6px; border-radius: 999px; background: #e2e8f0; min-width: 70px; overflow: hidden; }
+.an-rel-fill { height: 100%; border-radius: 999px; }
+.an-bar-list { display: flex; flex-direction: column; gap: 10px; }
+.an-bar-row { display: flex; flex-direction: column; gap: 4px; }
+.an-bar-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 0.81rem; }
+.an-bar-track { height: 7px; border-radius: 999px; background: #f1f5f9; overflow: hidden; }
+.an-bar-fill { height: 100%; border-radius: 999px; }
+.an-empty-sub { padding: 24px; text-align: center; color: var(--text-muted); font-size: 0.84rem; }

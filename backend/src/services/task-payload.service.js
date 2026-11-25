@@ -12,6 +12,7 @@ const ALLOWLISTED_FIELDS = [
   'description',
   'parent_id',
   'category_id',
+  'simulator_id',
   'assigned_to',
   'interval_type',
   'status',
@@ -107,7 +108,7 @@ function sanitizeTaskPayload(body, { isCreate = false, taskId = null } = {}) {
     data.priority = priority;
   }
 
-  for (const idField of ['assigned_to', 'parent_id', 'category_id']) {
+  for (const idField of ['assigned_to', 'parent_id', 'category_id', 'simulator_id']) {
     if (hasOwn(body, idField)) {
       const parsed = parseNullablePositiveInt(body[idField], idField);
       if (parsed.error) return { error: parsed.error, data: null };

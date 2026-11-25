@@ -27,6 +27,7 @@ export interface User {
   job_title?: string;
   phone?: string;
   is_active: boolean;
+  certifications?: string[] | null;
   last_login?: string;
   role: Role;
   created_at: string;
@@ -186,9 +187,23 @@ export interface DashboardRecentActivity {
   movements: StockMovement[];
 }
 
+export interface SimulatorDashboardSummary {
+  totalSimulators: number;
+  readyBays: number;
+  inSortieBays: number;
+  degradedBays: number;
+  aogBays: number;
+  todayFlightHours: number;
+  dispatchReliabilityPct: number;
+  openSnagsCount: number;
+  qtgCompliancePct: number;
+}
+
 export interface DashboardOverview {
   generatedAt: string;
   trendDays: 7 | 30 | 90;
+  simulators?: Simulator[];
+  simulatorSummary?: SimulatorDashboardSummary;
   kpis: DashboardKPIs;
   fleet: DashboardFleetHealth;
   warehouse: DashboardWarehouseHealth;
@@ -204,8 +219,196 @@ export interface DashboardOverview {
 
 export interface TrendPoint { date: string; count: number; status: string; }
 
-// ── Operations ────────────────────────────────────────────────────────────────
+// ── Flight Simulators Fleet, Subsystems & QTG ────────────────────────────────
+export type SimulatorPlatformCategory = 'COMMERCIAL_FIXED_WING' | 'ROTORCRAFT' | 'DEFENSE_FMS' | 'FTD_FNPT';
+export type SimulatorStationKind = 'FFS_BAY' | 'TEST_PLACE' | 'IOS_CONSOLE';
+export type ShiftUsageStatus = 'READY' | 'IN_USE' | 'NA';
+export type SimulatorStatus = 'READY' | 'IN_SORTIE' | 'PRE_FLIGHT' | 'MAINTENANCE' | 'DEGRADED' | 'AOG';
+export type SimulatorSubsystemCode = 'VISUAL' | 'MOTION' | 'CONTROL_LOADING' | 'AVIONICS_COCKPIT' | 'IOS' | 'HOST_COMPUTE' | 'SOUND' | 'HVAC_POWER';
+export type SimulatorSubsystemStatus = 'NOMINAL' | 'DEGRADED' | 'FAULT' | 'MAINTENANCE';
+export type QtgCategory = 'PERFORMANCE' | 'HANDLING' | 'MOTION_CUEING' | 'VISUAL_SYSTEM' | 'SOUND' | 'IOS_NAV';
+export type QtgStatus = 'PENDING' | 'PASSED' | 'TOLERANCE_WARN' | 'FAILED';
+
+export interface SimulatorSubsystem {
+  id: number;
+  simulator_id: number;
+  subsystem_code: SimulatorSubsystemCode;
+  name: string;
+  part_number?: string | null;
+  serial_number?: string | null;
+  firmware_version?: string | null;
+  status: SimulatorSubsystemStatus;
+  operating_hours?: number;
+  last_calibrated_at?: string | null;
+  next_calibration_due?: string | null;
+  notes?: string | null;
+}
+
+export interface SimulatorQtgRecord {
+  id: number;
+  simulator_id: number;
+  test_code: string;
+  title: string;
+  category: QtgCategory;
+  quarter: 'Q1' | 'Q2' | 'Q3' | 'Q4';
+  year: number;
+  mode: 'AUTO' | 'MANUAL';
+  status: QtgStatus;
+  due_date?: string | null;
+  executed_at?: string | null;
+  executed_by?: number | null;
+  measured_delta?: string | null;
+  notes?: string | null;
+  simulator?: Partial<Simulator>;
+  executor?: Partial<User>;
+}
+
+export interface SimulatorTelemetry {
+  totalSorties: number;
+  todayFlightHours: number;
+  dailyAvailableHours: number;
+  bayUtilizationPct: number;
+  scheduledHoursTotal: number;
+  lostTrainingMinutes: number;
+  dispatchReliabilityPct: number;
+  activeSortie?: { id: number; sortie_code?: string; title: string; customer_operator?: string; start_date: string; end_date?: string } | null;
+  nextSortie?: { id: number; sortie_code?: string; title: string; customer_operator?: string; start_date: string; end_date?: string } | null;
+  openSnagsCount: number;
+  aogSnagsCount: number;
+  subsystemCount: number;
+  degradedSubsystemsCount: number;
+  qtgSummary: {
+    total: number;
+    passed: number;
+    warn: number;
+    failed: number;
+    pending: number;
+    completionPct: number;
+  };
+  certificate: {
+    status: 'VALID' | 'EXPIRING_SOON' | 'EXPIRED' | 'UNSET';
+    daysRemaining: number | null;
+  };
+}
+
+export interface Simulator {
+  id: number;
+  code: string;
+  name: string;
+  bay_code: string;
+  station_kind?: SimulatorStationKind;
+  sort_order?: number;
+  platform_category: SimulatorPlatformCategory;
+  aircraft_type: string;
+  manufacturer?: string;
+  serial_number?: string | null;
+  authority?: string | null;
+  qualification_level?: string | null;
+  certificate_code?: string | null;
+  certificate_expiry?: string | null;
+  last_eval_date?: string | null;
+  daily_available_hours?: number;
+  engine_avionics?: string | null;
+  software_load?: string | null;
+  airac_cycle?: string | null;
+  visual_system?: string | null;
+  motion_system?: string | null;
+  control_loading?: string | null;
+  ios_config?: string | null;
+  status: SimulatorStatus;
+  power_on_hours?: number;
+  motion_hours?: number;
+  visual_lamp_hours?: number;
+  limitations_mel?: string | null;
+  notes?: string | null;
+  telemetry?: SimulatorTelemetry;
+  subsystems?: SimulatorSubsystem[];
+  qtgRecords?: SimulatorQtgRecord[];
+  sorties?: Operation[];
+  maintenanceRecords?: MaintenanceRecord[];
+  compatibleSpares?: InventoryItem[];
+}
+
+export interface SimulatorDailyLog {
+  id: number;
+  log_date: string;
+  station_kind: SimulatorStationKind;
+  system_readiness_time: string;
+  post_testing_time: string;
+  logout_time: string;
+  general_notes?: string | null;
+}
+
+export interface SimulatorShiftEntry {
+  id: number;
+  shift_id: number;
+  simulator_id: number;
+  usage_status: ShiftUsageStatus;
+  sim_testing_start: string;
+  sim_testing_end: string;
+  notes?: string | null;
+  duration_minutes?: number;
+  station?: Partial<Simulator> | null;
+}
+
+export interface SimulatorDailyShift {
+  id: number;
+  daily_log_id: number;
+  shift_number: number;
+  shift_name: string;
+  pre_flight_test_time: string;
+  lead_user_id?: number | null;
+  entries: SimulatorShiftEntry[];
+}
+
+export interface SimulatorDailySheetResponse {
+  log: SimulatorDailyLog;
+  shifts: SimulatorDailyShift[];
+  stations: Simulator[];
+  summary: {
+    total_stations: number;
+    in_use_count: number;
+    ready_count: number;
+    na_count: number;
+    total_session_minutes: number;
+  };
+}
+
+export interface TimelineShiftBlock {
+  id: string;
+  simulator_id: number;
+  station_kind: SimulatorStationKind;
+  block_kind: 'SHIFT_IN_USE' | 'SHIFT_READY' | 'SHIFT_NA';
+  usage_status: ShiftUsageStatus;
+  shift_name: string;
+  start_time: string;
+  end_time: string;
+  duration_minutes: number;
+  notes?: string | null;
+}
+
+export interface SimulatorMntRecord extends MaintenanceRecord {
+  record_year?: number;
+  is_corrective?: boolean;
+  time_window?: string;
+}
+
+export interface SimulatorMntRecordsResponse {
+  simulator: Partial<Simulator>;
+  selectedYear: number | 'ALL';
+  availableYears: number[];
+  counts: {
+    total: number;
+    preventive: number;
+    corrective: number;
+    total_downtime_hours: number;
+  };
+  records: SimulatorMntRecord[];
+}
+
+// ── Operations / Flight Sorties ───────────────────────────────────────────────
 export type OperationStatus = 'PLANNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'ON_HOLD';
+export type SortieOutcome = 'PENDING' | 'CLEAN' | 'COMPLETED_WITH_SNAGS' | 'INTERRUPTED_TECH' | 'NO_SHOW' | 'CANCELLED';
 export type Priority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
 export interface OperationType {
@@ -232,9 +435,20 @@ export interface OperationLog {
 
 export interface Operation {
   id: number;
+  sortie_code?: string | null;
   type_id: number;
+  simulator_id?: number | null;
   created_by: number;
   title: string;
+  customer_operator?: string | null;
+  scenario_code?: string | null;
+  weather_profile?: string | null;
+  motion_required?: boolean;
+  scheduled_hours?: number | null;
+  actual_flight_hours?: number | null;
+  lost_training_minutes?: number;
+  outcome?: SortieOutcome;
+  snag_summary?: string | null;
   description?: string;
   status: OperationStatus;
   priority: Priority;
@@ -245,6 +459,7 @@ export interface Operation {
   notes?: string;
   metadata?: any;
   type?: OperationType;
+  simulator?: Partial<Simulator>;
   creator?: Partial<User>;
   members?: OperationMember[];
   logs?: OperationLog[];
@@ -261,6 +476,11 @@ export interface OperationSummary {
   overdue_count: number;
   completion_rate: number;
   avg_duration_minutes: number;
+  total_scheduled_hours?: number;
+  total_actual_hours?: number;
+  total_lost_minutes?: number;
+  dispatch_reliability_pct?: number;
+  snag_sorties_count?: number;
 }
 
 // ── Maintenance ───────────────────────────────────────────────────────────────
@@ -303,7 +523,13 @@ export interface MaintenancePartUsage {
 
 export interface MaintenanceRecord {
   id: number;
-  asset_id: number;
+  asset_id?: number | null;
+  simulator_id?: number | null;
+  sortie_id?: number | null;
+  subsystem_code?: string | null;
+  severity?: 'MINOR' | 'DEGRADED' | 'AOG';
+  lost_training_hours?: number | null;
+  is_snag?: boolean;
   performed_by?: number;
   type: MaintenanceType;
   title: string;
@@ -318,6 +544,7 @@ export interface MaintenanceRecord {
   parts_used?: MaintenancePartUsage[];
   next_scheduled?: string | null;
   asset?: Asset;
+  simulator?: Partial<Simulator>;
   technician?: Partial<User>;
   created_at?: string;
 }
@@ -332,6 +559,9 @@ export interface MaintenanceSummary {
   overdue_count: number;
   total_cost: number;
   total_downtime_hours: number;
+  open_snags_count?: number;
+  aog_snags_count?: number;
+  lost_training_hours?: number;
 }
 
 // ── Planned Maintenance ───────────────────────────────────────────────────────
@@ -399,6 +629,11 @@ export interface InventoryItem {
   name: string;
   description?: string;
   unit: string;
+  part_classification?: 'CONSUMABLE' | 'ROTATABLE_LRU' | 'TOOL_CALIBRATED';
+  aog_critical?: boolean;
+  lead_time_days?: number;
+  compatible_models?: string[] | null;
+  unserviceable_qty?: number;
   quantity: number;
   min_stock: number;
   max_stock?: number | null;
@@ -432,6 +667,9 @@ export interface WarehouseSummary {
   total_value: number;
   estimated_restock_cost: number;
   movements_7d: number;
+  aog_critical_count?: number;
+  rotatable_count?: number;
+  unserviceable_units?: number;
   category_breakdown: WarehouseBreakdownEntry[];
   location_breakdown: WarehouseBreakdownEntry[];
 }
@@ -505,6 +743,7 @@ export interface ShiftEmployee {
   last_name: string;
   department?: string | null;
   job_title?: string | null;
+  certifications?: string[] | null;
   avatar_url?: string | null;
 }
 
@@ -527,6 +766,23 @@ export interface Shift {
   shiftType?: ShiftType;
   employee?: Partial<User>;
   supervisor?: Partial<User>;
+}
+
+export interface ShiftHandover {
+  id: number;
+  shift_date: string;
+  from_shift_code: string;
+  to_shift_code: string;
+  authored_by: number;
+  acknowledged_by?: number | null;
+  acknowledged_at?: string | null;
+  simulators_status_summary?: string | null;
+  open_drs_summary?: string | null;
+  pending_actions?: string | null;
+  safety_loto_notes?: string | null;
+  created_at?: string;
+  author?: Partial<User>;
+  acknowledger?: Partial<User>;
 }
 
 // ── Tasks ─────────────────────────────────────────────────────────────────────
@@ -555,6 +811,7 @@ export interface TaskComment {
 export interface Task {
   id: number;
   parent_id?: number | null;
+  simulator_id?: number | null;
   assigned_to?: number | null;
   created_by?: number;
   title: string;
@@ -568,6 +825,7 @@ export interface Task {
   actual_hours?: number;
   tags?: string[];
   subtasks?: Task[];
+  simulator?: Partial<Simulator> | null;
   assignee?: Partial<TaskAssignee> | null;
   creator?: Partial<TaskAssignee>;
   comments_count?: number;

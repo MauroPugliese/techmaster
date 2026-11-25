@@ -1,14 +1,41 @@
-import { Operation, OperationStatus, Priority, User } from '../../core/models/interfaces';
+import { Operation, OperationStatus, Priority, SortieOutcome, User } from '../../core/models/interfaces';
 
 const OPEN_OP_STATUSES = new Set<OperationStatus>(['PLANNED', 'IN_PROGRESS', 'ON_HOLD']);
 
 export const CREW_ROLE_SUGGESTIONS = [
-  'Mission Lead',
-  'Pilot / Operator',
-  'Tech Support',
-  'Safety Officer',
+  'Instructor (TRI/SFI)',
+  'Trainee Capt (PF)',
+  'Trainee FO (PM)',
+  'Sim Engineer / Tech',
+  'Examiner (TRE/SFE)',
   'Observer'
 ];
+
+export const CREW_ROLE_PRESETS = CREW_ROLE_SUGGESTIONS;
+
+export const WEATHER_PRESETS = [
+  'CAVOK / Day',
+  'CAT II / RVR 350m',
+  'CAT IIIB / Zero-Zero',
+  'Crosswind 30kt Gusting',
+  'Thunderstorm / WindShear',
+  'Icing / Winter Ops',
+  'NVG Night Tactical'
+];
+
+export const SORTIE_OUTCOME_META: Record<SortieOutcome, { label: string; bg: string; color: string }> = {
+  PENDING:              { label: 'Pending',         bg: '#f1f5f9', color: '#475569' },
+  CLEAN:                { label: 'Clean Sortie',    bg: '#dcfce7', color: '#15803d' },
+  COMPLETED_WITH_SNAGS: { label: 'With Snags (DR)', bg: '#fef3c7', color: '#b45309' },
+  INTERRUPTED_TECH:     { label: 'Tech Abort',      bg: '#fee2e2', color: '#b91c1c' },
+  NO_SHOW:              { label: 'No Show',         bg: '#f3e8ff', color: '#6b21a8' },
+  CANCELLED:            { label: 'Cancelled',       bg: '#f1f5f9', color: '#64748b' }
+};
+
+export function getOutcomeMeta(outcome?: SortieOutcome | string | null) {
+  const key = (String(outcome || 'PENDING').toUpperCase()) as SortieOutcome;
+  return SORTIE_OUTCOME_META[key] || SORTIE_OUTCOME_META.PENDING;
+}
 
 export const DURATION_PRESETS = [
   { label: '+1h', hours: 1 },

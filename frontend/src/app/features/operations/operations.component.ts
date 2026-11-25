@@ -26,15 +26,27 @@ import {
   OperationStatus,
   OperationSummary,
   OperationType,
+  ShiftUsageStatus,
+  Simulator,
+  SimulatorDailyLog,
+  SimulatorStationKind,
+  SimulatorStatus,
+  SortieOutcome,
+  TimelineShiftBlock,
   User
 } from '../../core/models/interfaces';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
 import { DropdownComponent, DropdownOptionComponent } from '../../shared/components/dropdown/dropdown.component';
 import { OperationModalsComponent } from './modals/operation-modals.component';
+import { SortieBayTimelineComponent } from './bay-timeline/sortie-bay-timeline.component';
+import { StationMntRecordsModalComponent } from '../simulators/modals/station-mnt-records-modal.component';
+import { SHIFT_USAGE_STATUS_META, SIM_STATUS_META } from '../simulators/simulator-helpers';
 import {
+  SORTIE_OUTCOME_META,
   formatDurationMinutes,
   formatDurationRange,
   formatEnumLabel,
+  getOutcomeMeta,
   getPriorityBadgeClass,
   getStatusBadgeClass,
   getUserDisplayName,
@@ -53,7 +65,9 @@ import {
     ExportMenuComponent,
     DropdownComponent,
     DropdownOptionComponent,
-    OperationModalsComponent
+    OperationModalsComponent,
+    SortieBayTimelineComponent,
+    StationMntRecordsModalComponent
   ],
   templateUrl: './operations.component.html',
   styleUrls: ['./operations.component.scss'],
@@ -61,6 +75,7 @@ import {
 })
 export class OperationsComponent implements OnInit, OnDestroy {
   @ViewChild(OperationModalsComponent) modals?: OperationModalsComponent;
+  @ViewChild('mntRecordsModal') mntRecordsModal?: StationMntRecordsModalComponent;
   @ViewChild('searchInput') searchInput?: ElementRef<HTMLInputElement>;
 
   private destroy$ = new Subject<void>();
@@ -69,6 +84,10 @@ export class OperationsComponent implements OnInit, OnDestroy {
   Math = Math;
 
   operations: Operation[] = [];
+  timelineOps: Operation[] = [];
+  timelineShiftBlocks: TimelineShiftBlock[] = [];
+  timelineShiftStatuses: Record<number, ShiftUsageStatus> = {};
+  simulators: Simulator[] = [];
   opTypes: OperationType[] = [];
   staffUsers: Partial<User>[] = [];
   summary: OperationSummary | null = null;
@@ -79,14 +98,29 @@ export class OperationsComponent implements OnInit, OnDestroy {
   page = 1;
   pageSize = 20;
   readonly pageSizeOptions = [10, 20, 50, 100];
-  viewMode: 'table' | 'cards' | 'board' = 'table';
+  viewMode: 'timeline' | 'table' | 'cards' | 'board' = 'timeline';
+  timelineDate = SortieBayTimelineComponent.todayIso();
+  showFleetDeck = false;
+  deckKindFilter: 'FFS_BAY' | 'TEST_PLACE' | 'IOS_CONSOLE' | 'ALL' = 'ALL';
+  todayPlantLog: SimulatorDailyLog | null = null;
 
   searchQuery = '';
   statusFilter = '';
   priorityFilter = '';
   typeFilter: number | '' = '';
+  simulatorFilter: number | '' = '';
+  outcomeFilter: '' | SortieOutcome = '';
   sortBy = 'start_date';
   sortDir: 'ASC' | 'DESC' = 'DESC';
+
+  readonly outcomeOptions: Array<{ value: SortieOutcome; label: string }> = [
+    { value: 'PENDING', label: SORTIE_OUTCOME_META.PENDING.label },
+    { value: 'CLEAN', label: SORTIE_OUTCOME_META.CLEAN.label },
+    { value: 'COMPLETED_WITH_SNAGS', label: SORTIE_OUTCOME_META.COMPLETED_WITH_SNAGS.label },
+    { value: 'INTERRUPTED_TECH', label: SORTIE_OUTCOME_META.INTERRUPTED_TECH.label },
+    { value: 'NO_SHOW', label: SORTIE_OUTCOME_META.NO_SHOW.label },
+    { value: 'CANCELLED', label: SORTIE_OUTCOME_META.CANCELLED.label }
+  ];
 
   openMenuOpId: number | null = null;
   selectedIds = new Set<number>();
@@ -132,12 +166,17 @@ export class OperationsComponent implements OnInit, OnDestroy {
       next: res => { this.staffUsers = res?.data || []; this.cdr.markForCheck(); }
     });
 
+    this.loadSimulators();
+    this.loadTimelineOps();
+    this.loadTimelineShiftBlocks();
+
     this.search$
       .pipe(debounceTime(280), distinctUntilChanged(), takeUntil(this.destroy$))
       .subscribe(val => {
         this.searchQuery = val;
         this.page = 1;
         this.loadOperations();
+        this.loadTimelineOps();
       });
 
     this.dateFilter.range$
@@ -146,12 +185,91 @@ export class OperationsComponent implements OnInit, OnDestroy {
         this.page = 1;
         this.loadSummary();
         this.loadOperations();
+        this.loadTimelineOps();
       });
   }
 
   ngOnDestroy(): void {
     this.destroy$.next();
     this.destroy$.complete();
+  }
+
+  loadSimulators(): void {
+    this.api.get<any>('/simulators').pipe(takeUntil(this.destroy$)).subscribe({
+      next: res => {
+        this.simulators = res?.data || [];
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  loadTimelineShiftBlocks(): void {
+    this.api
+      .get<any>('/simulators/daily-sheet/timeline', { date: this.timelineDate })
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: res => {
+          const data = res?.data;
+          this.timelineShiftBlocks = data?.blocks || [];
+          this.timelineShiftStatuses = data?.statusBySimulator || {};
+          if (data?.operatingHours?.TEST_PLACE) {
+            this.todayPlantLog = data.operatingHours.TEST_PLACE;
+          }
+          this.cdr.markForCheck();
+        }
+      });
+  }
+
+  openShiftBlockInSimulators(block: TimelineShiftBlock): void {
+    const view = block.station_kind === 'IOS_CONSOLE' ? 'ios-consoles' : 'test-places';
+    this.router.navigate(['/simulators'], {
+      queryParams: { view, date: this.timelineDate }
+    });
+  }
+
+  deckChipDotColor(sim: Simulator): string {
+    const shiftSt = this.timelineShiftStatuses[sim.id];
+    if (shiftSt && SHIFT_USAGE_STATUS_META[shiftSt]) {
+      return SHIFT_USAGE_STATUS_META[shiftSt].dot;
+    }
+    return this.simStatusMeta(sim.status).color;
+  }
+
+  deckChipStatusLabel(sim: Simulator): string {
+    const shiftSt = this.timelineShiftStatuses[sim.id];
+    if (shiftSt && SHIFT_USAGE_STATUS_META[shiftSt]) {
+      return SHIFT_USAGE_STATUS_META[shiftSt].label;
+    }
+    return this.simStatusMeta(sim.status).label;
+  }
+
+  get deckSimulators(): Simulator[] {
+    if (this.deckKindFilter === 'ALL') return this.simulators;
+    const filtered = this.simulators.filter(
+      s => (s.station_kind || 'FFS_BAY') === this.deckKindFilter
+    );
+    if (filtered.length === 0 && this.deckKindFilter === 'FFS_BAY' && this.simulators.length > 0) {
+      return this.simulators;
+    }
+    return filtered;
+  }
+
+  countByKind(kind: SimulatorStationKind): number {
+    return this.simulators.filter(s => (s.station_kind || 'FFS_BAY') === kind).length;
+  }
+
+  loadTimelineOps(): void {
+    this.api.get<any>('/operations', {
+      date: this.timelineDate,
+      simulator_id: this.simulatorFilter || '',
+      outcome: this.outcomeFilter || '',
+      limit: 200
+    }).pipe(takeUntil(this.destroy$)).subscribe({
+      next: res => {
+        this.timelineOps = res?.data?.items || [];
+        this.cdr.markForCheck();
+      }
+    });
   }
 
   @HostListener('document:click')
@@ -187,6 +305,14 @@ export class OperationsComponent implements OnInit, OnDestroy {
         changed = true;
       }
     }
+    if (qp['simulatorId'] !== undefined) {
+      const simId = qp['simulatorId'] ? Number(qp['simulatorId']) : '';
+      const validId = simId && Number.isFinite(simId) ? simId : '';
+      if (this.simulatorFilter !== validId) {
+        this.simulatorFilter = validId;
+        changed = true;
+      }
+    }
     if (qp['search'] !== undefined) {
       const q = String(qp['search'] || '');
       if (this.searchQuery !== q) {
@@ -196,8 +322,9 @@ export class OperationsComponent implements OnInit, OnDestroy {
     }
     if (qp['action'] === 'new' && !this.actionHandled) {
       this.actionHandled = true;
+      const preSim = qp['simulatorId'] ? Number(qp['simulatorId']) : (this.simulatorFilter || undefined);
       setTimeout(() => {
-        this.openModal();
+        this.openModal(undefined, typeof preSim === 'number' && Number.isFinite(preSim) ? preSim : undefined);
         this.router.navigate([], {
           relativeTo: this.route,
           queryParams: { action: null },
@@ -209,12 +336,15 @@ export class OperationsComponent implements OnInit, OnDestroy {
     if (reload && changed) {
       this.page = 1;
       this.loadOperations();
+      this.loadTimelineOps();
     }
     this.cdr.markForCheck();
   }
 
   loadSummary(): void {
-    this.api.get<any>('/operations/summary').subscribe({
+    this.api.get<any>('/operations/summary', {
+      simulator_id: this.simulatorFilter || ''
+    }).subscribe({
       next: res => {
         this.summary = res?.data || null;
         this.cdr.markForCheck();
@@ -230,6 +360,8 @@ export class OperationsComponent implements OnInit, OnDestroy {
       status: this.statusFilter,
       priority: this.priorityFilter,
       type_id: this.typeFilter || '',
+      simulator_id: this.simulatorFilter || '',
+      outcome: this.outcomeFilter || '',
       search: this.searchQuery.trim(),
       sort_by: this.sortBy,
       sort_dir: this.sortDir,
@@ -266,6 +398,8 @@ export class OperationsComponent implements OnInit, OnDestroy {
   applyFilters(): void {
     this.page = 1;
     this.loadOperations();
+    this.loadTimelineOps();
+    this.loadSummary();
   }
 
   filterByKpi(status: string): void {
@@ -274,7 +408,14 @@ export class OperationsComponent implements OnInit, OnDestroy {
   }
 
   get hasActiveFilters(): boolean {
-    return Boolean(this.searchQuery.trim() || this.statusFilter || this.priorityFilter || this.typeFilter !== '');
+    return Boolean(
+      this.searchQuery.trim() ||
+      this.statusFilter ||
+      this.priorityFilter ||
+      this.typeFilter !== '' ||
+      this.simulatorFilter !== '' ||
+      this.outcomeFilter !== ''
+    );
   }
 
   resetFilters(): void {
@@ -282,7 +423,41 @@ export class OperationsComponent implements OnInit, OnDestroy {
     this.statusFilter = '';
     this.priorityFilter = '';
     this.typeFilter = '';
+    this.simulatorFilter = '';
+    this.outcomeFilter = '';
     this.applyFilters();
+  }
+
+  selectDeckSimulator(simId: number): void {
+    this.simulatorFilter = this.simulatorFilter === simId ? '' : simId;
+    this.applyFilters();
+  }
+
+  onTimelineDateChange(dateIso: string): void {
+    this.timelineDate = dateIso;
+    this.loadTimelineOps();
+    this.loadTimelineShiftBlocks();
+  }
+
+  onTimelineScheduleSlot(evt: { simulatorId: number; hour: number }): void {
+    const parts = this.timelineDate.split('-').map(Number);
+    const start = new Date(parts[0], parts[1] - 1, parts[2], evt.hour, 0, 0, 0);
+    const end = new Date(start.getTime() + 2 * 3600 * 1000);
+    this.modals?.openFormWithSlot(evt.simulatorId, start, end);
+  }
+
+  openSimulatorWorkspace(simId: number, event?: Event): void {
+    event?.stopPropagation();
+    this.router.navigate(['/simulators'], { queryParams: { id: simId } });
+  }
+
+  openStationMnt(sim: Simulator, event: Event): void {
+    event.stopPropagation();
+    this.mntRecordsModal?.open(sim.id, sim.name);
+  }
+
+  onMntMutated(): void {
+    this.loadSimulators();
   }
 
   toggleSort(column: string): void {
@@ -395,7 +570,17 @@ export class OperationsComponent implements OnInit, OnDestroy {
   }
 
   // ── Modal & Mutation Triggers ──────────────────────────────────────────────
-  openModal(op?: Operation): void { this.modals?.openFormModal(op); }
+  openModal(op?: Operation, preselectedSimId?: number): void {
+    if (!op && preselectedSimId) {
+      const start = new Date();
+      start.setMinutes(0, 0, 0);
+      start.setHours(start.getHours() + 1);
+      const end = new Date(start.getTime() + 2 * 3600 * 1000);
+      this.modals?.openFormWithSlot(preselectedSimId, start, end);
+      return;
+    }
+    this.modals?.openFormModal(op);
+  }
   openDetail(op: Operation): void { this.modals?.openDetailModal(op); }
   setStatus(op: Operation, status: OperationStatus): void {
     this.closeRowMenu();
@@ -413,6 +598,9 @@ export class OperationsComponent implements OnInit, OnDestroy {
   onMutated(): void {
     this.loadSummary();
     this.loadOperations();
+    this.loadTimelineOps();
+    this.loadTimelineShiftBlocks();
+    this.loadSimulators();
   }
 
   // ── UI Customization & Row Formatters ──────────────────────────────────────
@@ -426,15 +614,31 @@ export class OperationsComponent implements OnInit, OnDestroy {
 
   opSubline(op: Operation): string {
     const parts: string[] = [];
-    if (this.showTableField('location') && op.location) parts.push(op.location);
+    if (op.customer_operator) parts.push(op.customer_operator);
+    if (op.scenario_code) parts.push(op.scenario_code);
+    if (this.showTableField('location') && op.location && !op.simulator) parts.push(op.location);
     const crewCount = op.members?.length || 0;
     if (crewCount > 0) parts.push(`${crewCount} crew`);
     return parts.join(' · ');
   }
 
+  simStatusMeta(st?: SimulatorStatus) {
+    return SIM_STATUS_META[st || 'READY'] || SIM_STATUS_META.READY;
+  }
+
+  outcomeMeta(outcome?: SortieOutcome | string | null) {
+    return getOutcomeMeta(outcome);
+  }
+
   avgDurationText(): string {
     const mins = this.summary?.avg_duration_minutes ?? 0;
     return mins > 0 ? formatDurationMinutes(mins) : '—';
+  }
+
+  totalHoursText(): string {
+    const act = this.summary?.total_actual_hours ?? 0;
+    const sched = this.summary?.total_scheduled_hours ?? 0;
+    return `${act > 0 ? act : sched}h`;
   }
 
   durationText(op: Operation): string {

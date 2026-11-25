@@ -33,29 +33,32 @@ export interface PaletteItem {
 }
 
 const STATIC_ACTIONS: PaletteItem[] = [
-  { key: 'act-op', title: 'New Operation', subtitle: 'Plan a sortie or field deployment', icon: 'add_circle_outline', route: '/operations', queryParams: { action: 'new' }, sectionKey: 'operations', groupLabel: 'Quick Actions' },
-  { key: 'act-wo', title: 'Log Work Order', subtitle: 'Create a maintenance intervention', icon: 'build', route: '/maintenance', queryParams: { action: 'new' }, sectionKey: 'maintenance', groupLabel: 'Quick Actions' },
-  { key: 'act-sku', title: 'Add Inventory Item', subtitle: 'Register spare part or SKU', icon: 'add_box', route: '/warehouse', queryParams: { action: 'new' }, sectionKey: 'warehouse', groupLabel: 'Quick Actions' },
-  { key: 'act-task', title: 'New Task', subtitle: 'Assign or schedule a recurring task', icon: 'add_task', route: '/tasks', queryParams: { action: 'new' }, sectionKey: 'tasks', groupLabel: 'Quick Actions' },
+  { key: 'act-sim', title: 'Add Flight Simulator', subtitle: 'Register a new FSTD bay & scaffold subsystems', icon: 'flight_takeoff', route: '/simulators', queryParams: { action: 'new' }, sectionKey: 'simulators', groupLabel: 'Quick Actions' },
+  { key: 'act-op', title: 'Schedule Flight Sortie', subtitle: 'Book a simulator slot or training sortie', icon: 'add_circle_outline', route: '/operations', queryParams: { action: 'new' }, sectionKey: 'operations', groupLabel: 'Quick Actions' },
+  { key: 'act-wo', title: 'Log Work Order', subtitle: 'Create a maintenance intervention or DR', icon: 'build', route: '/maintenance', queryParams: { action: 'new' }, sectionKey: 'maintenance', groupLabel: 'Quick Actions' },
+  { key: 'act-sku', title: 'Add Inventory Item', subtitle: 'Register spare part or LRU SKU', icon: 'add_box', route: '/warehouse', queryParams: { action: 'new' }, sectionKey: 'warehouse', groupLabel: 'Quick Actions' },
+  { key: 'act-task', title: 'New Task', subtitle: 'Assign or schedule a recurring engineering task', icon: 'add_task', route: '/tasks', queryParams: { action: 'new' }, sectionKey: 'tasks', groupLabel: 'Quick Actions' },
   { key: 'act-wiki', title: 'New Wiki Article', subtitle: 'Author SOP or technical documentation', icon: 'note_add', route: '/wiki', queryParams: { action: 'new' }, sectionKey: 'wiki', groupLabel: 'Quick Actions' }
 ];
 
 const STATIC_ROUTES: PaletteItem[] = [
-  { key: 'nav-dash', title: 'Dashboard', subtitle: 'Operational overview & telemetry', icon: 'dashboard', route: '/dashboard', sectionKey: 'dashboard', groupLabel: 'Navigate' },
-  { key: 'nav-ops', title: 'Operations & Sorties', subtitle: 'Active sorties and team allocations', icon: 'rocket_launch', route: '/operations', sectionKey: 'operations', groupLabel: 'Navigate' },
-  { key: 'nav-maint', title: 'Maintenance & Assets', subtitle: 'Work orders & asset registry', icon: 'build_circle', route: '/maintenance', sectionKey: 'maintenance', groupLabel: 'Navigate' },
+  { key: 'nav-dash', title: 'Control Room', subtitle: 'Operational overview & bay telemetry', icon: 'dashboard', route: '/dashboard', sectionKey: 'dashboard', groupLabel: 'Navigate' },
+  { key: 'nav-sims', title: 'Flight Simulators', subtitle: 'FSTD fleet bays, subsystems & QTG qualification', icon: 'flight_takeoff', route: '/simulators', sectionKey: 'simulators', groupLabel: 'Navigate' },
+  { key: 'nav-ops', title: 'Sorties & Dispatch', subtitle: '24h Bay Timeline & simulator sorties', icon: 'rocket_launch', route: '/operations', sectionKey: 'operations', groupLabel: 'Navigate' },
+  { key: 'nav-maint', title: 'Maintenance & QTG', subtitle: 'Work orders, snags & QTG compliance', icon: 'build_circle', route: '/maintenance', sectionKey: 'maintenance', groupLabel: 'Navigate' },
   { key: 'nav-pm', title: 'Planned Maintenance', subtitle: 'Recurring preventive calendar', icon: 'event_repeat', route: '/maintenance/planned', sectionKey: 'maintenance', groupLabel: 'Navigate' },
-  { key: 'nav-wh', title: 'Warehouse & Inventory', subtitle: 'Stock levels, movements & reorder queue', icon: 'inventory_2', route: '/warehouse', sectionKey: 'warehouse', groupLabel: 'Navigate' },
-  { key: 'nav-sh', title: 'Shifts & Roster', subtitle: 'Team rotations and labor compliance', icon: 'schedule', route: '/shifts', sectionKey: 'shifts', groupLabel: 'Navigate' },
+  { key: 'nav-wh', title: 'Warehouse & Inventory', subtitle: 'Stock levels, LRUs, AOG spares & reorder', icon: 'inventory_2', route: '/warehouse', sectionKey: 'warehouse', groupLabel: 'Navigate' },
+  { key: 'nav-sh', title: 'Shifts & Roster', subtitle: 'Certified engineers, rotations & handovers', icon: 'schedule', route: '/shifts', sectionKey: 'shifts', groupLabel: 'Navigate' },
   { key: 'nav-an', title: 'Analytics & Reports', subtitle: 'Cross-platform insights & exports', icon: 'insights', route: '/analytics', sectionKey: 'analytics', groupLabel: 'Navigate' },
-  { key: 'nav-oa', title: 'Operations Analytics', subtitle: 'Deep-dive mission telemetry', icon: 'analytics', route: '/analytics/operations', sectionKey: 'operations_analytics', groupLabel: 'Navigate' },
+  { key: 'nav-oa', title: 'Sorties Analytics', subtitle: 'Simulator utilization, dispatch & snag Pareto', icon: 'analytics', route: '/analytics/operations', sectionKey: 'operations_analytics', groupLabel: 'Navigate' },
   { key: 'nav-tasks', title: 'Task Manager', subtitle: 'Kanban, table & recurring checklists', icon: 'task_alt', route: '/tasks', sectionKey: 'tasks', groupLabel: 'Navigate' },
-  { key: 'nav-wiki', title: 'Wiki & Docs', subtitle: 'Internal knowledge base & SOPs', icon: 'menu_book', route: '/wiki', sectionKey: 'wiki', groupLabel: 'Navigate' },
+  { key: 'nav-wiki', title: 'Wiki & Docs', subtitle: 'Internal knowledge base and CAE SOPs', icon: 'menu_book', route: '/wiki', sectionKey: 'wiki', groupLabel: 'Navigate' },
   { key: 'nav-admin', title: 'Admin Settings', subtitle: 'Users, permissions, audit & health', icon: 'admin_panel_settings', route: '/admin', sectionKey: 'admin', groupLabel: 'Navigate' },
   { key: 'nav-profile', title: 'My Profile & Security', subtitle: 'Personal info, password & active sessions', icon: 'manage_accounts', route: '/profile', groupLabel: 'Navigate' }
 ];
 
 const KIND_ICONS: Record<string, string> = {
+  simulator: 'flight_takeoff',
   operation: 'rocket_launch',
   maintenance: 'build_circle',
   asset: 'precision_manufacturing',

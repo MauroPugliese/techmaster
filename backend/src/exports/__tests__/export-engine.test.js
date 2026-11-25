@@ -378,9 +378,9 @@ test('bundled Red Hat TrueType fonts are present and valid', () => {
   }
 });
 
-test('all 12 report modules enforce unified CAE A4 diagonal-hero identity with unique docCodes and bespoke metadata', () => {
+test('all 13 report modules enforce unified CAE A4 diagonal-hero identity with unique docCodes and bespoke metadata', () => {
   const mods = Object.values(MODULES);
-  assert.equal(mods.length, 12);
+  assert.equal(mods.length, 13);
 
   const docCodes = new Set();
   for (const mod of mods) {

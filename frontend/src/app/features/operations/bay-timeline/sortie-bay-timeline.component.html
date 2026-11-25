@@ -1,0 +1,178 @@
+<div class="timeline-card">
+
+  <!-- Header & Day Navigation -->
+  <div class="tl-header">
+    <div class="tl-title-group">
+      <div class="tl-badge-icon">view_timeline</div>
+      <div>
+        <h3 class="tl-title">24-Hour FSTD Bay Schedule &amp; Slot Allocation</h3>
+        <p class="tl-sub tl-num">
+          {{ displayDateObj | date:'EEEE, MMM d, y' }} · {{ daySortieCount }} {{ daySortieCount === 1 ? 'sortie' : 'sorties' }}
+          <ng-container *ngIf="dayShiftInUseCount > 0"> · {{ dayShiftInUseCount }} active shift {{ dayShiftInUseCount === 1 ? 'session' : 'sessions' }}</ng-container>
+          <ng-container *ngIf="dayShiftReadyCount > 0"> · {{ dayShiftReadyCount }} ready</ng-container>
+          across {{ sortedSimulators.length }} stations
+        </p>
+      </div>
+    </div>
+
+    <div class="tl-controls">
+      <div class="tl-legend">
+        <span class="leg-item"><span class="leg-dot planned"></span>Planned</span>
+        <span class="leg-item"><span class="leg-dot live"></span>In Use / Bay</span>
+        <span class="leg-item"><span class="leg-dot ready"></span>Ready</span>
+        <span class="leg-item"><span class="leg-dot clean"></span>Clean</span>
+        <span class="leg-item"><span class="leg-dot snag"></span>Snag / DR</span>
+        <span class="leg-item"><span class="leg-dot abort"></span>NA / Abort</span>
+      </div>
+
+      <div class="tl-day-nav">
+        <button type="button" class="btn btn-ghost btn-sm" (click)="shiftDay(-1)" title="Previous Day">
+          <span class="btn-icon">chevron_left</span>
+        </button>
+        <app-datetime-picker
+          class="tl-date-picker"
+          mode="date"
+          [clearable]="false"
+          ariaLabel="Timeline Date"
+          [ngModel]="displayDateObj"
+          (ngModelChange)="onDatePick($event)">
+        </app-datetime-picker>
+        <button type="button" class="btn btn-secondary btn-sm" [class.active-today]="isTodaySelected" (click)="goToday()">
+          Today
+        </button>
+        <button type="button" class="btn btn-ghost btn-sm" (click)="shiftDay(1)" title="Next Day">
+          <span class="btn-icon">chevron_right</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Empty Simulator Notice -->
+  <div class="tl-empty" *ngIf="sortedSimulators.length === 0">
+    No Flight Simulators registered yet. Add a simulator in Flight Simulators to unlock Bay Gantt scheduling.
+  </div>
+
+  <!-- Gantt Scroll Container -->
+  <div class="tl-scroll" *ngIf="sortedSimulators.length > 0">
+    <div class="tl-canvas">
+
+      <!-- Hour Axis Row -->
+      <div class="tl-axis-row">
+        <div class="tl-bay-col tl-axis-corner">Simulator Bay</div>
+        <div class="tl-hours-track">
+          <div class="tl-hour-head tl-num" *ngFor="let h of hours">
+            {{ hourLabel(h) }}
+          </div>
+        </div>
+      </div>
+
+      <!-- Simulator Bay Lanes -->
+      <div class="tl-lane-row" *ngFor="let sim of sortedSimulators; trackBy: trackBySimId">
+        <div class="tl-bay-col tl-bay-cell" (click)="openSimulator.emit(sim.id)" title="Open Simulator Workspace">
+          <div class="bay-top-line">
+            <span class="bay-tag tl-num">{{ sim.bay_code }}</span>
+            <span
+              class="bay-st-pill"
+              [style.background]="laneStatusBadge(sim).bg"
+              [style.color]="laneStatusBadge(sim).color">
+              {{ laneStatusBadge(sim).label }}
+            </span>
+          </div>
+          <div class="bay-sim-code tl-num">{{ sim.code }}</div>
+          <div class="bay-aircraft">{{ sim.aircraft_type }}</div>
+        </div>
+
+        <div class="tl-lane-track">
+          <!-- Clickable Hour Cells -->
+          <div class="tl-cells-grid">
+            <button
+              type="button"
+              class="tl-slot-cell"
+              *ngFor="let h of hours"
+              (click)="scheduleSlot.emit({ simulatorId: sim.id, hour: h })"
+              [title]="'Schedule sortie on ' + sim.bay_code + ' at ' + hourLabel(h)">
+              <span class="slot-plus">+</span>
+            </button>
+          </div>
+
+          <!-- Current Time Marker -->
+          <div class="tl-now-line" *ngIf="nowLinePct !== null" [style.left.%]="nowLinePct">
+            <span class="now-dot"></span>
+          </div>
+
+          <!-- Daily Station Shift Usage Bars (Synced from Flight Simulators) -->
+          <button
+            type="button"
+            class="tl-shift-bar"
+            *ngFor="let sb of shiftBarsForSim(sim.id); trackBy: trackByShiftBlockId"
+            [ngClass]="sb.toneClass"
+            [style.left.%]="sb.leftPct"
+            [style.width.%]="sb.widthPct"
+            (click)="selectShiftBlock.emit(sb.block)"
+            [title]="sb.block.shift_name + ' · ' + sb.block.usage_status + ' (' + sb.timeRangeLabel + ')' + (sb.block.notes ? ' — ' + sb.block.notes : '') + ' · Click to edit in Flight Simulators'">
+            <div class="bar-top">
+              <span class="bar-code tl-num">
+                {{ sb.block.block_kind === 'SHIFT_READY' ? 'READY' : (sb.block.block_kind === 'SHIFT_NA' ? 'NA' : (sb.block.shift_name + ' · IN USE')) }}
+              </span>
+              <span class="bar-time tl-num">{{ sb.timeRangeLabel }}</span>
+            </div>
+            <div class="bar-title">{{ sb.titleLabel }}</div>
+          </button>
+
+          <!-- Sortie Bars -->
+          <button
+            type="button"
+            class="tl-sortie-bar"
+            *ngFor="let bar of barsForSim(sim.id); trackBy: trackByBarId"
+            [ngClass]="bar.toneClass"
+            [style.left.%]="bar.leftPct"
+            [style.width.%]="bar.widthPct"
+            (click)="selectSortie.emit(bar.op)"
+            [title]="(bar.op.sortie_code || bar.op.title) + ' (' + bar.timeRangeLabel + ')'">
+            <div class="bar-top">
+              <span class="bar-code tl-num">{{ bar.op.sortie_code || bar.op.type?.name || 'SORTIE' }}</span>
+              <span class="bar-time tl-num">{{ bar.timeRangeLabel }}</span>
+              <span class="bar-snag-ico" *ngIf="bar.hasSnag" title="Technical Snag Recorded">warning</span>
+            </div>
+            <div class="bar-title">
+              {{ bar.op.customer_operator ? (bar.op.customer_operator + ' · ') : '' }}{{ bar.op.title }}
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Optional Unassigned Row -->
+      <div class="tl-lane-row unassigned-row" *ngIf="unassignedBars.length > 0">
+        <div class="tl-bay-col tl-bay-cell">
+          <div class="bay-top-line">
+            <span class="bay-tag unassigned-tag">UNASSIGNED</span>
+          </div>
+          <div class="bay-aircraft">No Simulator Linked</div>
+        </div>
+
+        <div class="tl-lane-track">
+          <div class="tl-cells-grid">
+            <div class="tl-slot-cell static-cell" *ngFor="let h of hours"></div>
+          </div>
+          <div class="tl-now-line" *ngIf="nowLinePct !== null" [style.left.%]="nowLinePct"></div>
+          <button
+            type="button"
+            class="tl-sortie-bar"
+            *ngFor="let bar of unassignedBars; trackBy: trackByBarId"
+            [ngClass]="bar.toneClass"
+            [style.left.%]="bar.leftPct"
+            [style.width.%]="bar.widthPct"
+            (click)="selectSortie.emit(bar.op)">
+            <div class="bar-top">
+              <span class="bar-code tl-num">{{ bar.op.sortie_code || 'SORTIE' }}</span>
+              <span class="bar-time tl-num">{{ bar.timeRangeLabel }}</span>
+            </div>
+            <div class="bar-title">{{ bar.op.title }}</div>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>

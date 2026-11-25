@@ -431,3 +431,11 @@
 @media (max-width: 1024px) { .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 900px)  { .kanban-board { height: auto; } .search-box { max-width: none; flex: 1 1 100%; } }
 @media (max-width: 560px)  { .stats-grid { grid-template-columns: 1fr; } }
+
+
+.tag.bay-tag {
+  background: #0f172a;
+  color: #f8fafc;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}

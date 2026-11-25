@@ -59,16 +59,28 @@
       <span>Assets Registry</span>
       <span class="mnt-tab-pill">{{assets.length}}</span>
     </button>
+
+    <button type="button"
+            role="tab"
+            class="mnt-tab-btn"
+            [class.active]="activeTab === 'qtg'"
+            [attr.aria-selected]="activeTab === 'qtg'"
+            (click)="selectTab('qtg')">
+      <span class="mat-i">fact_check</span>
+      <span>QTG Compliance</span>
+    </button>
   </div>
 
   <!-- ── Active Tab Panel ────────────────────────────────────────────────── -->
   <app-maintenance-work-orders
     *ngIf="activeTab === 'work-orders'"
+    [simulators]="simulators"
     [assets]="assets"
     [uiPrefs]="uiPrefs"
     [refreshTick]="refreshTick"
     [externalStatusFilter]="externalStatusFilter"
     [externalSearch]="externalSearch"
+    [externalSimulatorId]="externalSimulatorId"
     (logWorkOrderRequested)="openAddWorkOrder()"
     (editWorkOrderRequested)="openEditWorkOrder($event)"
     (detailRequested)="openWorkOrderDetail($event)"
@@ -99,10 +111,19 @@
     (assetsMutated)="onAssetsMutated()">
   </app-maintenance-assets>
 
+  <app-maintenance-qtg
+    *ngIf="activeTab === 'qtg'"
+    [simulators]="simulators"
+    [preselectedSimulatorId]="externalSimulatorId"
+    [refreshTick]="refreshTick"
+    (mutated)="onMutated()">
+  </app-maintenance-qtg>
+
 </div>
 
 <!-- ── Shared Modals ─────────────────────────────────────────────────────── -->
 <app-maintenance-modals
+  [simulators]="simulators"
   [assets]="assets"
   [assetCategories]="assetCategories"
   [warehouseItems]="warehouseItems"

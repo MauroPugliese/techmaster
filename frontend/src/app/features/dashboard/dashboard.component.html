@@ -159,6 +159,79 @@
     </app-dashboard-today-radar>
   </div>
 
+  <!-- ── Row 2.5: Live FSTD Simulator Bays Status Wall (Control Room) ───── -->
+  <div class="card dash-card dash-sim-wall" *ngIf="simulators.length > 0">
+    <div class="dash-sim-head">
+      <div>
+        <h3>Live FSTD Simulator Bays Wall</h3>
+        <p>Real-time bay availability, active sorties, dispatch reliability &amp; open technical snags</p>
+      </div>
+
+      <div class="dash-sim-kpis">
+        <span class="dash-sim-kpi-pill">
+          Total Bays: <strong>{{simSummary?.totalSimulators ?? simulators.length}}</strong>
+        </span>
+        <span class="dash-sim-kpi-pill is-good">
+          Ready / Sortie: <strong>{{(simSummary?.readyBays ?? 0) + (simSummary?.inSortieBays ?? 0)}}</strong>
+        </span>
+        <span class="dash-sim-kpi-pill is-good">
+          Dispatch: <strong>{{simSummary?.dispatchReliabilityPct ?? 100}}%</strong>
+        </span>
+        <span class="dash-sim-kpi-pill">
+          Today Flown: <strong>{{simSummary?.todayFlightHours ?? 0}}h</strong>
+        </span>
+        <span class="dash-sim-kpi-pill">
+          QTG: <strong>{{simSummary?.qtgCompliancePct ?? 100}}%</strong>
+        </span>
+        <span class="dash-sim-kpi-pill" [class.is-bad]="(simSummary?.openSnagsCount ?? 0) > 0">
+          Open DRs: <strong>{{simSummary?.openSnagsCount ?? 0}}</strong>
+        </span>
+        <a class="btn btn-secondary btn-sm" routerLink="/simulators">Manage Simulators</a>
+        <a class="btn btn-primary btn-sm" routerLink="/operations">Bay Timeline</a>
+      </div>
+    </div>
+
+    <div class="dash-sim-grid">
+      <a
+        class="dash-sim-card"
+        *ngFor="let sim of simulators"
+        [class.sim-aog]="sim.status === 'AOG'"
+        [class.sim-degraded]="sim.status === 'DEGRADED' || sim.status === 'MAINTENANCE'"
+        routerLink="/simulators"
+        [queryParams]="{ id: sim.id }">
+        <div class="dash-sim-top">
+          <span class="dash-bay-tag">{{sim.bay_code}}</span>
+          <span
+            class="dash-sim-st"
+            [style.background]="simStatusMeta(sim.status).bg"
+            [style.color]="simStatusMeta(sim.status).color">
+            {{simStatusMeta(sim.status).label}}
+          </span>
+        </div>
+
+        <div>
+          <div class="dash-sim-title">{{sim.code}} · {{sim.aircraft_type}}</div>
+          <div class="dash-sim-sub">{{sim.authority || 'EASA'}} {{sim.qualification_level || 'Level D'}} · AIRAC {{sim.airac_cycle || 'Current'}}</div>
+        </div>
+
+        <div class="dash-sim-sortie" *ngIf="sim.telemetry?.activeSortie || sim.telemetry?.nextSortie; else idleBayTpl">
+          <strong>{{sim.telemetry?.activeSortie ? 'LIVE:' : 'NEXT:'}}</strong>
+          {{(sim.telemetry?.activeSortie || sim.telemetry?.nextSortie)?.customer_operator || (sim.telemetry?.activeSortie || sim.telemetry?.nextSortie)?.title}}
+        </div>
+        <ng-template #idleBayTpl>
+          <div class="dash-sim-sortie is-idle">Standby / Available for dispatch</div>
+        </ng-template>
+
+        <div class="dash-sim-foot">
+          <span>{{sim.telemetry?.todayFlightHours ?? 0}}h today · {{sim.telemetry?.dispatchReliabilityPct ?? 100}}% rel</span>
+          <span [class.snag-hot]="(sim.telemetry?.openSnagsCount ?? 0) > 0">
+            {{sim.telemetry?.openSnagsCount ?? 0}} DRs
+          </span>
+        </div>
+      </a>
+    </div>
+  </div>
+
   <!-- ── Row 3: Charts (Continuous Velocity + Workload Breakdown) ────────── -->
   <app-dashboard-charts
     [trends]="overview?.trends ?? null"

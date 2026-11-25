@@ -5,3 +5,55 @@
   flex-direction: column;
   gap: 14px;
 }
+
+
+.mnt-title-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.mnt-bay-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: #0f172a;
+  color: #f8fafc;
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.mnt-snag-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  color: #c2410c;
+  font-size: 0.67rem;
+  font-weight: 800;
+}
+
+.mnt-sev-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 0.67rem;
+  font-weight: 700;
+
+  &.sev-degraded {
+    background: #fef3c7;
+    color: #b45309;
+  }
+
+  &.sev-aog {
+    background: #fee2e2;
+    color: #b91c1c;
+  }
+}

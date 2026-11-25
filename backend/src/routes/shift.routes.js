@@ -3,7 +3,7 @@
 // =============================================================================
 const router = require('express').Router();
 const { Op } = require('sequelize');
-const { Shift, ShiftType, User } = require('../models');
+const { Shift, ShiftType, ShiftHandover, Operation, User } = require('../models');
 const { authorize } = require('../middleware/auth.middleware');
 const { parseDateFilter } = require('../middleware/error.middleware');
 const { validateIdParam } = require('../middleware/validation.middleware');
@@ -18,7 +18,7 @@ const {
   expandDateSelection,
 } = require('../services/shift-schedule.service');
 
-const EMPLOYEE_ATTRS = ['id', 'first_name', 'last_name', 'department', 'job_title', 'avatar_url'];
+const EMPLOYEE_ATTRS = ['id', 'first_name', 'last_name', 'department', 'job_title', 'avatar_url', 'certifications'];
 const SUPERVISOR_ATTRS = ['id', 'first_name', 'last_name'];
 
 function buildShiftInclude(department) {
@@ -446,6 +446,117 @@ router.post('/copy-week', async (req, res, next) => {
         skipped,
       },
     });
+  } catch (err) { next(err); }
+});
+
+// ── Sortie Coverage Alerts ──────────────────────────────────────────────────
+router.get('/coverage-alerts', async (req, res, next) => {
+  try {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const fromStr = isValidIsoDate(req.query.from) ? req.query.from : todayStr;
+    const toStr = isValidIsoDate(req.query.to) ? req.query.to : addDaysToIsoDate(fromStr, 6);
+
+    const [sorties, shifts] = await Promise.all([
+      Operation.findAll({
+        where: {
+          status: { [Op.in]: ['PLANNED', 'IN_PROGRESS'] },
+          start_date: {
+            [Op.between]: [new Date(`${fromStr}T00:00:00Z`), new Date(`${toStr}T23:59:59Z`)]
+          }
+        },
+        attributes: ['id', 'start_date', 'sortie_code', 'title']
+      }),
+      Shift.findAll({
+        where: {
+          date: { [Op.between]: [fromStr, toStr] },
+          entry_kind: { [Op.ne]: 'LEAVE' },
+          status: { [Op.notIn]: ['ON_LEAVE', 'ABSENT'] }
+        },
+        attributes: ['id', 'date']
+      })
+    ]);
+
+    const sortiesByDate = new Map();
+    for (const op of sorties) {
+      const d = new Date(op.start_date).toISOString().slice(0, 10);
+      sortiesByDate.set(d, (sortiesByDate.get(d) || 0) + 1);
+    }
+
+    const shiftsByDate = new Map();
+    for (const sh of shifts) {
+      shiftsByDate.set(sh.date, (shiftsByDate.get(sh.date) || 0) + 1);
+    }
+
+    const alerts = [];
+    for (const [date, sortieCount] of sortiesByDate.entries()) {
+      const shiftCount = shiftsByDate.get(date) || 0;
+      if (shiftCount === 0) {
+        alerts.push({
+          date,
+          sortieCount,
+          shiftCount,
+          severity: 'HIGH',
+          message: `${date}: ${sortieCount} scheduled sortie(s) with 0 active crew shifts rostered.`
+        });
+      }
+    }
+
+    alerts.sort((a, b) => a.date.localeCompare(b.date));
+    res.json({ success: true, data: { from: fromStr, to: toStr, alerts } });
+  } catch (err) { next(err); }
+});
+
+// ── Shift Handover Log ───────────────────────────────────────────────────────
+const HANDOVER_INCLUDE = [
+  { model: User, as: 'author', attributes: ['id', 'first_name', 'last_name', 'username', 'job_title'] },
+  { model: User, as: 'acknowledger', attributes: ['id', 'first_name', 'last_name', 'username', 'job_title'] }
+];
+
+router.get('/handovers', async (req, res, next) => {
+  try {
+    const rows = await ShiftHandover.findAll({
+      include: HANDOVER_INCLUDE,
+      order: [['shift_date', 'DESC'], ['id', 'DESC']],
+      limit: 30
+    });
+    res.json({ success: true, data: rows });
+  } catch (err) { next(err); }
+});
+
+router.post('/handovers', async (req, res, next) => {
+  try {
+    const shiftDate = isValidIsoDate(req.body?.shift_date)
+      ? req.body.shift_date
+      : new Date().toISOString().slice(0, 10);
+    const fromCode = String(req.body?.from_shift_code || '').trim().toUpperCase().slice(0, 20);
+    const toCode = String(req.body?.to_shift_code || '').trim().toUpperCase().slice(0, 20);
+    if (!fromCode || !toCode) {
+      return res.status(400).json({ success: false, message: 'from_shift_code and to_shift_code are required.' });
+    }
+
+    const created = await ShiftHandover.create({
+      shift_date: shiftDate,
+      from_shift_code: fromCode,
+      to_shift_code: toCode,
+      authored_by: req.user.id,
+      simulators_status_summary: String(req.body?.simulators_status_summary || '').trim() || null,
+      open_drs_summary: String(req.body?.open_drs_summary || '').trim() || null,
+      pending_actions: String(req.body?.pending_actions || '').trim() || null,
+      safety_loto_notes: String(req.body?.safety_loto_notes || '').trim() || null
+    });
+
+    const full = await ShiftHandover.findByPk(created.id, { include: HANDOVER_INCLUDE });
+    res.status(201).json({ success: true, data: full || created });
+  } catch (err) { next(err); }
+});
+
+router.patch('/handovers/:id/acknowledge', validateIdParam, async (req, res, next) => {
+  try {
+    const row = await ShiftHandover.findByPk(req.params.id);
+    if (!row) return res.status(404).json({ success: false, message: 'Handover entry not found' });
+    await row.update({ acknowledged_by: req.user.id, acknowledged_at: new Date() });
+    const full = await ShiftHandover.findByPk(row.id, { include: HANDOVER_INCLUDE });
+    res.json({ success: true, data: full || row });
   } catch (err) { next(err); }
 });
 

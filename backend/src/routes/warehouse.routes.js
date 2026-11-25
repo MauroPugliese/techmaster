@@ -88,10 +88,16 @@ router.get('/summary', async (req, res, next) => {
     ]);
 
     const summary = summarizeInventoryRows(items.map(i => i.get({ plain: true })));
+    const aogCriticalCount = items.filter(i => Boolean(i.aog_critical)).length;
+    const rotatableCount = items.filter(i => i.part_classification === 'ROTATABLE_LRU').length;
+    const unserviceableUnits = items.reduce((acc, i) => acc + (Number(i.unserviceable_qty) || 0), 0);
     res.json({
       success: true,
       data: {
         ...summary,
+        aog_critical_count: aogCriticalCount,
+        rotatable_count: rotatableCount,
+        unserviceable_units: unserviceableUnits,
         movements_7d: movements7d
       }
     });
@@ -298,6 +304,8 @@ router.get('/', async (req, res, next) => {
     const {
       low_stock,
       stock_status,
+      aog_critical,
+      part_classification,
       page = 1,
       limit = 20,
       search,
@@ -312,6 +320,10 @@ router.get('/', async (req, res, next) => {
     const parsedLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
 
     const where = { is_active: true };
+    if (aog_critical === 'true') where.aog_critical = true;
+    if (part_classification && String(part_classification).trim()) {
+      where.part_classification = String(part_classification).trim().toUpperCase();
+    }
     const andConditions = [];
 
     const effectiveStatus = String(stock_status || '').trim().toLowerCase();

@@ -82,6 +82,7 @@
 
           <td class="col-title-cell">
             <div class="title-main">
+              <span class="pill-bay" *ngIf="task.simulator?.bay_code || task.simulator?.code">{{task.simulator?.bay_code || task.simulator?.code}}</span>
               <span class="title-text">{{task.title}}</span>
               <span class="pill-interval">{{task.interval_type}}</span>
               <span class="pill-comments" *ngIf="task.comments_count" title="Comments">

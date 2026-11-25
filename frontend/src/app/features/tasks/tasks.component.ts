@@ -21,7 +21,7 @@ import {
   ToastService, UiCustomizationService, UiSectionPreferences
 } from '../../core/services/services';
 import {
-  IntervalType, Priority, Task, TaskAssignee, TaskStatus, User
+  IntervalType, Priority, Simulator, Task, TaskAssignee, TaskStatus, User
 } from '../../core/models/interfaces';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
 import { DropdownComponent, DropdownOptionComponent } from '../../shared/components/dropdown/dropdown.component';
@@ -87,9 +87,10 @@ export class TasksComponent implements OnInit, OnDestroy {
 
   private destroy$ = new Subject<void>();
 
-  tasks:     Task[] = [];
-  allTasks:  Task[] = [];
-  assignees: TaskAssignee[] = [];
+  tasks:      Task[] = [];
+  allTasks:   Task[] = [];
+  simulators: Simulator[] = [];
+  assignees:  TaskAssignee[] = [];
   loading  = true;
   saving   = false;
   busyBulk = false;
@@ -224,6 +225,14 @@ export class TasksComponent implements OnInit, OnDestroy {
         this.cdr.markForCheck();
       },
       error: () => { /* optional metadata fallback */ }
+    });
+
+    this.api.get<any>('/simulators').pipe(takeUntil(this.destroy$)).subscribe({
+      next: res => {
+        this.simulators = res?.data || [];
+        this.cdr.markForCheck();
+      },
+      error: () => { /* ignore if simulators inaccessible */ }
     });
 
     this.dateFilter.range$.pipe(

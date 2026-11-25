@@ -19,15 +19,17 @@ import {
   MaintenanceStatus,
   MaintenanceSummary,
   PlannedMaintenanceSummary,
-  PlannedMaintenanceTask
+  PlannedMaintenanceTask,
+  Simulator
 } from '../../core/models/interfaces';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
 import { MaintenanceWorkOrdersComponent } from './work-orders/maintenance-work-orders.component';
 import { PlannedMaintenanceDashboardComponent } from './planned/planned-maintenance-dashboard.component';
 import { MaintenanceAssetsComponent } from './assets/maintenance-assets.component';
+import { MaintenanceQtgComponent } from './qtg/maintenance-qtg.component';
 import { MaintenanceModalsComponent } from './modals/maintenance-modals.component';
 
-export type MaintenanceTab = 'work-orders' | 'planned' | 'assets';
+export type MaintenanceTab = 'work-orders' | 'planned' | 'assets' | 'qtg';
 
 @Component({
   selector: 'app-maintenance',
@@ -38,6 +40,7 @@ export type MaintenanceTab = 'work-orders' | 'planned' | 'assets';
     MaintenanceWorkOrdersComponent,
     PlannedMaintenanceDashboardComponent,
     MaintenanceAssetsComponent,
+    MaintenanceQtgComponent,
     MaintenanceModalsComponent
   ],
   templateUrl: './maintenance.component.html',
@@ -53,6 +56,7 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
   activeTab: MaintenanceTab = 'work-orders';
   refreshTick = 0;
 
+  simulators: Simulator[] = [];
   assets: Asset[] = [];
   assetCategories: AssetCategory[] = [];
   warehouseItems: InventoryItem[] = [];
@@ -64,6 +68,7 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
   plannedExportParams: Record<string, any> = {};
   externalStatusFilter = '';
   externalSearch = '';
+  externalSimulatorId: number | null = null;
   private actionHandled = false;
 
   constructor(
@@ -80,8 +85,12 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
 
     this.route.queryParams.pipe(takeUntil(this.destroy$)).subscribe(qp => {
       const tab = qp['tab'];
-      if (tab === 'work-orders' || tab === 'planned' || tab === 'assets') {
+      if (tab === 'work-orders' || tab === 'planned' || tab === 'assets' || tab === 'qtg') {
         this.activeTab = tab;
+      }
+      if (qp['simulatorId'] !== undefined) {
+        const simId = Number(qp['simulatorId']);
+        this.externalSimulatorId = Number.isFinite(simId) && simId > 0 ? simId : null;
       }
       if (qp['status'] !== undefined) {
         const st = String(qp['status'] || '').toUpperCase();
@@ -121,6 +130,9 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
   }
 
   loadReferenceData(): void {
+    this.api.get<any>('/simulators').subscribe({
+      next: r => { this.simulators = r?.data || []; this.cdr.markForCheck(); }
+    });
     this.api.get<any>('/maintenance/assets').subscribe({
       next: r => { this.assets = r?.data || []; this.cdr.markForCheck(); }
     });
@@ -148,7 +160,7 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
   get primaryActionLabel(): string {
     if (this.activeTab === 'planned') return 'New Planned Task';
     if (this.activeTab === 'assets') return 'Add Asset';
-    return 'Log Work Order';
+    return 'Log Work Order / DR';
   }
 
   triggerPrimaryAction(): void {
@@ -157,13 +169,13 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
     } else if (this.activeTab === 'assets') {
       this.modals?.openAssetModal();
     } else {
-      this.modals?.openRecordModal();
+      this.modals?.openRecordModal(undefined, this.externalSimulatorId ? { simulator_id: this.externalSimulatorId } : undefined);
     }
   }
 
   // ── Modal Delegation ───────────────────────────────────────────────────────
   openAddWorkOrder(): void {
-    this.modals?.openRecordModal();
+    this.modals?.openRecordModal(undefined, this.externalSimulatorId ? { simulator_id: this.externalSimulatorId } : undefined);
   }
 
   openEditWorkOrder(record: MaintenanceRecord): void {

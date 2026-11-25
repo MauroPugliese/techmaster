@@ -14,6 +14,7 @@ const users = require('./users');
 const analytics = require('./analytics');
 const audit = require('./audit');
 const dashboard = require('./dashboard');
+const simulators = require('./simulators');
 
 const MODULES = {
   operations,
@@ -27,7 +28,8 @@ const MODULES = {
   users,
   analytics,
   audit,
-  dashboard
+  dashboard,
+  simulators
 };
 
 module.exports = { MODULES, wiki };

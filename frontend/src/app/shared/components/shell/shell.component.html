@@ -30,16 +30,28 @@
         <span class="nav-label">Dashboard</span>
       </a>
 
-      <div class="nav-section-label" *ngIf="showAnyNavSection(['operations','maintenance','warehouse','shifts'])">Operations</div>
+      <div class="nav-section-label" *ngIf="showAnyNavSection(['simulators','operations','maintenance','warehouse','shifts'])">Simulator Center</div>
+
+      <a class="nav-item" routerLink="/simulators" routerLinkActive="active" *ngIf="showNavSection('simulators')">
+        <span class="nav-icon">flight_takeoff</span>
+        <span class="nav-label">Flight Simulators</span>
+        <span
+          class="nav-badge nav-badge-warn"
+          *ngIf="simulatorsAlertCount > 0"
+          [attr.data-tooltip]="simulatorsAlertCount + (simulatorsAlertCount === 1 ? ' bay degraded or AOG' : ' bays degraded or AOG')"
+          [attr.aria-label]="simulatorsAlertCount + (simulatorsAlertCount === 1 ? ' bay degraded or AOG' : ' bays degraded or AOG')">
+          {{ simulatorsAlertCount }}
+        </span>
+      </a>
 
       <a class="nav-item" routerLink="/operations" routerLinkActive="active" *ngIf="showNavSection('operations')">
         <span class="nav-icon">rocket_launch</span>
-        <span class="nav-label">Operations &amp; Sorties</span>
+        <span class="nav-label">Sorties &amp; Dispatch</span>
         <span
           class="nav-badge"
           *ngIf="activeOpsCount > 0"
-          [attr.data-tooltip]="activeOpsCount + (activeOpsCount === 1 ? ' active or planned operation' : ' active or planned operations')"
-          [attr.aria-label]="activeOpsCount + (activeOpsCount === 1 ? ' active or planned operation' : ' active or planned operations')">
+          [attr.data-tooltip]="activeOpsCount + (activeOpsCount === 1 ? ' active or planned sortie' : ' active or planned sorties')"
+          [attr.aria-label]="activeOpsCount + (activeOpsCount === 1 ? ' active or planned sortie' : ' active or planned sorties')">
           {{ activeOpsCount }}
         </span>
       </a>
@@ -82,7 +94,7 @@
 
       <a class="nav-item" routerLink="/analytics/operations" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}" *ngIf="showNavSection('operations_analytics')">
         <span class="nav-icon">analytics</span>
-        <span class="nav-label">Operations Analytics</span>
+        <span class="nav-label">Sorties Analytics</span>
       </a>
 
       <a class="nav-item" routerLink="/tasks" routerLinkActive="active" *ngIf="showNavSection('tasks')">
@@ -140,18 +152,25 @@
         <span class="shell-crumb-group">{{ pageGroup }}</span>
         <span class="shell-crumb-sep">chevron_right</span>
         <span class="shell-crumb-page">{{ pageTitle }}</span>
-        <span class="shell-crumb-sub" *ngIf="pageSubtitle">{{ pageSubtitle }}</span>
+      </div>
+
+      <!-- Live Aviation UTC / Local Clock -->
+      <div class="aviation-clock-pill" title="Center Time (UTC Zulu / Local)">
+        <span class="clock-ico">schedule</span>
+        <span class="clock-val">UTC {{ utcClock }}</span>
+        <span class="clock-sep">·</span>
+        <span class="clock-val is-local">LOC {{ localClock }}</span>
       </div>
 
       <!-- Command Palette Trigger -->
       <button type="button" class="cmd-trigger" (click)="openCommandPalette()" title="Search or jump to page">
         <span class="cmd-trigger-icon">search</span>
-        <span class="cmd-trigger-text">Quick search…</span>
+        <span class="cmd-trigger-text">Search…</span>
         <span class="cmd-trigger-kbd">{{ isMac ? '⌘K' : 'Ctrl+K' }}</span>
       </button>
 
-      <!-- Global Date Filter -->
-      <div class="header-date-controls">
+      <!-- Global Date Filter (hidden on pages with native date navigation) -->
+      <div class="header-date-controls" *ngIf="showGlobalDateFilter">
         <div class="preset-chips">
           <button type="button" class="chip" [class.active]="activePreset==='today'"   (click)="setPreset('today')">Today</button>
           <button type="button" class="chip" [class.active]="activePreset==='week'"    (click)="setPreset('week')">7D</button>

@@ -122,6 +122,14 @@
           </div>
         </div>
 
+        <div class="form-group" *ngIf="simulators.length > 0">
+          <label class="form-label">Simulator Bay (Optional)</label>
+          <app-dropdown class="form-control" [(ngModel)]="form.simulator_id" placeholder="— General Center Task —">
+            <app-dropdown-option [ngValue]="null">— General Center Task —</app-dropdown-option>
+            <app-dropdown-option *ngFor="let s of simulators" [value]="s.id">{{s.bay_code}} · {{s.code}} ({{s.aircraft_type}})</app-dropdown-option>
+          </app-dropdown>
+        </div>
+
         <!-- Time Tracking: Estimated vs Actual Hours -->
         <div class="hours-card" *ngIf="showFormField('estimated_hours') || showFormField('actual_hours')">
           <div class="form-grid two">

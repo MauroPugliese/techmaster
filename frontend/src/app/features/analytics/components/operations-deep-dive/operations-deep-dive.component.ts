@@ -148,6 +148,35 @@ export class OperationsDeepDiveComponent implements OnInit, AfterViewInit, OnCha
     return this.payload?.insights;
   }
 
+  get simulatorMetrics(): {
+    bySimulator: Array<{
+      simulator_id: number;
+      simulator_code: string;
+      bay_code: string;
+      aircraft_type: string;
+      bay_status: string;
+      sortie_count: number;
+      scheduled_hours: number;
+      actual_hours: number;
+      lost_minutes: number;
+      reliability_pct: number;
+    }>;
+    snagsBySubsystem: Array<{ subsystem: string; count: number; aog_count: number; lost_hours: number }>;
+    hoursByCustomer: Array<{ customer: string; sorties: number; scheduled_hours: number; lost_minutes: number }>;
+  } {
+    return (this.payload as any)?.simulatorMetrics || { bySimulator: [], snagsBySubsystem: [], hoursByCustomer: [] };
+  }
+
+  get maxSubSnags(): number {
+    const arr = this.simulatorMetrics.snagsBySubsystem;
+    return Math.max(1, ...arr.map(x => Number(x.count) || 0));
+  }
+
+  get maxCustomerHours(): number {
+    const arr = this.simulatorMetrics.hoursByCustomer;
+    return Math.max(1, ...arr.map(x => Number(x.scheduled_hours) || 0));
+  }
+
   get hasTrendData(): boolean {
     return (this.payload?.charts?.trend || []).some(r => Number(r.count) > 0);
   }

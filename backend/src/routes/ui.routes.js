@@ -4,9 +4,13 @@ const { sequelize } = require('../models');
 let sectionAccessTableInitPromise = null;
 
 const UI_SECTION_CATALOG = {
+  simulators: {
+    table: ['code', 'name', 'bay_code', 'aircraft_type', 'qualification_level', 'certificate_expiry', 'status'],
+    form: ['code', 'name', 'bay_code', 'platform_category', 'aircraft_type', 'manufacturer', 'authority', 'qualification_level', 'certificate_code', 'certificate_expiry', 'visual_system', 'motion_system', 'airac_cycle', 'status', 'limitations_mel']
+  },
   operations: {
-    table: ['id', 'title', 'type', 'status', 'priority', 'location', 'start_date', 'creator'],
-    form: ['title', 'type_id', 'priority', 'status', 'location', 'start_date', 'end_date', 'description', 'notes']
+    table: ['sortie_code', 'title', 'simulator', 'customer_operator', 'type', 'status', 'priority', 'start_date', 'creator'],
+    form: ['title', 'sortie_code', 'simulator_id', 'type_id', 'customer_operator', 'scenario_code', 'weather_profile', 'motion_required', 'priority', 'status', 'location', 'start_date', 'end_date', 'scheduled_hours', 'actual_flight_hours', 'lost_training_minutes', 'outcome', 'description', 'notes']
   },
   maintenance: {
     table: ['title', 'asset', 'type', 'status', 'priority', 'scheduled_date', 'technician', 'cost'],
@@ -49,11 +53,17 @@ const NAV_SECTION_CATALOG = {
     group: 'Overview',
     icon: 'dashboard'
   },
+  simulators: {
+    path: '/simulators',
+    label: 'Flight Simulators',
+    group: 'Operations',
+    icon: 'flight'
+  },
   operations: {
     path: '/operations',
-    label: 'Operations & Sorties',
+    label: 'Sorties & Dispatch',
     group: 'Operations',
-    icon: 'rocket_launch'
+    icon: 'flight_takeoff'
   },
   maintenance: {
     path: '/maintenance',
@@ -81,7 +91,7 @@ const NAV_SECTION_CATALOG = {
   },
   operations_analytics: {
     path: '/analytics/operations',
-    label: 'Operations Analytics',
+    label: 'Sorties Analytics',
     group: 'Intelligence',
     icon: 'analytics'
   },

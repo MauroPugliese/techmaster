@@ -116,6 +116,11 @@
       <app-dropdown-option value="INSPECTION">Inspection</app-dropdown-option>
     </app-dropdown>
 
+    <app-dropdown class="form-control mnt-filter-select" [(ngModel)]="simulatorFilter" (change)="applyFilters()" placeholder="All Bays">
+      <app-dropdown-option [ngValue]="''">All Simulator Bays</app-dropdown-option>
+      <app-dropdown-option *ngFor="let s of simulators" [ngValue]="s.id">{{s.bay_code}} · {{s.code}}</app-dropdown-option>
+    </app-dropdown>
+
     <app-dropdown class="form-control mnt-filter-select" [(ngModel)]="assetFilter" (change)="applyFilters()" placeholder="All Assets">
       <app-dropdown-option [ngValue]="''">All Assets</app-dropdown-option>
       <app-dropdown-option *ngFor="let a of assets" [ngValue]="a.id">{{a.name}}</app-dropdown-option>
@@ -230,7 +235,12 @@
         </td>
 
         <td *ngIf="showTableField('title') || showTableField('asset') || showTableField('type')">
-          <div class="mnt-title-main" *ngIf="showTableField('title')">{{r.title}}</div>
+          <div class="mnt-title-badges" *ngIf="showTableField('title')">
+            <span class="mnt-bay-pill" *ngIf="r.simulator?.bay_code">{{r.simulator?.bay_code}}</span>
+            <span class="mnt-snag-pill" *ngIf="r.is_snag">DR</span>
+            <span class="mnt-sev-pill" *ngIf="r.severity && r.severity !== 'MINOR'" [ngClass]="'sev-' + r.severity.toLowerCase()">{{r.severity}}</span>
+            <span class="mnt-title-main">{{r.title}}</span>
+          </div>
           <div class="mnt-subtext" *ngIf="recordSubline(r)">{{recordSubline(r)}}</div>
         </td>
 

@@ -140,6 +140,11 @@ export class WarehouseModalsComponent {
       name: '',
       description: '',
       unit: 'pcs',
+      part_classification: 'CONSUMABLE' as 'CONSUMABLE' | 'ROTATABLE_LRU' | 'TOOL_CALIBRATED',
+      aog_critical: false,
+      lead_time_days: 7,
+      unserviceable_qty: 0,
+      compatible_models_text: '',
       quantity: 0,
       min_stock: 0,
       reorder_point: 0,
@@ -161,6 +166,11 @@ export class WarehouseModalsComponent {
         name: item.name,
         description: item.description ?? '',
         unit: item.unit || 'pcs',
+        part_classification: (item.part_classification || 'CONSUMABLE') as 'CONSUMABLE' | 'ROTATABLE_LRU' | 'TOOL_CALIBRATED',
+        aog_critical: Boolean(item.aog_critical),
+        lead_time_days: item.lead_time_days ?? 7,
+        unserviceable_qty: item.unserviceable_qty ?? 0,
+        compatible_models_text: Array.isArray(item.compatible_models) ? item.compatible_models.join(', ') : '',
         quantity: item.quantity,
         min_stock: item.min_stock ?? 0,
         reorder_point: item.reorder_point ?? 0,
@@ -231,7 +241,18 @@ export class WarehouseModalsComponent {
 
     this.saving = true;
     const isEdit = !!this.editingItem;
-    const payload = { ...this.itemForm };
+    const { compatible_models_text, ...rest } = this.itemForm;
+    const compatList = String(compatible_models_text || '')
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean);
+    const payload = {
+      ...rest,
+      aog_critical: Boolean(rest.aog_critical),
+      lead_time_days: Math.max(0, Math.floor(Number(rest.lead_time_days || 0))),
+      unserviceable_qty: Math.max(0, Math.floor(Number(rest.unserviceable_qty || 0))),
+      compatible_models: compatList
+    };
     const req$ = isEdit
       ? this.api.put<any>(`/warehouse/${this.editingItem!.id}`, payload)
       : this.api.post<any>('/warehouse', payload);

@@ -1,22 +1,19 @@
 <div class="ops-page fade-in">
 
-  <!-- ── Page Header ─────────────────────────────────────────────────────── -->
+  <!-- ── Balanced Page Header (Consistent with other SMaRT sections) ──── -->
   <div class="ops-page-head">
     <div>
-      <h2>Operations &amp; Sorties</h2>
-      <p>Mission planning, active sorties, crew assignments, and activity logs.</p>
+      <h2>Sorties &amp; Dispatch</h2>
+      <p>Schedule simulator training sorties, filter live bays and track 24-hour bay utilization.</p>
     </div>
 
     <div class="ops-head-actions">
-      <a class="btn btn-secondary" routerLink="/analytics/operations">
-        <span class="btn-icon">analytics</span> Analytics
-      </a>
       <app-export-menu endpoint="operations"
-                       filename="Operations"
-                       [params]="{ status: statusFilter, priority: priorityFilter, type_id: typeFilter, search: searchQuery }">
+                       filename="Sorties-Dispatch"
+                       [params]="{ status: statusFilter, priority: priorityFilter, type_id: typeFilter, simulator_id: simulatorFilter, outcome: outcomeFilter, search: searchQuery }">
       </app-export-menu>
       <button type="button" class="btn btn-primary" (click)="openModal()">
-        <span class="btn-icon">add</span> New Operation
+        <span class="btn-icon">add</span> Schedule Sortie
       </button>
     </div>
   </div>
@@ -40,22 +37,10 @@
             [class.active]="statusFilter === 'IN_PROGRESS'"
             style="--kpi-color:#0288D1"
             (click)="filterByKpi('IN_PROGRESS')">
-      <div class="kpi-icon-wrap">rocket_launch</div>
+      <div class="kpi-icon-wrap">flight_takeoff</div>
       <div class="ops-kpi-body">
         <div class="ops-kpi-value">{{summary?.in_progress_count ?? 0}}</div>
-        <div class="kpi-label">In Progress</div>
-      </div>
-    </button>
-
-    <button type="button"
-            class="kpi-card ops-kpi-card ops-kpi-clickable"
-            [class.active]="statusFilter === 'ON_HOLD'"
-            style="--kpi-color:#D97706"
-            (click)="filterByKpi('ON_HOLD')">
-      <div class="kpi-icon-wrap">pause_circle</div>
-      <div class="ops-kpi-body">
-        <div class="ops-kpi-value">{{summary?.on_hold_count ?? 0}}</div>
-        <div class="kpi-label">On Hold</div>
+        <div class="kpi-label">In Sim Now</div>
       </div>
     </button>
 
@@ -64,24 +49,125 @@
             [class.active]="statusFilter === 'COMPLETED'"
             style="--kpi-color:#16A34A"
             (click)="filterByKpi('COMPLETED')">
-      <div class="kpi-icon-wrap">check_circle</div>
+      <div class="kpi-icon-wrap">verified</div>
       <div class="ops-kpi-body">
-        <div class="ops-kpi-value">{{summary?.completed_count ?? 0}}</div>
-        <div class="kpi-label ops-num">Completed · {{summary?.completion_rate ?? 0}}% rate</div>
+        <div class="ops-kpi-value ops-num">{{summary?.dispatch_reliability_pct ?? summary?.completion_rate ?? 100}}%</div>
+        <div class="kpi-label ops-num">Reliability · {{summary?.completed_count ?? 0}} flown</div>
       </div>
     </button>
+
+    <div class="kpi-card ops-kpi-card" style="--kpi-color:#0f766e">
+      <div class="kpi-icon-wrap">schedule</div>
+      <div class="ops-kpi-body">
+        <div class="ops-kpi-value ops-num">{{totalHoursText()}}</div>
+        <div class="kpi-label ops-num">Hours · Avg {{avgDurationText()}}</div>
+      </div>
+    </div>
 
     <button type="button"
             class="kpi-card ops-kpi-card ops-kpi-clickable"
             [class.active]="statusFilter === 'OVERDUE'"
-            style="--kpi-color:#1565C0"
+            style="--kpi-color:#D97706"
             (click)="filterByKpi('OVERDUE')">
-      <div class="kpi-icon-wrap">schedule</div>
+      <div class="kpi-icon-wrap">report_problem</div>
       <div class="ops-kpi-body">
-        <div class="ops-kpi-value">{{summary?.total ?? 0}}</div>
-        <div class="kpi-label ops-num">Avg {{avgDurationText()}} · {{summary?.overdue_count ?? 0}} overdue</div>
+        <div class="ops-kpi-value ops-num">{{summary?.snag_sorties_count ?? summary?.overdue_count ?? 0}}</div>
+        <div class="kpi-label ops-num">Snags · {{summary?.total_lost_minutes ?? 0}}m lost</div>
       </div>
     </button>
+  </div>
+
+  <!-- ── Compact 1-Row Live Bay Strip (Expandable Details on Demand) ─────── -->
+  <div class="ops-fleet-deck" *ngIf="simulators.length > 0">
+    <div class="ops-fleet-compact-bar">
+      <div class="ops-deck-kind-pills" role="group" aria-label="Filter deck by station kind">
+        <button type="button" class="ops-kind-pill" [class.active]="deckKindFilter === 'ALL'" (click)="deckKindFilter = 'ALL'">
+          All {{simulators.length}}
+        </button>
+        <button type="button" class="ops-kind-pill" [class.active]="deckKindFilter === 'FFS_BAY'" (click)="deckKindFilter = 'FFS_BAY'">
+          FFS {{countByKind('FFS_BAY')}}
+        </button>
+        <button type="button" class="ops-kind-pill" [class.active]="deckKindFilter === 'TEST_PLACE'" (click)="deckKindFilter = 'TEST_PLACE'">
+          TP {{countByKind('TEST_PLACE')}}
+        </button>
+        <button type="button" class="ops-kind-pill" [class.active]="deckKindFilter === 'IOS_CONSOLE'" (click)="deckKindFilter = 'IOS_CONSOLE'">
+          IOS {{countByKind('IOS_CONSOLE')}}
+        </button>
+      </div>
+
+      <!-- Compact Live Status Chips (Click to filter timeline & sorties) -->
+      <div class="ops-bay-chip-strip" role="group" aria-label="Filter by simulator bay">
+        <button
+          type="button"
+          class="ops-bay-chip"
+          *ngFor="let sim of deckSimulators"
+          [class.active]="simulatorFilter === sim.id"
+          [class.is-aog]="sim.status === 'AOG' || timelineShiftStatuses[sim.id] === 'NA'"
+          [class.is-warn]="sim.status === 'DEGRADED' || sim.status === 'MAINTENANCE'"
+          (click)="selectDeckSimulator(sim.id)"
+          [title]="sim.name + ' · ' + deckChipStatusLabel(sim) + ' · Click to filter'">
+          <span class="ops-chip-dot" [style.background]="deckChipDotColor(sim)"></span>
+          <span class="ops-num">{{sim.bay_code}}</span>
+        </button>
+
+        <button *ngIf="simulatorFilter !== ''"
+                type="button"
+                class="ops-bay-clear-btn"
+                (click)="simulatorFilter = ''; applyFilters()"
+                title="Clear bay filter">
+          <span class="mat-i">close</span>
+        </button>
+      </div>
+
+      <div class="ops-deck-controls">
+        <a *ngIf="todayPlantLog"
+           class="ops-plant-hours-pill ops-num"
+           routerLink="/simulators"
+           [queryParams]="{ view: 'test-places' }"
+           [title]="'Operating Hours · Readiness ' + todayPlantLog.system_readiness_time + ' · Post-Test ' + todayPlantLog.post_testing_time + ' · Logout ' + todayPlantLog.logout_time">
+          <span class="mat-i">schedule</span>
+          <span>{{todayPlantLog.system_readiness_time}}–{{todayPlantLog.logout_time}}</span>
+        </a>
+
+        <button type="button" class="btn btn-ghost btn-sm" (click)="showFleetDeck = !showFleetDeck">
+          <span class="btn-icon">{{showFleetDeck ? 'expand_less' : 'expand_more'}}</span>
+          {{showFleetDeck ? 'Hide Cards' : 'Details'}}
+        </button>
+      </div>
+    </div>
+
+    <div class="ops-fleet-strip" *ngIf="showFleetDeck">
+      <div
+        class="ops-deck-card"
+        *ngFor="let sim of deckSimulators"
+        [class.active]="simulatorFilter === sim.id"
+        [class.deck-aog]="sim.status === 'AOG'"
+        [class.deck-degraded]="sim.status === 'DEGRADED' || sim.status === 'MAINTENANCE'"
+        (click)="selectDeckSimulator(sim.id)">
+        <div class="deck-card-top">
+          <span class="ops-bay-pill">{{sim.bay_code}}</span>
+          <span
+            class="ops-sim-st-pill"
+            [style.background]="simStatusMeta(sim.status).bg"
+            [style.color]="simStatusMeta(sim.status).color">
+            {{simStatusMeta(sim.status).label}}
+          </span>
+        </div>
+        <div class="deck-sim-code">{{sim.code}}</div>
+        <div class="deck-sim-aircraft">{{sim.aircraft_type}} · {{sim.qualification_level || 'Level D'}}</div>
+        <div class="deck-card-foot">
+          <span>{{sim.telemetry?.todayFlightHours ?? 0}}h today · {{sim.telemetry?.dispatchReliabilityPct ?? 100}}% rel</span>
+          <span class="deck-foot-links">
+            <button type="button" class="deck-link-btn" (click)="openStationMnt(sim, $event)" title="Rapid MNT Records">
+              MNT
+            </button>
+            <button type="button" class="deck-link-btn" (click)="openSimulatorWorkspace(sim.id, $event)">
+              Dossier
+            </button>
+          </span>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- ── Single-Row Filter Toolbar + View Switcher ───────────────────────── -->
@@ -93,8 +179,8 @@
           <input #searchInput
                  [ngModel]="searchQuery"
                  (ngModelChange)="onSearchModelChange($event)"
-                 placeholder="Search title, location, notes… ( / )"
-                 aria-label="Search operations">
+                 placeholder="Search sortie code, customer, scenario, ICAO… ( / )"
+                 aria-label="Search sorties">
           <button *ngIf="searchQuery"
                   type="button"
                   class="ops-search-clear"
@@ -104,6 +190,11 @@
           </button>
         </div>
       </div>
+
+      <app-dropdown class="form-control ops-filter-select" [(ngModel)]="simulatorFilter" (change)="applyFilters()" placeholder="All Bays">
+        <app-dropdown-option [ngValue]="''">All Simulators</app-dropdown-option>
+        <app-dropdown-option *ngFor="let s of simulators" [ngValue]="s.id">{{s.bay_code}} · {{s.code}}</app-dropdown-option>
+      </app-dropdown>
 
       <app-dropdown class="form-control ops-filter-select" [(ngModel)]="statusFilter" (change)="applyFilters()" placeholder="All Statuses">
         <app-dropdown-option value="">All Statuses</app-dropdown-option>
@@ -115,16 +206,13 @@
         <app-dropdown-option value="CANCELLED">Cancelled</app-dropdown-option>
       </app-dropdown>
 
-      <app-dropdown class="form-control ops-filter-select" [(ngModel)]="priorityFilter" (change)="applyFilters()" placeholder="All Priorities">
-        <app-dropdown-option value="">All Priorities</app-dropdown-option>
-        <app-dropdown-option value="LOW">Low</app-dropdown-option>
-        <app-dropdown-option value="MEDIUM">Medium</app-dropdown-option>
-        <app-dropdown-option value="HIGH">High</app-dropdown-option>
-        <app-dropdown-option value="CRITICAL">Critical</app-dropdown-option>
+      <app-dropdown class="form-control ops-filter-select" [(ngModel)]="outcomeFilter" (change)="applyFilters()" placeholder="All Outcomes">
+        <app-dropdown-option value="">All Outcomes</app-dropdown-option>
+        <app-dropdown-option *ngFor="let o of outcomeOptions" [value]="o.value">{{o.label}}</app-dropdown-option>
       </app-dropdown>
 
-      <app-dropdown class="form-control ops-filter-select" [(ngModel)]="typeFilter" (change)="applyFilters()" placeholder="All Types">
-        <app-dropdown-option [ngValue]="''">All Types</app-dropdown-option>
+      <app-dropdown class="form-control ops-filter-select" [(ngModel)]="typeFilter" (change)="applyFilters()" placeholder="All Sortie Types">
+        <app-dropdown-option [ngValue]="''">All Profiles</app-dropdown-option>
         <app-dropdown-option *ngFor="let t of opTypes" [ngValue]="t.id">{{t.name}}</app-dropdown-option>
       </app-dropdown>
 
@@ -133,6 +221,9 @@
       </button>
 
       <div class="ops-view-toggle" role="group" aria-label="View mode">
+        <button type="button" class="ops-view-btn" [class.active]="viewMode === 'timeline'" (click)="viewMode = 'timeline'">
+          <span class="mat-i">view_timeline</span> Bay Timeline
+        </button>
         <button type="button" class="ops-view-btn" [class.active]="viewMode === 'table'" (click)="viewMode = 'table'">
           <span class="mat-i">table_rows</span> Table
         </button>
@@ -147,7 +238,7 @@
   </div>
 
   <!-- ── Contextual Bulk Action Bar ──────────────────────────────────────── -->
-  <div class="ops-bulk-bar" *ngIf="selectedIds.size > 0">
+  <div class="ops-bulk-bar" *ngIf="selectedIds.size > 0 && viewMode === 'table'">
     <div class="ops-head-actions">
       <span class="mat-i">checklist</span>
       <strong>{{selectedIds.size}} operation{{selectedIds.size > 1 ? 's' : ''}} selected</strong>
@@ -187,8 +278,23 @@
     </div>
   </div>
 
+  <!-- ── VIEW 0: 24-Hour FSTD Bay Gantt Timeline ─────────────────────────── -->
+  <app-sortie-bay-timeline
+    *ngIf="viewMode === 'timeline'"
+    [simulators]="deckSimulators"
+    [operations]="timelineOps"
+    [shiftBlocks]="timelineShiftBlocks"
+    [shiftStatusBySimulator]="timelineShiftStatuses"
+    [selectedDate]="timelineDate"
+    (dateChange)="onTimelineDateChange($event)"
+    (selectSortie)="openDetail($event)"
+    (selectShiftBlock)="openShiftBlockInSimulators($event)"
+    (scheduleSlot)="onTimelineScheduleSlot($event)"
+    (openSimulator)="openSimulatorWorkspace($event)">
+  </app-sortie-bay-timeline>
+
   <!-- ── Main Content Surface ────────────────────────────────────────────── -->
-  <div class="table-container ops-table-wrap">
+  <div class="table-container ops-table-wrap" *ngIf="viewMode !== 'timeline'">
 
     <div *ngIf="loading" class="flex items-center" style="justify-content:center;padding:48px">
       <div class="spinner"></div>
@@ -255,8 +361,14 @@
           </td>
 
           <td *ngIf="showTableField('title') || showTableField('type') || showTableField('location')">
-            <div class="ops-title-main" *ngIf="showTableField('title')">{{op.title}}</div>
+            <div class="ops-title-line" *ngIf="showTableField('title')">
+              <span class="ops-bay-pill" *ngIf="op.simulator?.bay_code">{{op.simulator?.bay_code}}</span>
+              <span class="ops-sim-st-pill" *ngIf="op.sortie_code" style="background:#f1f5f9;color:#334155">{{op.sortie_code}}</span>
+              <span class="ops-title-main">{{op.title}}</span>
+            </div>
             <div class="ops-subtext ops-sub-inline">
+              <span *ngIf="op.simulator?.code">{{op.simulator?.code}}</span>
+              <span *ngIf="op.simulator?.code && (op.type || opSubline(op))">·</span>
               <ng-container *ngIf="showTableField('type') && op.type">
                 <span class="ops-dot" [style.background]="op.type.color || '#1565C0'"></span>
                 <span>{{op.type.name}}</span>
@@ -273,13 +385,23 @@
           <td *ngIf="showTableField('status')">
             <div class="ops-status-stack">
               <span class="badge" [ngClass]="statusBadge(op.status)">{{label(op.status)}}</span>
+              <span
+                class="ops-outcome-pill"
+                *ngIf="op.outcome && op.outcome !== 'PENDING'"
+                [style.background]="outcomeMeta(op.outcome).bg"
+                [style.color]="outcomeMeta(op.outcome).color">
+                {{outcomeMeta(op.outcome).label}}
+              </span>
               <span class="ops-overdue-tag" *ngIf="overdue(op)">Overdue</span>
             </div>
           </td>
 
           <td *ngIf="showTableField('start_date')">
             <div class="ops-num">{{op.start_date | date:'MMM d, y · HH:mm'}}</div>
-            <div class="ops-subtext">Duration: {{durationText(op)}}</div>
+            <div class="ops-subtext">
+              {{durationText(op)}}
+              <ng-container *ngIf="op.lost_training_minutes && op.lost_training_minutes > 0"> · {{op.lost_training_minutes}}m lost</ng-container>
+            </div>
           </td>
 
           <td *ngIf="showTableField('creator')">
@@ -374,14 +496,22 @@
            (click)="openDetail(op)">
         <div class="ops-card-top">
           <div class="ops-status-stack">
+            <span class="ops-bay-pill" *ngIf="op.simulator?.bay_code">{{op.simulator?.bay_code}} · {{op.simulator?.code}}</span>
             <span class="badge" [ngClass]="statusBadge(op.status)">{{label(op.status)}}</span>
+            <span
+              class="ops-outcome-pill"
+              *ngIf="op.outcome && op.outcome !== 'PENDING'"
+              [style.background]="outcomeMeta(op.outcome).bg"
+              [style.color]="outcomeMeta(op.outcome).color">
+              {{outcomeMeta(op.outcome).label}}
+            </span>
             <span class="ops-overdue-tag" *ngIf="overdue(op)">Overdue</span>
           </div>
           <span class="badge" [ngClass]="priorityBadge(op.priority)">{{label(op.priority)}}</span>
         </div>
 
-        <h4 class="ops-card-title">{{op.title}}</h4>
-        <p class="ops-card-desc">{{op.description || 'No description provided.'}}</p>
+        <h4 class="ops-card-title">{{op.sortie_code ? (op.sortie_code + ' · ') : ''}}{{op.title}}</h4>
+        <p class="ops-card-desc">{{op.customer_operator ? (op.customer_operator + (op.scenario_code ? ' · ' + op.scenario_code : '')) : (op.description || 'No brief notes provided.')}}</p>
 
         <div class="ops-card-meta">
           <div class="ops-card-meta-row" *ngIf="op.type">
@@ -389,8 +519,8 @@
             <span>{{op.type.name}}</span>
           </div>
           <div class="ops-card-meta-row">
-            <span class="mat-i">location_on</span>
-            <span>{{op.location || 'No location specified'}}</span>
+            <span class="mat-i">flight_takeoff</span>
+            <span>{{op.simulator?.name || op.location || 'Simulator Bay Unassigned'}}<ng-container *ngIf="op.weather_profile"> · {{op.weather_profile}}</ng-container></span>
           </div>
           <div class="ops-card-meta-row ops-num">
             <span class="mat-i">calendar_today</span>
@@ -407,14 +537,14 @@
                     type="button"
                     class="btn btn-ghost btn-icon-only btn-sm"
                     (click)="setStatus(op, 'IN_PROGRESS')"
-                    title="Start">
+                    title="Start Sortie">
               <span class="btn-icon text-primary">play_circle</span>
             </button>
             <button *ngIf="op.status === 'IN_PROGRESS'"
                     type="button"
                     class="btn btn-ghost btn-icon-only btn-sm"
                     (click)="setStatus(op, 'COMPLETED')"
-                    title="Complete">
+                    title="Complete Sortie">
               <span class="btn-icon" style="color:#16A34A">check_circle</span>
             </button>
             <button type="button" class="btn btn-ghost btn-icon-only btn-sm" (click)="openModal(op)" title="Edit">
@@ -441,12 +571,13 @@
              [style.border-left-color]="op.type?.color || col.color"
              (click)="openDetail(op)">
           <div class="ops-card-top">
+            <span class="ops-bay-pill" *ngIf="op.simulator?.bay_code">{{op.simulator?.bay_code}}</span>
             <span class="badge" [ngClass]="priorityBadge(op.priority)">{{label(op.priority)}}</span>
             <span class="ops-overdue-tag" *ngIf="overdue(op)">Overdue</span>
           </div>
           <div class="ops-title-main">{{op.title}}</div>
           <div class="ops-subtext">
-            {{op.type?.name || 'Operation'}} · {{op.location || 'No location'}}
+            {{op.customer_operator || op.type?.name || 'Sortie'}} · {{op.simulator?.code || op.location || 'No bay'}}
           </div>
           <div class="ops-subtext">
             {{op.start_date | date:'MMM d, HH:mm'}} · {{op.members?.length ?? 0}} crew
@@ -479,13 +610,13 @@
       </div>
     </div>
 
-    <!-- Empty State -->
-    <div class="empty-state" *ngIf="!loading && operations.length === 0">
-      <span class="empty-icon">rocket_launch</span>
-      <h3>No operations found</h3>
-      <p *ngIf="hasActiveFilters">Try clearing one or more filters to view all operations.</p>
+    <!-- Empty State (non-timeline views) -->
+    <div class="empty-state" *ngIf="!loading && viewMode !== 'timeline' && operations.length === 0">
+      <span class="empty-icon">flight_takeoff</span>
+      <h3>No flight sorties found</h3>
+      <p *ngIf="hasActiveFilters">Try clearing one or more filters to view all simulator sorties.</p>
       <button *ngIf="!hasActiveFilters" type="button" class="btn btn-primary" (click)="openModal()">
-        <span class="btn-icon">add</span> New Operation
+        <span class="btn-icon">add</span> Schedule Sortie
       </button>
       <button *ngIf="hasActiveFilters" type="button" class="btn btn-secondary" (click)="resetFilters()">
         Reset Filters
@@ -493,7 +624,7 @@
     </div>
 
     <!-- Paginator -->
-    <div class="ops-pagination-bar" *ngIf="!loading && total > 0">
+    <div class="ops-pagination-bar" *ngIf="!loading && viewMode !== 'timeline' && total > 0">
       <div class="table-page-size-control">
         <span class="text-sm text-muted ops-num">
           Showing {{(page - 1) * pageSize + 1}}–{{Math.min(page * pageSize, total)}} of {{total}}
@@ -523,7 +654,13 @@
 <!-- ── Shared Modals ─────────────────────────────────────────────────────── -->
 <app-operation-modals
   [opTypes]="opTypes"
+  [simulators]="simulators"
   [staffUsers]="staffUsers"
   [uiPrefs]="uiPrefs"
   (mutated)="onMutated()">
 </app-operation-modals>
+
+<app-station-mnt-records-modal
+  #mntRecordsModal
+  (mutated)="onMntMutated()">
+</app-station-mnt-records-modal>

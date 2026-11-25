@@ -8,6 +8,9 @@ const {
   OperationType,
   OperationMember,
   OperationLog,
+  Simulator,
+  SimulatorSubsystem,
+  MaintenanceRecord,
   User,
   sequelize
 } = require('../models');
@@ -19,11 +22,14 @@ const {
   sanitizeBulkOperationAction,
   sanitizeOperationLogPayload,
   buildOperationSortOrder,
-  summarizeOperationRows
+  summarizeOperationRows,
+  summarizeSortieFleetMetrics
 } = require('../services/operation-helpers.service');
+const { detectSortieBayConflict } = require('../services/simulator-helpers.service');
 
 const LIST_INCLUDES = [
   { model: OperationType, as: 'type' },
+  { model: Simulator, as: 'simulator', attributes: ['id', 'code', 'name', 'bay_code', 'aircraft_type', 'qualification_level', 'status', 'limitations_mel'] },
   { model: User, as: 'creator', attributes: ['id', 'first_name', 'last_name', 'username', 'avatar_url'] },
   {
     model: OperationMember,
@@ -70,7 +76,7 @@ router.get('/staff', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// GET /operations/summary — real DB KPI metrics respecting active date range
+// GET /operations/summary — real DB KPI metrics respecting active date range & simulator filter
 router.get('/summary', parseDateFilter, async (req, res, next) => {
   try {
     const { from, to } = req.dateRange;
@@ -80,16 +86,59 @@ router.get('/summary', parseDateFilter, async (req, res, next) => {
       if (from) where.start_date[Op.gte] = from;
       if (to) where.start_date[Op.lte] = to;
     }
+    if (req.query.simulator_id && Number.isInteger(Number(req.query.simulator_id)) && Number(req.query.simulator_id) > 0) {
+      where.simulator_id = Number(req.query.simulator_id);
+    }
 
     const rows = await Operation.findAll({
       where,
-      attributes: ['id', 'status', 'start_date', 'end_date', 'actual_end_date']
+      attributes: [
+        'id', 'status', 'start_date', 'end_date', 'actual_end_date',
+        'scheduled_hours', 'actual_flight_hours', 'lost_training_minutes', 'outcome'
+      ]
     });
 
+    const plain = rows.map(r => r.get({ plain: true }));
     res.json({
       success: true,
-      data: summarizeOperationRows(rows.map(r => r.get({ plain: true })))
+      data: {
+        ...summarizeOperationRows(plain),
+        ...summarizeSortieFleetMetrics(plain)
+      }
     });
+  } catch (err) { next(err); }
+});
+
+// GET /operations/check-conflict — preflight slot overlap + bay readiness verification
+router.get('/check-conflict', async (req, res, next) => {
+  try {
+    const simId = Number(req.query.simulator_id);
+    if (!Number.isInteger(simId) || simId < 1) {
+      return res.json({ success: true, data: { hasOverlap: false, overlappingSorties: [], warnings: [] } });
+    }
+
+    const [simulator, subsystems, existingSorties] = await Promise.all([
+      Simulator.findByPk(simId),
+      SimulatorSubsystem.findAll({ where: { simulator_id: simId }, attributes: ['subsystem_code', 'status'] }),
+      Operation.findAll({
+        where: { simulator_id: simId, status: { [Op.ne]: 'CANCELLED' } },
+        attributes: ['id', 'sortie_code', 'title', 'status', 'start_date', 'end_date']
+      })
+    ]);
+
+    const result = detectSortieBayConflict(
+      {
+        start_date: req.query.start_date,
+        end_date: req.query.end_date,
+        exclude_id: req.query.exclude_id,
+        motion_required: req.query.motion_required !== 'false'
+      },
+      existingSorties.map(s => s.get({ plain: true })),
+      simulator ? simulator.get({ plain: true }) : null,
+      subsystems.map(s => s.get({ plain: true }))
+    );
+
+    res.json({ success: true, data: result });
   } catch (err) { next(err); }
 });
 
@@ -142,6 +191,9 @@ router.get('/', parseDateFilter, async (req, res, next) => {
       status,
       priority,
       type_id,
+      simulator_id,
+      outcome,
+      date,
       search,
       sort_by,
       sort_dir,
@@ -150,12 +202,22 @@ router.get('/', parseDateFilter, async (req, res, next) => {
     } = req.query;
 
     const parsedPage = Math.max(1, parseInt(page, 10) || 1);
-    const parsedLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+    const parsedLimit = Math.min(200, Math.max(1, parseInt(limit, 10) || 20));
 
     const where = {};
     const andConditions = [];
 
-    if (from || to) {
+    if (date && /^\d{4}-\d{2}-\d{2}$/.test(String(date).trim())) {
+      const dayStart = new Date(`${String(date).trim()}T00:00:00.000Z`);
+      const dayEnd = new Date(`${String(date).trim()}T23:59:59.999Z`);
+      andConditions.push({
+        start_date: { [Op.lte]: dayEnd },
+        [Op.or]: [
+          { end_date: { [Op.gte]: dayStart } },
+          { end_date: null, start_date: { [Op.gte]: dayStart } }
+        ]
+      });
+    } else if (from || to) {
       where.start_date = {};
       if (from) where.start_date[Op.gte] = from;
       if (to) where.start_date[Op.lte] = to;
@@ -172,8 +234,12 @@ router.get('/', parseDateFilter, async (req, res, next) => {
     }
 
     if (priority) where.priority = String(priority).trim().toUpperCase();
+    if (outcome) where.outcome = String(outcome).trim().toUpperCase();
     if (type_id && Number.isInteger(Number(type_id)) && Number(type_id) > 0) {
       where.type_id = Number(type_id);
+    }
+    if (simulator_id && Number.isInteger(Number(simulator_id)) && Number(simulator_id) > 0) {
+      where.simulator_id = Number(simulator_id);
     }
 
     if (search?.trim()) {
@@ -181,6 +247,9 @@ router.get('/', parseDateFilter, async (req, res, next) => {
       andConditions.push({
         [Op.or]: [
           { title: { [Op.like]: searchTerm } },
+          { sortie_code: { [Op.like]: searchTerm } },
+          { customer_operator: { [Op.like]: searchTerm } },
+          { scenario_code: { [Op.like]: searchTerm } },
           { description: { [Op.like]: searchTerm } },
           { location: { [Op.like]: searchTerm } },
           { notes: { [Op.like]: searchTerm } }
@@ -223,6 +292,20 @@ router.post('/', async (req, res, next) => {
     if (membersRes.error) {
       await transaction.rollback();
       return res.status(400).json({ success: false, message: membersRes.error });
+    }
+
+    if (data.simulator_id && !data.location) {
+      const sim = await Simulator.findByPk(data.simulator_id, { attributes: ['id', 'bay_code', 'code'], transaction });
+      if (sim) data.location = `${sim.bay_code} · ${sim.code}`;
+    }
+    if (!data.sortie_code) {
+      const ymd = new Date(data.start_date).toISOString().slice(2, 10).replace(/-/g, '');
+      const suffix = String(Math.floor(100 + Math.random() * 900));
+      data.sortie_code = `SRT-${ymd}-${suffix}`;
+    }
+    if ((data.scheduled_hours === undefined || data.scheduled_hours === null) && data.start_date && data.end_date) {
+      const diffHrs = Math.round(((new Date(data.end_date).getTime() - new Date(data.start_date).getTime()) / 3600000) * 100) / 100;
+      if (diffHrs > 0 && diffHrs <= 24) data.scheduled_hours = diffHrs;
     }
 
     const op = await Operation.create(
@@ -329,9 +412,16 @@ router.post('/:id/duplicate', validateIdParam, async (req, res, next) => {
     }
 
     const copy = await Operation.create({
+      sortie_code: `SRT-${String(Date.now()).slice(-6)}`,
       type_id: source.type_id,
+      simulator_id: source.simulator_id,
       created_by: req.user.id,
       title: `${source.title} (Copy)`.slice(0, 200),
+      customer_operator: source.customer_operator,
+      scenario_code: source.scenario_code,
+      weather_profile: source.weather_profile,
+      motion_required: source.motion_required,
+      scheduled_hours: source.scheduled_hours,
       description: source.description,
       status: 'PLANNED',
       priority: source.priority,
@@ -472,6 +562,81 @@ router.post('/:id/logs', validateIdParam, async (req, res, next) => {
     });
     res.status(201).json({ success: true, data: full || log });
   } catch (err) { next(err); }
+});
+
+// POST /operations/:id/snag — 1-click Post-Sortie Discrepancy Report (DR) linked to Simulator
+router.post('/:id/snag', validateIdParam, async (req, res, next) => {
+  const transaction = await sequelize.transaction();
+  try {
+    const op = await Operation.findByPk(req.params.id, { transaction });
+    if (!op) {
+      await transaction.rollback();
+      return res.status(404).json({ success: false, message: 'Sortie not found' });
+    }
+
+    const title = String(req.body?.title ?? '').trim().slice(0, 200);
+    const description = String(req.body?.description ?? '').trim().slice(0, 4000);
+    if (!title || !description) {
+      await transaction.rollback();
+      return res.status(400).json({ success: false, message: 'Snag title and description are required.' });
+    }
+
+    const severity = ['MINOR', 'DEGRADED', 'AOG'].includes(String(req.body?.severity || '').toUpperCase())
+      ? String(req.body.severity).toUpperCase()
+      : 'DEGRADED';
+    const subsystemCode = req.body?.subsystem_code ? String(req.body.subsystem_code).trim().toUpperCase().slice(0, 60) : null;
+    const lostMinutes = Math.max(0, Math.min(1440, Math.round(Number(req.body?.lost_training_minutes) || 0)));
+    const simulatorId = req.body?.simulator_id ? Number(req.body.simulator_id) : op.simulator_id;
+
+    const drRecord = await MaintenanceRecord.create({
+      simulator_id: simulatorId || null,
+      sortie_id: op.id,
+      subsystem_code: subsystemCode,
+      severity,
+      lost_training_hours: Math.round((lostMinutes / 60) * 100) / 100,
+      is_snag: true,
+      performed_by: req.user.id,
+      type: 'CORRECTIVE',
+      title,
+      description,
+      status: 'SCHEDULED',
+      priority: severity === 'AOG' ? 'CRITICAL' : (severity === 'DEGRADED' ? 'HIGH' : 'MEDIUM'),
+      scheduled_date: new Date()
+    }, { transaction });
+
+    const nextLostMin = (Number(op.lost_training_minutes) || 0) + lostMinutes;
+    const nextOutcome = severity === 'AOG' ? 'INTERRUPTED_TECH' : 'COMPLETED_WITH_SNAGS';
+    const combinedSummary = op.snag_summary ? `${op.snag_summary}\n• [${severity}] ${title}` : `[${severity}] ${title}`;
+
+    await op.update({
+      lost_training_minutes: nextLostMin,
+      outcome: nextOutcome,
+      snag_summary: combinedSummary
+    }, { transaction });
+
+    if (simulatorId && (severity === 'AOG' || severity === 'DEGRADED')) {
+      const targetSim = await Simulator.findByPk(simulatorId, { transaction });
+      if (targetSim) {
+        await targetSim.update({
+          status: severity === 'AOG' ? 'AOG' : (targetSim.status === 'AOG' ? 'AOG' : 'DEGRADED'),
+          limitations_mel: severity === 'DEGRADED' ? (targetSim.limitations_mel ? `${targetSim.limitations_mel}; ${title}` : title) : targetSim.limitations_mel
+        }, { transaction });
+      }
+    }
+
+    await OperationLog.create({
+      operation_id: op.id,
+      user_id: req.user.id,
+      action: `DR Snag Logged [${severity}]: ${title}`,
+      details: subsystemCode ? `Subsystem: ${subsystemCode} · Lost time: ${lostMinutes} min` : `Lost time: ${lostMinutes} min`
+    }, { transaction });
+
+    await transaction.commit();
+    res.status(201).json({ success: true, data: drRecord });
+  } catch (err) {
+    await transaction.rollback();
+    next(err);
+  }
 });
 
 router.delete('/:id', validateIdParam, async (req, res, next) => {

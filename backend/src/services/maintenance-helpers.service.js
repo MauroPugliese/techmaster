@@ -7,6 +7,7 @@ const VALID_PRIORITIES = new Set(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']);
 const VALID_ASSET_STATUSES = new Set(['ACTIVE', 'INACTIVE', 'UNDER_MAINTENANCE', 'RETIRED', 'LOST']);
 const VALID_BULK_ACTIONS = new Set(['status', 'priority', 'delete']);
 const OPEN_STATUSES = new Set(['SCHEDULED', 'IN_PROGRESS', 'DEFERRED']);
+const VALID_SNAG_SEVERITIES = new Set(['MINOR', 'DEGRADED', 'AOG']);
 
 /**
  * Returns true if an open maintenance record's scheduled date has passed.
@@ -94,12 +95,28 @@ function sanitizePartsUsed(rawParts) {
 function sanitizeMaintenancePayload(body = {}, { isCreate = false } = {}) {
   const payload = {};
 
-  if (body.asset_id !== undefined || isCreate) {
+  if (body.asset_id !== undefined && body.asset_id !== null && body.asset_id !== '') {
     const assetId = Number(body.asset_id);
     if (!Number.isInteger(assetId) || assetId < 1) {
       return { error: 'Valid asset_id is required.' };
     }
     payload.asset_id = assetId;
+  } else if (body.asset_id === null || body.asset_id === '') {
+    payload.asset_id = null;
+  }
+
+  if (body.simulator_id !== undefined && body.simulator_id !== null && body.simulator_id !== '') {
+    const simId = Number(body.simulator_id);
+    if (!Number.isInteger(simId) || simId < 1) {
+      return { error: 'Valid simulator_id is required.' };
+    }
+    payload.simulator_id = simId;
+  } else if (body.simulator_id === null || body.simulator_id === '') {
+    payload.simulator_id = null;
+  }
+
+  if (isCreate && !payload.asset_id && !payload.simulator_id) {
+    return { error: 'Valid asset_id or simulator_id is required.' };
   }
 
   if (body.title !== undefined || isCreate) {
@@ -181,6 +198,37 @@ function sanitizeMaintenancePayload(body = {}, { isCreate = false } = {}) {
   const partsParsed = sanitizePartsUsed(body.parts_used);
   if (partsParsed.error) return { error: partsParsed.error };
   if (partsParsed.provided) payload.parts_used = partsParsed.data;
+
+  if (body.sortie_id !== undefined) {
+    if (body.sortie_id === null || body.sortie_id === '') {
+      payload.sortie_id = null;
+    } else {
+      const sId = Number(body.sortie_id);
+      if (!Number.isInteger(sId) || sId < 1) return { error: 'Invalid sortie_id.' };
+      payload.sortie_id = sId;
+    }
+  }
+
+  if (body.subsystem_code !== undefined) {
+    const sc = String(body.subsystem_code ?? '').trim().toUpperCase().slice(0, 60);
+    payload.subsystem_code = sc || null;
+  }
+
+  if (body.severity !== undefined) {
+    const sev = String(body.severity || 'MINOR').trim().toUpperCase();
+    if (!VALID_SNAG_SEVERITIES.has(sev)) return { error: 'Invalid snag severity.' };
+    payload.severity = sev;
+  }
+
+  if (body.lost_training_hours !== undefined) {
+    const lth = toOptionalNullableFloat(body.lost_training_hours);
+    if (lth.error) return { error: `Lost training hours ${lth.error.toLowerCase()}` };
+    payload.lost_training_hours = lth.value ?? 0;
+  }
+
+  if (body.is_snag !== undefined) {
+    payload.is_snag = Boolean(body.is_snag);
+  }
 
   return { data: payload };
 }

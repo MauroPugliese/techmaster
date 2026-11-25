@@ -98,6 +98,11 @@ const MODULE_THEMES = {
     docCode: 'CAE-SEC-12',
     reportType: 'Security & Forensic Audit Trail',
     coverTagline: 'HTTP Integrity, Access Rejections & Operator Anomaly Hotspots'
+  },
+  simulators: {
+    docCode: 'CAE-SIM-13',
+    reportType: 'Flight Simulator Fleet & QTG Dossier',
+    coverTagline: 'Multi-Bay Availability, Qualification Compliance & Subsystem Health'
   }
 };
 

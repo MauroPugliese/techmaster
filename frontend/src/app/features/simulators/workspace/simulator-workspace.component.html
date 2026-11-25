@@ -1,0 +1,598 @@
+<div class="sim-ws fade-in" *ngIf="dossier || loading">
+
+  <!-- Top Bay Switcher & Breadcrumb Bar -->
+  <div class="sim-ws-topbar">
+    <div class="sim-ws-left">
+      <button type="button" class="btn btn-secondary btn-sm" (click)="closeWorkspace.emit()">
+        <span class="btn-icon">arrow_back</span> All Simulators
+      </button>
+
+      <div class="sim-switcher-group" *ngIf="fleet.length > 0">
+        <button
+          type="button"
+          class="btn btn-ghost btn-sm sw-step-btn"
+          [disabled]="fleet.length <= 1"
+          (click)="stepSimulator(-1)"
+          title="Previous station">
+          <span class="btn-icon">chevron_left</span>
+        </button>
+
+        <app-dropdown
+          class="form-control sim-ws-dropdown"
+          [ngModel]="dossier?.id ?? simulatorId"
+          (ngModelChange)="onSwitcherSelect($event)"
+          placeholder="Switch station…">
+          <app-dropdown-option *ngFor="let s of fleet" [ngValue]="s.id">
+            {{ s.bay_code }} · {{ s.name }}
+          </app-dropdown-option>
+        </app-dropdown>
+
+        <button
+          type="button"
+          class="btn btn-ghost btn-sm sw-step-btn"
+          [disabled]="fleet.length <= 1"
+          (click)="stepSimulator(1)"
+          title="Next station">
+          <span class="btn-icon">chevron_right</span>
+        </button>
+
+        <span class="sw-counter sim-num" *ngIf="currentFleetIndex >= 0">
+          {{ currentFleetIndex + 1 }} / {{ fleet.length }}
+        </span>
+      </div>
+    </div>
+
+    <div class="sim-ws-actions" *ngIf="dossier">
+      <a class="btn btn-secondary btn-sm" routerLink="/operations" [queryParams]="{ action: 'new', simulatorId: dossier.id }">
+        <span class="btn-icon">flight_takeoff</span> Schedule Sortie
+      </a>
+      <button type="button" class="btn btn-primary btn-sm" (click)="editSimulatorRequested.emit(dossier)">
+        <span class="btn-icon">edit</span> Edit Simulator
+      </button>
+    </div>
+  </div>
+
+  <div *ngIf="loading" class="sim-ws-loading"><div class="spinner"></div></div>
+
+  <ng-container *ngIf="!loading && dossier as d">
+
+    <!-- Hero Header Card -->
+    <div class="card sim-ws-hero">
+      <div class="sim-ws-hero-main">
+        <div class="sim-ws-badges">
+          <span class="sim-bay-badge sim-num">{{ d.bay_code }}</span>
+          <span class="sim-code-pill sim-num">{{ d.code }}</span>
+          <span class="badge" [style.background]="simStatusMeta(d.status).bg" [style.color]="simStatusMeta(d.status).color">
+            {{ simStatusMeta(d.status).label }}
+          </span>
+          <span class="sim-cat-pill">{{ categoryLabel(d.platform_category) }}</span>
+          <span class="sim-cert-pill" [ngClass]="'tone-' + certBadge(d).tone">
+            {{ d.authority || 'EASA' }} · {{ d.qualification_level || 'Level D' }} · {{ certBadge(d).label }}
+          </span>
+        </div>
+
+        <h2>{{ d.name }}</h2>
+        <p class="sim-ws-sub">
+          <span>{{ d.aircraft_type }}</span>
+          <span>·</span>
+          <span>{{ d.manufacturer || 'CAE' }}</span>
+          <span *ngIf="d.software_load">· {{ d.software_load }}</span>
+          <span *ngIf="d.airac_cycle">· {{ d.airac_cycle }}</span>
+        </p>
+
+        <div class="sim-mel-alert" *ngIf="d.limitations_mel">
+          <span class="mat-i">warning</span>
+          <span><strong>Active MEL / Limitation:</strong> {{ d.limitations_mel }}</span>
+        </div>
+      </div>
+
+      <!-- Mini KPIs -->
+      <div class="sim-ws-hero-kpis sim-num">
+        <div class="hero-stat">
+          <div class="hs-val">{{ d.telemetry?.dispatchReliabilityPct ?? 100 }}%</div>
+          <div class="hs-lbl">Dispatch Reliability</div>
+        </div>
+        <div class="hero-stat">
+          <div class="hs-val">{{ d.telemetry?.todayFlightHours ?? 0 }}h / {{ d.telemetry?.dailyAvailableHours ?? 20 }}h</div>
+          <div class="hs-lbl">Today Utilization ({{ d.telemetry?.bayUtilizationPct ?? 0 }}%)</div>
+        </div>
+        <div class="hero-stat">
+          <div class="hs-val" [style.color]="(d.telemetry?.openSnagsCount ?? 0) > 0 ? '#D97706' : '#15803D'">
+            {{ d.telemetry?.openSnagsCount ?? 0 }}
+          </div>
+          <div class="hs-lbl">Open DRs / Snags</div>
+        </div>
+        <div class="hero-stat">
+          <div class="hs-val">{{ d.telemetry?.qtgSummary?.completionPct ?? 100 }}%</div>
+          <div class="hs-lbl">QTG Compliance</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5 Sub-Section Tabs -->
+    <div class="sim-subtabs" role="tablist">
+      <button type="button" class="sim-subtab" [class.active]="activeTab === 'overview'" (click)="selectTab('overview')">
+        <span class="mat-i">dashboard</span> Overview &amp; Config
+      </button>
+      <button type="button" class="sim-subtab" [class.active]="activeTab === 'subsystems'" (click)="selectTab('subsystems')">
+        <span class="mat-i">memory</span> Subsystems ({{ d.subsystems?.length ?? 0 }})
+      </button>
+      <button type="button" class="sim-subtab" [class.active]="activeTab === 'qtg'" (click)="selectTab('qtg')">
+        <span class="mat-i">fact_check</span> QTG Compliance ({{ d.telemetry?.qtgSummary?.completionPct ?? 0 }}%)
+      </button>
+      <button type="button" class="sim-subtab" [class.active]="activeTab === 'maintenance'" (click)="selectTab('maintenance')">
+        <span class="mat-i">build_circle</span> Snags &amp; DRs ({{ d.telemetry?.openSnagsCount ?? 0 }})
+      </button>
+      <button type="button" class="sim-subtab" [class.active]="activeTab === 'sorties'" (click)="selectTab('sorties')">
+        <span class="mat-i">flight_takeoff</span> Sorties &amp; Spares ({{ d.sorties?.length ?? 0 }})
+      </button>
+    </div>
+
+    <!-- TAB 1: Overview & Quick Status Control -->
+    <div *ngIf="activeTab === 'overview'" class="sim-tab-grid">
+      <div class="card sim-panel">
+        <div class="card-header"><h3>Hardware, Visual &amp; Avionics Baseline</h3></div>
+        <div class="card-body">
+          <div class="spec-grid">
+            <div class="spec-item"><span class="spec-lbl">Engine &amp; Avionics</span><span class="spec-val">{{ d.engine_avionics || '—' }}</span></div>
+            <div class="spec-item"><span class="spec-lbl">Visual System</span><span class="spec-val">{{ d.visual_system || '—' }}</span></div>
+            <div class="spec-item"><span class="spec-lbl">Motion Platform</span><span class="spec-val">{{ d.motion_system || '—' }}</span></div>
+            <div class="spec-item"><span class="spec-lbl">Control Loading</span><span class="spec-val">{{ d.control_loading || '—' }}</span></div>
+            <div class="spec-item"><span class="spec-lbl">IOS Console</span><span class="spec-val">{{ d.ios_config || '—' }}</span></div>
+            <div class="spec-item"><span class="spec-lbl">Host Software Load</span><span class="spec-val sim-num">{{ d.software_load || '—' }}</span></div>
+            <div class="spec-item"><span class="spec-lbl">AIRAC / NavDB</span><span class="spec-val sim-num">{{ d.airac_cycle || '—' }}</span></div>
+            <div class="spec-item"><span class="spec-lbl">Device S/N</span><span class="spec-val sim-num">{{ d.serial_number || '—' }}</span></div>
+          </div>
+
+          <div class="meters-strip sim-num">
+            <div class="meter-box">
+              <span class="meter-val">{{ d.power_on_hours || 0 | number:'1.1-1' }} h</span>
+              <span class="meter-lbl">Total Power-On Hours</span>
+            </div>
+            <div class="meter-box">
+              <span class="meter-val">{{ d.motion_hours || 0 | number:'1.1-1' }} h</span>
+              <span class="meter-lbl">Motion Actuation Hours</span>
+            </div>
+            <div class="meter-box">
+              <span class="meter-val">{{ d.visual_lamp_hours || 0 | number:'1.1-1' }} h</span>
+              <span class="meter-lbl">Visual Projector Hours</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card sim-panel">
+        <div class="card-header"><h3>Live Bay Status &amp; MEL Control</h3></div>
+        <div class="card-body">
+          <div class="form-group">
+            <label class="form-label">Bay Operational Status</label>
+            <app-dropdown class="form-control" [(ngModel)]="quickStatus">
+              <app-dropdown-option value="READY">Ready</app-dropdown-option>
+              <app-dropdown-option value="IN_SORTIE">In Sortie</app-dropdown-option>
+              <app-dropdown-option value="PRE_FLIGHT">Pre-Flight</app-dropdown-option>
+              <app-dropdown-option value="DEGRADED">Degraded (MEL)</app-dropdown-option>
+              <app-dropdown-option value="MAINTENANCE">Maintenance</app-dropdown-option>
+              <app-dropdown-option value="AOG">AOG / Grounded</app-dropdown-option>
+            </app-dropdown>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Active MEL Limitation / Operations Advisory</label>
+            <textarea class="form-control" rows="3" [(ngModel)]="quickMel" placeholder="Clear when aircraft sim returns to full Level D availability…"></textarea>
+          </div>
+          <button type="button" class="btn btn-primary" [disabled]="savingQuickStatus" (click)="saveQuickStatus()">
+            <span class="btn-icon">save</span> {{ savingQuickStatus ? 'Updating…' : 'Apply Bay Status' }}
+          </button>
+
+          <div class="cert-card sim-num">
+            <div>
+              <div class="cert-lbl">Qualification Certificate</div>
+              <div class="cert-code">{{ d.certificate_code || 'Unassigned' }}</div>
+              <div class="cert-dates">
+                Expiry: {{ d.certificate_expiry ? (d.certificate_expiry | date:'dd MMM yyyy') : 'Not set' }}
+                <span *ngIf="d.last_eval_date"> · Last Eval: {{ d.last_eval_date | date:'dd MMM yyyy' }}</span>
+              </div>
+            </div>
+            <span class="sim-cert-pill" [ngClass]="'tone-' + certBadge(d).tone">{{ certBadge(d).label }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: Subsystems & LRUs -->
+    <div *ngIf="activeTab === 'subsystems'" class="card sim-panel">
+      <div class="card-header sim-panel-head">
+        <div>
+          <h3>Simulator Subsystems &amp; LRU Configuration</h3>
+          <p class="card-sub">Track health, firmware load, P/N and operating hours across every simulator rack.</p>
+        </div>
+        <button type="button" class="btn btn-primary btn-sm" (click)="openAddSubsystem()">
+          <span class="btn-icon">add</span> Add Subsystem
+        </button>
+      </div>
+
+      <div class="sim-inline-form" *ngIf="showSubForm">
+        <div class="sim-inline-grid">
+          <div class="form-group">
+            <label class="form-label">Subsystem Type</label>
+            <app-dropdown class="form-control" [(ngModel)]="subForm.subsystem_code">
+              <app-dropdown-option *ngFor="let o of subsystemOptions" [value]="o.code">{{ o.label }}</app-dropdown-option>
+            </app-dropdown>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Display Name *</label>
+            <input class="form-control" [(ngModel)]="subForm.name" placeholder="e.g. Tropos 6000XR Projector Array">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Health Status</label>
+            <app-dropdown class="form-control" [(ngModel)]="subForm.status">
+              <app-dropdown-option value="NOMINAL">Nominal</app-dropdown-option>
+              <app-dropdown-option value="DEGRADED">Degraded</app-dropdown-option>
+              <app-dropdown-option value="FAULT">Fault</app-dropdown-option>
+              <app-dropdown-option value="MAINTENANCE">Maintenance</app-dropdown-option>
+            </app-dropdown>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Firmware / SW</label>
+            <input class="form-control sim-num" [(ngModel)]="subForm.firmware_version" placeholder="v8.4.2">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Part Number</label>
+            <input class="form-control sim-num" [(ngModel)]="subForm.part_number" placeholder="CAE-PN-xxxx">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Serial Number</label>
+            <input class="form-control sim-num" [(ngModel)]="subForm.serial_number" placeholder="S/N">
+          </div>
+        </div>
+        <div class="sim-inline-actions">
+          <button type="button" class="btn btn-ghost btn-sm" (click)="showSubForm = false">Cancel</button>
+          <button type="button" class="btn btn-primary btn-sm" [disabled]="savingSub" (click)="saveSubsystem()">
+            {{ savingSub ? 'Saving…' : (editingSub ? 'Update Subsystem' : 'Save Subsystem') }}
+          </button>
+        </div>
+      </div>
+
+      <div class="table-container">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Subsystem</th>
+              <th>Firmware / Part No.</th>
+              <th>Operating Hrs</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let sub of d.subsystems">
+              <td>
+                <div class="sub-name-cell">
+                  <span class="mat-i sub-ic">{{ subMeta(sub.subsystem_code).icon }}</span>
+                  <div>
+                    <div class="font-bold">{{ sub.name }}</div>
+                    <div class="text-xs text-muted">{{ sub.subsystem_code }}</div>
+                  </div>
+                </div>
+              </td>
+              <td class="sim-num text-sm">
+                <div>{{ sub.firmware_version || '—' }}</div>
+                <div class="text-xs text-muted" *ngIf="sub.part_number || sub.serial_number">
+                  {{ sub.part_number || '—' }} · {{ sub.serial_number || '—' }}
+                </div>
+              </td>
+              <td class="sim-num text-sm">{{ sub.operating_hours || 0 | number:'1.1-1' }} h</td>
+              <td>
+                <app-dropdown class="form-control sim-compact-dd" [ngModel]="sub.status" (ngModelChange)="changeSubsystemStatus(sub, $event)">
+                  <app-dropdown-option value="NOMINAL">Nominal</app-dropdown-option>
+                  <app-dropdown-option value="DEGRADED">Degraded</app-dropdown-option>
+                  <app-dropdown-option value="FAULT">Fault</app-dropdown-option>
+                  <app-dropdown-option value="MAINTENANCE">Maintenance</app-dropdown-option>
+                </app-dropdown>
+              </td>
+              <td>
+                <div class="sim-row-btns">
+                  <button type="button" class="btn btn-ghost btn-icon-only btn-sm" (click)="openEditSubsystem(sub)" title="Edit">
+                    <span class="btn-icon">edit</span>
+                  </button>
+                  <button type="button" class="btn btn-ghost btn-icon-only btn-sm" (click)="deleteSubsystem(sub)" title="Delete">
+                    <span class="btn-icon" style="color:#DC2626">delete</span>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TAB 3: QTG & Qualification -->
+    <div *ngIf="activeTab === 'qtg'" class="card sim-panel">
+      <div class="card-header sim-panel-head">
+        <div>
+          <h3>QTG Compliance &amp; Quarterly Qualification</h3>
+          <p class="card-sub">Quarterly Objective Test Guide verification required for EASA / FAA Level D retention.</p>
+        </div>
+        <button type="button" class="btn btn-primary btn-sm" (click)="showQtgForm = !showQtgForm">
+          <span class="btn-icon">add</span> Add QTG Test
+        </button>
+      </div>
+
+      <div class="qtg-quarter-strip sim-num">
+        <button *ngFor="let q of (['Q1','Q2','Q3','Q4'] )"
+                type="button"
+                class="qtg-q-card"
+                [class.active]="qtgFilterQuarter === q"
+                (click)="qtgFilterQuarter = (qtgFilterQuarter === q ? '' : q)">
+          <span class="qtg-q-name">{{ q }}</span>
+          <span class="qtg-q-val">{{ quarterSummary($any(q)).done }} / {{ quarterSummary($any(q)).total }}</span>
+        </button>
+      </div>
+
+      <div class="sim-inline-form" *ngIf="showQtgForm">
+        <div class="sim-inline-grid">
+          <div class="form-group">
+            <label class="form-label">QTG Test Code *</label>
+            <input class="form-control sim-num" [(ngModel)]="qtgForm.test_code" placeholder="QTG-1.B.2">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Title *</label>
+            <input class="form-control" [(ngModel)]="qtgForm.title" placeholder="Climb Performance All Engines">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Quarter</label>
+            <app-dropdown class="form-control" [(ngModel)]="qtgForm.quarter">
+              <app-dropdown-option value="Q1">Q1</app-dropdown-option>
+              <app-dropdown-option value="Q2">Q2</app-dropdown-option>
+              <app-dropdown-option value="Q3">Q3</app-dropdown-option>
+              <app-dropdown-option value="Q4">Q4</app-dropdown-option>
+            </app-dropdown>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Category</label>
+            <app-dropdown class="form-control" [(ngModel)]="qtgForm.category">
+              <app-dropdown-option value="PERFORMANCE">Performance</app-dropdown-option>
+              <app-dropdown-option value="HANDLING">Handling Qualities</app-dropdown-option>
+              <app-dropdown-option value="MOTION_CUEING">Motion Cueing</app-dropdown-option>
+              <app-dropdown-option value="VISUAL_SYSTEM">Visual System</app-dropdown-option>
+              <app-dropdown-option value="SOUND">Sound</app-dropdown-option>
+              <app-dropdown-option value="IOS_NAV">IOS / Nav</app-dropdown-option>
+            </app-dropdown>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Status</label>
+            <app-dropdown class="form-control" [(ngModel)]="qtgForm.status">
+              <app-dropdown-option value="PENDING">Pending</app-dropdown-option>
+              <app-dropdown-option value="PASSED">Passed</app-dropdown-option>
+              <app-dropdown-option value="TOLERANCE_WARN">Tolerance Warn</app-dropdown-option>
+              <app-dropdown-option value="FAILED">Failed</app-dropdown-option>
+            </app-dropdown>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Measured Delta / Note</label>
+            <input class="form-control sim-num" [(ngModel)]="qtgForm.measured_delta" placeholder="±1.1 kt nominal">
+          </div>
+        </div>
+        <div class="sim-inline-actions">
+          <button type="button" class="btn btn-ghost btn-sm" (click)="showQtgForm = false">Cancel</button>
+          <button type="button" class="btn btn-primary btn-sm" [disabled]="savingQtg" (click)="saveQtgRecord()">
+            {{ savingQtg ? 'Saving…' : 'Save QTG Test' }}
+          </button>
+        </div>
+      </div>
+
+      <div class="table-container">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Code</th>
+              <th>Test Title</th>
+              <th>Quarter</th>
+              <th>Delta / Measured</th>
+              <th>Status</th>
+              <th>Quick Sign-off</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let q of filteredQtg">
+              <td class="sim-num font-bold">{{ q.test_code }}</td>
+              <td>
+                <div class="font-bold text-sm">{{ q.title }}</div>
+                <div class="text-xs text-muted">{{ q.category }} · {{ q.mode }}</div>
+              </td>
+              <td class="sim-num font-bold">{{ q.quarter }} {{ q.year }}</td>
+              <td class="sim-num text-sm">{{ q.measured_delta || '—' }}</td>
+              <td>
+                <span class="badge" [style.background]="qtgStatusMeta(q.status).bg" [style.color]="qtgStatusMeta(q.status).color">
+                  {{ qtgStatusMeta(q.status).label }}
+                </span>
+              </td>
+              <td>
+                <div class="sim-row-btns">
+                  <button type="button" class="btn btn-secondary btn-sm" (click)="setQtgStatus(q, 'PASSED')">Pass</button>
+                  <button type="button" class="btn btn-ghost btn-sm" (click)="setQtgStatus(q, 'TOLERANCE_WARN')">Warn</button>
+                  <button type="button" class="btn btn-ghost btn-sm" style="color:#DC2626" (click)="setQtgStatus(q, 'FAILED')">Fail</button>
+                  <button type="button" class="btn btn-ghost btn-icon-only btn-sm" (click)="deleteQtgRecord(q)">
+                    <span class="btn-icon" style="color:#DC2626">delete</span>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TAB 4: Snags (DRs) & Maintenance -->
+    <div *ngIf="activeTab === 'maintenance'" class="card sim-panel">
+      <div class="card-header sim-panel-head">
+        <div>
+          <h3>Discrepancy Reports (Snags) &amp; Work Orders</h3>
+          <p class="card-sub">Hardware/software anomalies linked to {{ d.code }} ({{ d.bay_code }}).</p>
+        </div>
+        <div class="sim-row-btns">
+          <a class="btn btn-secondary btn-sm" routerLink="/maintenance" [queryParams]="{ simulatorId: d.id }">Open in Maintenance</a>
+          <button type="button" class="btn btn-primary btn-sm" (click)="showSnagForm = !showSnagForm">
+            <span class="btn-icon">report_problem</span> Log Simulator DR
+          </button>
+        </div>
+      </div>
+
+      <div class="sim-inline-form" *ngIf="showSnagForm">
+        <div class="sim-inline-grid">
+          <div class="form-group">
+            <label class="form-label">DR Summary *</label>
+            <input class="form-control" [(ngModel)]="snagForm.title" placeholder="e.g. Visual Ch.2 edge blend drift">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Affected Subsystem</label>
+            <app-dropdown class="form-control" [(ngModel)]="snagForm.subsystem_code">
+              <app-dropdown-option *ngFor="let o of subsystemOptions" [value]="o.code">{{ o.label }}</app-dropdown-option>
+            </app-dropdown>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Severity</label>
+            <app-dropdown class="form-control" [(ngModel)]="snagForm.severity">
+              <app-dropdown-option value="MINOR">Minor (No Impact)</app-dropdown-option>
+              <app-dropdown-option value="DEGRADED">Degraded (MEL)</app-dropdown-option>
+              <app-dropdown-option value="AOG">AOG (Bay Down)</app-dropdown-option>
+            </app-dropdown>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Lost Training Hours</label>
+            <input type="number" class="form-control sim-num" [(ngModel)]="snagForm.lost_training_hours" min="0" step="0.25">
+          </div>
+        </div>
+        <div class="form-group" style="margin-top:8px">
+          <label class="form-label">Technical Description *</label>
+          <textarea class="form-control" rows="2" [(ngModel)]="snagForm.description" placeholder="Detailed symptoms, fault codes, or instructor observations…"></textarea>
+        </div>
+        <div class="sim-inline-actions">
+          <button type="button" class="btn btn-ghost btn-sm" (click)="showSnagForm = false">Cancel</button>
+          <button type="button" class="btn btn-primary btn-sm" [disabled]="savingSnag" (click)="saveSnag()">
+            {{ savingSnag ? 'Submitting…' : 'Submit DR Work Order' }}
+          </button>
+        </div>
+      </div>
+
+      <div class="empty-state" *ngIf="!d.maintenanceRecords?.length">
+        <span class="empty-icon">verified</span>
+        <h3>Clean snag log on {{ d.bay_code }}</h3>
+        <p>No discrepancy reports or maintenance records recorded for this simulator.</p>
+      </div>
+
+      <div class="table-container" *ngIf="d.maintenanceRecords?.length">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Title &amp; Subsystem</th>
+              <th>Severity</th>
+              <th>Status</th>
+              <th>Lost Hrs</th>
+              <th>Scheduled</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let m of d.maintenanceRecords">
+              <td>
+                <div class="font-bold text-sm">{{ m.title }}</div>
+                <div class="text-xs text-muted">{{ m.subsystem_code || m.type }}</div>
+              </td>
+              <td>
+                <span class="badge" [ngClass]="m.severity === 'AOG' ? 'badge-cancelled' : (m.severity === 'DEGRADED' ? 'badge-on-hold' : 'badge-in-progress')">
+                  {{ m.severity || 'MINOR' }}
+                </span>
+              </td>
+              <td class="text-sm font-bold">{{ m.status }}</td>
+              <td class="sim-num text-sm">{{ m.lost_training_hours || 0 }} h</td>
+              <td class="sim-num text-sm">{{ m.scheduled_date | date:'dd MMM, HH:mm' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TAB 5: Sorties & Compatible Warehouse Spares -->
+    <div *ngIf="activeTab === 'sorties'" class="sim-tab-grid">
+      <div class="card sim-panel">
+        <div class="card-header sim-panel-head">
+          <div>
+            <h3>Recent &amp; Upcoming Sorties ({{ d.sorties?.length ?? 0 }})</h3>
+            <p class="card-sub">Flight training slots assigned specifically to {{ d.bay_code }}.</p>
+          </div>
+          <a class="btn btn-primary btn-sm" routerLink="/operations" [queryParams]="{ action: 'new', simulatorId: d.id }">
+            <span class="btn-icon">add</span> Schedule Sortie
+          </a>
+        </div>
+
+        <div class="empty-state" *ngIf="!d.sorties?.length">
+          <span class="empty-icon">flight_takeoff</span>
+          <h3>No sorties logged yet</h3>
+          <p>Schedule the next training sortie directly in {{ d.bay_code }}.</p>
+        </div>
+
+        <div class="table-container" *ngIf="d.sorties?.length">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Sortie</th>
+                <th>Customer</th>
+                <th>Slot</th>
+                <th>Status / Outcome</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let s of d.sorties">
+                <td>
+                  <div class="font-bold text-sm sim-num">{{ s.sortie_code || ('#' + s.id) }} · {{ s.title }}</div>
+                  <div class="text-xs text-muted">{{ s.type?.name || 'Sortie' }} {{ s.scenario_code ? ('· ' + s.scenario_code) : '' }}</div>
+                </td>
+                <td class="text-sm">{{ s.customer_operator || 'Internal' }}</td>
+                <td class="sim-num text-xs">
+                  <div>{{ s.start_date | date:'dd MMM, HH:mm' }}</div>
+                  <div class="text-muted">{{ s.scheduled_hours || 2 }}h · Lost {{ s.lost_training_minutes || 0 }}m</div>
+                </td>
+                <td>
+                  <span class="badge" [ngClass]="s.status === 'COMPLETED' ? 'badge-completed' : (s.status === 'IN_PROGRESS' ? 'badge-in-progress' : 'badge-planned')">
+                    {{ s.status }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card sim-panel">
+        <div class="card-header sim-panel-head">
+          <div>
+            <h3>Compatible Spares &amp; LRUs ({{ d.compatibleSpares?.length ?? 0 }})</h3>
+            <p class="card-sub">Warehouse items tagged for {{ d.code }} / {{ d.aircraft_type }}.</p>
+          </div>
+          <a class="btn btn-secondary btn-sm" routerLink="/warehouse">Open Warehouse</a>
+        </div>
+
+        <div class="empty-state" *ngIf="!d.compatibleSpares?.length">
+          <span class="empty-icon">inventory_2</span>
+          <h3>No model-tagged spares</h3>
+          <p>Tag compatible models ({{ d.code }}) on Warehouse items to surface them here automatically.</p>
+        </div>
+
+        <div class="spares-list" *ngIf="d.compatibleSpares?.length">
+          <a class="spare-row" *ngFor="let item of d.compatibleSpares" routerLink="/warehouse" [queryParams]="{ search: item.sku }">
+            <div>
+              <div class="font-bold text-sm">{{ item.name }}</div>
+              <div class="text-xs text-muted sim-num">{{ item.sku }} · {{ item.part_classification || 'CONSUMABLE' }}</div>
+            </div>
+            <div class="spare-qty-col sim-num">
+              <span class="badge" [ngClass]="item.quantity <= (item.reorder_point || 0) ? 'badge-cancelled' : 'badge-completed'">
+                {{ item.quantity }} {{ item.unit }}
+              </span>
+              <span class="aog-flag" *ngIf="item.aog_critical">AOG CRITICAL</span>
+            </div>
+          </a>
+        </div>
+      </div>
+    </div>
+
+  </ng-container>
+</div>

@@ -25,6 +25,7 @@ const notificationRoutes      = require('./routes/notification.routes');
 const exportRoutes            = require('./routes/export.routes');
 const uiRoutes                = require('./routes/ui.routes');
 const searchRoutes            = require('./routes/search.routes');
+const simulatorRoutes         = require('./routes/simulator.routes');
 
 const { errorHandler } = require('./middleware/error.middleware');
 const { authenticate, authorize } = require('./middleware/auth.middleware');
@@ -94,6 +95,7 @@ app.use('/api/auth', authRoutes);
 // ── Protected Routes ──────────────────────────────────────────────────────────
 app.use('/api/users',       authenticate, userRoutes);
 app.use('/api/dashboard',   authenticate, dashboardRoutes);
+app.use('/api/simulators',  authenticate, simulatorRoutes);
 app.use('/api/operations',  authenticate, operationRoutes);
 app.use('/api/maintenance/planned', authenticate, plannedMaintenanceRoutes);
 app.use('/api/maintenance', authenticate, maintenanceRoutes);

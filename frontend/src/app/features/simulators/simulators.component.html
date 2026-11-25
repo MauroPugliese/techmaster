@@ -1,0 +1,419 @@
+<div class="sim-page">
+
+  <!-- ══ MAIN MULTI-STATION OVERVIEW & FLEET MODE ══════════════════════ -->
+  <ng-container *ngIf="selectedSimId === null">
+
+    <!-- Balanced Page Header (Consistent with other SMaRT sections) -->
+    <div class="sim-page-head">
+      <div>
+        <h2>Flight Simulators</h2>
+        <p>{{ activeViewDescription }}</p>
+      </div>
+
+      <div class="sim-head-actions">
+        <app-export-menu
+          *ngIf="activeView === 'fleet'"
+          endpoint="simulators"
+          filename="cae-simulator-fleet-report"
+          [includeDateRange]="false">
+        </app-export-menu>
+        <button type="button" class="btn btn-primary" (click)="openCreateModal()">
+          <span class="btn-icon">add</span>
+          {{ activeView === 'test-places' ? 'Add Test Place' : (activeView === 'ios-consoles' ? 'Add IOS Console' : 'Add Simulator') }}
+        </button>
+      </div>
+    </div>
+
+    <!-- Clean View Switcher Tabs -->
+    <nav class="sim-tabs-bar" aria-label="Simulator views">
+      <button
+        type="button"
+        class="sim-top-tab"
+        [class.active]="activeView === 'test-places'"
+        (click)="setTopView('test-places')">
+        <span class="mat-i">developer_board</span>
+        <span>Test Places</span>
+        <span class="tab-count">{{ testPlaceCount }}</span>
+      </button>
+
+      <button
+        type="button"
+        class="sim-top-tab"
+        [class.active]="activeView === 'ios-consoles'"
+        (click)="setTopView('ios-consoles')">
+        <span class="mat-i">desktop_windows</span>
+        <span>IOS Consoles</span>
+        <span class="tab-count">{{ iosConsoleCount }}</span>
+      </button>
+
+      <button
+        type="button"
+        class="sim-top-tab"
+        [class.active]="activeView === 'fleet'"
+        (click)="setTopView('fleet')">
+        <span class="mat-i">flight_takeoff</span>
+        <span>Fleet Registry</span>
+        <span class="tab-count">{{ simulators.length }}</span>
+      </button>
+    </nav>
+
+    <!-- TAB 1: TEST PLACES UNIFIED OVERVIEW -->
+    <app-station-daily-ops
+      *ngIf="activeView === 'test-places'"
+      stationKind="TEST_PLACE"
+      [initialDate]="dailyInitialDate"
+      [refreshTick]="dailyRefreshTick"
+      (openMntRecords)="onOpenMntRecords($event)"
+      (openWorkspace)="openWorkspace($event)"
+      (addStationRequested)="openCreateModal($event)"
+      (sheetUpdated)="onDailySheetUpdated()">
+    </app-station-daily-ops>
+
+    <!-- TAB 2: IOS CONSOLES UNIFIED OVERVIEW -->
+    <app-station-daily-ops
+      *ngIf="activeView === 'ios-consoles'"
+      stationKind="IOS_CONSOLE"
+      [initialDate]="dailyInitialDate"
+      [refreshTick]="dailyRefreshTick"
+      (openMntRecords)="onOpenMntRecords($event)"
+      (openWorkspace)="openWorkspace($event)"
+      (addStationRequested)="openCreateModal($event)"
+      (sheetUpdated)="onDailySheetUpdated()">
+    </app-station-daily-ops>
+
+    <!-- TAB 3: FLEET REGISTRY & TECHNICAL DOSSIERS -->
+    <ng-container *ngIf="activeView === 'fleet'">
+
+      <!-- Compact Single-Row Toolbar + Inline Fleet Health Pills -->
+      <div class="sim-toolbar-card">
+        <div class="sim-filter-row">
+          <div class="sim-search-wrap">
+            <div class="search-bar">
+              <span class="search-icon">search</span>
+              <input
+                type="text"
+                [(ngModel)]="searchQuery"
+                (ngModelChange)="applyFilters()"
+                placeholder="Search bay, code, aircraft..." />
+              <button
+                type="button"
+                class="sim-search-clear"
+                *ngIf="searchQuery"
+                (click)="searchQuery=''; applyFilters()"
+                title="Clear search">
+                <span class="mat-i">close</span>
+              </button>
+            </div>
+          </div>
+
+          <app-dropdown
+            class="form-control sim-filter-select"
+            [(ngModel)]="stationKindFilter"
+            (ngModelChange)="applyFilters()">
+            <app-dropdown-option value="ALL">All Kinds</app-dropdown-option>
+            <app-dropdown-option *ngFor="let opt of stationKindOptions" [value]="opt.value">
+              {{ opt.label }}
+            </app-dropdown-option>
+          </app-dropdown>
+
+          <app-dropdown
+            class="form-control sim-filter-select"
+            [(ngModel)]="statusFilter"
+            (ngModelChange)="applyFilters()">
+            <app-dropdown-option value="ALL">All Statuses</app-dropdown-option>
+            <app-dropdown-option value="READY_GROUP">Ready / Active</app-dropdown-option>
+            <app-dropdown-option value="ATTENTION_GROUP">Degraded / AOG</app-dropdown-option>
+            <app-dropdown-option *ngFor="let st of statusOptions" [value]="st.value">
+              {{ st.label }}
+            </app-dropdown-option>
+          </app-dropdown>
+
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm"
+            *ngIf="hasActiveFleetFilters"
+            (click)="resetFilters()">
+            Reset
+          </button>
+
+          <div class="sim-view-toggle" role="group" aria-label="View layout">
+            <button
+              type="button"
+              class="sim-view-btn"
+              [class.active]="viewMode === 'cards'"
+              (click)="viewMode = 'cards'">
+              <span class="mat-i">grid_view</span>
+              Cards
+            </button>
+            <button
+              type="button"
+              class="sim-view-btn"
+              [class.active]="viewMode === 'table'"
+              (click)="viewMode = 'table'">
+              <span class="mat-i">table_rows</span>
+              Table
+            </button>
+          </div>
+        </div>
+
+        <!-- Inline Quick Summary Pills (Replaces 5 Tall KPI Boxes) -->
+        <div class="sim-inline-stats">
+          <button type="button" class="sim-stat-chip" [class.active]="statusFilter === 'ALL'" (click)="applyKpiFilter('ALL')">
+            All <strong class="sim-num">{{ summary.total_simulators }}</strong>
+          </button>
+          <button type="button" class="sim-stat-chip tone-ok" [class.active]="statusFilter === 'READY_GROUP'" (click)="applyKpiFilter('READY_GROUP')">
+            <span class="dot"></span>
+            <strong class="sim-num">{{ summary.ready_count + summary.in_sortie_count }}</strong> Ready
+          </button>
+          <button
+            type="button"
+            class="sim-stat-chip tone-alert"
+            [class.active]="statusFilter === 'ATTENTION_GROUP'"
+            [class.has-alert]="(summary.degraded_count + summary.aog_or_maint_count) > 0"
+            (click)="applyKpiFilter('ATTENTION_GROUP')">
+            <span class="dot"></span>
+            <strong class="sim-num">{{ summary.degraded_count + summary.aog_or_maint_count }}</strong> Attention
+          </button>
+
+          <span class="sim-stat-meta sim-num">
+            Dispatch <strong>{{ summary.avg_dispatch_reliability_pct }}%</strong>
+          </span>
+          <span class="sim-stat-meta sim-num">
+            QTG <strong>{{ summary.qtg_compliance_pct }}%</strong>
+          </span>
+          <span class="sim-stat-meta sim-num" *ngIf="summary.open_snags_count > 0" style="color: #B91C1C">
+            <strong>{{ summary.open_snags_count }}</strong> Open DR
+          </span>
+        </div>
+      </div>
+
+      <!-- Loading -->
+      <div class="sim-loading-box" *ngIf="loading && simulators.length === 0">
+        <div class="spinner"></div>
+        <p>Loading fleet...</p>
+      </div>
+
+      <!-- Empty State -->
+      <div class="sim-empty-box" *ngIf="!loading && filtered.length === 0">
+        <div class="empty-icon">flight</div>
+        <h3>No simulators match these filters</h3>
+        <div class="empty-actions">
+          <button type="button" class="btn btn-secondary btn-sm" *ngIf="hasActiveFleetFilters" (click)="resetFilters()">
+            Reset Filters
+          </button>
+          <button type="button" class="btn btn-primary btn-sm" (click)="openCreateModal('FFS_BAY')">
+            <span class="btn-icon">add</span>
+            Add Simulator
+          </button>
+        </div>
+      </div>
+
+      <!-- Lean High-Signal Fleet Cards Grid -->
+      <div class="sim-cards-grid" *ngIf="!loading && filtered.length > 0 && viewMode === 'cards'">
+        <article
+          class="sim-card"
+          *ngFor="let sim of filtered; trackBy: trackBySimId"
+          [class.is-aog]="sim.status === 'AOG' || sim.status === 'MAINTENANCE'"
+          [class.is-degraded]="sim.status === 'DEGRADED'"
+          (click)="openWorkspace(sim.id)">
+
+          <!-- 1. Identity + Status -->
+          <div class="sim-card-head">
+            <div class="sim-card-id">
+              <span class="bay-badge sim-num">{{ sim.bay_code }}</span>
+              <div class="sim-id-text">
+                <div class="sim-code-line">
+                  <strong class="sim-code sim-num">{{ sim.code }}</strong>
+                  <span class="cat-chip">{{ stationKindLabel(sim.station_kind) }}</span>
+                </div>
+                <div class="sim-name">{{ sim.name }}</div>
+              </div>
+            </div>
+
+            <span
+              class="status-pill"
+              [style.background]="statusMeta(sim.status).bg"
+              [style.color]="statusMeta(sim.status).color"
+              [style.border-color]="statusMeta(sim.status).border || 'transparent'">
+              {{ statusMeta(sim.status).label }}
+            </span>
+          </div>
+
+          <!-- 2. Essential 3-Metric Strip -->
+          <div class="sim-lean-metrics">
+            <div class="lean-metric">
+              <span class="tel-lbl">Type</span>
+              <strong class="lean-val">{{ sim.aircraft_type }}</strong>
+            </div>
+            <div class="lean-metric">
+              <span class="tel-lbl">Today · Rel</span>
+              <strong class="lean-val sim-num">
+                {{ sim.telemetry?.todayFlightHours ?? 0 }}h · {{ sim.telemetry?.dispatchReliabilityPct ?? 100 }}%
+              </strong>
+            </div>
+            <div class="lean-metric align-end">
+              <span class="tel-lbl">Open DR</span>
+              <strong class="lean-val sim-num" [class.text-danger]="(sim.telemetry?.openSnagsCount ?? 0) > 0">
+                {{ sim.telemetry?.openSnagsCount ?? 0 }}
+              </strong>
+            </div>
+          </div>
+
+          <!-- 3. Exception / Live Activity Only When Relevant -->
+          <div class="sim-live-banner" *ngIf="sim.telemetry?.activeSortie">
+            <span class="live-dot"></span>
+            <span class="banner-tag">IN BAY</span>
+            <span class="banner-text">
+              {{ sim.telemetry?.activeSortie?.customer_operator || sim.telemetry?.activeSortie?.title }}
+            </span>
+          </div>
+
+          <div class="sim-mel-banner" *ngIf="sim.limitations_mel">
+            <span class="mel-icon">report_problem</span>
+            <span class="mel-text">MEL: {{ sim.limitations_mel }}</span>
+          </div>
+
+          <!-- 4. Clean Action Footer -->
+          <div class="sim-card-footer" (click)="$event.stopPropagation()">
+            <app-dropdown
+              class="form-control sim-card-status-dd"
+              [ngModel]="sim.status"
+              (ngModelChange)="quickChangeStatus(sim, $event)"
+              ariaLabel="Quick status change">
+              <app-dropdown-option *ngFor="let st of statusOptions" [value]="st.value">
+                {{ st.label }}
+              </app-dropdown-option>
+            </app-dropdown>
+
+            <div class="card-btn-group">
+              <button
+                type="button"
+                class="btn btn-secondary btn-sm"
+                (click)="onOpenMntRecords({ simulatorId: sim.id, stationName: sim.name }, $event)"
+                title="MNT Records">
+                MNT
+              </button>
+              <button
+                type="button"
+                class="btn btn-secondary btn-sm"
+                (click)="scheduleSortie(sim, $event)"
+                title="Schedule Sortie">
+                Sortie
+              </button>
+              <span class="sim-card-hover-icons">
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm"
+                  (click)="openEditModal(sim, $event)"
+                  title="Edit">
+                  <span class="btn-icon">edit</span>
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm danger-btn"
+                  (click)="deleteSimulator(sim, $event)"
+                  title="Delete">
+                  <span class="btn-icon">delete</span>
+                </button>
+              </span>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <!-- Fleet Table View -->
+      <div class="table-container" *ngIf="!loading && filtered.length > 0 && viewMode === 'table'">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Bay</th>
+              <th>Station</th>
+              <th>Kind</th>
+              <th>Type</th>
+              <th>Status</th>
+              <th>Dispatch</th>
+              <th>Open DR</th>
+              <th class="text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let sim of filtered; trackBy: trackBySimId">
+              <td><span class="bay-badge sim-num">{{ sim.bay_code }}</span></td>
+              <td>
+                <button type="button" class="sim-name-link" (click)="openWorkspace(sim.id)">
+                  <span class="sim-num">{{ sim.code }}</span>
+                  <span>{{ sim.name }}</span>
+                </button>
+              </td>
+              <td><span class="cat-chip">{{ stationKindLabel(sim.station_kind) }}</span></td>
+              <td>{{ sim.aircraft_type }}</td>
+              <td>
+                <span
+                  class="status-pill"
+                  [style.background]="statusMeta(sim.status).bg"
+                  [style.color]="statusMeta(sim.status).color"
+                  [style.border-color]="statusMeta(sim.status).border || 'transparent'">
+                  {{ statusMeta(sim.status).label }}
+                </span>
+              </td>
+              <td class="sim-num">{{ sim.telemetry?.dispatchReliabilityPct ?? 100 }}%</td>
+              <td>
+                <span class="dr-count sim-num" [class.has-dr]="(sim.telemetry?.openSnagsCount ?? 0) > 0">
+                  {{ sim.telemetry?.openSnagsCount ?? 0 }}
+                </span>
+              </td>
+              <td class="text-right">
+                <div class="tbl-actions">
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    (click)="onOpenMntRecords({ simulatorId: sim.id, stationName: sim.name }, $event)">
+                    MNT
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-sm"
+                    (click)="openWorkspace(sim.id, 'overview', $event)"
+                    title="Dossier">
+                    <span class="btn-icon">open_in_new</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-sm"
+                    (click)="openEditModal(sim, $event)"
+                    title="Edit">
+                    <span class="btn-icon">edit</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-sm danger-btn"
+                    (click)="deleteSimulator(sim, $event)"
+                    title="Delete">
+                    <span class="btn-icon">delete</span>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+    </ng-container>
+
+  </ng-container>
+
+  <!-- ══ SIMULATOR FULL TECHNICAL DOSSIER WORKSPACE ═══════════════════ -->
+  <app-simulator-workspace
+    *ngIf="selectedSimId !== null"
+    [simulatorId]="selectedSimId"
+    [fleet]="simulators"
+    [initialTab]="workspaceTab"
+    (closeWorkspace)="closeWorkspace()"
+    (switchSimulator)="openWorkspace($event, workspaceTab)"
+    (editSimulatorRequested)="openEditModal($event)"
+    (fleetChanged)="loadData()">
+  </app-simulator-workspace>
+
+  <app-simulator-form-modal #formModal (saved)="onSimulatorSaved($event)"></app-simulator-form-modal>
+  <app-station-mnt-records-modal #mntRecordsModal (mutated)="onMntMutated()"></app-station-mnt-records-modal>
+</div>
