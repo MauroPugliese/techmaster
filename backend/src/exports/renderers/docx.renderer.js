@@ -1,589 +1,250 @@
 // =============================================================================
-// exports/renderers/docx.renderer.js — Multi-Page A4 Composable Word (.docx) v4
+// exports/renderers/docx.renderer.js — Tailored CAE Navy Blue Word Engine v5
 // -----------------------------------------------------------------------------
-// Executes bespoke `spec.pages` blueprints in ISO A4 Portrait (`11906 x 16838`),
-// keeping official CAE `diagonal-hero` Page 1 Cover clean (`titlePage: true`),
-// filtering `printHidden` columns, and styling tables with Red Hat + Arial.
+// Clones the official CAE Navy Blue corporate template (`CAE-General-Template`)
+// preserving 100% identical cover, typography, headers, footers & native chart,
+// while rendering lean, data-first, module-specific sections (zero repetitive
+// audit prose, zero filler — only real metrics, charts & tables with concise
+// 1-sentence context per section).
 // =============================================================================
+'use strict';
 
+const fs = require('fs');
+const path = require('path');
+const PizZip = require('pizzip');
+
+const { FORMAT_META } = require('../core/helpers');
+const { collectSpecData } = require('../core/spec-collector');
+const { buildTemplateContent } = require('./docx-content.mapper');
+const { updateTemplateChart } = require('./docx-chart.updater');
 const {
-  Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
-  HeadingLevel, WidthType, AlignmentType, BorderStyle, Header, Footer,
-  PageNumber, PageOrientation, VerticalAlign, ImageRun
-} = require('docx');
+  escXml,
+  pPageBreak,
+  pSpacer,
+  pAppendixHeading,
+  pSectionHeading,
+  pCategoryHeading,
+  pBody,
+  buildCoverSdtXml,
+  buildTocSdtXml,
+  buildMetaStripXml,
+  buildAlertsTable,
+  buildTemplateDataTable,
+  buildInlineChartParagraph,
+  buildMarkdownXmlBlocks
+} = require('./docx-xml-helpers');
 
-const {
-  COMPANY, COLORS, OFFICE_FONTS, toneStyle, noHash, getLogoBuffer
-} = require('../core/branding');
-const { resolveTheme } = require('../core/themes');
-const {
-  str, formatCell, computeColumnTotals, resolveBadgeTone, fmtNumber, fmtMoney, fmtPercent, toNumber, FORMAT_META
-} = require('../core/helpers');
-const {
-  buildCoverPage,
-  buildPageBanner,
-  buildExecutiveBrief,
-  buildThemedKpis,
-  buildGaugeBand,
-  buildScorecards,
-  buildHighlights,
-  buildStatMatrix,
-  buildCardList,
-  buildAlerts
-} = require('./docx-sections');
+const TEMPLATE_FILENAME = 'CAE-General-Template_Navy_Blue_Lorem.docx';
 
-const F_DISP = OFFICE_FONTS.docx.display;
-const F_BODY = OFFICE_FONTS.docx.body;
-const F_MONO = OFFICE_FONTS.docx.mono;
+let cachedTemplateBuffer = null;
 
-const noBorder = () => {
-  const none = { style: BorderStyle.NONE, size: 0, color: 'auto' };
-  return { top: none, bottom: none, left: none, right: none };
-};
-
-const subtleTableBorders = () => {
-  const line = { style: BorderStyle.SINGLE, size: 4, color: noHash(COLORS.border) };
-  const none = { style: BorderStyle.NONE, size: 0, color: 'auto' };
-  return { top: line, bottom: line, left: none, right: none };
-};
-
-function mapAlign(align) {
-  if (align === 'right') return AlignmentType.RIGHT;
-  if (align === 'center') return AlignmentType.CENTER;
-  return AlignmentType.LEFT;
-}
-
-function formatChartVal(val, valueFormat) {
-  const n = toNumber(val, 0);
-  if (valueFormat === 'currency') return fmtMoney(n);
-  if (valueFormat === 'percent') return fmtPercent(n, 1);
-  if (valueFormat === 'hours') return `${n.toFixed(1)} h`;
-  return Number.isInteger(n) ? fmtNumber(n, 0) : fmtNumber(n, 1);
-}
-
-/** Build a proportional OOXML data-bar table for any chart specification. */
-function buildChartBlock(chart, theme) {
-  if (!chart) return [];
-  const pal = theme.chartPalette || [COLORS.accent];
-  const out = [
-    new Paragraph({
-      heading: HeadingLevel.HEADING_3,
-      spacing: { before: 100, after: 35 },
-      children: [new TextRun({ text: chart.title || 'Breakdown', bold: true, font: F_DISP, size: 20, color: noHash(theme.primary) })]
-    })
+/** Resolve the official CAE Navy Blue .docx template from /docs or bundled /templates. */
+function resolveGeneralTemplatePath() {
+  const candidates = [
+    path.resolve(__dirname, '../../../../docs', TEMPLATE_FILENAME),
+    path.resolve(__dirname, '../../../docs', TEMPLATE_FILENAME),
+    path.resolve(process.cwd(), 'docs', TEMPLATE_FILENAME),
+    path.resolve(process.cwd(), '../docs', TEMPLATE_FILENAME),
+    path.resolve(__dirname, '../templates', TEMPLATE_FILENAME)
   ];
-  if (chart.subtitle) {
-    out.push(new Paragraph({
-      spacing: { after: 55 },
-      children: [new TextRun({ text: chart.subtitle, italics: true, font: F_BODY, size: 16, color: noHash(COLORS.subtle) })]
-    }));
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
   }
+  const err = new Error(`Word template not found: ${TEMPLATE_FILENAME}. Checked: ${candidates.join(' | ')}`);
+  err.statusCode = 500;
+  throw err;
+}
 
-  const labels = chart.labels || [];
-  const series = Array.isArray(chart.series) && chart.series.length
-    ? chart.series
-    : [{ name: chart.seriesName || 'Value', data: chart.values || [], color: chart.color }];
-  const primaryVals = (series[0]?.data || []).map((v) => toNumber(v, 0));
-  const total = primaryVals.reduce((a, b) => a + Math.max(0, b), 0);
-  const maxVal = Math.max(...primaryVals, 1);
-
-  if (!labels.length || total <= 0) {
-    out.push(new Paragraph({
-      spacing: { after: 90 },
-      children: [new TextRun({ text: 'No quantitative data available for the selected period.', italics: true, font: F_BODY, size: 17, color: noHash(COLORS.subtle) })]
-    }));
-    return out;
+function getTemplateBuffer() {
+  if (!cachedTemplateBuffer) {
+    cachedTemplateBuffer = fs.readFileSync(resolveGeneralTemplatePath());
   }
+  return cachedTemplateBuffer;
+}
 
-  const barMaxChars = 22;
-  const hdrBg = noHash(theme.tableHeaderBg || theme.primary);
-  const headerRow = new TableRow({
-    tableHeader: true,
-    cantSplit: true,
-    children: [
-      makeCell('Category', { header: true, widthPct: 30, fill: hdrBg }),
-      makeCell('Distribution', { header: true, widthPct: 38, fill: hdrBg }),
-      makeCell(series[0]?.name || 'Value', { header: true, align: 'right', widthPct: 18, fill: hdrBg }),
-      makeCell('Share', { header: true, align: 'right', widthPct: 14, fill: hdrBg })
-    ]
-  });
-
-  const dataRows = labels.slice(0, 12).map((lbl, idx) => {
-    const val = primaryVals[idx] || 0;
-    const barColor = noHash(chart.colors?.[idx] || series[0]?.color || pal[idx % pal.length]);
-    const filledBlocks = val > 0 ? Math.max(1, Math.round((val / maxVal) * barMaxChars)) : 0;
-    const emptyBlocks = Math.max(0, barMaxChars - filledBlocks);
-    const shareStr = total > 0 ? `${((val / total) * 100).toFixed(1)}%` : '0.0%';
-    const zebra = idx % 2 === 1 ? noHash(COLORS.zebra) : undefined;
-
-    const barCell = new TableCell({
-      width: { size: 38, type: WidthType.PERCENTAGE },
-      shading: zebra ? { fill: zebra } : undefined,
-      verticalAlign: VerticalAlign.CENTER,
-      borders: subtleTableBorders(),
-      margins: { top: 60, bottom: 60, left: 100, right: 100 },
-      children: [new Paragraph({
-        spacing: { after: 0 },
-        children: [
-          new TextRun({ text: '█'.repeat(filledBlocks), font: F_MONO, size: 13, color: barColor }),
-          ...(emptyBlocks > 0 ? [new TextRun({ text: '░'.repeat(emptyBlocks), font: F_MONO, size: 13, color: noHash(COLORS.border) })] : [])
-        ]
-      })]
-    });
-
-    return new TableRow({
-      cantSplit: true,
-      children: [
-        makeCell(lbl, { fill: zebra, widthPct: 30, bold: true }),
-        barCell,
-        makeCell(formatChartVal(val, chart.valueFormat), { align: 'right', fill: zebra, widthPct: 18, bold: true }),
-        makeCell(shareStr, { align: 'right', fill: zebra, widthPct: 14, color: noHash(COLORS.subtle) })
-      ]
-    });
-  });
-
-  out.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [headerRow, ...dataRows] }));
-  out.push(new Paragraph({ spacing: { after: 100 }, text: '' }));
+/** Update publication date & confidentiality text inside footer1.xml / footer2.xml. */
+function patchFooterXml(xml, pubDateShort, confidentiality) {
+  if (!xml) return xml;
+  let out = xml;
+  out = out.replace(
+    /<w:r\b[^>]*><w:t[^>]*>Publication dat[\s\S]*?<w:t[^>]*>2<\/w:t><\/w:r>/,
+    `<w:r><w:t xml:space="preserve">Publication date: ${escXml(pubDateShort)}</w:t></w:r>`
+  );
+  if (confidentiality) {
+    out = out.replace(/>Privileged and Confidential</g, `>${escXml(confidentiality)}<`);
+  }
   return out;
 }
 
-function buildDocumentBlocks(blocks, theme) {
-  if (!blocks || !blocks.length) return [];
-  const out = [];
+/** Ensure Microsoft Word refreshes TOC & page fields automatically on open. */
+function patchSettingsXml(xml) {
+  if (!xml) return xml;
+  if (/<w:updateFields\b/.test(xml)) return xml;
+  return xml.replace('</w:settings>', '<w:updateFields w:val="true"/></w:settings>');
+}
 
-  const runsToTextRuns = (runs = [], baseSize = 19) =>
-    runs.map((r) => new TextRun({
-      text: r.text,
-      bold: r.bold,
-      italics: r.italic,
-      font: r.code ? F_MONO : F_BODY,
-      size: r.code ? 17 : baseSize,
-      color: r.code ? noHash(COLORS.royal) : noHash(COLORS.body)
-    }));
+/** Update OOXML core document properties with live title, author & timestamp. */
+function patchCorePropsXml(xml, spec) {
+  if (!xml) return xml;
+  const isoNow = new Date(spec.meta?.generatedAt || Date.now()).toISOString();
+  const author = escXml(spec.meta?.generatedBy || 'SMaRT Operations');
+  const title = escXml(spec.title || 'Operational Report');
+  const subject = escXml(spec.subtitle || spec.category || 'Operations Report');
 
-  blocks.forEach((b) => {
-    switch (b.type) {
-      case 'h1':
-        out.push(new Paragraph({
-          heading: HeadingLevel.HEADING_1,
-          spacing: { before: 200, after: 80 },
-          children: [new TextRun({ text: b.text, bold: true, font: F_DISP, size: 28, color: noHash(theme.primary) })]
-        }));
-        break;
-      case 'h2':
-        out.push(new Paragraph({
-          heading: HeadingLevel.HEADING_2,
-          spacing: { before: 160, after: 60 },
-          children: [new TextRun({ text: b.text, bold: true, font: F_DISP, size: 24, color: noHash(COLORS.cobalt) })]
-        }));
-        break;
-      case 'h3':
-        out.push(new Paragraph({
-          heading: HeadingLevel.HEADING_3,
-          spacing: { before: 120, after: 40 },
-          children: [new TextRun({ text: b.text, bold: true, font: F_DISP, size: 20, color: noHash(COLORS.royal) })]
-        }));
-        break;
-      case 'paragraph':
-        out.push(new Paragraph({
-          spacing: { after: 100, line: 276 },
-          children: b.runs?.length ? runsToTextRuns(b.runs) : [new TextRun({ text: b.text, font: F_BODY, size: 19, color: noHash(COLORS.body) })]
-        }));
-        break;
-      case 'bullets':
-        (b.items || []).forEach((item) => {
-          out.push(new Paragraph({
-            bullet: { level: 0 },
-            spacing: { after: 55 },
-            children: item.runs?.length ? runsToTextRuns(item.runs) : [new TextRun({ text: item.text, font: F_BODY, size: 19, color: noHash(COLORS.body) })]
-          }));
-        });
-        break;
-      case 'ordered':
-        (b.items || []).forEach((item, idx) => {
-          out.push(new Paragraph({
-            spacing: { after: 55 },
-            indent: { left: 360 },
-            children: [
-              new TextRun({ text: `${idx + 1}. `, bold: true, font: F_DISP, size: 19, color: noHash(theme.accent) }),
-              ...(item.runs?.length ? runsToTextRuns(item.runs) : [new TextRun({ text: item.text, font: F_BODY, size: 19, color: noHash(COLORS.body) })])
-            ]
-          }));
-        });
-        break;
-      case 'quote':
-        out.push(new Table({
-          width: { size: 100, type: WidthType.PERCENTAGE },
-          rows: [new TableRow({
-            cantSplit: true,
-            children: [new TableCell({
-              width: { size: 100, type: WidthType.PERCENTAGE },
-              shading: { fill: noHash(theme.tint || COLORS.zebra) },
-              borders: { ...noBorder(), left: { style: BorderStyle.SINGLE, size: 24, color: noHash(theme.accent) } },
-              margins: { top: 85, bottom: 85, left: 150, right: 120 },
-              children: [new Paragraph({
-                spacing: { after: 0 },
-                children: [new TextRun({ text: b.text, italics: true, font: F_BODY, size: 18, color: noHash(COLORS.ink) })]
-              })]
-            })]
-          })]
-        }));
-        out.push(new Paragraph({ spacing: { after: 80 }, text: '' }));
-        break;
-      case 'code':
-        out.push(new Table({
-          width: { size: 100, type: WidthType.PERCENTAGE },
-          rows: [new TableRow({
-            cantSplit: true,
-            children: [new TableCell({
-              width: { size: 100, type: WidthType.PERCENTAGE },
-              shading: { fill: noHash(COLORS.surface) },
-              borders: {
-                top: { style: BorderStyle.SINGLE, size: 4, color: noHash(COLORS.borderStrong) },
-                bottom: { style: BorderStyle.SINGLE, size: 4, color: noHash(COLORS.borderStrong) },
-                left: { style: BorderStyle.SINGLE, size: 4, color: noHash(COLORS.borderStrong) },
-                right: { style: BorderStyle.SINGLE, size: 4, color: noHash(COLORS.borderStrong) }
-              },
-              margins: { top: 90, bottom: 90, left: 130, right: 130 },
-              children: String(b.content || '').split('\n').map((line) => new Paragraph({
-                spacing: { after: 20 },
-                children: [new TextRun({ text: line || ' ', font: F_MONO, size: 16, color: noHash(COLORS.ink) })]
-              }))
-            })]
-          })]
-        }));
-        out.push(new Paragraph({ spacing: { after: 80 }, text: '' }));
-        break;
-      case 'divider':
-        out.push(new Paragraph({
-          border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: noHash(COLORS.border) } },
-          spacing: { before: 70, after: 110 },
-          text: ''
-        }));
-        break;
-      case 'table':
-        out.push(buildDataTable({
-          columns: (b.headers || []).map((h, idx) => ({ header: h, key: `c${idx}`, width: 15 })),
-          rows: (b.rows || []).map((r) => {
-            const obj = {};
-            r.forEach((cell, idx) => { obj[`c${idx}`] = cell; });
-            return obj;
-          })
-        }, theme));
-        out.push(new Paragraph({ spacing: { after: 90 }, text: '' }));
-        break;
-    }
+  return xml
+    .replace(/<dc:title>[\s\S]*?<\/dc:title>/, `<dc:title>${title}</dc:title>`)
+    .replace(/<dc:subject>[\s\S]*?<\/dc:subject>/, `<dc:subject>${subject}</dc:subject>`)
+    .replace(/<dc:creator>[\s\S]*?<\/dc:creator>/, `<dc:creator>${author}</dc:creator>`)
+    .replace(/<cp:lastModifiedBy>[\s\S]*?<\/cp:lastModifiedBy>/, `<cp:lastModifiedBy>${author}</cp:lastModifiedBy>`)
+    .replace(/<dcterms:created([^>]*)>[\s\S]*?<\/dcterms:created>/, `<dcterms:created$1>${isoNow}</dcterms:created>`)
+    .replace(/<dcterms:modified([^>]*)>[\s\S]*?<\/dcterms:modified>/, `<dcterms:modified$1>${isoNow}</dcterms:modified>`);
+}
+
+/** Assemble the clean, data-first `word/document.xml` body inside the official CAE template. */
+function buildDocumentBodyXml(templateDocXml, content) {
+  const coverLogoMatch = templateDocXml.match(/<w:drawing>[\s\S]*?r:embed="rId11"[\s\S]*?<\/w:drawing>/);
+  const logoDrawingXml = coverLogoMatch ? coverLogoMatch[0] : '';
+
+  const sectPrMatch = templateDocXml.match(/<w:sectPr\b[\s\S]*?<\/w:sectPr>/);
+  const sectPrXml = sectPrMatch ? sectPrMatch[0] : '';
+
+  let bmCounter = 100;
+  const nextBookmarkId = () => {
+    bmCounter += 1;
+    return bmCounter;
+  };
+
+  // Build exact live Table of Contents from ONLY the module's populated sections
+  let estPage = 2;
+  const tocEntries = content.sections.map((sec) => {
+    if (sec.startOnNewPage) estPage += 1;
+    const entry = {
+      level: 1,
+      title: sec.title,
+      bookmark: sec.bookmark,
+      pageNum: estPage
+    };
+    if (sec.id === 'charts' || sec.id === 'tables') estPage += 1;
+    return entry;
   });
 
-  return out;
-}
+  const parts = [];
 
-function makeCell(text, { header = false, align = 'left', fill, color, widthPct, bold = false, mono = false, topBorder = null, bottomBorder = null } = {}) {
-  const baseBorders = subtleTableBorders();
-  if (topBorder) baseBorders.top = topBorder;
-  if (bottomBorder) baseBorders.bottom = bottomBorder;
+  // ── PAGE 1: OFFICIAL CAE NAVY BLUE COVER PAGE SDT ──────────────────────────
+  parts.push(buildCoverSdtXml({
+    logoDrawingXml,
+    title: content.cover.title,
+    subtitle: content.cover.subtitle,
+    periodBanner: content.cover.periodBanner,
+    teamLine: content.cover.teamLine,
+    dateLine: content.cover.dateLine
+  }));
 
-  return new TableCell({
-    width: widthPct ? { size: widthPct, type: WidthType.PERCENTAGE } : undefined,
-    shading: fill ? { fill } : undefined,
-    verticalAlign: VerticalAlign.CENTER,
-    borders: baseBorders,
-    margins: { top: 70, bottom: 70, left: 95, right: 95 },
-    children: [new Paragraph({
-      spacing: { after: 0 },
-      alignment: mapAlign(align),
-      children: [new TextRun({
-        text: str(text),
-        bold: header || bold,
-        size: header ? 16 : (mono ? 14 : 16),
-        font: header ? F_DISP : (mono ? F_MONO : F_BODY),
-        color: color || (header ? noHash(COLORS.white) : noHash(COLORS.body))
-      })]
-    })]
-  });
-}
+  // ── PAGE 2: LIVE TABLE OF CONTENTS SDT ─────────────────────────────────────
+  parts.push(buildTocSdtXml(tocEntries));
 
-function buildDataTable(table, theme) {
-  const columns = (table?.columns || []).filter((c) => !c.printHidden);
-  const rows = table?.rows || [];
-  if (!columns.length) return new Paragraph({ text: '' });
-
-  const weights = columns.map((c) => c.docxWidth || c.width || 12);
-  const totalW = weights.reduce((a, b) => a + b, 0) || 1;
-  const pct = weights.map((w) => (w / totalW) * 100);
-  const hdrBg = noHash(theme.tableHeaderBg || theme.primary);
-
-  const headerRow = new TableRow({
-    tableHeader: true,
-    cantSplit: true,
-    children: columns.map((col, i) => makeCell(col.header, {
-      header: true,
-      align: col.align || ((col.type === 'number' || col.type === 'currency' || col.type === 'percent') ? 'right' : 'left'),
-      fill: hdrBg,
-      widthPct: pct[i],
-      bottomBorder: { style: BorderStyle.SINGLE, size: 12, color: noHash(theme.accent) }
-    }))
-  });
-
-  const dataRows = rows.length ? rows.map((row, idx) => {
-    const rowTone = toneStyle(row._flag);
-    const zebra = idx % 2 === 1 ? noHash(COLORS.zebra) : undefined;
-    return new TableRow({
-      cantSplit: true,
-      children: columns.map((col, i) => {
-        const isNum = col.type === 'number' || col.type === 'currency' || col.type === 'percent';
-        const isBadge = col.type === 'badge';
-        const badgeTone = isBadge ? (toneStyle(resolveBadgeTone(row, col)) || toneStyle('neutral')) : null;
-        return makeCell(formatCell(row, col), {
-          align: col.align || (isBadge ? 'center' : (isNum ? 'right' : 'left')),
-          fill: isBadge ? noHash(badgeTone.bg) : (rowTone && (row._flag === 'danger' || row._flag === 'warning') ? noHash(rowTone.bg) : zebra),
-          color: isBadge ? noHash(badgeTone.fg) : (rowTone && isNum ? noHash(rowTone.fg) : undefined),
-          bold: isBadge || (rowTone && isNum),
-          mono: col.type === 'mono',
-          widthPct: pct[i]
-        });
-      })
-    });
-  }) : [new TableRow({
-    cantSplit: true,
-    children: [new TableCell({
-      columnSpan: columns.length,
-      borders: subtleTableBorders(),
-      margins: { top: 90, bottom: 90, left: 110, right: 110 },
-      children: [new Paragraph({
-        spacing: { after: 0 },
-        children: [new TextRun({ text: 'No records match the selected filters.', italics: true, font: F_BODY, size: 17, color: noHash(COLORS.subtle) })]
-      })]
-    })]
-  })];
-
-  const allRows = [headerRow, ...dataRows];
-  const totalsRow = computeColumnTotals({ ...table, columns });
-  if (totalsRow) {
-    allRows.push(new TableRow({
-      cantSplit: true,
-      children: columns.map((col, i) => {
-        const isNum = col.type === 'number' || col.type === 'currency' || col.type === 'percent';
-        return makeCell(totalsRow[col.key] || '', {
-          align: col.align || (isNum ? 'right' : 'left'),
-          fill: noHash(theme.tint || COLORS.navyTint),
-          color: noHash(theme.primary),
-          bold: true,
-          widthPct: pct[i],
-          topBorder: { style: BorderStyle.SINGLE, size: 12, color: noHash(theme.primary) }
-        });
-      })
-    }));
+  // ── COMPACT REPORT CONTEXT STRIP (Period / Active Filters / Prepared By) ───
+  if (content.metaPairs.length) {
+    parts.push(buildMetaStripXml(content.metaPairs));
   }
 
-  return new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: allRows });
-}
-
-function renderDocxBlock(block, page, theme) {
-  switch (block.type) {
-    case 'brief':
-      return buildExecutiveBrief(block.title, block.text, theme);
-    case 'kpis':
-      return buildThemedKpis(block.items, block.variant || 'grid-2col', theme);
-    case 'gaugeBand':
-      return buildGaugeBand(block.items, theme);
-    case 'scorecard':
-      return buildScorecards(block, theme);
-    case 'highlights':
-      return buildHighlights(block.title, block.items, theme);
-    case 'alerts':
-      return buildAlerts(block.title, block.items, theme);
-    case 'statMatrix':
-      return buildStatMatrix(block.title, block.pairs, theme);
-    case 'cardList':
-      return buildCardList(block.title, block.items, theme);
-    case 'chart':
-      return buildChartBlock(block.chart, theme);
-    case 'chartPair':
-      return [
-        ...buildChartBlock(block.left, theme),
-        ...buildChartBlock(block.right, theme)
-      ];
-    case 'table': {
-      const out = [];
-      const showHdr = block.showHeading !== undefined
-        ? block.showHeading
-        : (block.table?.name && block.table.name !== page.title);
-      if (showHdr && block.table?.name) {
-        out.push(new Paragraph({
-          heading: HeadingLevel.HEADING_3,
-          spacing: { before: 120, after: 40 },
-          children: [new TextRun({ text: block.table.name, bold: true, font: F_DISP, size: 21, color: noHash(theme.primary) })]
-        }));
-      }
-      if (showHdr && block.table?.note) {
-        out.push(new Paragraph({
-          spacing: { after: 50 },
-          children: [new TextRun({ text: block.table.note, italics: true, font: F_BODY, size: 16, color: noHash(COLORS.subtle) })]
-        }));
-      }
-      out.push(buildDataTable(block.table, theme));
-      out.push(makeSpacer(90));
-      return out;
+  // ── MODULE-SPECIFIC DATA-FIRST SECTIONS ────────────────────────────────────
+  content.sections.forEach((sec, idx) => {
+    if (sec.startOnNewPage && idx > 0) {
+      parts.push(pPageBreak());
     }
-    case 'markdown':
-      return buildDocumentBlocks(block.blocks, theme);
-    default:
-      return [];
-  }
-}
 
-/** Strip trailing empty spacer paragraphs from a section so `pageBreakBefore` never creates blank pages. */
-function trimTrailingEmptySpacer(items) {
-  while (items.length > 0) {
-    const last = items[items.length - 1];
-    if (last && last.rootKey === 'w:p' && last._isEmptySpacer) {
-      items.pop();
-    } else {
-      break;
+    const headingXml = idx === 0
+      ? pAppendixHeading(sec.title, nextBookmarkId(), sec.bookmark)
+      : pSectionHeading(sec.title, nextBookmarkId(), sec.bookmark);
+    parts.push(headingXml);
+
+    if (sec.description) {
+      parts.push(pBody(sec.description, { color: '334155', spacingAfter: 90 }));
     }
-  }
-  return items;
-}
 
-function makeSpacer(after = 80) {
-  const p = new Paragraph({ spacing: { before: 0, after, line: 40 }, children: [new TextRun({ text: '', size: 4 })] });
-  p._isEmptySpacer = true;
-  return p;
-}
-
-/** Build a styled A4 Multi-Page docx Document from a normalised ReportSpec v5. */
-function buildDocument(spec) {
-  const theme = spec.theme?.primary ? spec.theme : resolveTheme(spec);
-  const children = [...buildCoverPage(spec, theme)];
-
-  if (spec.pages && spec.pages.length) {
-    const renderablePages = spec.pages.filter((p) => p && (p.title || (Array.isArray(p.blocks) && p.blocks.length > 0)));
-    renderablePages.forEach((page, idx) => {
-      trimTrailingEmptySpacer(children);
-      if (page.title) {
-        children.push(...buildPageBanner(idx + 1, page.eyebrow, page.title, page.subtitle, theme, true));
-      } else {
-        children.push(new Paragraph({ pageBreakBefore: true, spacing: { after: 0 }, text: '' }));
-      }
-      const pageNodes = [];
-      (page.blocks || []).forEach((block) => {
-        pageNodes.push(...renderDocxBlock(block, page, theme));
-      });
-      trimTrailingEmptySpacer(pageNodes);
-      children.push(...pageNodes);
-    });
-  } else {
-    let sectionNum = 1;
-    const hasExec = Boolean(
-      spec.executiveBrief ||
-      (spec.kpis && spec.kpis.length) ||
-      (spec.scorecards && spec.scorecards.length) ||
-      (spec.highlights && spec.highlights.length) ||
-      (spec.insights && spec.insights.length)
-    );
-    if (hasExec) {
-      children.push(...buildPageBanner(sectionNum++, 'SECTION 01 · OVERVIEW', 'Executive Overview', theme.coverTagline || '', theme, true));
-      children.push(...buildExecutiveBrief('Executive Brief', spec.executiveBrief, theme));
-      children.push(...buildThemedKpis(spec.kpis, 'grid-2col', theme));
-      (spec.scorecards || []).forEach((sc) => children.push(...buildScorecards(sc, theme)));
-      children.push(...buildHighlights(null, spec.highlights, theme));
-      children.push(...buildAlerts('Key Insights & Alerts', spec.insights, theme));
-    }
-    if (spec.charts && spec.charts.length) {
-      children.push(...buildPageBanner(sectionNum++, 'ANALYTICS', 'Visual Analytics', '', theme, true));
-      spec.charts.forEach((ch) => children.push(...buildChartBlock(ch, theme)));
-    }
-    if (spec.documentBlocks && spec.documentBlocks.length) {
-      children.push(...buildPageBanner(sectionNum++, 'DOCUMENT', spec.title, '', theme, true));
-      children.push(...buildDocumentBlocks(spec.documentBlocks, theme));
-    }
-    const tables = [...(spec.tables || [])].sort((a, b) => (a.priority === 'high' ? 0 : 1) - (b.priority === 'high' ? 0 : 1));
-    tables.forEach((table, idx) => {
-      children.push(...buildPageBanner(sectionNum++, 'DATA LEDGER', table.name || `Data ${idx + 1}`, table.note || '', theme, true));
-      children.push(buildDataTable(table, theme));
-      children.push(new Paragraph({ spacing: { after: 100 }, text: '' }));
-    });
-  }
-
-  const darkLogo = getLogoBuffer('dark');
-  const headerChildren = [new Paragraph({
-    border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: noHash(COLORS.border) } },
-    children: [
-      ...(darkLogo ? [new ImageRun({ data: darkLogo, transformation: { width: 64, height: 24 } })] : []),
-      new TextRun({ text: `${darkLogo ? '   ' : ''}${theme.docCode}  ·  `, bold: true, font: F_DISP, size: 16, color: noHash(theme.accent) }),
-      new TextRun({ text: spec.title, font: F_DISP, size: 16, color: noHash(COLORS.subtle) })
-    ]
-  })];
-
-  const footer = new Footer({
-    children: [new Paragraph({
-      alignment: AlignmentType.CENTER,
-      border: { top: { style: BorderStyle.SINGLE, size: 6, color: noHash(COLORS.border) } },
-      children: [
-        new TextRun({ text: `${COMPANY.name}  |  ${theme.docCode}  |  Page `, font: F_BODY, size: 14, color: noHash(COLORS.subtle) }),
-        new TextRun({ children: [PageNumber.CURRENT], font: F_DISP, bold: true, size: 14, color: noHash(theme.primary) }),
-        new TextRun({ text: ' of ', font: F_BODY, size: 14, color: noHash(COLORS.subtle) }),
-        new TextRun({ children: [PageNumber.TOTAL_PAGES], font: F_DISP, bold: true, size: 14, color: noHash(theme.primary) })
-      ]
-    })]
-  });
-
-  const isLandscape = spec.orientation === 'landscape';
-
-  return new Document({
-    creator: COMPANY.name,
-    title: spec.title,
-    styles: {
-      default: {
-        document: {
-          run: { font: F_BODY, size: 19, color: noHash(COLORS.body) },
-          paragraph: { spacing: { after: 100, line: 260 } }
-        },
-        heading1: {
-          run: { font: F_DISP, size: 32, bold: true, color: noHash(COLORS.cobalt) },
-          paragraph: { spacing: { before: 120, after: 80 } }
-        },
-        heading2: {
-          run: { font: F_DISP, size: 26, bold: true, color: noHash(COLORS.cobalt) },
-          paragraph: { spacing: { before: 140, after: 60 } }
-        },
-        heading3: {
-          run: { font: F_DISP, size: 22, bold: true, color: noHash(COLORS.royal) },
-          paragraph: { spacing: { before: 120, after: 40 } }
+    sec.blocks.forEach((blk) => {
+      if (blk.kind === 'table' && blk.table) {
+        if (blk.subTitle) {
+          parts.push(pCategoryHeading(blk.subTitle));
         }
-      }
-    },
-    sections: [{
-      properties: {
-        titlePage: true,
-        page: {
-          margin: { top: 960, bottom: 960, left: 860, right: 860, header: 480, footer: 480 },
-          size: isLandscape
-            ? { width: 16838, height: 11906, orientation: PageOrientation.LANDSCAPE }
-            : { width: 11906, height: 16838, orientation: PageOrientation.PORTRAIT }
+        if (blk.note) {
+          parts.push(pBody(blk.note, { italic: true, color: '475569', spacingAfter: 60 }));
         }
-      },
-      headers: {
-        first: new Header({ children: [] }),
-        default: new Header({ children: headerChildren })
-      },
-      footers: {
-        first: new Footer({ children: [] }),
-        default: footer
-      },
-      children
-    }]
+        parts.push(buildTemplateDataTable(blk.table));
+        parts.push(pSpacer(110));
+      } else if (blk.kind === 'alerts' && blk.items?.length) {
+        parts.push(buildAlertsTable(blk.items, blk.columns));
+        parts.push(pSpacer(110));
+      } else if (blk.kind === 'chart') {
+        parts.push(buildInlineChartParagraph(blk.relId || 'rId13'));
+        parts.push(pSpacer(90));
+      } else if (blk.kind === 'markdown' && blk.blocks?.length) {
+        parts.push(buildMarkdownXmlBlocks(blk.blocks));
+        parts.push(pSpacer(90));
+      } else if (blk.kind === 'note' && blk.text) {
+        parts.push(pBody(blk.text, { italic: true, color: '475569', spacingAfter: 90 }));
+      }
+    });
   });
+
+  const bodyStartIdx = templateDocXml.indexOf('<w:body>');
+  const docHeader = bodyStartIdx !== -1
+    ? templateDocXml.slice(0, bodyStartIdx + '<w:body>'.length)
+    : '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>';
+
+  return `${docHeader}${parts.join('')}${sectPrXml}</w:body></w:document>`;
 }
 
-/** Stream a generated Word document to the Express response. */
+/**
+ * Generate a complete Word (.docx) Buffer cloned from the official CAE Navy Blue
+ * Template and populated with lean, module-specific operational data.
+ */
+async function buildDocxBuffer(spec) {
+  const zip = new PizZip(getTemplateBuffer());
+  const collected = collectSpecData(spec);
+
+  // 1. Update native embedded chart (`chart1.xml` + `Microsoft_Excel_Worksheet.xlsx`)
+  const chartData = await updateTemplateChart(zip, collected, spec);
+
+  // 2. Build module-tailored data-first sections
+  const content = buildTemplateContent(spec, { hasRealChart: Boolean(chartData?.hasRealChart) });
+
+  // 3. Rebuild `word/document.xml` keeping exact namespaces, cover logo drawing & sectPr
+  const origDocXml = zip.file('word/document.xml').asText();
+  const nextDocXml = buildDocumentBodyXml(origDocXml, content);
+  zip.file('word/document.xml', nextDocXml);
+
+  // 4. Patch footers (`footer1.xml` interior + `footer2.xml` cover) with real publication date
+  for (const fPath of ['word/footer1.xml', 'word/footer2.xml']) {
+    if (zip.file(fPath)) {
+      zip.file(fPath, patchFooterXml(zip.file(fPath).asText(), content.cover.pubDateShort, content.cover.confidentiality));
+    }
+  }
+
+  // 5. Enable auto field refresh (TOC & Page X of Y) in `word/settings.xml`
+  if (zip.file('word/settings.xml')) {
+    zip.file('word/settings.xml', patchSettingsXml(zip.file('word/settings.xml').asText()));
+  }
+
+  // 6. Update `docProps/core.xml` metadata
+  if (zip.file('docProps/core.xml')) {
+    zip.file('docProps/core.xml', patchCorePropsXml(zip.file('docProps/core.xml').asText(), spec));
+  }
+
+  return zip.generate({ type: 'nodebuffer', compression: 'DEFLATE' });
+}
+
+/** Stream a generated official CAE Navy Blue Word document to the Express response. */
 async function streamDocx(spec, res, filename) {
-  const doc = buildDocument(spec);
-  const buffer = await Packer.toBuffer(doc);
+  const buffer = await buildDocxBuffer(spec);
   res.setHeader('Content-Type', FORMAT_META.docx.mime);
   res.setHeader('Content-Disposition', `attachment; filename="${filename}.docx"`);
   res.send(buffer);
 }
 
-module.exports = { buildDocument, streamDocx };
+module.exports = {
+  buildDocxBuffer,
+  streamDocx,
+  resolveGeneralTemplatePath
+};

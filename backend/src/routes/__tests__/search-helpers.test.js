@@ -24,7 +24,15 @@ test('escapeLikePattern escapes LIKE wildcards safely', () => {
 });
 
 test('normalizeNavBadges clamps negatives and invalid values to 0 without mutating input', () => {
-  const input = { simulators: '2', operations: 5.9, maintenance: -3, warehouse: '12', tasks: NaN, notifications: undefined };
+  const input = {
+    simulators: '2',
+    operations: 5.9,
+    maintenance: -3,
+    plannedMaintenance: '4',
+    warehouse: '12',
+    tasks: NaN,
+    notifications: undefined
+  };
   const snapshot = { ...input };
   const result = normalizeNavBadges(input);
 
@@ -33,6 +41,7 @@ test('normalizeNavBadges clamps negatives and invalid values to 0 without mutati
     simulators: 2,
     operations: 5,
     maintenance: 0,
+    plannedMaintenance: 4,
     warehouse: 12,
     tasks: 0,
     notifications: 0

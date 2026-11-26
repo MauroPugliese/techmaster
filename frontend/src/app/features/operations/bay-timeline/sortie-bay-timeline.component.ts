@@ -1,9 +1,12 @@
 import {
   ChangeDetectionStrategy,
+  ChangeDetectorRef,
   Component,
   EventEmitter,
   Input,
   OnChanges,
+  OnDestroy,
+  OnInit,
   Output,
   SimpleChanges
 } from '@angular/core';
@@ -60,7 +63,7 @@ const KIND_ORDER: Record<SimulatorStationKind, number> = {
   styleUrls: ['./sortie-bay-timeline.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class SortieBayTimelineComponent implements OnChanges {
+export class SortieBayTimelineComponent implements OnInit, OnChanges, OnDestroy {
   @Input() simulators: Simulator[] = [];
   @Input() operations: Operation[] = [];
   @Input() shiftBlocks: TimelineShiftBlock[] = [];
@@ -83,11 +86,17 @@ export class SortieBayTimelineComponent implements OnChanges {
   maintBarsBySimulator = new Map<number, PositionedMaintenanceBlock[]>();
   unassignedBars: PositionedSortie[] = [];
   nowLinePct: number | null = null;
+  nowPillPct: number | null = null;
+  nowTimeLabel = '';
   daySortieCount = 0;
   dayShiftInUseCount = 0;
   dayShiftReadyCount = 0;
   dayMaintCount = 0;
   displayDateObj = new Date();
+  private lastDateIso = '';
+  private nowTimer: ReturnType<typeof setInterval> | null = null;
+
+  constructor(private cdr: ChangeDetectorRef) {}
 
   static todayIso(): string {
     const now = new Date();
@@ -97,8 +106,22 @@ export class SortieBayTimelineComponent implements OnChanges {
     return `${y}-${m}-${d}`;
   }
 
+  ngOnInit(): void {
+    this.nowTimer = setInterval(() => {
+      this.updateNowMarker();
+      this.cdr.markForCheck();
+    }, 60_000);
+  }
+
   ngOnChanges(_: SimpleChanges): void {
     this.rebuildTimeline();
+  }
+
+  ngOnDestroy(): void {
+    if (this.nowTimer) {
+      clearInterval(this.nowTimer);
+      this.nowTimer = null;
+    }
   }
 
   get isTodaySelected(): boolean {
@@ -174,9 +197,29 @@ export class SortieBayTimelineComponent implements OnChanges {
     return Math.max(0, Math.min(24 * 60, parts[0] * 60 + parts[1]));
   }
 
+  private updateNowMarker(): void {
+    const dayStart = this.parseIsoDay(this.selectedDate);
+    const dayStartMs = dayStart.getTime();
+    const dayEndMs = dayStartMs + 24 * 3600 * 1000;
+    const now = new Date();
+    if (now.getTime() >= dayStartMs && now.getTime() < dayEndMs) {
+      const pct = ((now.getTime() - dayStartMs) / (24 * 3600 * 1000)) * 100;
+      this.nowLinePct = pct;
+      this.nowPillPct = Math.min(96.5, Math.max(3.5, pct));
+      this.nowTimeLabel = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    } else {
+      this.nowLinePct = null;
+      this.nowPillPct = null;
+      this.nowTimeLabel = '';
+    }
+  }
+
   private rebuildTimeline(): void {
     const dayStart = this.parseIsoDay(this.selectedDate);
-    this.displayDateObj = dayStart;
+    if (this.selectedDate !== this.lastDateIso) {
+      this.lastDateIso = this.selectedDate;
+      this.displayDateObj = dayStart;
+    }
     const dayStartMs = dayStart.getTime();
     const dayEndMs = dayStartMs + 24 * 3600 * 1000;
 
@@ -191,13 +234,7 @@ export class SortieBayTimelineComponent implements OnChanges {
     });
 
     const visibleSimIds = new Set(this.sortedSimulators.map((s) => s.id));
-
-    const now = new Date();
-    if (now.getTime() >= dayStartMs && now.getTime() < dayEndMs) {
-      this.nowLinePct = ((now.getTime() - dayStartMs) / (24 * 3600 * 1000)) * 100;
-    } else {
-      this.nowLinePct = null;
-    }
+    this.updateNowMarker();
 
     // 1. Formal Sortie Operations
     const map = new Map<number, PositionedSortie[]>();

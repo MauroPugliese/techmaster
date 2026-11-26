@@ -87,6 +87,7 @@ export class ShellComponent implements OnInit, OnDestroy {
   simulatorsAlertCount = 0;
   activeOpsCount = 0;
   pendingMaintCount = 0;
+  pendingPlannedMaintCount = 0;
   lowStockCount = 0;
   openTasksCount = 0;
   utcClock = '';
@@ -155,6 +156,12 @@ export class ShellComponent implements OnInit, OnDestroy {
       }
     });
 
+    this.api.navBadgesRefresh$.pipe(takeUntil(this.destroy$)).subscribe(() => {
+      if (this.currentUser) {
+        this.loadNavBadges();
+      }
+    });
+
     this.router.events.pipe(
       filter(e => e instanceof NavigationEnd),
       takeUntil(this.destroy$)
@@ -162,6 +169,9 @@ export class ShellComponent implements OnInit, OnDestroy {
       this.resolvePageFromUrl(e.urlAfterRedirects || e.url || '');
       this.mobileSidebarOpen = false;
       this.showNotifications = false;
+      if (this.currentUser) {
+        this.loadNavBadges();
+      }
       this.cdr.markForCheck();
     });
 
@@ -384,14 +394,20 @@ export class ShellComponent implements OnInit, OnDestroy {
     this.cdr.markForCheck();
   }
 
+  private localTodayIso(): string {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  }
+
   private loadNavBadges(): void {
-    this.api.get<any>('/search/nav-badges').subscribe({
+    this.api.get<any>('/search/nav-badges', { date: this.localTodayIso() }).subscribe({
       next: (res) => {
         const d = res?.data;
         if (!d) return;
         this.simulatorsAlertCount = Number(d.simulators) || 0;
         this.activeOpsCount = Number(d.operations) || 0;
         this.pendingMaintCount = Number(d.maintenance) || 0;
+        this.pendingPlannedMaintCount = Number(d.plannedMaintenance) || 0;
         this.lowStockCount = Number(d.warehouse) || 0;
         this.openTasksCount = Number(d.tasks) || 0;
         this.cdr.markForCheck();

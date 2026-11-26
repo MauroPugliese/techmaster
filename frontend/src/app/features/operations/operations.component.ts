@@ -104,6 +104,11 @@ export class OperationsComponent implements OnInit, OnDestroy {
   timelineDate = SortieBayTimelineComponent.todayIso();
   showFleetDeck = false;
   deckKindFilter: 'FFS_BAY' | 'TEST_PLACE' | 'IOS_CONSOLE' | 'ALL' = 'ALL';
+  deckSimulators: Simulator[] = [];
+  ffsBayCount = 0;
+  testPlaceCount = 0;
+  iosConsoleCount = 0;
+  exportParams: Record<string, any> = {};
   todayPlantLog: SimulatorDailyLog | null = null;
 
   searchQuery = '';
@@ -200,6 +205,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
     this.api.get<any>('/simulators').pipe(takeUntil(this.destroy$)).subscribe({
       next: res => {
         this.simulators = res?.data || [];
+        this.recomputeDeckSimulators();
         this.cdr.markForCheck();
       }
     });
@@ -254,19 +260,45 @@ export class OperationsComponent implements OnInit, OnDestroy {
     return this.simStatusMeta(sim.status).label;
   }
 
-  get deckSimulators(): Simulator[] {
-    if (this.deckKindFilter === 'ALL') return this.simulators;
-    const filtered = this.simulators.filter(
-      s => (s.station_kind || 'FFS_BAY') === this.deckKindFilter
-    );
-    if (filtered.length === 0 && this.deckKindFilter === 'FFS_BAY' && this.simulators.length > 0) {
-      return this.simulators;
-    }
-    return filtered;
+  setDeckKindFilter(kind: 'FFS_BAY' | 'TEST_PLACE' | 'IOS_CONSOLE' | 'ALL'): void {
+    if (this.deckKindFilter === kind) return;
+    this.deckKindFilter = kind;
+    this.recomputeDeckSimulators();
+    this.cdr.markForCheck();
   }
 
-  countByKind(kind: SimulatorStationKind): number {
-    return this.simulators.filter(s => (s.station_kind || 'FFS_BAY') === kind).length;
+  private recomputeDeckSimulators(): void {
+    let ffs = 0;
+    let tp = 0;
+    let ios = 0;
+    for (const s of this.simulators) {
+      const k = s.station_kind || 'FFS_BAY';
+      if (k === 'TEST_PLACE') tp += 1;
+      else if (k === 'IOS_CONSOLE') ios += 1;
+      else ffs += 1;
+    }
+    this.ffsBayCount = ffs;
+    this.testPlaceCount = tp;
+    this.iosConsoleCount = ios;
+
+    this.deckSimulators = this.deckKindFilter === 'ALL'
+      ? [...this.simulators]
+      : this.simulators.filter(s => (s.station_kind || 'FFS_BAY') === this.deckKindFilter);
+  }
+
+  private syncExportParams(): void {
+    this.exportParams = {
+      status: this.statusFilter,
+      priority: this.priorityFilter,
+      type_id: this.typeFilter,
+      simulator_id: this.simulatorFilter,
+      outcome: this.outcomeFilter,
+      search: this.searchQuery
+    };
+  }
+
+  trackBySimId(_: number, sim: Simulator): number {
+    return sim.id;
   }
 
   loadTimelineOps(): void {
@@ -366,6 +398,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
   loadOperations(): void {
     this.loading = true;
     this.openMenuOpId = null;
+    this.syncExportParams();
 
     this.api.get<any>('/operations', {
       status: this.statusFilter,

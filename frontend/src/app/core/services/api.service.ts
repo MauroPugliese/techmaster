@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, Subject } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { DateFilterService } from './date-filter.service';
 import { DateRange } from '../models/interfaces';
@@ -8,11 +8,17 @@ import { DateRange } from '../models/interfaces';
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   readonly baseUrl = environment.apiUrl;
+  private readonly navBadgesRefreshSubject = new Subject<void>();
+  readonly navBadgesRefresh$ = this.navBadgesRefreshSubject.asObservable();
 
   constructor(
     private http: HttpClient,
     private dateFilter: DateFilterService
   ) {}
+
+  notifyNavBadgesChanged(): void {
+    this.navBadgesRefreshSubject.next();
+  }
 
   buildParams(extra: Record<string, any> = {}, dateRange?: DateRange): HttpParams {
     let params = new HttpParams();

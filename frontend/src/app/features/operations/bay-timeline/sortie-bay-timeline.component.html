@@ -25,6 +25,11 @@
         <span class="leg-item"><span class="leg-dot snag"></span>Snag / DR</span>
         <span class="leg-item"><span class="leg-dot maint"></span>Maint.</span>
         <span class="leg-item"><span class="leg-dot abort"></span>NA / Abort</span>
+        <span
+          class="leg-item leg-now"
+          title="Red vertical line indicating the current local time on today's 24-hour schedule">
+          <span class="leg-now-mark"></span>Current Time<ng-container *ngIf="nowTimeLabel"> ({{ nowTimeLabel }})</ng-container>
+        </span>
       </div>
 
       <div class="tl-day-nav">
@@ -64,6 +69,13 @@
         <div class="tl-hours-track">
           <div class="tl-hour-head tl-num" *ngFor="let h of hours">
             {{ hourLabel(h) }}
+          </div>
+          <div
+            class="tl-now-axis-pill tl-num"
+            *ngIf="nowPillPct !== null && nowTimeLabel"
+            [style.left.%]="nowPillPct"
+            [title]="'Current local time (' + nowTimeLabel + ') — live 24h schedule marker'">
+            NOW {{ nowTimeLabel }}
           </div>
         </div>
       </div>

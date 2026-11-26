@@ -71,6 +71,13 @@
       <a class="nav-item" routerLink="/maintenance/planned" routerLinkActive="active" *ngIf="showNavSection('maintenance')">
         <span class="nav-icon">event_repeat</span>
         <span class="nav-label">Planned Maintenance</span>
+        <span
+          class="nav-badge"
+          *ngIf="pendingPlannedMaintCount > 0"
+          [attr.data-tooltip]="pendingPlannedMaintCount + (pendingPlannedMaintCount === 1 ? ' scheduled occurrence remaining today' : ' scheduled occurrences remaining today')"
+          [attr.aria-label]="pendingPlannedMaintCount + (pendingPlannedMaintCount === 1 ? ' scheduled occurrence remaining today' : ' scheduled occurrences remaining today')">
+          {{ pendingPlannedMaintCount }}
+        </span>
       </a>
 
       <a class="nav-item" routerLink="/warehouse" routerLinkActive="active" *ngIf="showNavSection('warehouse')">

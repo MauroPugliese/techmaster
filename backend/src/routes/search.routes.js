@@ -17,6 +17,7 @@ const {
   normalizeNavBadges,
   buildSearchGroups
 } = require('../services/search-helpers.service');
+const { getTasksForDate } = require('../services/planned-recurrence.service');
 
 // GET /api/search?q=...
 router.get('/', async (req, res, next) => {
@@ -146,7 +147,12 @@ router.get('/', async (req, res, next) => {
 // GET /api/search/nav-badges
 router.get('/nav-badges', async (req, res, next) => {
   try {
-    const [simulators, operations, maintenance, warehouse, tasks, notifications] = await Promise.all([
+    const rawDate = String(req.query.date || '').trim();
+    const todayStr = /^\d{4}-\d{2}-\d{2}$/.test(rawDate)
+      ? rawDate
+      : new Date().toISOString().slice(0, 10);
+
+    const [simulators, operations, maintenance, plannedTodayTasks, warehouse, tasks, notifications] = await Promise.all([
       Simulator.count({
         where: { status: { [Op.in]: ['AOG', 'DEGRADED'] } }
       }),
@@ -156,6 +162,7 @@ router.get('/nav-badges', async (req, res, next) => {
       MaintenanceRecord.count({
         where: { status: { [Op.in]: ['SCHEDULED', 'IN_PROGRESS'] } }
       }),
+      getTasksForDate(todayStr).catch(() => []),
       InventoryItem.count({
         where: {
           is_active: true,
@@ -170,12 +177,17 @@ router.get('/nav-badges', async (req, res, next) => {
       })
     ]);
 
+    const plannedMaintenance = (plannedTodayTasks || []).filter(
+      (occ) => String(occ.status || 'TODO').toUpperCase() !== 'DONE'
+    ).length;
+
     res.json({
       success: true,
       data: normalizeNavBadges({
         simulators,
         operations,
         maintenance,
+        plannedMaintenance,
         warehouse,
         tasks,
         notifications

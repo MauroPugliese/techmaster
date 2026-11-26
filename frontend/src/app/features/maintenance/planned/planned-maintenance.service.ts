@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { map } from 'rxjs/operators';
+import { map, tap } from 'rxjs/operators';
 import { ApiService } from '../../../core/services/api.service';
 import {
   PlannedMaintenanceTask,
@@ -110,27 +110,42 @@ export class PlannedMaintenanceService {
   }
 
   create(task: Partial<PlannedMaintenanceTask>): Observable<PlannedMaintenanceTask> {
-    return this.api.post<any>(this.basePath, this.toApiPayload(task)).pipe(map(res => this.normalizeTask(res.data)));
+    return this.api.post<any>(this.basePath, this.toApiPayload(task)).pipe(
+      map(res => this.normalizeTask(res.data)),
+      tap(() => this.api.notifyNavBadgesChanged())
+    );
   }
 
   update(id: number, task: Partial<PlannedMaintenanceTask>): Observable<PlannedMaintenanceTask> {
-    return this.api.put<any>(`${this.basePath}/${id}`, this.toApiPayload(task)).pipe(map(res => this.normalizeTask(res.data)));
+    return this.api.put<any>(`${this.basePath}/${id}`, this.toApiPayload(task)).pipe(
+      map(res => this.normalizeTask(res.data)),
+      tap(() => this.api.notifyNavBadgesChanged())
+    );
   }
 
   createWorkOrder(id: number, body: Record<string, any>): Observable<any> {
-    return this.api.post<any>(`${this.basePath}/${id}/work-order`, body);
+    return this.api.post<any>(`${this.basePath}/${id}/work-order`, body).pipe(
+      tap(() => this.api.notifyNavBadgesChanged())
+    );
   }
 
   updateOccurrence(id: number, occurrenceDate: string, task: Partial<PlannedMaintenanceTask>): Observable<PlannedMaintenanceTask> {
-    return this.api.put<any>(`${this.basePath}/${id}/occurrence/${occurrenceDate}`, this.toApiPayload(task)).pipe(map(res => this.normalizeTask(res.data)));
+    return this.api.put<any>(`${this.basePath}/${id}/occurrence/${occurrenceDate}`, this.toApiPayload(task)).pipe(
+      map(res => this.normalizeTask(res.data)),
+      tap(() => this.api.notifyNavBadgesChanged())
+    );
   }
 
   deleteOccurrence(id: number, occurrenceDate: string): Observable<any> {
-    return this.api.delete<any>(`${this.basePath}/${id}/occurrence/${occurrenceDate}`);
+    return this.api.delete<any>(`${this.basePath}/${id}/occurrence/${occurrenceDate}`).pipe(
+      tap(() => this.api.notifyNavBadgesChanged())
+    );
   }
 
   delete(id: number): Observable<any> {
-    return this.api.delete<any>(`${this.basePath}/${id}`);
+    return this.api.delete<any>(`${this.basePath}/${id}`).pipe(
+      tap(() => this.api.notifyNavBadgesChanged())
+    );
   }
 
   getExportUrl(format: 'xlsx' | 'pdf' | 'docx', from: string, to: string): string {

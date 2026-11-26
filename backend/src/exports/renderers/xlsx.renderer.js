@@ -1,25 +1,29 @@
 // =============================================================================
-// exports/renderers/xlsx.renderer.js — Official CAE Excel (.xlsx) Renderer v4
+// exports/renderers/xlsx.renderer.js — Clean Tabular Excel (.xlsx) Renderer v5
 // -----------------------------------------------------------------------------
-// Consumes both top-level specs and composable `spec.pages` blueprints:
-//   • A4 Print Setup (`paperSize: 9`) with spec orientation
-//   • Dedicated "Executive Summary" dashboard sheet (gridlines off, Brief, KPIs,
-//     Scorecards, Spotlights, Insights, analytical breakdowns + ColorScale)
-//   • Typography: Red Hat Display (Banners, KPIs, Headers, Totals), Arial (Data),
-//     Courier New (SKUs / Monospace IDs)
-//   • Preserves ALL dataset columns (including `printHidden: true` audit cols)
+// Pure, analyst-ready rows & columns spreadsheet format:
+//   • Row 1 = Column Headers on EVERY worksheet (frozen pane + AutoFilter)
+//   • Standard Excel gridlines ON, ZERO merged cells, ZERO floating images
+//   • Data tables placed FIRST for immediate filtering, sorting, and pivoting
+//   • Preserves ALL exported columns (including `printHidden: true` audit cols)
+//   • True numeric types (currency, percent, number) + live SUM/AVERAGE totals
+//   • Clean flat `Summary` and `Chart Data` sheets so zero report data is lost
 // =============================================================================
 
 const ExcelJS = require('exceljs');
 const {
-  COMPANY, COLORS, OFFICE_FONTS, toneStyle, argb, getLogoBuffer
+  COMPANY, COLORS, OFFICE_FONTS, toneStyle, argb
 } = require('../core/branding');
 const { resolveTheme } = require('../core/themes');
+const { collectSpecData } = require('../core/spec-collector');
 const { str, toNumber, resolveBadgeTone, FORMAT_META } = require('../core/helpers');
 
 const F_DISP = OFFICE_FONTS.xlsx.display;
 const F_BODY = OFFICE_FONTS.xlsx.body;
 const F_MONO = OFFICE_FONTS.xlsx.mono;
+
+const MIN_COL_WIDTH = 10;
+const MAX_COL_WIDTH = 44;
 
 const thinBorder = () => ({
   top:    { style: 'thin', color: { argb: argb(COLORS.border) } },
@@ -28,83 +32,12 @@ const thinBorder = () => ({
   right:  { style: 'thin', color: { argb: argb(COLORS.border) } }
 });
 
-function extractAggregatedData(spec) {
-  const briefParts = [];
-  if (spec.executiveBrief) briefParts.push(spec.executiveBrief);
-  const kpis = [...(spec.kpis || [])];
-  const scorecards = [...(spec.scorecards || [])];
-  const highlights = [...(spec.highlights || [])];
-  const insights = [...(spec.insights || [])];
-  const statMatrices = [];
-  const charts = [...(spec.charts || [])];
-  const tables = [...(spec.tables || [])];
-  const documentBlocks = [...(spec.documentBlocks || [])];
-
-  const seenTables = new Set(tables.map((t) => t.name).filter(Boolean));
-  const seenCharts = new Set(charts.map((c) => c.title).filter(Boolean));
-
-  (spec.pages || []).forEach((page) => {
-    (page.blocks || []).forEach((block) => {
-      if (block.type === 'brief' && block.text && !briefParts.includes(block.text)) briefParts.push(block.text);
-      if (block.type === 'kpis' && Array.isArray(block.items) && block.includeInSummary !== false) {
-        block.items.forEach((it) => { if (!kpis.some((k) => k.label === it.label)) kpis.push(it); });
-      }
-      if (block.type === 'gaugeBand' && Array.isArray(block.items) && !kpis.length) {
-        block.items.forEach((it) => kpis.push({
-          label: it.label,
-          value: it.valueLabel || `${Number(it.percent || 0).toFixed(1)}%`,
-          rawValue: Number(it.percent || 0),
-          numFmt: '0.0"%"',
-          sublabel: it.sublabel,
-          tone: it.tone
-        }));
-      }
-      if (block.type === 'scorecard' && block.items?.length && !scorecards.some((s) => s.title === block.title)) {
-        scorecards.push({ title: block.title, subtitle: block.subtitle, items: block.items });
-      }
-      if (block.type === 'highlights') {
-        (block.items || []).forEach((it) => { if (!highlights.some((h) => h.title === it.title)) highlights.push(it); });
-      }
-      if (block.type === 'cardList') {
-        (block.items || []).forEach((it) => {
-          if (!highlights.some((h) => h.title === it.title)) {
-            highlights.push({ eyebrow: it.badge || block.title, metric: it.metric, title: it.title, detail: [it.meta, it.detail].filter(Boolean).join(' · '), tone: it.badgeTone || 'info' });
-          }
-        });
-      }
-      if (block.type === 'alerts') {
-        (block.items || []).forEach((it) => { if (!insights.some((ins) => ins.title === it.title)) insights.push(it); });
-      }
-      if (block.type === 'statMatrix' && Array.isArray(block.pairs) && block.pairs.length) {
-        statMatrices.push({ title: block.title || 'Control & Specification Summary', pairs: block.pairs });
-      }
-      if (block.type === 'chart' && block.chart && (!block.chart.title || !seenCharts.has(block.chart.title))) {
-        charts.push(block.chart);
-        if (block.chart.title) seenCharts.add(block.chart.title);
-      }
-      if (block.type === 'chartPair') {
-        [block.left, block.right].filter(Boolean).forEach((ch) => {
-          if (!ch.title || !seenCharts.has(ch.title)) {
-            charts.push(ch);
-            if (ch.title) seenCharts.add(ch.title);
-          }
-        });
-      }
-      if (block.type === 'table' && block.table && (!block.table.name || !seenTables.has(block.table.name))) {
-        tables.push(block.table);
-        if (block.table.name) seenTables.add(block.table.name);
-      }
-      if (block.type === 'markdown' && Array.isArray(block.blocks)) {
-        block.blocks.forEach((mb) => documentBlocks.push(mb));
-      }
-    });
-  });
-
-  return { executiveBrief: briefParts[0] || '', kpis, scorecards, highlights, insights, statMatrices, charts, tables, documentBlocks };
-}
-
+/** Generate a valid, unique Excel worksheet name (<= 31 chars). */
 function uniqueSheetName(wb, rawName, idx) {
-  const base = String(rawName || `Sheet ${idx + 1}`).replace(/[\\/?*[\]:]/g, ' ').trim() || `Sheet ${idx + 1}`;
+  const base = String(rawName || `Data ${idx + 1}`)
+    .replace(/[\\/?*[\]:]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim() || `Data ${idx + 1}`;
   let candidate = base.slice(0, 31);
   let counter = 2;
   while (wb.getWorksheet(candidate)) {
@@ -115,760 +48,499 @@ function uniqueSheetName(wb, rawName, idx) {
   return candidate;
 }
 
-function renderHeaderBlock(wb, ws, logoId, spec, colCount, theme, subtitleOverride = null) {
-  const lastCol = Math.max(colCount, 6);
-  const colLetter = (n) => ws.getColumn(n).letter;
-  const span = (r) => `A${r}:${colLetter(lastCol)}${r}`;
-
-  ws.mergeCells(span(1));
-  const titleCell = ws.getCell('A1');
-  titleCell.value = `[${theme.docCode || spec.docCode || 'CAE-RPT'}]  ${spec.title}`;
-  titleCell.font = { name: F_DISP, size: 15, bold: true, color: { argb: argb(COLORS.white) } };
-  titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(theme.primary) } };
-  titleCell.alignment = { vertical: 'middle', horizontal: 'left', indent: logoId !== null ? 9 : 1 };
-  ws.getRow(1).height = 38;
-
-  if (logoId !== null) {
-    ws.addImage(logoId, {
-      tl: { col: 0.14, row: 0.12 },
-      ext: { width: 96, height: 36 },
-      editAs: 'oneCell'
-    });
-  }
-
-  let r = 2;
-  const subtitle = subtitleOverride ?? spec.subtitle;
-  if (subtitle) {
-    ws.mergeCells(span(r));
-    const sub = ws.getCell(`A${r}`);
-    sub.value = subtitle;
-    sub.font = { name: F_DISP, size: 10, italic: true, color: { argb: argb(COLORS.white) } };
-    sub.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(COLORS.navyLight) } };
-    sub.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
-    ws.getRow(r).height = 22;
-    r += 1;
-  }
-
-  const meta = spec.meta || {};
-  const lines = [
-    ['Generated', new Date(meta.generatedAt || Date.now()).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })],
-    ...(meta.generatedBy ? [['Prepared By', meta.generatedBy]] : []),
-    ...(meta.filters || []).map((f) => [f.label, str(f.value)])
-  ];
-
-  lines.forEach(([label, value]) => {
-    const lblCell = ws.getCell(`A${r}`);
-    lblCell.value = `${label}:`;
-    lblCell.font = { name: F_DISP, size: 9.5, bold: true, color: { argb: argb(COLORS.subtle) } };
-    ws.mergeCells(`B${r}:${colLetter(lastCol)}${r}`);
-    const valCell = ws.getCell(`B${r}`);
-    valCell.value = value;
-    valCell.font = { name: F_BODY, size: 9.5, color: { argb: argb(COLORS.ink) } };
-    ws.getRow(r).height = 18;
-    r += 1;
-  });
-
-  return r + 1;
-}
-
-function buildExecutiveSummarySheet(wb, logoId, spec, data, theme) {
-  const ws = wb.addWorksheet(uniqueSheetName(wb, 'Executive Summary', 0), {
-    views: [{ showGridLines: false }],
+/** Create a clean worksheet configured with gridlines ON, frozen Row 1, and A4 print setup. */
+function createCleanSheet(wb, name, spec, colCount) {
+  const isWide = colCount >= 6 || spec.orientation === 'landscape';
+  const ws = wb.addWorksheet(name, {
+    views: [{ state: 'frozen', ySplit: 1, showGridLines: true }],
     pageSetup: {
       paperSize: 9,
-      orientation: spec.orientation === 'landscape' ? 'landscape' : 'portrait',
-      fitToPage: true, fitToWidth: 1, fitToHeight: 0,
-      margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.3, footer: 0.3 }
+      orientation: isWide ? 'landscape' : 'portrait',
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 0,
+      printTitlesRow: '1:1',
+      margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.25, footer: 0.25 }
     },
     headerFooter: {
-      oddFooter: `&L${COMPANY.name}&C&D &T&RPage &P of &N`,
-      oddHeader: `&R&"${F_DISP}"&8${spec.title} — Executive Summary`
+      oddHeader: `&R&"${F_DISP}"&8${spec.title || 'Report'}`,
+      oddFooter: `&L${COMPANY.name}&C&D &T&RPage &P of &N`
     }
   });
-
-  ws.getColumn(1).width = 24;
-  ws.getColumn(2).width = 22;
-  ws.getColumn(3).width = 22;
-  ws.getColumn(4).width = 22;
-  ws.getColumn(5).width = 22;
-  ws.getColumn(6).width = 22;
-
-  let row = renderHeaderBlock(wb, ws, logoId, spec, 6, theme);
-
-  if (data.executiveBrief) {
-    ws.mergeCells(`A${row}:F${row}`);
-    const bCell = ws.getCell(`A${row}`);
-    bCell.value = `EXECUTIVE BRIEF: ${data.executiveBrief}`;
-    bCell.font = { name: F_BODY, size: 10, italic: true, color: { argb: argb(COLORS.ink) } };
-    bCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(theme.tint || COLORS.zebra) } };
-    bCell.alignment = { vertical: 'middle', wrapText: true, indent: 1 };
-    bCell.border = { left: { style: 'thick', color: { argb: argb(theme.accent) } }, top: thinBorder().top, bottom: thinBorder().bottom, right: thinBorder().right };
-    ws.getRow(row).height = Math.max(28, Math.ceil(data.executiveBrief.length / 105) * 16 + 10);
-    row += 2;
-  }
-
-  if (data.kpis.length) {
-    ws.mergeCells(`A${row}:F${row}`);
-    const secHead = ws.getCell(`A${row}`);
-    secHead.value = 'KEY PERFORMANCE INDICATORS';
-    secHead.font = { name: F_DISP, size: 11, bold: true, color: { argb: argb(theme.primary) } };
-    ws.getRow(row).height = 22;
-    row += 1;
-
-    for (let i = 0; i < data.kpis.length; i += 6) {
-      const chunk = data.kpis.slice(i, i + 6);
-      chunk.forEach((k, ci) => {
-        const col = ci + 1;
-        const tone = toneStyle(k.tone);
-        const topColor = argb(tone ? tone.accent : theme.accent);
-        const valColor = argb(tone && (k.tone === 'danger' || k.tone === 'warning') ? tone.fg : theme.primary);
-        const topBorder = { style: 'thick', color: { argb: topColor } };
-        const sideBorder = { style: 'thin', color: { argb: argb(COLORS.border) } };
-
-        const lblCell = ws.getRow(row).getCell(col);
-        lblCell.value = String(k.label || '').toUpperCase();
-        lblCell.font = { name: F_DISP, size: 8.5, bold: true, color: { argb: argb(COLORS.subtle) } };
-        lblCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(COLORS.zebra) } };
-        lblCell.border = { top: topBorder, left: sideBorder, right: sideBorder };
-        lblCell.alignment = { vertical: 'middle', horizontal: 'left' };
-
-        const valCell = ws.getRow(row + 1).getCell(col);
-        if (k.rawValue !== undefined && k.rawValue !== null && Number.isFinite(Number(k.rawValue))) {
-          valCell.value = Number(k.rawValue);
-          if (k.numFmt) valCell.numFmt = k.numFmt;
-        } else {
-          valCell.value = str(k.value);
-        }
-        valCell.font = { name: F_DISP, size: 15, bold: true, color: { argb: valColor } };
-        valCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(COLORS.white) } };
-        valCell.border = { left: sideBorder, right: sideBorder };
-        valCell.alignment = { vertical: 'middle', horizontal: 'left' };
-
-        const subCell = ws.getRow(row + 2).getCell(col);
-        subCell.value = k.sublabel ? str(k.sublabel) : '';
-        subCell.font = { name: F_BODY, size: 8.5, color: { argb: argb(COLORS.subtle) } };
-        subCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(COLORS.zebra) } };
-        subCell.border = { bottom: sideBorder, left: sideBorder, right: sideBorder };
-        subCell.alignment = { vertical: 'middle', horizontal: 'left' };
-      });
-      ws.getRow(row).height = 20;
-      ws.getRow(row + 1).height = 28;
-      ws.getRow(row + 2).height = 18;
-      row += 4;
-    }
-  }
-
-  if (data.scorecards.length) {
-    data.scorecards.forEach((group) => {
-      ws.mergeCells(`A${row}:F${row}`);
-      const sh = ws.getCell(`A${row}`);
-      sh.value = String(group.title || 'HEALTH SCORECARD').toUpperCase();
-      sh.font = { name: F_DISP, size: 11, bold: true, color: { argb: argb(theme.primary) } };
-      ws.getRow(row).height = 22;
-      row += 1;
-
-      const hdr = ws.getRow(row);
-      hdr.getCell(1).value = 'Dimension';
-      hdr.getCell(2).value = 'Score (%)';
-      hdr.getCell(3).value = 'Display';
-      ws.mergeCells(`D${row}:F${row}`);
-      hdr.getCell(4).value = 'Assessment Details';
-      for (let c = 1; c <= 6; c += 1) {
-        hdr.getCell(c).font = { name: F_DISP, size: 9.5, bold: true, color: { argb: argb(COLORS.white) } };
-        hdr.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(theme.tableHeaderBg || theme.primary) } };
-        hdr.getCell(c).border = thinBorder();
-      }
-      hdr.height = 21;
-      row += 1;
-
-      const sStart = row;
-      (group.items || []).forEach((item) => {
-        const rObj = ws.getRow(row);
-        const tone = toneStyle(item.tone);
-        rObj.getCell(1).value = str(item.label);
-        rObj.getCell(1).font = { name: F_DISP, size: 9.5, bold: true, color: { argb: argb(COLORS.ink) } };
-        rObj.getCell(1).border = thinBorder();
-
-        rObj.getCell(2).value = Number((Number(item.percent) || 0).toFixed(1));
-        rObj.getCell(2).numFmt = '0.0"%"';
-        rObj.getCell(2).font = { name: F_DISP, size: 9.5, bold: true, color: { argb: argb(tone ? tone.fg : theme.primary) } };
-        rObj.getCell(2).alignment = { horizontal: 'right', vertical: 'middle' };
-        rObj.getCell(2).border = thinBorder();
-
-        rObj.getCell(3).value = str(item.valueLabel || '');
-        rObj.getCell(3).font = { name: F_BODY, size: 9.5, color: { argb: argb(COLORS.body) } };
-        rObj.getCell(3).border = thinBorder();
-
-        ws.mergeCells(`D${row}:F${row}`);
-        rObj.getCell(4).value = str(item.detail || '');
-        rObj.getCell(4).font = { name: F_BODY, size: 9.5, color: { argb: argb(COLORS.subtle) } };
-        for (let c = 4; c <= 6; c += 1) rObj.getCell(c).border = thinBorder();
-
-        rObj.height = 20;
-        row += 1;
-      });
-      if (row - 1 > sStart) {
-        ws.addConditionalFormatting({
-          ref: `B${sStart}:B${row - 1}`,
-          rules: [{
-            type: 'colorScale',
-            priority: 1,
-            cfvo: [{ type: 'min' }, { type: 'max' }],
-            color: [{ argb: argb(COLORS.coral) }, { argb: argb(COLORS.teal) }]
-          }]
-        });
-      }
-      row += 1;
-    });
-  }
-
-  if (data.highlights.length) {
-    ws.mergeCells(`A${row}:F${row}`);
-    const hlHead = ws.getCell(`A${row}`);
-    hlHead.value = 'OPERATIONAL SPOTLIGHTS';
-    hlHead.font = { name: F_DISP, size: 11, bold: true, color: { argb: argb(theme.primary) } };
-    ws.getRow(row).height = 22;
-    row += 1;
-
-    data.highlights.forEach((h) => {
-      const tone = toneStyle(h.tone || 'info') || toneStyle('info');
-      const rObj = ws.getRow(row);
-      rObj.getCell(1).value = String(h.eyebrow || 'HIGHLIGHT').toUpperCase();
-      rObj.getCell(1).font = { name: F_DISP, size: 9, bold: true, color: { argb: argb(tone.fg) } };
-      rObj.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(tone.bg) } };
-      rObj.getCell(1).border = thinBorder();
-
-      rObj.getCell(2).value = str(h.metric || '');
-      rObj.getCell(2).font = { name: F_DISP, size: 10, bold: true, color: { argb: argb(theme.primary) } };
-      rObj.getCell(2).border = thinBorder();
-
-      rObj.getCell(3).value = str(h.title);
-      rObj.getCell(3).font = { name: F_DISP, size: 9.5, bold: true, color: { argb: argb(COLORS.ink) } };
-      rObj.getCell(3).border = thinBorder();
-
-      ws.mergeCells(`D${row}:F${row}`);
-      rObj.getCell(4).value = str(h.detail || '');
-      rObj.getCell(4).font = { name: F_BODY, size: 9.5, color: { argb: argb(COLORS.body) } };
-      rObj.getCell(4).alignment = { wrapText: true, vertical: 'middle' };
-      for (let c = 4; c <= 6; c += 1) rObj.getCell(c).border = thinBorder();
-
-      rObj.height = 22;
-      row += 1;
-    });
-    row += 1;
-  }
-
-  if (data.insights.length) {
-    ws.mergeCells(`A${row}:F${row}`);
-    const insHead = ws.getCell(`A${row}`);
-    insHead.value = 'KEY INSIGHTS & PRIORITY ALERTS';
-    insHead.font = { name: F_DISP, size: 11, bold: true, color: { argb: argb(theme.primary) } };
-    ws.getRow(row).height = 22;
-    row += 1;
-
-    const hRow = ws.getRow(row);
-    hRow.getCell(1).value = 'Severity';
-    hRow.getCell(2).value = 'Insight';
-    ws.mergeCells(`C${row}:F${row}`);
-    hRow.getCell(3).value = 'Details & Actionable Context';
-    for (let c = 1; c <= 6; c += 1) {
-      const cell = hRow.getCell(c);
-      cell.font = { name: F_DISP, size: 9.5, bold: true, color: { argb: argb(COLORS.white) } };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(theme.tableHeaderBg || theme.primary) } };
-      cell.border = thinBorder();
-    }
-    hRow.height = 22;
-    row += 1;
-
-    data.insights.forEach((ins) => {
-      const tone = toneStyle(ins.severity || 'info') || toneStyle('info');
-      const rObj = ws.getRow(row);
-      const sevCell = rObj.getCell(1);
-      sevCell.value = String(ins.severity || 'info').toUpperCase();
-      sevCell.font = { name: F_DISP, size: 9, bold: true, color: { argb: argb(tone.fg) } };
-      sevCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(tone.bg) } };
-      sevCell.alignment = { vertical: 'middle', horizontal: 'center' };
-      sevCell.border = thinBorder();
-
-      const titleCell = rObj.getCell(2);
-      titleCell.value = str(ins.title);
-      titleCell.font = { name: F_DISP, size: 9.5, bold: true, color: { argb: argb(COLORS.ink) } };
-      titleCell.alignment = { vertical: 'middle', wrapText: true };
-      titleCell.border = thinBorder();
-
-      ws.mergeCells(`C${row}:F${row}`);
-      const detailCell = rObj.getCell(3);
-      detailCell.value = str(ins.detail);
-      detailCell.font = { name: F_BODY, size: 9.5, color: { argb: argb(COLORS.body) } };
-      detailCell.alignment = { vertical: 'middle', wrapText: true };
-      for (let c = 3; c <= 6; c += 1) rObj.getCell(c).border = thinBorder();
-
-      const estLines = Math.max(1, Math.ceil(str(ins.detail).length / 80));
-      rObj.height = Math.max(22, estLines * 15 + 8);
-      row += 1;
-    });
-    row += 1;
-  }
-
-  if (data.statMatrices && data.statMatrices.length) {
-    data.statMatrices.forEach((mat) => {
-      ws.mergeCells(`A${row}:F${row}`);
-      const mh = ws.getCell(`A${row}`);
-      mh.value = String(mat.title || 'CONTROL & SPECIFICATION SUMMARY').toUpperCase();
-      mh.font = { name: F_DISP, size: 11, bold: true, color: { argb: argb(theme.primary) } };
-      ws.getRow(row).height = 22;
-      row += 1;
-
-      const pairs = mat.pairs || [];
-      for (let i = 0; i < pairs.length; i += 2) {
-        const left = pairs[i];
-        const right = pairs[i + 1];
-        const rObj = ws.getRow(row);
-        if (left) {
-          rObj.getCell(1).value = str(left[0]);
-          rObj.getCell(1).font = { name: F_DISP, size: 9.5, bold: true, color: { argb: argb(COLORS.subtle) } };
-          rObj.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(COLORS.zebra) } };
-          rObj.getCell(1).border = thinBorder();
-          ws.mergeCells(`B${row}:C${row}`);
-          rObj.getCell(2).value = str(left[1]);
-          rObj.getCell(2).font = { name: F_BODY, size: 9.5, color: { argb: argb(COLORS.ink) } };
-          rObj.getCell(2).alignment = { wrapText: true, vertical: 'middle' };
-          rObj.getCell(2).border = thinBorder();
-          rObj.getCell(3).border = thinBorder();
-        }
-        if (right) {
-          rObj.getCell(4).value = str(right[0]);
-          rObj.getCell(4).font = { name: F_DISP, size: 9.5, bold: true, color: { argb: argb(COLORS.subtle) } };
-          rObj.getCell(4).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(COLORS.zebra) } };
-          rObj.getCell(4).border = thinBorder();
-          ws.mergeCells(`E${row}:F${row}`);
-          rObj.getCell(5).value = str(right[1]);
-          rObj.getCell(5).font = { name: F_BODY, size: 9.5, color: { argb: argb(COLORS.ink) } };
-          rObj.getCell(5).alignment = { wrapText: true, vertical: 'middle' };
-          rObj.getCell(5).border = thinBorder();
-          rObj.getCell(6).border = thinBorder();
-        }
-        rObj.height = 20;
-        row += 1;
-      }
-      row += 1;
-    });
-  }
-
-  if (data.charts.length) {
-    ws.mergeCells(`A${row}:F${row}`);
-    const cHead = ws.getCell(`A${row}`);
-    cHead.value = 'ANALYTICAL BREAKDOWNS';
-    cHead.font = { name: F_DISP, size: 11, bold: true, color: { argb: argb(theme.primary) } };
-    ws.getRow(row).height = 22;
-    row += 1;
-
-    data.charts.forEach((chart) => {
-      const labels = chart.labels || [];
-      const seriesList = Array.isArray(chart.series) && chart.series.length
-        ? chart.series
-        : [{ name: chart.seriesName || 'Value', data: chart.values || [] }];
-      if (!labels.length || !seriesList.length) return;
-
-      ws.mergeCells(`A${row}:D${row}`);
-      const tTitle = ws.getCell(`A${row}`);
-      tTitle.value = chart.title || 'Breakdown';
-      tTitle.font = { name: F_DISP, size: 10, bold: true, color: { argb: argb(theme.primary) } };
-      ws.getRow(row).height = 20;
-      row += 1;
-
-      const isSingleSeries = seriesList.length === 1;
-      const headers = ['Category', ...seriesList.map((s) => s.name || 'Value'), ...(isSingleSeries ? ['Share (%)'] : [])];
-      const hdrRow = ws.getRow(row);
-      headers.forEach((h, i) => {
-        const cell = hdrRow.getCell(i + 1);
-        cell.value = h;
-        cell.font = { name: F_DISP, size: 9.5, bold: true, color: { argb: argb(COLORS.white) } };
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(theme.tableHeaderBg || COLORS.navyLight) } };
-        cell.alignment = { vertical: 'middle', horizontal: i === 0 ? 'left' : 'right' };
-        cell.border = thinBorder();
-      });
-      hdrRow.height = 20;
-      row += 1;
-
-      const dataStart = row;
-      const dataEnd = dataStart + labels.length - 1;
-      const valFormat = chart.valueFormat === 'currency'
-        ? '$#,##0.00'
-        : (chart.valueFormat === 'percent' ? '0.0"%"' : '#,##0.##');
-
-      labels.forEach((lbl, li) => {
-        const rObj = ws.getRow(row);
-        const c0 = rObj.getCell(1);
-        c0.value = str(lbl);
-        c0.font = { name: F_BODY, size: 9.5, bold: true, color: { argb: argb(COLORS.ink) } };
-        c0.border = thinBorder();
-        if (li % 2 === 1) c0.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(COLORS.zebra) } };
-
-        seriesList.forEach((s, si) => {
-          const vc = rObj.getCell(si + 2);
-          vc.value = toNumber(s.data?.[li], 0);
-          vc.numFmt = valFormat;
-          vc.font = { name: F_BODY, size: 9.5, color: { argb: argb(COLORS.body) } };
-          vc.alignment = { vertical: 'middle', horizontal: 'right' };
-          vc.border = thinBorder();
-          if (li % 2 === 1) vc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(COLORS.zebra) } };
-        });
-
-        if (isSingleSeries) {
-          const sc = rObj.getCell(3);
-          sc.value = { formula: `IF(SUM($B$${dataStart}:$B$${dataEnd})=0,0,B${row}/SUM($B$${dataStart}:$B$${dataEnd}))` };
-          sc.numFmt = '0.0%';
-          sc.font = { name: F_BODY, size: 9.5, color: { argb: argb(COLORS.subtle) } };
-          sc.alignment = { vertical: 'middle', horizontal: 'right' };
-          sc.border = thinBorder();
-          if (li % 2 === 1) sc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(COLORS.zebra) } };
-        }
-        rObj.height = 19;
-        row += 1;
-      });
-
-      const totRow = ws.getRow(row);
-      totRow.getCell(1).value = 'Total';
-      totRow.getCell(1).font = { name: F_DISP, size: 9.5, bold: true, color: { argb: argb(theme.primary) } };
-      totRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(theme.tint || COLORS.navyTint) } };
-      totRow.getCell(1).border = thinBorder();
-
-      seriesList.forEach((_, si) => {
-        const colLet = ws.getColumn(si + 2).letter;
-        const tc = totRow.getCell(si + 2);
-        tc.value = { formula: `SUM(${colLet}${dataStart}:${colLet}${dataEnd})` };
-        tc.numFmt = valFormat;
-        tc.font = { name: F_DISP, size: 9.5, bold: true, color: { argb: argb(theme.primary) } };
-        tc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(theme.tint || COLORS.navyTint) } };
-        tc.alignment = { vertical: 'middle', horizontal: 'right' };
-        tc.border = thinBorder();
-      });
-
-      if (isSingleSeries) {
-        const sc = totRow.getCell(3);
-        sc.value = { formula: `SUM(C${dataStart}:C${dataEnd})` };
-        sc.numFmt = '0.0%';
-        sc.font = { name: F_DISP, size: 9.5, bold: true, color: { argb: argb(theme.primary) } };
-        sc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(theme.tint || COLORS.navyTint) } };
-        sc.alignment = { vertical: 'middle', horizontal: 'right' };
-        sc.border = thinBorder();
-
-        if (dataEnd > dataStart) {
-          ws.addConditionalFormatting({
-            ref: `B${dataStart}:B${dataEnd}`,
-            rules: [{
-              type: 'colorScale',
-              priority: 1,
-              cfvo: [{ type: 'min' }, { type: 'max' }],
-              color: [{ argb: argb(COLORS.white) }, { argb: argb(COLORS.infoBorder) }]
-            }]
-          });
-        }
-      }
-
-      totRow.height = 20;
-      row += 2;
-    });
-  }
+  return ws;
 }
 
-function buildDocumentSheet(wb, logoId, spec, blocks, theme) {
-  const ws = wb.addWorksheet(uniqueSheetName(wb, 'Article Content', 1), {
-    views: [{ showGridLines: true }],
-    pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0 }
-  });
-
-  ws.getColumn(1).width = 18;
-  ws.getColumn(2).width = 92;
-
-  let row = renderHeaderBlock(wb, ws, logoId, spec, 2, theme);
-
-  const hdr = ws.getRow(row);
-  hdr.getCell(1).value = 'Section / Type';
-  hdr.getCell(2).value = 'Content';
-  [1, 2].forEach((ci) => {
-    const c = hdr.getCell(ci);
-    c.font = { name: F_DISP, size: 10, bold: true, color: { argb: argb(COLORS.white) } };
-    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(theme.primary) } };
-    c.border = thinBorder();
-  });
-  hdr.height = 22;
-  row += 1;
-
-  blocks.forEach((b) => {
-    if (b.type === 'divider') return;
-    let label = b.type.toUpperCase();
-    let content = b.text || b.content || '';
-    if (b.type === 'bullets' || b.type === 'ordered') {
-      content = (b.items || []).map((it, idx) => (b.type === 'ordered' ? `${idx + 1}. ${it.text}` : `• ${it.text}`)).join('\n');
-    } else if (b.type === 'table') {
-      label = 'TABLE';
-      content = [(b.headers || []).join(' | '), ...(b.rows || []).map((r) => r.join(' | '))].join('\n');
-    }
-
-    const rObj = ws.getRow(row);
-    const c1 = rObj.getCell(1);
-    c1.value = label;
-    c1.font = { name: F_DISP, size: 9, bold: true, color: { argb: argb(theme.primary) } };
-    c1.alignment = { vertical: 'top', horizontal: 'left' };
-    c1.border = thinBorder();
-
-    const c2 = rObj.getCell(2);
-    c2.value = content;
-    c2.font = {
-      name: b.type === 'code' ? F_MONO : (b.type.startsWith('h') ? F_DISP : F_BODY),
-      size: b.type === 'h1' ? 12 : (b.type === 'h2' ? 11 : 10),
-      bold: b.type.startsWith('h'),
-      color: { argb: argb(b.type.startsWith('h') ? theme.primary : COLORS.body) }
-    };
-    c2.alignment = { vertical: 'top', wrapText: true };
-    c2.border = thinBorder();
-    if (b.type === 'code' || b.type === 'quote') {
-      c2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(COLORS.zebra) } };
-    }
-
-    const lineCount = Math.max(content.split('\n').length, Math.ceil(content.length / 86));
-    rObj.height = Math.max(20, Math.min(260, lineCount * 14.5 + 8));
-    row += 1;
-  });
-}
-
-function defaultNumFmt(col) {
+/** Resolve Excel number format string for a column definition. */
+function resolveNumFmt(col) {
   if (col.numFmt) return col.numFmt;
-  if (col.type === 'currency') return '$#,##0.00';
-  if (col.type === 'percent') return '0.0"%"';
-  if (col.type === 'number') return '#,##0.##';
+  if (col.type === 'currency') {
+    const sym = col.currency || '$';
+    return `"${sym}"#,##0.00;-"${sym}"#,##0.00;"${sym}"0.00`;
+  }
+  if (col.type === 'percent') {
+    const dec = col.decimals !== undefined ? col.decimals : 1;
+    const zeros = dec > 0 ? `.${'0'.repeat(dec)}` : '';
+    return `0${zeros}"%"`;
+  }
+  if (col.type === 'number') {
+    const dec = col.decimals !== undefined ? col.decimals : 0;
+    const zeros = dec > 0 ? `.${'0'.repeat(dec)}` : '';
+    return `#,##0${zeros}`;
+  }
   return null;
 }
 
-/** Render full dataset table (including `printHidden` columns) onto an Excel worksheet. */
-function renderTable(ws, table, startRow, theme) {
-  const columns = table.columns || [];
-  const rows = table.rows || [];
-  if (!columns.length) return startRow;
+/** Estimate printable text length of a cell value (including formatted numbers) for column sizing. */
+function estimateCellDisplayLen(value, colType) {
+  if (value === null || value === undefined || value === '') return 0;
+  if (typeof value === 'object' && value.formula) return 14;
+  if (typeof value === 'number') {
+    if (colType === 'currency') return `$${Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`.length + 2;
+    if (colType === 'percent') return `${value.toFixed(1)}%`.length + 1;
+    return value.toLocaleString('en-US', { maximumFractionDigits: 2 }).length + 1;
+  }
+  const lines = String(value).split('\n');
+  return Math.max(...lines.map((l) => l.length));
+}
 
-  const headerRow = ws.getRow(startRow);
-  columns.forEach((col, i) => {
-    const cell = headerRow.getCell(i + 1);
+/** Compute clean auto-fit column widths (10..44 chars) and dynamic row heights. */
+function autoFitColumns(ws, columns, rowDisplayLengths) {
+  const widths = columns.map((col, idx) => {
+    const headerLen = String(col.header || '').length;
+    const maxDataLen = rowDisplayLengths[idx] || 0;
+    const hinted = col.excelWidth ? Number(col.excelWidth) : 0;
+    const raw = Math.max(headerLen + 4, maxDataLen + 3, hinted);
+    return Math.min(MAX_COL_WIDTH, Math.max(MIN_COL_WIDTH, Math.ceil(raw)));
+  });
+
+  widths.forEach((w, idx) => {
+    ws.getColumn(idx + 1).width = w;
+  });
+
+  return widths;
+}
+
+/** Style Row 1 header cells uniformly across any tabular worksheet. */
+function styleHeaderRow(ws, columns, theme) {
+  const hdrRow = ws.getRow(1);
+  hdrRow.height = 24;
+  const headerBg = argb(theme.tableHeaderBg || theme.primary || COLORS.navy);
+
+  columns.forEach((col, idx) => {
+    const cell = hdrRow.getCell(idx + 1);
     const isNum = col.type === 'number' || col.type === 'currency' || col.type === 'percent';
-    cell.value = col.header;
+    cell.value = String(col.header || '');
     cell.font = { name: F_DISP, size: 10, bold: true, color: { argb: argb(COLORS.white) } };
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(theme.tableHeaderBg || theme.primary) } };
-    cell.alignment = { vertical: 'middle', horizontal: col.align || (isNum ? 'right' : 'left'), wrapText: true };
-    cell.border = {
-      ...thinBorder(),
-      bottom: { style: 'medium', color: { argb: argb(theme.accent) } }
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerBg } };
+    cell.alignment = {
+      horizontal: col.align || (isNum ? 'right' : 'left'),
+      vertical: 'middle',
+      wrapText: true
     };
+    cell.border = thinBorder();
   });
-  headerRow.height = 24;
+}
 
-  const maxRawWidth = columns.reduce((mx, c) => Math.max(mx, Number(c.width) || 0), 0);
-  const isPointScale = maxRawWidth > 55;
-  const widths = columns.map((c) => {
-    const rawW = Number(c.width) || 0;
-    const baseW = rawW > 0
-      ? (isPointScale ? Math.round(rawW / 5.4) : rawW)
-      : (String(c.header || '').length + 4);
-    return Math.min(42, Math.max(10, baseW));
-  });
-  const dataStartRow = startRow + 1;
+/** Render a pure tabular dataset (Row 1 = Headers, Row 2..N = Data, optional Totals row). */
+function writeDataTableSheet(wb, sheetName, table, spec, theme) {
+  const columns = Array.isArray(table.columns) ? table.columns : [];
+  const rows = Array.isArray(table.rows) ? table.rows : [];
+  const effectiveCols = columns.length
+    ? columns
+    : [{ header: 'Status', key: 'status', type: 'text' }];
 
-  rows.forEach((row, rIdx) => {
-    const xlRow = ws.getRow(dataStartRow + rIdx);
-    const rowTone = toneStyle(row._flag);
-    const zebra = rIdx % 2 === 1;
-    let maxLines = 1;
+  const ws = createCleanSheet(wb, sheetName, spec, effectiveCols.length);
+  styleHeaderRow(ws, effectiveCols, theme);
 
-    columns.forEach((col, i) => {
-      const cell = xlRow.getCell(i + 1);
-      const raw = row[col.key];
-      const isNumType = col.type === 'number' || col.type === 'currency' || col.type === 'percent';
+  const maxLens = effectiveCols.map(() => 0);
+
+  if (!columns.length) {
+    const row = ws.getRow(2);
+    row.getCell(1).value = 'No columns defined for this dataset.';
+    row.getCell(1).font = { name: F_BODY, size: 10, italic: true, color: { argb: argb(COLORS.subtle) } };
+    ws.getColumn(1).width = 36;
+    return ws;
+  }
+
+  rows.forEach((item, rIdx) => {
+    const excelRowNum = rIdx + 2;
+    const row = ws.getRow(excelRowNum);
+    const isZebra = rIdx % 2 === 1;
+    const rowTone = toneStyle(item._flag);
+    const isFlagRow = rowTone && (item._flag === 'danger' || item._flag === 'warning');
+
+    effectiveCols.forEach((col, cIdx) => {
+      const cell = row.getCell(cIdx + 1);
+      const raw = item ? item[col.key] : undefined;
+      const isNumCol = col.type === 'number' || col.type === 'currency' || col.type === 'percent';
       const isBadge = col.type === 'badge';
 
+      let cellVal;
       if (raw === null || raw === undefined || raw === '') {
-        cell.value = '—';
-      } else if (isNumType && Number.isFinite(Number(raw))) {
-        cell.value = Number(raw);
-        const fmt = defaultNumFmt(col);
-        if (fmt) cell.numFmt = fmt;
+        cellVal = '';
+      } else if (isNumCol && typeof raw === 'number' && Number.isFinite(raw)) {
+        cellVal = raw;
+      } else if (isNumCol && typeof raw === 'string' && raw.trim() !== '' && Number.isFinite(Number(raw))) {
+        cellVal = Number(raw);
       } else {
-        cell.value = str(raw);
+        cellVal = str(raw);
       }
 
-      const badgeTone = isBadge ? (toneStyle(resolveBadgeTone(row, col)) || toneStyle('neutral')) : null;
-      const fontColor = isBadge
-        ? argb(badgeTone.fg)
-        : (rowTone && isNumType ? argb(rowTone.fg) : argb(COLORS.body));
+      cell.value = cellVal;
+      const len = estimateCellDisplayLen(cellVal, col.type);
+      if (len > maxLens[cIdx]) maxLens[cIdx] = len;
 
+      const numFmt = typeof cellVal === 'number' ? resolveNumFmt(col) : null;
+      if (numFmt) cell.numFmt = numFmt;
+
+      const badgeTone = isBadge ? (toneStyle(resolveBadgeTone(item, col)) || toneStyle('neutral')) : null;
+      const bgHex = isBadge
+        ? badgeTone.bg
+        : (isFlagRow ? rowTone.bg : (isZebra ? COLORS.zebra : COLORS.white));
+      const fgHex = isBadge
+        ? badgeTone.fg
+        : (isFlagRow && isNumCol ? rowTone.fg : COLORS.body);
+
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(bgHex) } };
       cell.font = {
-        name: col.type === 'mono' ? F_MONO : (isBadge ? F_DISP : F_BODY),
-        size: col.type === 'mono' ? 9 : 9.5,
-        bold: isBadge || Boolean(rowTone && isNumType),
-        color: { argb: fontColor }
+        name: col.type === 'mono' ? F_MONO : F_BODY,
+        size: col.type === 'mono' ? 9.5 : 10,
+        bold: isBadge || (isFlagRow && isNumCol),
+        color: { argb: argb(fgHex) }
       };
-
       cell.alignment = {
+        horizontal: col.align || (isBadge ? 'center' : (isNumCol ? 'right' : 'left')),
         vertical: 'middle',
-        horizontal: col.align || (isBadge ? 'center' : (isNumType ? 'right' : 'left')),
-        wrapText: col.wrap !== false
+        wrapText: !isNumCol
       };
       cell.border = thinBorder();
+    });
+  });
 
-      if (isBadge) {
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(badgeTone.bg) } };
-      } else if (rowTone && (row._flag === 'danger' || row._flag === 'warning')) {
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(rowTone.bg) } };
-      } else if (zebra) {
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(COLORS.zebra) } };
-      }
+  const widths = autoFitColumns(ws, effectiveCols, maxLens);
 
-      const textLen = String(cell.value ?? '').length;
-      const colW = Math.min(48, Math.max(widths[i], Math.min(44, textLen + 3)));
-      widths[i] = colW;
-      if (col.wrap !== false) {
-        const lines = Math.max(1, Math.ceil(textLen / Math.max(12, widths[i] - 2)));
+  // Set clean dynamic row heights so multi-line text cells never clip
+  rows.forEach((item, rIdx) => {
+    const excelRowNum = rIdx + 2;
+    let maxLines = 1;
+    effectiveCols.forEach((col, cIdx) => {
+      const raw = item ? item[col.key] : '';
+      if (typeof raw === 'string' && raw.length > 0) {
+        const colW = Math.max(8, widths[cIdx] - 2);
+        const lines = raw.split('\n').reduce((acc, seg) => acc + Math.max(1, Math.ceil(seg.length / colW)), 0);
         if (lines > maxLines) maxLines = lines;
       }
     });
-
-    xlRow.height = Math.max(20, Math.min(110, maxLines * 14.5 + 7));
+    ws.getRow(excelRowNum).height = Math.min(110, Math.max(20, maxLines * 15 + 6));
   });
 
-  columns.forEach((_, i) => {
-    ws.getColumn(i + 1).width = Math.min(48, Math.max(9, widths[i]));
-  });
+  const lastDataRow = Math.max(1, rows.length + 1);
+  const lastColLetter = ws.getColumn(effectiveCols.length).letter;
 
-  ws.views = [{ state: 'frozen', ySplit: startRow }];
-  if (columns.length) {
-    ws.autoFilter = {
-      from: { row: startRow, column: 1 },
-      to:   { row: startRow + rows.length, column: columns.length }
-    };
-  }
+  // Apply AutoFilter cleanly over Header + Data rows (excluding Totals row)
+  ws.autoFilter = `A1:${lastColLetter}${lastDataRow}`;
 
-  let nextRow = dataStartRow + rows.length;
-
-  if (rows.length > 0 && columns.some((c) => c.total)) {
-    const dataEndRow = dataStartRow + rows.length - 1;
-    const totRow = ws.getRow(nextRow);
+  // Append clean Excel formula Totals row if any column requests aggregation
+  const hasTotals = rows.length > 0 && effectiveCols.some((c) => c.total);
+  if (hasTotals) {
+    const totRowNum = rows.length + 2;
+    const totRow = ws.getRow(totRowNum);
+    totRow.height = 23;
     let labelPlaced = false;
 
-    columns.forEach((col, i) => {
-      const cell = totRow.getCell(i + 1);
-      const colLet = ws.getColumn(i + 1).letter;
-      const isNum = col.type === 'number' || col.type === 'currency' || col.type === 'percent';
+    effectiveCols.forEach((col, cIdx) => {
+      const cell = totRow.getCell(cIdx + 1);
+      const colLet = ws.getColumn(cIdx + 1).letter;
+      const isNumCol = col.type === 'number' || col.type === 'currency' || col.type === 'percent';
 
-      if (col.total === 'label' || (i === 0 && !col.total && !labelPlaced)) {
+      if (col.total === 'label' || (cIdx === 0 && !col.total && !labelPlaced)) {
         cell.value = col.totalLabel || `TOTAL (${rows.length})`;
         labelPlaced = true;
       } else if (col.total === 'sum') {
-        cell.value = { formula: `SUM(${colLet}${dataStartRow}:${colLet}${dataEndRow})` };
+        cell.value = { formula: `SUM(${colLet}2:${colLet}${lastDataRow})` };
+        const fmt = resolveNumFmt(col);
+        if (fmt) cell.numFmt = fmt;
       } else if (col.total === 'avg') {
-        cell.value = { formula: `AVERAGE(${colLet}${dataStartRow}:${colLet}${dataEndRow})` };
+        cell.value = { formula: `AVERAGE(${colLet}2:${colLet}${lastDataRow})` };
+        const fmt = resolveNumFmt(col);
+        if (fmt) cell.numFmt = fmt;
       } else if (col.total === 'count') {
-        cell.value = { formula: `COUNTA(${colLet}${dataStartRow}:${colLet}${dataEndRow})` };
+        cell.value = { formula: `COUNTA(${colLet}2:${colLet}${lastDataRow})` };
+        cell.numFmt = '#,##0';
       } else {
         cell.value = '';
       }
 
-      const fmt = defaultNumFmt(col);
-      if (fmt && col.total && col.total !== 'label') cell.numFmt = fmt;
-
-      cell.font = { name: F_DISP, size: 10, bold: true, color: { argb: argb(theme.primary) } };
+      cell.font = { name: F_DISP, size: 10, bold: true, color: { argb: argb(theme.primary || COLORS.navy) } };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(theme.tint || COLORS.navyTint) } };
-      cell.alignment = { vertical: 'middle', horizontal: col.align || (isNum ? 'right' : 'left') };
+      cell.alignment = {
+        horizontal: col.align || (isNumCol ? 'right' : 'left'),
+        vertical: 'middle'
+      };
       cell.border = {
-        ...thinBorder(),
-        top: { style: 'medium', color: { argb: argb(theme.primary) } }
+        top:    { style: 'medium', color: { argb: argb(theme.primary || COLORS.navy) } },
+        bottom: { style: 'double', color: { argb: argb(theme.primary || COLORS.navy) } },
+        left:   { style: 'thin', color: { argb: argb(COLORS.border) } },
+        right:  { style: 'thin', color: { argb: argb(COLORS.border) } }
       };
     });
-
-    totRow.height = 22;
-    nextRow += 1;
   }
 
-  if (rows.length > 1) {
-    const dataEndRow = dataStartRow + rows.length - 1;
-    columns.forEach((col, i) => {
-      if (!col.dataBar) return;
-      const colLet = ws.getColumn(i + 1).letter;
-      ws.addConditionalFormatting({
-        ref: `${colLet}${dataStartRow}:${colLet}${dataEndRow}`,
-        rules: [{
-          type: 'colorScale',
-          priority: 1,
-          cfvo: [{ type: 'min' }, { type: 'max' }],
-          color: [{ argb: argb(COLORS.white) }, { argb: argb(COLORS.accentSoft) }]
-        }]
-      });
-    });
-  }
-
-  return nextRow;
+  return ws;
 }
 
-/** Build a fully styled ExcelJS workbook from a normalised ReportSpec v4. */
+/** Build a simple flat 4-column Summary sheet with all metadata, KPIs, matrices, scorecards, and alerts. */
+function buildSummarySheet(wb, spec, data, theme) {
+  const summaryRows = [];
+  const pushRow = (section, field, value, details = '', numFmt = null) => {
+    summaryRows.push({ section, field: str(field), value, details: str(details), numFmt });
+  };
+
+  const meta = spec.meta || {};
+  const generatedStr = new Date(meta.generatedAt || Date.now()).toLocaleString('en-GB', {
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+  });
+
+  pushRow('Report Info', 'Title', str(spec.title || 'Report'));
+  if (spec.subtitle) pushRow('Report Info', 'Subtitle', str(spec.subtitle));
+  pushRow('Report Info', 'Document Code', str(spec.docCode || theme.docCode || 'CAE-RPT'));
+  pushRow('Report Info', 'Category', str(spec.category || 'OPERATIONS INTELLIGENCE'));
+  if (meta.period?.label) {
+    pushRow('Report Info', 'Reporting Period', str(meta.period.label), str(meta.period.rangeText || ''));
+  }
+  pushRow('Report Info', 'Generated At', generatedStr);
+  if (meta.generatedBy) pushRow('Report Info', 'Generated By', str(meta.generatedBy));
+
+  (meta.filters || []).forEach((f) => {
+    pushRow('Filter', f.label, str(f.value));
+  });
+
+  if (data.executiveBrief) {
+    pushRow('Executive Brief', 'Overview', str(data.executiveBrief));
+  }
+
+  (data.kpis || []).forEach((k) => {
+    const val = typeof k.rawValue === 'number' && Number.isFinite(k.rawValue) ? k.rawValue : str(k.value);
+    pushRow('KPI', k.label, val, k.sublabel || '', k.numFmt || null);
+  });
+
+  (data.scorecards || []).forEach((sc) => {
+    (sc.items || []).forEach((it) => {
+      const pctNum = Number.isFinite(Number(it.percent)) ? Number(it.percent) : null;
+      const val = pctNum !== null ? pctNum : str(it.valueLabel || '');
+      const fmt = pctNum !== null ? '0.0"%"' : null;
+      pushRow(`Scorecard: ${sc.title || 'Health'}`, it.label, val, it.valueLabel || '', fmt);
+    });
+  });
+
+  (data.statMatrices || []).forEach((m) => {
+    (m.pairs || []).forEach((pair) => {
+      if (Array.isArray(pair) && pair.length >= 2) {
+        pushRow(m.title || 'Operational Summary', pair[0], str(pair[1]));
+      }
+    });
+  });
+
+  (data.highlights || []).forEach((h) => {
+    pushRow('Highlight', h.title || h.eyebrow || 'Spotlight', str(h.metric || ''), [h.eyebrow, h.detail].filter(Boolean).join(' — '));
+  });
+
+  (data.insights || []).forEach((ins) => {
+    pushRow('Alert', ins.title || 'Notice', String(ins.severity || 'info').toUpperCase(), ins.detail || '');
+  });
+
+  if (!summaryRows.length) return null;
+
+  const cols = [
+    { header: 'Section', key: 'section', type: 'text', excelWidth: 22 },
+    { header: 'Field / Metric', key: 'field', type: 'text', excelWidth: 28 },
+    { header: 'Value', key: 'value', type: 'text', excelWidth: 28 },
+    { header: 'Details', key: 'details', type: 'text', excelWidth: 42 }
+  ];
+
+  const ws = createCleanSheet(wb, uniqueSheetName(wb, 'Summary', 99), spec, cols.length);
+  styleHeaderRow(ws, cols, theme);
+
+  const maxLens = cols.map(() => 0);
+
+  summaryRows.forEach((item, idx) => {
+    const row = ws.getRow(idx + 2);
+    const isZebra = idx % 2 === 1;
+    const bgHex = isZebra ? COLORS.zebra : COLORS.white;
+
+    const values = [item.section, item.field, item.value, item.details];
+    values.forEach((val, cIdx) => {
+      const cell = row.getCell(cIdx + 1);
+      cell.value = val;
+      if (cIdx === 2 && typeof val === 'number' && item.numFmt) {
+        cell.numFmt = item.numFmt;
+      }
+      const len = estimateCellDisplayLen(val, typeof val === 'number' ? 'number' : 'text');
+      if (len > maxLens[cIdx]) maxLens[cIdx] = len;
+
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(bgHex) } };
+      cell.font = {
+        name: F_BODY,
+        size: 10,
+        bold: cIdx === 0 || (cIdx === 2 && typeof val === 'number'),
+        color: { argb: argb(cIdx === 0 ? (theme.primary || COLORS.navy) : COLORS.body) }
+      };
+      cell.alignment = {
+        horizontal: typeof val === 'number' ? 'right' : 'left',
+        vertical: 'middle',
+        wrapText: true
+      };
+      cell.border = thinBorder();
+    });
+  });
+
+  const widths = autoFitColumns(ws, cols, maxLens);
+  summaryRows.forEach((item, idx) => {
+    const values = [item.section, item.field, String(item.value ?? ''), item.details];
+    let maxLines = 1;
+    values.forEach((v, cIdx) => {
+      const colW = Math.max(8, widths[cIdx] - 2);
+      const lines = String(v || '').split('\n').reduce((acc, s) => acc + Math.max(1, Math.ceil(s.length / colW)), 0);
+      if (lines > maxLines) maxLines = lines;
+    });
+    ws.getRow(idx + 2).height = Math.min(110, Math.max(20, maxLines * 15 + 6));
+  });
+
+  ws.autoFilter = `A1:D${summaryRows.length + 1}`;
+  return ws;
+}
+
+/** Build a simple flat 4-column Chart Data sheet with numeric series values for Excel pivoting/charting. */
+function buildChartDataSheet(wb, spec, charts, theme) {
+  const rows = [];
+  (charts || []).forEach((ch) => {
+    const labels = ch?.labels || [];
+    if (!labels.length) return;
+    const seriesList = Array.isArray(ch.series) && ch.series.length
+      ? ch.series
+      : [{ name: ch.seriesName || 'Value', data: ch.values || [] }];
+
+    seriesList.forEach((s) => {
+      labels.forEach((lbl, idx) => {
+        rows.push({
+          chart: str(ch.title || 'Analytics'),
+          category: str(lbl),
+          series: str(s.name || 'Value'),
+          value: toNumber((s.data || [])[idx], 0)
+        });
+      });
+    });
+  });
+
+  if (!rows.length) return null;
+
+  const table = {
+    name: 'Chart Data',
+    columns: [
+      { header: 'Chart', key: 'chart', type: 'text', excelWidth: 28 },
+      { header: 'Category', key: 'category', type: 'text', excelWidth: 24 },
+      { header: 'Series', key: 'series', type: 'text', excelWidth: 20 },
+      { header: 'Value', key: 'value', type: 'number', decimals: 2, excelWidth: 14 }
+    ],
+    rows
+  };
+  return writeDataTableSheet(wb, uniqueSheetName(wb, 'Chart Data', 98), table, spec, theme);
+}
+
+/** Build a clean 3-column Document sheet for Markdown / SOP content plus any embedded Markdown tables. */
+function buildDocumentSheets(wb, spec, blocks, theme) {
+  if (!blocks || !blocks.length) return;
+
+  const docRows = [];
+  const mdTables = [];
+  let currentHeading = spec.title || 'Document';
+
+  blocks.forEach((b) => {
+    if (!b) return;
+    if (b.type === 'h1' || b.type === 'h2' || b.type === 'h3') {
+      currentHeading = str(b.text);
+      docRows.push({ type: b.type.toUpperCase(), section: currentHeading, content: currentHeading });
+    } else if (b.type === 'paragraph' || b.type === 'quote') {
+      docRows.push({ type: b.type === 'quote' ? 'Note' : 'Paragraph', section: currentHeading, content: str(b.text) });
+    } else if (b.type === 'bullets' || b.type === 'ordered') {
+      (b.items || []).forEach((it, idx) => {
+        docRows.push({
+          type: b.type === 'ordered' ? `Step ${idx + 1}` : 'Item',
+          section: currentHeading,
+          content: str(it.text)
+        });
+      });
+    } else if (b.type === 'code') {
+      docRows.push({ type: 'Code', section: currentHeading, content: str(b.content) });
+    } else if (b.type === 'table' && Array.isArray(b.headers) && b.headers.length) {
+      mdTables.push({
+        name: `${currentHeading} Table`,
+        columns: b.headers.map((h, i) => ({ header: str(h), key: `c${i}`, type: 'text' })),
+        rows: (b.rows || []).map((r) => {
+          const obj = {};
+          b.headers.forEach((_, i) => { obj[`c${i}`] = str(r[i] ?? ''); });
+          return obj;
+        })
+      });
+    }
+  });
+
+  if (docRows.length) {
+    writeDataTableSheet(
+      wb,
+      uniqueSheetName(wb, 'Document', 0),
+      {
+        columns: [
+          { header: 'Type', key: 'type', type: 'text', excelWidth: 14 },
+          { header: 'Section', key: 'section', type: 'text', excelWidth: 28 },
+          { header: 'Content', key: 'content', type: 'text', excelWidth: 44 }
+        ],
+        rows: docRows
+      },
+      spec,
+      theme
+    );
+  }
+
+  mdTables.forEach((tbl, idx) => {
+    writeDataTableSheet(wb, uniqueSheetName(wb, tbl.name, idx + 1), tbl, spec, theme);
+  });
+}
+
+/** Build a clean, purely tabular ExcelJS Workbook from a normalized ReportSpec. */
 function buildWorkbook(spec) {
   const theme = spec.theme?.primary ? spec.theme : resolveTheme(spec);
-  const data = extractAggregatedData(spec);
+  const data = collectSpecData(spec);
 
   const wb = new ExcelJS.Workbook();
   wb.creator = COMPANY.name;
-  wb.created = new Date();
-  wb.title = spec.title;
+  wb.created = new Date(spec.meta?.generatedAt || Date.now());
+  wb.modified = new Date();
+  wb.properties.subject = spec.title || 'SMaRT Report';
 
-  const logoBuf = getLogoBuffer('light');
-  const logoId = logoBuf ? wb.addImage({ buffer: logoBuf, extension: 'png' }) : null;
-
-  const hasExecSummary = Boolean(
-    data.executiveBrief ||
-    data.kpis.length ||
-    data.scorecards.length ||
-    data.highlights.length ||
-    data.insights.length ||
-    (data.statMatrices && data.statMatrices.length) ||
-    data.charts.length
+  // 1. Primary Data Tables FIRST — immediate rows & columns starting at Row 1
+  const tables = [...(data.tables || [])].sort(
+    (a, b) => (a.priority === 'high' ? 0 : 1) - (b.priority === 'high' ? 0 : 1)
   );
-
-  if (hasExecSummary) {
-    buildExecutiveSummarySheet(wb, logoId, spec, data, theme);
-  }
-
-  if (data.documentBlocks.length) {
-    buildDocumentSheet(wb, logoId, spec, data.documentBlocks, theme);
-  }
-
-  const tables = [...data.tables].sort((a, b) => (a.priority === 'high' ? 0 : 1) - (b.priority === 'high' ? 0 : 1));
-
-  if (!tables.length && !hasExecSummary && !data.documentBlocks.length) {
-    tables.push({ name: 'Report', columns: [], rows: [] });
-  }
-
   tables.forEach((table, idx) => {
-    const ws = wb.addWorksheet(uniqueSheetName(wb, table.name, idx), {
-      pageSetup: {
-        paperSize: 9,
-        orientation: spec.orientation === 'landscape' ? 'landscape' : 'portrait',
-        fitToPage: true, fitToWidth: 1, fitToHeight: 0,
-        margins: { left: 0.4, right: 0.4, top: 0.6, bottom: 0.6, header: 0.3, footer: 0.3 }
-      },
-      headerFooter: {
-        oddFooter: `&L${COMPANY.name}&C&D &T&RPage &P of &N`,
-        oddHeader: `&R&"${F_DISP}"&8${spec.title}`
-      }
-    });
-
-    const colCount = (table.columns || []).length;
-    let row = renderHeaderBlock(wb, ws, logoId, spec, colCount, theme);
-    if (table.note) {
-      ws.getCell(`A${row}`).value = table.note;
-      ws.getCell(`A${row}`).font = { name: F_BODY, size: 9.5, italic: true, color: { argb: argb(COLORS.subtle) } };
-      row += 2;
-    }
-    renderTable(ws, table, row, theme);
-    ws.pageSetup.printTitlesRow = `${row}:${row}`;
+    writeDataTableSheet(wb, uniqueSheetName(wb, table.name, idx), table, spec, theme);
   });
+
+  // 2. Markdown / SOP Document sheets (if any)
+  if (data.documentBlocks.length) {
+    buildDocumentSheets(wb, spec, data.documentBlocks, theme);
+  }
+
+  // 3. Clean flat Summary sheet (Metadata, Filters, KPIs, Scorecards, Stat Matrices, Alerts)
+  buildSummarySheet(wb, spec, data, theme);
+
+  // 4. Clean flat Chart Data sheet (for pivot-ready chart numbers)
+  buildChartDataSheet(wb, spec, data.charts, theme);
+
+  // Ensure workbook always has at least 1 sheet
+  if (!wb.worksheets.length) {
+    writeDataTableSheet(wb, 'Data', { columns: [], rows: [] }, spec, theme);
+  }
 
   return wb;
 }

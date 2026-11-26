@@ -9,7 +9,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const PizZip = require('pizzip');
 const ExcelJS = require('exceljs');
-const { Packer } = require('docx');
 
 const { verifyBundledFonts } = require('../core/fonts');
 const { THEMES, CAE_A4_THEME, MODULE_THEMES, resolveTheme } = require('../core/themes');
@@ -26,7 +25,7 @@ const {
   renderDailyNativePdf
 } = require('../core/planned-daily-template.service');
 const { buildPdfBuffer } = require('../renderers/pdf.renderer');
-const { buildDocument } = require('../renderers/docx.renderer');
+const { buildDocxBuffer } = require('../renderers/docx.renderer');
 const { buildPptxBuffer } = require('../renderers/pptx.renderer');
 const { buildWorkbook } = require('../renderers/xlsx.renderer');
 
@@ -522,99 +521,297 @@ test('PDF renderer executes distinct spec.pages blueprints (Briefing, Telemetry,
   assert.equal(emptyBuf.subarray(0, 5).toString('ascii'), '%PDF-');
 });
 
-test('DOCX renderer renders all 4 distinct blueprints on A4 Portrait with Cover Outline, Red Hat Display & Arial, hiding printHidden', async () => {
+test('DOCX renderer builds concise, data-first, section-tailored CAE Navy Blue Word reports with zero generic audit boilerplate', async () => {
+  const { DOCX_SECTION_PROFILES } = require('../renderers/docx-section-profiles');
+  const { buildTemplateContent } = require('../renderers/docx-content.mapper');
+
+  // 1. Verify all 15 platform sections define unique primary headings & descriptions
+  const allModuleKeys = Object.keys(DOCX_SECTION_PROFILES);
+  assert.equal(allModuleKeys.length, 15, 'Expected dedicated Word profiles for all 15 platform sections');
+
+  const seenPrimaryTitles = new Set();
+  const seenDescriptions = new Set();
+  const sampleCtx = { specTitle: 'Sample', periodLabel: 'Weekly Report', alertCount: 2, totalRows: 10 };
+
+  for (const mk of allModuleKeys) {
+    const prof = DOCX_SECTION_PROFILES[mk];
+    const firstSlot = prof.order[0];
+    const firstSec = prof.sections[firstSlot];
+    assert.ok(firstSec?.title, `${mk}: primary section must have a title`);
+    assert.ok(!seenPrimaryTitles.has(firstSec.title), `Duplicate primary Word heading "${firstSec.title}" in ${mk}`);
+    seenPrimaryTitles.add(firstSec.title);
+
+    const desc = typeof firstSec.desc === 'function' ? firstSec.desc(sampleCtx) : firstSec.desc;
+    assert.ok(desc && desc.length >= 25 && desc.length <= 200, `${mk}: primary description must be concise (25..200 chars), got ${desc?.length}`);
+    assert.ok(!seenDescriptions.has(desc), `Duplicate primary Word description in ${mk}: "${desc}"`);
+    seenDescriptions.add(desc);
+  }
+
+  // 2. Verify all 4 distinct blueprints render cleanly inside the official CAE Navy Blue template
   const specs = [
-    ['briefing', createCommandBriefingSpec(), true],
-    ['telemetry', createTelemetrySpec(), true],
-    ['dossier', createMissionDossierSpec(), true],
-    ['sop', createFormalSopSpec(), false]
+    ['briefing', createCommandBriefingSpec(), true, 'Control Room Snapshot'],
+    ['telemetry', createTelemetrySpec(), true, 'Peak Demand &amp; Runtime Telemetry'],
+    ['dossier', createMissionDossierSpec(), true, 'Sortie Volume &amp; Dispatch Metrics'],
+    ['sop', createFormalSopSpec(), false, 'Document Control Metadata']
   ];
 
-  for (const [label, spec, hasHiddenCol] of specs) {
-    const buffer = await Packer.toBuffer(buildDocument(spec));
+  for (const [label, spec, hasHiddenCol, expectedHeading] of specs) {
+    const buffer = await buildDocxBuffer(spec);
     assert.ok(Buffer.isBuffer(buffer));
+    assert.ok(buffer.length > 80000, `Expected full template-backed DOCX for ${label}, got ${buffer.length} bytes`);
 
     const zip = new PizZip(buffer);
     const stylesXml = zip.file('word/styles.xml')?.asText() || '';
     const documentXml = zip.file('word/document.xml')?.asText() || '';
+    const chartXml = zip.file('word/charts/chart1.xml')?.asText() || '';
+    const footer1Xml = zip.file('word/footer1.xml')?.asText() || '';
+    const footer2Xml = zip.file('word/footer2.xml')?.asText() || '';
+    const settingsXml = zip.file('word/settings.xml')?.asText() || '';
 
-    assert.match(stylesXml, /Red Hat Display/, `Missing Red Hat Display in DOCX ${label}`);
-    assert.match(stylesXml, /Arial/, `Missing Arial in DOCX ${label}`);
-    assert.match(stylesXml, /0C47C7/i);
-    assert.match(stylesXml, /082F84/i);
+    // Exact official CAE Navy Blue template styles, media & theme preserved
+    assert.match(stylesXml, /Titre-Title/);
+    assert.match(stylesXml, /SousTitre-01/);
+    assert.match(stylesXml, /Appendix-SousTitre/);
+    assert.match(stylesXml, /Red Hat Display/);
+    assert.match(stylesXml, /Arial/);
+    assert.ok(zip.file('word/media/image1.png'), 'Cover CAE PNG logo must be preserved');
+    assert.ok(zip.file('word/media/image2.svg'), 'Cover CAE SVG logo must be preserved');
+    assert.ok(zip.file('word/media/image3.png'), 'Footer CAE PNG logo must be preserved');
+    assert.ok(zip.file('word/embeddings/Microsoft_Excel_Worksheet.xlsx'), 'Embedded chart Excel sheet must exist');
+    assert.match(settingsXml, /<w:updateFields w:val="true"\/>/);
 
-    assert.match(documentXml, /w:w="11906"/);
-    assert.match(documentXml, /w:h="16838"/);
+    // Tailored section heading + template structural guarantees
+    assert.match(documentXml, /r:embed="rId11"/, 'Cover logo rId11 must remain intact');
+    assert.match(documentXml, /Table of Contents/);
+    assert.ok(documentXml.includes(expectedHeading), `${label}: expected tailored heading "${expectedHeading}"`);
     assert.match(documentXml, /w:titlePg/);
-    assert.match(documentXml, /w:pageBreakBefore/);
     assert.match(documentXml, /w:cantSplit/);
     assert.match(documentXml, /w:tblHeader/);
-    assert.match(documentXml, /REPORT CONTENTS/);
-    assert.doesNotMatch(documentXml, /\{[^{}]+\}/);
+
+    // ZERO bloated generic audit essay sections!
+    for (const verboseBoilerplate of [
+      /Objectives and Scope/,
+      /Audit Approach/,
+      /Root Causes and Risk Ratings/,
+      /Acknowledgment/,
+      /Detailed Audit Findings/,
+      /Primary Root Cause/,
+      /Management Comments &amp; Action Plans/,
+      /Appendix 1/
+    ]) {
+      assert.doesNotMatch(documentXml, verboseBoilerplate, `${label}: must NOT contain generic audit boilerplate ${verboseBoilerplate}`);
+    }
+
+    // ZERO leftover Lorem Ipsum / template placeholder text anywhere
+    for (const bad of [/Lorem ipsum/i, /Insert title here/i, /Insérer le titre/i, /Insert Text/i, /Insert Date/i, /Name, Title/, /Month day/i, /Chart Title/, /Category 1/, /Series 1/]) {
+      assert.doesNotMatch(documentXml, bad, `Found leftover placeholder ${bad} in document.xml (${label})`);
+      assert.doesNotMatch(chartXml, bad, `Found leftover placeholder ${bad} in chart1.xml (${label})`);
+      assert.doesNotMatch(footer1Xml, bad, `Found leftover placeholder ${bad} in footer1.xml (${label})`);
+      assert.doesNotMatch(footer2Xml, bad, `Found leftover placeholder ${bad} in footer2.xml (${label})`);
+    }
+    assert.match(footer1Xml, /Publication date:/);
+    assert.match(footer2Xml, /Publication date:/);
+
+    // Every bookmarkStart must have a matching bookmarkEnd
+    const starts = [...documentXml.matchAll(/<w:bookmarkStart w:id="(\d+)"/g)].map((m) => m[1]);
+    const ends = [...documentXml.matchAll(/<w:bookmarkEnd w:id="(\d+)"/g)].map((m) => m[1]);
+    assert.deepEqual([...starts].sort(), [...ends].sort(), `${label}: balanced bookmarks required`);
 
     if (hasHiddenCol) {
       assert.match(documentXml, /TOTAL \(3\)/);
       assert.doesNotMatch(documentXml, /Secret Excel Audit/, `printHidden column must stay hidden in DOCX ${label}`);
     } else {
-      assert.match(documentXml, /Document Control Metadata/);
+      assert.match(documentXml, /Standard Operating Procedure/);
       assert.match(documentXml, /Lockout-Tagout/);
+      assert.doesNotMatch(documentXml, /r:id="rId13"/, 'Standalone SOP without charts should not embed a dummy bar chart');
     }
+
+    // Ensure generated Word content stays lean and concise (not wordy essays)
+    const contentModel = buildTemplateContent(spec, { hasRealChart: hasHiddenCol });
+    assert.ok(contentModel.sections.length >= 2 && contentModel.sections.length <= 5, `${label}: expected 2..5 clean sections`);
   }
 });
 
-test('PPTX renderer consumes spec.pages via aggregated data with native charts, Red Hat typography & Slide numbering', async () => {
+test('PPTX renderer produces 13.333x7.5 Widescreen slides with native charts, Red Hat typography & ZERO out-of-bounds shapes or tables', async () => {
+  const SLIDE_W_EMU = 12192000; // 13.333"
+  const SLIDE_H_EMU = 6858000;  // 7.500"
+  const FOOTER_Y_EMU = Math.round(6.98 * 914400);
+
+  const assertStrictSlideBounds = (zip, label) => {
+    const presXml = zip.file('ppt/presentation.xml')?.asText() || '';
+    assert.match(
+      presXml,
+      /<p:sldSz[^>]*cx="12192000"[^>]*cy="6858000"/,
+      `${label}: PPTX must use 13.333" x 7.5" Widescreen canvas (12192000 x 6858000 EMU)`
+    );
+
+    const slideFiles = Object.keys(zip.files).filter((k) => /^ppt\/slides\/slide\d+\.xml$/.test(k));
+    assert.ok(slideFiles.length >= 2, `${label}: Expected >= 2 slides`);
+
+    for (const sf of slideFiles) {
+      const xml = zip.file(sf).asText();
+      // Check every shape / picture / graphicFrame xfrm bounding box
+      const xfrmMatches = [...xml.matchAll(/<a:off x="(-?\d+)" y="(-?\d+)"\/>\s*<a:ext cx="(\d+)" cy="(\d+)"\/>/g)];
+      for (const m of xfrmMatches) {
+        const x = Number(m[1]);
+        const y = Number(m[2]);
+        const cx = Number(m[3]);
+        const cy = Number(m[4]);
+        assert.ok(x >= -1000 && x + cx <= SLIDE_W_EMU + 2000, `${label} ${sf}: horizontal overflow x=${x}, cx=${cx}, sum=${x + cx} > ${SLIDE_W_EMU}`);
+        assert.ok(y >= -1000 && y + cy <= SLIDE_H_EMU + 2000, `${label} ${sf}: vertical overflow y=${y}, cy=${cy}, sum=${y + cy} > ${SLIDE_H_EMU}`);
+      }
+
+      // Check every table graphicFrame: y + sum(row heights) must stay strictly above footer line!
+      const graphicFrames = [...xml.matchAll(/<p:graphicFrame>[\s\S]*?<\/p:graphicFrame>/g)];
+      for (const gf of graphicFrames) {
+        const chunk = gf[0];
+        if (!chunk.includes('<a:tbl>')) continue;
+        const offMatch = chunk.match(/<a:off x="(\d+)" y="(\d+)"\/>/);
+        const rowHeights = [...chunk.matchAll(/<a:tr h="(\d+)"/g)].map((r) => Number(r[1]));
+        const colWidths = [...chunk.matchAll(/<a:gridCol w="(\d+)"/g)].map((c) => Number(c[1]));
+        const tblX = Number(offMatch?.[1] || 0);
+        const tblY = Number(offMatch?.[2] || 0);
+        const sumH = rowHeights.reduce((a, b) => a + b, 0);
+        const sumW = colWidths.reduce((a, b) => a + b, 0);
+        assert.ok(
+          tblX + sumW <= SLIDE_W_EMU + 2000,
+          `${label} ${sf}: table width overflow x=${tblX} + sumW=${sumW} > ${SLIDE_W_EMU}`
+        );
+        assert.ok(
+          tblY + sumH <= FOOTER_Y_EMU,
+          `${label} ${sf}: table height crosses footer line! y=${tblY} + sumH=${sumH} (${((tblY + sumH) / 914400).toFixed(2)}") > 6.98"`
+        );
+      }
+    }
+    return slideFiles;
+  };
+
   const briefing = createCommandBriefingSpec();
   const buffer = await buildPptxBuffer(briefing);
   assert.ok(Buffer.isBuffer(buffer));
 
   const zip = new PizZip(buffer);
   assert.ok(zip.file('ppt/charts/chart1.xml'), 'Expected editable native chart1.xml inside PPTX');
+  const slideFiles = assertStrictSlideBounds(zip, 'CommandBriefing');
+  assert.ok(slideFiles.length >= 4, `Expected >= 4 slides for command briefing, got ${slideFiles.length}`);
 
   const slide1Xml = zip.file('ppt/slides/slide1.xml')?.asText() || '';
   assert.match(slide1Xml, /Red Hat Display/);
   assert.match(slide1Xml, /Executive Command Center Briefing/);
 
-  const slideFiles = Object.keys(zip.files).filter((k) => /^ppt\/slides\/slide\d+\.xml$/.test(k));
-  assert.ok(slideFiles.length >= 4, `Expected >= 4 slides for command briefing, got ${slideFiles.length}`);
   const allSlidesXml = slideFiles.map((k) => zip.file(k).asText()).join('\n');
   assert.match(allSlidesXml, /Slide \d+ of \d+/);
   assert.doesNotMatch(allSlidesXml, /Secret Excel Audit/, 'printHidden column should be omitted from PPTX slides');
 
-  // Verify minimal SOP spec without charts or KPIs also renders cleanly to PPTX
+  // Verify minimal SOP spec without charts or KPIs also renders cleanly within bounds
   const sopBuf = await buildPptxBuffer(createFormalSopSpec());
   assert.ok(Buffer.isBuffer(sopBuf));
+  assertStrictSlideBounds(new PizZip(sopBuf), 'FormalSOP');
+
+  // Stress-test heavy dense operational spec (18 rows with 260-char notes, 9 cols, 6 alerts, 7 scorecards, 5 highlights)
+  const heavySpec = normalizeSpec({
+    moduleKey: 'daily-station-ops',
+    title: 'High-Density Fleet Operations, Maintenance & Handover Stress-Test Report',
+    subtitle: 'Automated overflow stress test verifying strict pagination across dense tables, alerts, scorecards, and stat matrices',
+    executiveBrief: 'Fleet readiness remained steady at 96.4% across 18 scheduled stations while maintenance crews completed corrective work orders on cooling loop sensors, motion control actuators, and projector calibration rigs without exceeding daily operational windows.',
+    kpis: [
+      { label: 'Availability', value: '96.4%', sublabel: 'Target >= 95%', tone: 'success' },
+      { label: 'Training Hours', value: '342.5 h', sublabel: '18 active bays', tone: 'info' },
+      { label: 'Open Work Orders', value: '14', sublabel: '3 high priority', tone: 'warning' },
+      { label: 'Maintenance Cost', value: '$48,920.50', sublabel: 'MTD actuals', tone: 'primary' },
+      { label: 'Critical Faults', value: '2', sublabel: 'Under repair', tone: 'danger' }
+    ],
+    insights: Array.from({ length: 6 }, (_, i) => ({
+      severity: i % 2 === 0 ? 'danger' : 'warning',
+      title: `Priority Escalation #${i + 1} — Subsystem Actuator Variance on Bay SIM-0${i + 1}`,
+      detail: 'Hydraulic servo feedback exceeded nominal tolerance during evening QTG check. Engineering scheduled replacement cartridge installation during overnight window with zero lost crew training slots.'
+    })),
+    scorecards: [{
+      title: 'Fleet Subsystem Health Matrix',
+      items: Array.from({ length: 7 }, (_, i) => ({
+        label: `Subsystem Group ${i + 1} — Motion & Visual Calibration`,
+        percent: 98 - i * 4,
+        valueLabel: `${98 - i * 4}.0%`,
+        tone: i > 4 ? 'warning' : 'success'
+      }))
+    }],
+    highlights: Array.from({ length: 5 }, (_, i) => ({
+      eyebrow: 'SHIFT SPOTLIGHT',
+      metric: `${18 + i}h`,
+      title: `Bay SIM-0${i + 1} Continuous Mission Run`,
+      detail: 'Zero unscheduled interruptions across morning, afternoon, and night training blocks with full QTG validation completed ahead of handover.',
+      tone: 'info'
+    })),
+    pages: [{
+      blocks: [{
+        type: 'statMatrix',
+        title: 'Control & Shift Configuration',
+        pairs: Array.from({ length: 10 }, (_, i) => [
+          `Operational Parameter ${i + 1}`,
+          `Verified baseline threshold and extended shift handover configuration string for station cluster ${i + 1} (${i + 6}:00 UTC)`
+        ])
+      }]
+    }],
+    tables: [{
+      name: 'Dense Station Handover Ledger',
+      note: 'Comprehensive multi-shift log covering all 18 training bays including extended technician handover narratives and corrective maintenance notes.',
+      columns: [
+        { header: 'Bay ID', key: 'id', type: 'mono', width: 9 },
+        { header: 'Simulator', key: 'sim', type: 'text', width: 12 },
+        { header: 'Shift', key: 'shift', type: 'text', width: 8 },
+        { header: 'Status', key: 'status', type: 'badge', width: 10 },
+        { header: 'Hours', key: 'hours', type: 'number', decimals: 1, width: 8, total: 'sum' },
+        { header: 'Util %', key: 'util', type: 'percent', decimals: 1, width: 8, total: 'avg' },
+        { header: 'Cost', key: 'cost', type: 'currency', width: 10, total: 'sum' },
+        { header: 'Lead Tech', key: 'tech', type: 'text', width: 12 },
+        { header: 'Handover Notes', key: 'notes', type: 'text', width: 26 }
+      ],
+      rows: Array.from({ length: 18 }, (_, i) => ({
+        id: `SIM-${String(i + 1).padStart(2, '0')}`,
+        sim: `Full Flight Level-D Unit ${i + 1}`,
+        shift: i % 2 === 0 ? 'Morning' : 'Night',
+        status: i % 5 === 0 ? 'MAINTENANCE' : 'OPERATIONAL',
+        status_tone: i % 5 === 0 ? 'warning' : 'success',
+        hours: 14.5 + (i % 4),
+        util: 86.2 + (i % 10),
+        cost: 1250.75 * (i + 1),
+        tech: `Engineer ${i + 1}`,
+        notes: `Completed pre-flight visual collimation alignment, verified host network latency < 2ms, inspected motion hydraulic accumulators, and documented follow-up preventive lubrication checklist item #${i + 100} for incoming night-shift lead engineer.`
+      }))
+    }]
+  });
+
+  const heavyBuf = await buildPptxBuffer(heavySpec);
+  const heavyZip = new PizZip(heavyBuf);
+  const heavySlides = assertStrictSlideBounds(heavyZip, 'HeavyStressTest');
+  assert.ok(heavySlides.length >= 8, `Expected multi-slide pagination for stress test, got ${heavySlides.length}`);
 });
 
-test('XLSX renderer collects spec.pages data into A4 Executive Summary, preserves printHidden audit cols, SUM totals & colorScale XML', async () => {
+test('XLSX renderer creates simple pure rows-and-columns sheets starting at Row 1 with AutoFilter, gridlines ON, zero merged cells, and ALL exported data', async () => {
   const spec = createCommandBriefingSpec();
   const wb = buildWorkbook(spec);
   const rawBuffer = await wb.xlsx.writeBuffer();
 
-  const zip = new PizZip(rawBuffer);
-  const sheetXmls = Object.keys(zip.files)
-    .filter((k) => /^xl\/worksheets\/sheet\d+\.xml$/.test(k))
-    .map((k) => zip.file(k).asText());
-  const allSheetsXml = sheetXmls.join('\n');
-  assert.match(allSheetsXml, /<colorScale>/);
-  assert.doesNotMatch(allSheetsXml, /<x14:id>undefined<\/x14:id>/);
-
   const loaded = new ExcelJS.Workbook();
   await loaded.xlsx.load(rawBuffer);
 
-  const execSheet = loaded.getWorksheet('Executive Summary');
-  assert.ok(execSheet, 'Expected Executive Summary sheet');
-  assert.equal(execSheet.views?.[0]?.showGridLines, false);
-  assert.equal(execSheet.pageSetup?.paperSize, 9);
-  assert.ok(
-    Array.isArray(execSheet.conditionalFormattings) &&
-      execSheet.conditionalFormattings.some((cf) => cf.rules?.some((r) => r.type === 'colorScale')),
-    'Expected colorScale conditional formatting on Executive Summary'
-  );
+  // Data sheet must come FIRST for immediate tabular analysis
+  assert.equal(loaded.worksheets[0].name, 'Operations Detail', 'Primary data table must be the first worksheet');
+
+  // Every worksheet must be pure flat rows & columns: Row 1 headers, frozen Row 1, gridlines ON, ZERO merged cells, ZERO floating images
+  loaded.worksheets.forEach((ws) => {
+    assert.equal(ws.views?.[0]?.showGridLines, true, `${ws.name}: gridlines must be ON`);
+    assert.equal(ws.views?.[0]?.state, 'frozen', `${ws.name}: Row 1 must be frozen`);
+    assert.equal(ws.views?.[0]?.ySplit, 1, `${ws.name}: freeze pane must be on Row 1`);
+    assert.equal(ws.pageSetup?.paperSize, 9, `${ws.name}: paperSize must be A4`);
+    assert.ok(ws.autoFilter, `${ws.name}: AutoFilter must be enabled on Row 1`);
+    assert.equal(ws.model.merges?.length || 0, 0, `${ws.name}: pure tabular Excel must contain ZERO merged cells`);
+    assert.equal(ws.getImages().length, 0, `${ws.name}: pure tabular Excel must contain ZERO floating images`);
+  });
 
   const detailSheet = loaded.getWorksheet('Operations Detail');
   assert.ok(detailSheet, 'Expected Operations Detail sheet');
-  assert.equal(detailSheet.pageSetup?.paperSize, 9);
-  assert.ok(detailSheet.autoFilter, 'Expected autoFilter on Operations Detail');
+  assert.equal(detailSheet.getRow(1).getCell(1).value, 'ID', 'Row 1 must start immediately with table column headers');
 
   let foundNumericCost = false;
   let foundSumFormula = false;
@@ -632,11 +829,15 @@ test('XLSX renderer collects spec.pages data into A4 Executive Summary, preserve
   assert.equal(foundNumericCost, true, 'Expected typed numeric currency cell');
   assert.equal(foundSumFormula, true, 'Expected live SUM() formula row');
   assert.equal(foundPrintHiddenAuditCol, true, 'Expected printHidden columns to be preserved in Excel');
-  assert.ok(
-    Array.isArray(detailSheet.conditionalFormattings) &&
-      detailSheet.conditionalFormattings.some((cf) => cf.rules?.some((r) => r.type === 'colorScale')),
-    'Expected colorScale conditional formatting rules on Operations Detail'
-  );
+
+  // Clean flat Summary & Chart Data sheets preserve ALL non-table report data
+  const summarySheet = loaded.getWorksheet('Summary');
+  assert.ok(summarySheet, 'Expected flat Summary worksheet');
+  assert.equal(summarySheet.getRow(1).getCell(1).value, 'Section');
+
+  const chartSheet = loaded.getWorksheet('Chart Data');
+  assert.ok(chartSheet, 'Expected flat Chart Data worksheet');
+  assert.equal(chartSheet.getRow(1).getCell(1).value, 'Chart');
 });
 
 test('Daily planned maintenance template data preserves LOTO, computes UTC OpsTime, renders clean DOCX & Red Hat PDF', async () => {
@@ -722,8 +923,26 @@ test('Daily planned maintenance template data preserves LOTO, computes UTC OpsTi
   for (const pdfBuf of [checklistPdf, reportPdf]) {
     assert.equal(pdfBuf.subarray(0, 5).toString('ascii'), '%PDF-');
     const latin1 = pdfBuf.toString('latin1');
+    const pageCount = (latin1.match(/\/Type\s*\/Page\b/g) || []).length;
+    assert.equal(pageCount, 1, `Daily template PDF with 6 tasks must fit on exactly 1 page with ZERO blank pages, got ${pageCount}`);
     assert.match(latin1, /RedHatDisplay/);
     assert.match(latin1, /RedHatText/);
     assert.doesNotMatch(latin1, /\/BaseFont\s+\/Helvetica\b/);
+  }
+
+  // Stress-test multi-page daily checklist & report (20 tasks -> exactly 2 pages, ZERO blank pages)
+  const manyTasks = Array.from({ length: 20 }, (_, i) => ({
+    subsystem: `Subsystem ${i + 1}`,
+    task: `Preventive verification and calibration task #${i + 1} on simulator bay`,
+    operationDateStart: '2026-04-15T08:00:00.000Z',
+    operationDateEnd: '2026-04-15T08:30:00.000Z',
+    status: i % 2 === 0 ? 'DONE' : 'TODO',
+    reportTemplate: `Verified telemetry reading #${i + 1}`
+  }));
+  const manyData = buildTemplateData(manyTasks, '2026-04-15', { first_name: 'Alex', last_name: 'Tech' });
+  for (const kind of ['checklist', 'report']) {
+    const buf = await renderDailyNativePdf(kind, manyData, '2026-04-15');
+    const pageCount = (buf.toString('latin1').match(/\/Type\s*\/Page\b/g) || []).length;
+    assert.equal(pageCount, 2, `20-task daily ${kind} PDF must be exactly 2 pages with zero blank pages, got ${pageCount}`);
   }
 });

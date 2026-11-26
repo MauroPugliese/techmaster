@@ -23,6 +23,7 @@ function normalizeNavBadges(rawCounts = {}) {
     simulators: clampCount(src.simulators),
     operations: clampCount(src.operations),
     maintenance: clampCount(src.maintenance),
+    plannedMaintenance: clampCount(src.plannedMaintenance),
     warehouse: clampCount(src.warehouse),
     tasks: clampCount(src.tasks),
     notifications: clampCount(src.notifications)

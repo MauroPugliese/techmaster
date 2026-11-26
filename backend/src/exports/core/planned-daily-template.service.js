@@ -282,12 +282,13 @@ function renderDailyNativePdf(templateType, data, dateStr) {
         doc.image(logo, margin + 12, y + 14, { width: 68, height: 25.5 });
         tx = margin + 92;
       }
+      const hdrTextW = w - (tx - margin) - 12;
       doc.font(F.displaySemiBold).fontSize(7.5).fillColor(COLORS.lime)
-        .text('CAE · PLANNED MAINTENANCE OPERATIONS', tx, y + 10, { width: w - (tx - margin) - 12 });
+        .text('CAE · PLANNED MAINTENANCE OPERATIONS', tx, y + 10, { width: hdrTextW, lineBreak: false });
       doc.font(F.displayBold).fontSize(13.5).fillColor(COLORS.white)
-        .text(titleText, tx, y + 20, { width: w - (tx - margin) - 12 });
+        .text(titleText, tx, y + 20, { width: hdrTextW, lineBreak: false });
       doc.font(F.displayLight).fontSize(8.5).fillColor('#CBD5E1')
-        .text(subtitleText, tx, y + 37, { width: w - (tx - margin) - 12 });
+        .text(subtitleText, tx, y + 37, { width: hdrTextW, lineBreak: false });
       doc.save().rect(margin, y + 54, w, 2.5).fill(COLORS.accent).restore();
       return y + 66;
     };
@@ -296,39 +297,42 @@ function renderDailyNativePdf(templateType, data, dateStr) {
 
     // Metadata strip
     doc.save().roundedRect(margin, y, w, 26, 4).fillAndStroke(COLORS.zebra, COLORS.border).restore();
-    doc.font(F.displaySemiBold).fontSize(8.5).fillColor(COLORS.subtle).text('Date: ', margin + 10, y + 8, { continued: true });
-    doc.font(F.bodyBold).fillColor(COLORS.ink).text(data.DATE, { continued: true });
-    doc.font(F.displaySemiBold).fillColor(COLORS.subtle).text('    |    Technician / Owner: ', { continued: true });
-    doc.font(F.bodyBold).fillColor(COLORS.ink).text(data.AssignedTo || 'All', { continued: true });
-    doc.font(F.displaySemiBold).fillColor(COLORS.subtle).text('    |    Total Duration: ', { continued: true });
-    doc.font(F.bodyBold).fillColor(COLORS.accent).text(data.TOTAL_DURATION || '0 min');
+    doc.font(F.displaySemiBold).fontSize(8.5).fillColor(COLORS.subtle)
+      .text('Date: ', margin + 10, y + 8, { continued: true, width: w - 20, lineBreak: false });
+    doc.font(F.bodyBold).fillColor(COLORS.ink).text(data.DATE, { continued: true, lineBreak: false });
+    doc.font(F.displaySemiBold).fillColor(COLORS.subtle).text('    |    Technician / Owner: ', { continued: true, lineBreak: false });
+    doc.font(F.bodyBold).fillColor(COLORS.ink).text(data.AssignedTo || 'All', { continued: true, lineBreak: false });
+    doc.font(F.displaySemiBold).fillColor(COLORS.subtle).text('    |    Total Duration: ', { continued: true, lineBreak: false });
+    doc.font(F.bodyBold).fillColor(COLORS.accent).text(data.TOTAL_DURATION || '0 min', { lineBreak: false });
     y += 36;
 
     // Section 1: Shutdown & LOTO
     doc.save().rect(margin, y, w, 20).fill(COLORS.navyLight).restore();
     doc.font(F.displayBold).fontSize(9.5).fillColor(COLORS.white)
-      .text('1. MANDATORY SHUTDOWN & LOTO PROCEDURE', margin + 10, y + 5);
+      .text('1. MANDATORY SHUTDOWN & LOTO PROCEDURE', margin + 10, y + 5, { width: w - 20, lineBreak: false });
     y += 24;
 
     doc.save().roundedRect(margin, y, w, 58, 4).fillAndStroke(COLORS.white, COLORS.border).restore();
     const hasOpsTime = data.StartOpsTime && data.StartOpsTime !== '00:00';
-    doc.font(F.bodyBold).fontSize(8.5).fillColor(COLORS.ink).text('Mandatory Shutdown Required?', margin + 12, y + 10);
+    doc.font(F.bodyBold).fontSize(8.5).fillColor(COLORS.ink)
+      .text('Mandatory Shutdown Required?', margin + 12, y + 10, { width: 158, lineBreak: false });
     drawCheckbox(doc, margin + 175, y + 9, isReport && hasOpsTime, 'YES', F);
     drawCheckbox(doc, margin + 225, y + 9, isReport && !hasOpsTime, 'NO', F);
 
-    doc.font(F.bodyBold).fontSize(8.5).fillColor(COLORS.ink).text('LOTO Procedure Applied?', margin + 290, y + 10);
+    doc.font(F.bodyBold).fontSize(8.5).fillColor(COLORS.ink)
+      .text('LOTO Procedure Applied?', margin + 290, y + 10, { width: 120, lineBreak: false });
     drawCheckbox(doc, margin + 415, y + 9, isReport && data.HAS_LOTO, 'YES', F);
     drawCheckbox(doc, margin + 465, y + 9, isReport && !data.HAS_LOTO, 'N/A', F);
 
     doc.font(F.body).fontSize(8.5).fillColor(COLORS.subtle)
-      .text(`Start Time: ${isReport && hasOpsTime ? data.StartOpsTime : '____________'}`, margin + 12, y + 32)
-      .text('Authorized Technician Signature: ______________________________________', margin + 175, y + 32);
+      .text(`Start Time: ${isReport && hasOpsTime ? data.StartOpsTime : '____________'}`, margin + 12, y + 32, { width: 158, lineBreak: false })
+      .text('Authorized Technician Signature: ______________________________________', margin + 175, y + 32, { width: w - 187, lineBreak: false });
     y += 68;
 
     // Section 2: Maintenance Tasks
     doc.save().rect(margin, y, w, 20).fill(COLORS.navyLight).restore();
     doc.font(F.displayBold).fontSize(9.5).fillColor(COLORS.white)
-      .text('2. SCHEDULED MAINTENANCE ACTIVITIES', margin + 10, y + 5);
+      .text('2. SCHEDULED MAINTENANCE ACTIVITIES', margin + 10, y + 5, { width: w - 20, lineBreak: false });
     y += 24;
 
     const tasks = data.MAINT_TASKS && data.MAINT_TASKS.length ? data.MAINT_TASKS : data.TASKS;
@@ -340,7 +344,7 @@ function renderDailyNativePdf(templateType, data, dateStr) {
       let cx = margin;
       headers.forEach((h, i) => {
         doc.font(F.displayBold).fontSize(8).fillColor(COLORS.white)
-          .text(h, cx + 5, yy + 6, { width: colW[i] - 10, align: i >= 3 ? 'center' : 'left' });
+          .text(h, cx + 5, yy + 6, { width: colW[i] - 10, align: i >= 3 ? 'center' : 'left', lineBreak: false });
         cx += colW[i];
       });
       return yy + 20;
@@ -351,14 +355,15 @@ function renderDailyNativePdf(templateType, data, dateStr) {
     if (!tasks.length) {
       doc.save().rect(margin, y, w, 26).fillAndStroke(COLORS.zebra, COLORS.border).restore();
       doc.font(F.bodyItalic).fontSize(8.5).fillColor(COLORS.subtle)
-        .text('No maintenance tasks scheduled for this date.', margin + 10, y + 8);
+        .text('No maintenance tasks scheduled for this date.', margin + 10, y + 8, { width: w - 20, lineBreak: false });
       y += 32;
     } else {
       tasks.forEach((t, idx) => {
-        doc.font(F.body).fontSize(8.5);
-        const h1 = doc.heightOfString(t.Subsystem || '—', { width: colW[1] - 10 });
-        const h2 = doc.heightOfString(t.Task || '—', { width: colW[2] - 10 });
-        const rowH = Math.max(20, Math.max(h1, h2) + 10);
+        const subText = t.Subsystem || '—';
+        const taskText = t.Task || '—';
+        const h1 = doc.font(F.bodyBold).fontSize(8).heightOfString(subText, { width: colW[1] - 10 });
+        const h2 = doc.font(F.body).fontSize(8.5).heightOfString(taskText, { width: colW[2] - 10 });
+        const rowH = Math.max(20, Math.ceil(Math.max(h1, h2)) + 10);
 
         if (y + rowH > bottomLimit) {
           doc.addPage();
@@ -376,58 +381,72 @@ function renderDailyNativePdf(templateType, data, dateStr) {
 
         let cx = margin + colW[0];
         doc.font(F.bodyBold).fontSize(8).fillColor(COLORS.ink)
-          .text(t.Subsystem || '—', cx + 5, y + 5, { width: colW[1] - 10 });
+          .text(subText, cx + 5, y + 5, { width: colW[1] - 10, height: rowH - 6, ellipsis: true });
         cx += colW[1];
         doc.font(F.body).fontSize(8.5).fillColor(COLORS.body)
-          .text(t.Task || '—', cx + 5, y + 5, { width: colW[2] - 10 });
+          .text(taskText, cx + 5, y + 5, { width: colW[2] - 10, height: rowH - 6, ellipsis: true });
         cx += colW[2];
         doc.font(F.body).fontSize(8.5).fillColor(COLORS.subtle)
-          .text(t.FormattedDuration || '—', cx + 5, y + 5, { width: colW[3] - 10, align: 'center' });
+          .text(t.FormattedDuration || '—', cx + 5, y + 5, { width: colW[3] - 10, align: 'center', lineBreak: false });
         cx += colW[3];
         doc.font(F.displayBold).fontSize(8).fillColor(isDone ? COLORS.successFg : COLORS.infoFg)
-          .text(isDone ? 'DONE' : 'TODO', cx + 5, y + 5, { width: colW[4] - 10, align: 'center' });
+          .text(isDone ? 'DONE' : 'TODO', cx + 5, y + 5, { width: colW[4] - 10, align: 'center', lineBreak: false });
 
         y += rowH;
       });
 
-      // Totals row
+      // Totals row — paginate cleanly if right at bottom limit
+      if (y + 24 > bottomLimit) {
+        doc.addPage();
+        y = drawTopHeader();
+      }
       doc.save().rect(margin, y, w, 20).fill(COLORS.navyTint).restore();
       doc.save().lineWidth(1).strokeColor(COLORS.navy).moveTo(margin, y).lineTo(margin + w, y).stroke().restore();
       doc.font(F.displayBold).fontSize(8.5).fillColor(COLORS.navy)
-        .text(`TOTAL (${tasks.length} tasks)`, margin + colW[0] + 5, y + 5);
+        .text(`TOTAL (${tasks.length} tasks)`, margin + colW[0] + 5, y + 5, { width: colW[1] + colW[2] - 10, lineBreak: false });
       doc.font(F.displayBold).fontSize(8.5).fillColor(COLORS.navy)
-        .text(data.TOTAL_DURATION, margin + colW[0] + colW[1] + colW[2] + 5, y + 5, { width: colW[3] - 10, align: 'center' });
+        .text(data.TOTAL_DURATION, margin + colW[0] + colW[1] + colW[2] + 5, y + 5, { width: colW[3] - 10, align: 'center', lineBreak: false });
       y += 28;
     }
 
-    // Comments & Section 3 Re-entry into Service
-    if (y + 130 > bottomLimit) {
+    // Comments & Section 3 Re-entry into Service (measure exact notes height first)
+    const notesText = (data.MAINT_TASKS || []).map((t) => t.ReportTemplate).filter(Boolean).join(' · ');
+    const measuredNotesH = notesText
+      ? doc.font(F.body).fontSize(8.5).heightOfString(notesText, { width: w - 16 })
+      : 0;
+    const notesBoxH = Math.max(40, Math.min(92, Math.ceil(measuredNotesH) + 16));
+    const closingSectionH = 14 + notesBoxH + 10 + 24 + 38;
+
+    if (y + closingSectionH > bottomLimit) {
       doc.addPage();
       y = drawTopHeader();
     }
 
-    doc.font(F.displayBold).fontSize(9).fillColor(COLORS.navy).text('Remarks / Comments', margin, y);
+    doc.font(F.displayBold).fontSize(9).fillColor(COLORS.navy)
+      .text('Remarks / Comments', margin, y, { width: w, lineBreak: false });
     y += 14;
-    const notesText = (data.MAINT_TASKS || []).map((t) => t.ReportTemplate).filter(Boolean).join(' · ');
-    doc.save().roundedRect(margin, y, w, 40, 4).fillAndStroke(COLORS.white, COLORS.border).restore();
+    doc.save().roundedRect(margin, y, w, notesBoxH, 4).fillAndStroke(COLORS.white, COLORS.border).restore();
     if (notesText) {
-      doc.font(F.body).fontSize(8.5).fillColor(COLORS.body).text(notesText, margin + 8, y + 8, { width: w - 16 });
+      doc.font(F.body).fontSize(8.5).fillColor(COLORS.body)
+        .text(notesText, margin + 8, y + 8, { width: w - 16, height: notesBoxH - 12, ellipsis: true });
     }
-    y += 50;
+    y += notesBoxH + 10;
 
     doc.save().rect(margin, y, w, 20).fill(COLORS.navyLight).restore();
     doc.font(F.displayBold).fontSize(9.5).fillColor(COLORS.white)
-      .text('3. RE-ENTRY INTO SERVICE & SIGN-OFF', margin + 10, y + 5);
+      .text('3. RE-ENTRY INTO SERVICE & SIGN-OFF', margin + 10, y + 5, { width: w - 20, lineBreak: false });
     y += 24;
     doc.save().roundedRect(margin, y, w, 36, 4).fillAndStroke(COLORS.white, COLORS.border).restore();
     doc.font(F.body).fontSize(8.5).fillColor(COLORS.subtle)
-      .text(`Completion Time: ${isReport && data.EndOpsTime !== '00:00' ? data.EndOpsTime : '____________'}`, margin + 12, y + 12)
-      .text('Authorized Technician Signature: ______________________________________', margin + 175, y + 12);
+      .text(`Completion Time: ${isReport && data.EndOpsTime !== '00:00' ? data.EndOpsTime : '____________'}`, margin + 12, y + 12, { width: 158, lineBreak: false })
+      .text('Authorized Technician Signature: ______________________________________', margin + 175, y + 12, { width: w - 187, lineBreak: false });
 
-    // Footers (with lineBreak: false to avoid trailing blank pages)
+    // Footers: temporarily clear bottom margin on each page so PDFKit NEVER spawns blank pages!
     const range = doc.bufferedPageRange();
     for (let i = range.start; i < range.start + range.count; i += 1) {
       doc.switchToPage(i);
+      const savedBottomMargin = doc.page.margins.bottom;
+      doc.page.margins.bottom = 0;
       const fy = doc.page.height - 28;
       doc.save()
         .lineWidth(0.5).strokeColor(COLORS.border)
@@ -436,6 +455,7 @@ function renderDailyNativePdf(templateType, data, dateStr) {
         .text(`${COMPANY.name}  ·  Daily Operations (${dateStr})`, margin, fy, { width: w * 0.65, lineBreak: false })
         .text(`Page ${i - range.start + 1} of ${range.count}`, margin + w * 0.65, fy, { width: w * 0.35, align: 'right', lineBreak: false })
         .restore();
+      doc.page.margins.bottom = savedBottomMargin;
     }
 
     doc.end();

@@ -10,7 +10,7 @@
     <div class="ops-head-actions">
       <app-export-menu endpoint="operations"
                        filename="Sorties-Dispatch"
-                       [params]="{ status: statusFilter, priority: priorityFilter, type_id: typeFilter, simulator_id: simulatorFilter, outcome: outcomeFilter, search: searchQuery }">
+                       [params]="exportParams">
       </app-export-menu>
       <button type="button" class="btn btn-primary" (click)="openModal()">
         <span class="btn-icon">add</span> Schedule Sortie
@@ -81,17 +81,17 @@
   <div class="ops-fleet-deck" *ngIf="simulators.length > 0">
     <div class="ops-fleet-compact-bar">
       <div class="ops-deck-kind-pills" role="group" aria-label="Filter deck by station kind">
-        <button type="button" class="ops-kind-pill" [class.active]="deckKindFilter === 'ALL'" (click)="deckKindFilter = 'ALL'">
+        <button type="button" class="ops-kind-pill" [class.active]="deckKindFilter === 'ALL'" (click)="setDeckKindFilter('ALL')">
           All {{simulators.length}}
         </button>
-        <button type="button" class="ops-kind-pill" [class.active]="deckKindFilter === 'FFS_BAY'" (click)="deckKindFilter = 'FFS_BAY'">
-          FFS {{countByKind('FFS_BAY')}}
+        <button type="button" class="ops-kind-pill" [class.active]="deckKindFilter === 'FFS_BAY'" (click)="setDeckKindFilter('FFS_BAY')">
+          FFS {{ffsBayCount}}
         </button>
-        <button type="button" class="ops-kind-pill" [class.active]="deckKindFilter === 'TEST_PLACE'" (click)="deckKindFilter = 'TEST_PLACE'">
-          TP {{countByKind('TEST_PLACE')}}
+        <button type="button" class="ops-kind-pill" [class.active]="deckKindFilter === 'TEST_PLACE'" (click)="setDeckKindFilter('TEST_PLACE')">
+          TP {{testPlaceCount}}
         </button>
-        <button type="button" class="ops-kind-pill" [class.active]="deckKindFilter === 'IOS_CONSOLE'" (click)="deckKindFilter = 'IOS_CONSOLE'">
-          IOS {{countByKind('IOS_CONSOLE')}}
+        <button type="button" class="ops-kind-pill" [class.active]="deckKindFilter === 'IOS_CONSOLE'" (click)="setDeckKindFilter('IOS_CONSOLE')">
+          IOS {{iosConsoleCount}}
         </button>
       </div>
 
@@ -100,7 +100,7 @@
         <button
           type="button"
           class="ops-bay-chip"
-          *ngFor="let sim of deckSimulators"
+          *ngFor="let sim of deckSimulators; trackBy: trackBySimId"
           [class.active]="simulatorFilter === sim.id"
           [class.is-aog]="sim.status === 'AOG' || timelineShiftStatuses[sim.id] === 'NA'"
           [class.is-warn]="sim.status === 'DEGRADED' || sim.status === 'MAINTENANCE'"
@@ -139,7 +139,7 @@
     <div class="ops-fleet-strip" *ngIf="showFleetDeck">
       <div
         class="ops-deck-card"
-        *ngFor="let sim of deckSimulators"
+        *ngFor="let sim of deckSimulators; trackBy: trackBySimId"
         [class.active]="simulatorFilter === sim.id"
         [class.deck-aog]="sim.status === 'AOG'"
         [class.deck-degraded]="sim.status === 'DEGRADED' || sim.status === 'MAINTENANCE'"

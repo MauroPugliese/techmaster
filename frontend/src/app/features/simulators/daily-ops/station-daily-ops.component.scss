@@ -990,21 +990,19 @@ app-time-picker.row-time-picker {
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-sm);
-  border: 1px solid #FCA5A5;
-  background: #FFFFFF;
-  color: #DC2626;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--primary);
   cursor: pointer;
   flex-shrink: 0;
-  box-shadow: 0 1px 2px rgba(185, 28, 28, 0.08);
   transition: var(--transition);
 
   .mat-i { font-size: 16px; }
 
   &:hover {
-    background: #DC2626;
-    border-color: #DC2626;
-    color: #FFFFFF;
-    box-shadow: 0 2px 6px rgba(220, 38, 38, 0.25);
+    background: var(--blue-50);
+    border-color: var(--blue-200);
+    color: var(--primary);
   }
 }
 

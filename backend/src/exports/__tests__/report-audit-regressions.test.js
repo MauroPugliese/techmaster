@@ -14,7 +14,6 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const PizZip = require('pizzip');
 const ExcelJS = require('exceljs');
-const { Packer } = require('docx');
 
 const models = require('../../models');
 const { toneStyle } = require('../core/branding');
@@ -28,7 +27,7 @@ const {
 } = require('../core/helpers');
 const { normalizeSpec, collectSpecData } = require('../core/export.service');
 const { buildPdfBuffer } = require('../renderers/pdf.renderer');
-const { buildDocument } = require('../renderers/docx.renderer');
+const { buildDocxBuffer } = require('../renderers/docx.renderer');
 const { buildWorkbook } = require('../renderers/xlsx.renderer');
 const { buildPptxBuffer } = require('../renderers/pptx.renderer');
 const { taskOccursOnDate } = require('../../services/planned-recurrence.service');
@@ -247,28 +246,42 @@ test('PDF renderer produces ZERO blank pages in BOTH A4 Portrait and A4 Landscap
   );
 });
 
-test('DOCX renderer outputs valid integer OOXML half-point font sizes and clean page breaks', async () => {
+test('DOCX renderer produces valid official CAE template OOXML with periodicity banner, live chart Excel & balanced bookmarks', async () => {
   const spec = buildAuditSpec('portrait');
-  const doc = buildDocument(spec);
-  const buf = await Packer.toBuffer(doc);
+  const buf = await buildDocxBuffer(spec);
   const zip = new PizZip(buf);
   const xml = zip.file('word/document.xml').asText();
+  const chartXml = zip.file('word/charts/chart1.xml').asText();
+  const f1 = zip.file('word/footer1.xml').asText();
+  const f2 = zip.file('word/footer2.xml').asText();
 
   assert.equal(
     xml.match(/w:sz="\d+\.\d+"/g),
     null,
     'DOCX XML must contain ZERO fractional half-point w:sz values'
   );
-  assert.ok(xml.includes('WEEKLY REPORT'), 'Cover should display periodicity tag');
-  const breakMatches = xml.match(/w:pageBreakBefore/g) || [];
-  assert.equal(
-    breakMatches.length,
-    spec.pages.length,
-    'DOCX pageBreakBefore count should match spec.pages.length'
-  );
+  assert.ok(xml.includes('WEEKLY REPORT'), 'Cover should display periodicity banner');
+  assert.ok(xml.includes('Session Hours by Station') || chartXml.includes('Session Hours by Station'), 'Live chart title must populate chart1.xml');
+  assert.ok(chartXml.includes('TP-01'), 'Live chart categories must populate chart1.xml');
+  assert.ok(f1.includes('November 25, 2026'), 'Interior footer must carry real publication date');
+  assert.ok(f2.includes('November 25, 2026'), 'Cover footer must carry real publication date');
+
+  // Verify every bookmarkStart has a matching bookmarkEnd
+  const starts = [...xml.matchAll(/<w:bookmarkStart w:id="(\d+)"/g)].map((m) => m[1]);
+  const ends = [...xml.matchAll(/<w:bookmarkEnd w:id="(\d+)"/g)].map((m) => m[1]);
+  assert.deepEqual([...starts].sort(), [...ends].sort(), 'Every bookmarkStart must pair with bookmarkEnd');
+
+  // Verify embedded Excel chart workbook matches real data
+  const xlsxBuf = zip.file('word/embeddings/Microsoft_Excel_Worksheet.xlsx').asNodeBuffer();
+  const chartWb = new ExcelJS.Workbook();
+  await chartWb.xlsx.load(xlsxBuf);
+  const ws = chartWb.getWorksheet('Sheet1');
+  assert.ok(ws, 'Embedded Sheet1 must exist');
+  assert.equal(ws.getCell('A2').value, 'TP-01');
+  assert.equal(ws.getCell('B2').value, 32.5);
 });
 
-test('XLSX & PPTX renderers include statMatrix data, horizontalBar charts and clean column widths', async () => {
+test('XLSX & PPTX renderers include statMatrix data, horizontalBar charts, pure tabular Excel & Widescreen PPTX bounds', async () => {
   const spec = buildAuditSpec('portrait');
   const collected = collectSpecData(spec);
   assert.equal(collected.statMatrices.length, 1);
@@ -278,18 +291,11 @@ test('XLSX & PPTX renderers include statMatrix data, horizontalBar charts and cl
   const parsedWb = new ExcelJS.Workbook();
   await parsedWb.xlsx.load(xlsxBuf);
 
-  const summarySheet = parsedWb.getWorksheet('Executive Summary');
-  assert.ok(summarySheet, 'Executive Summary worksheet must exist');
-  let foundStatMatrixValue = false;
-  summarySheet.eachRow((row) => {
-    row.eachCell((cell) => {
-      if (String(cell.value || '').includes('06:30 Local')) foundStatMatrixValue = true;
-    });
-  });
-  assert.ok(foundStatMatrixValue, 'Executive Summary must render statMatrix values');
-
   const dataSheet = parsedWb.getWorksheet('Station Ledger');
   assert.ok(dataSheet, 'Station Ledger sheet must exist');
+  assert.equal(parsedWb.worksheets[0].name, 'Station Ledger', 'Data sheet must open first');
+  assert.equal(dataSheet.views?.[0]?.showGridLines, true, 'Gridlines must be ON');
+  assert.equal(dataSheet.model.merges?.length || 0, 0, 'Data sheet must have zero merged cells');
   for (let c = 1; c <= 5; c += 1) {
     const w = dataSheet.getColumn(c).width;
     assert.ok(
@@ -298,8 +304,21 @@ test('XLSX & PPTX renderers include statMatrix data, horizontalBar charts and cl
     );
   }
 
+  const summarySheet = parsedWb.getWorksheet('Summary');
+  assert.ok(summarySheet, 'Flat Summary worksheet must exist');
+  assert.equal(summarySheet.model.merges?.length || 0, 0, 'Summary sheet must have zero merged cells');
+  let foundStatMatrixValue = false;
+  summarySheet.eachRow((row) => {
+    row.eachCell((cell) => {
+      if (String(cell.value || '').includes('06:30 Local')) foundStatMatrixValue = true;
+    });
+  });
+  assert.ok(foundStatMatrixValue, 'Summary sheet must render statMatrix values');
+
   const pptxBuf = await buildPptxBuffer(spec);
   const pptxZip = new PizZip(pptxBuf);
+  const presXml = pptxZip.file('ppt/presentation.xml')?.asText() || '';
+  assert.match(presXml, /cx="12192000"[^>]*cy="6858000"/, 'PPTX must use 13.333" x 7.5" Widescreen dimensions');
   const slideFiles = Object.keys(pptxZip.files).filter((k) => /^ppt\/slides\/slide\d+\.xml$/.test(k));
   assert.ok(slideFiles.length >= 4, `Expected cover + overview + statMatrix + chart + table slides, got ${slideFiles.length}`);
   const slide1Xml = pptxZip.file('ppt/slides/slide1.xml').asText();
