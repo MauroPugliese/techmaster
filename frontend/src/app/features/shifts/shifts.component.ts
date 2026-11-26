@@ -84,6 +84,7 @@ export class ShiftsComponent implements OnInit, OnDestroy {
 
   private readonly destroy$ = new Subject<void>();
   private actionHandled = false;
+  private shiftsReqSeq = 0;
 
   // Core datasets
   shifts: Shift[] = [];
@@ -212,6 +213,9 @@ export class ShiftsComponent implements OnInit, OnDestroy {
     this.route.queryParams
       .pipe(takeUntil(this.destroy$))
       .subscribe(qp => {
+        if (qp['action'] !== 'new') {
+          this.actionHandled = false;
+        }
         if (qp['action'] === 'new' && !this.actionHandled) {
           this.actionHandled = true;
           setTimeout(() => {
@@ -257,7 +261,9 @@ export class ShiftsComponent implements OnInit, OnDestroy {
 
   @HostListener('document:keydown.escape')
   onEsc(): void {
-    if (this.showShiftTypesModal) {
+    if (this.showHandoverModal) {
+      this.showHandoverModal = false;
+    } else if (this.showShiftTypesModal) {
       this.showShiftTypesModal = false;
     } else if (this.showCopyWeekModal) {
       this.showCopyWeekModal = false;
@@ -307,6 +313,7 @@ export class ShiftsComponent implements OnInit, OnDestroy {
   }
 
   loadShifts(): void {
+    const seq = ++this.shiftsReqSeq;
     const from = formatLocalYmd(this.weekStart);
     const to = formatLocalYmd(this.weekEnd);
     this.loading = true;
@@ -316,10 +323,12 @@ export class ShiftsComponent implements OnInit, OnDestroy {
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: r => {
+          if (seq !== this.shiftsReqSeq) return;
           this.coverageAlerts = r?.data?.alerts || [];
           this.cdr.markForCheck();
         },
         error: () => {
+          if (seq !== this.shiftsReqSeq) return;
           this.coverageAlerts = [];
         }
       });
@@ -329,12 +338,14 @@ export class ShiftsComponent implements OnInit, OnDestroy {
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: r => {
+          if (seq !== this.shiftsReqSeq) return;
           this.shifts = r?.data?.items || r?.data || [];
           this.loading = false;
           this.recomputeViewState();
           this.cdr.markForCheck();
         },
         error: () => {
+          if (seq !== this.shiftsReqSeq) return;
           this.loading = false;
           this.toast.error('Failed to load weekly shifts.');
           this.cdr.markForCheck();
@@ -349,6 +360,7 @@ export class ShiftsComponent implements OnInit, OnDestroy {
 
   onShiftSaved(): void {
     this.showFormModal = false;
+    this.api.notifyNavBadgesChanged();
     this.loadShifts();
   }
 
@@ -385,10 +397,20 @@ export class ShiftsComponent implements OnInit, OnDestroy {
     this.weekEnd = addDays(this.weekStart, 6);
     this.weekDays = buildWeekDays(this.weekStart);
     this.jumpPickerDate = new Date(this.weekStart);
-    this.exportParams = {
+    this.updateExportParams();
+  }
+
+  private updateExportParams(): void {
+    const params: Record<string, string> = {
       from: formatLocalYmd(this.weekStart),
       to: formatLocalYmd(this.weekEnd),
     };
+    if (this.selectedDepartment) params['department'] = this.selectedDepartment;
+    if (this.selectedStatus) params['status'] = this.selectedStatus;
+    if (this.selectedEntryKind) params['entry_kind'] = this.selectedEntryKind;
+    if (this.selectedShiftTypeId !== null) params['shift_type_id'] = String(this.selectedShiftTypeId);
+    if (this.searchTerm.trim()) params['search'] = this.searchTerm.trim();
+    this.exportParams = params;
   }
 
   // ── Filtering & Pagination ────────────────────────────────────────────────
@@ -541,6 +563,7 @@ export class ShiftsComponent implements OnInit, OnDestroy {
     this.kpis = computeWeekKpis(weekShiftsInScope, this.shiftTypes);
     this.employeeSummaries = computeEmployeeSummaries(this.filteredEmployees, this.weekDays, lookup, this.shiftTypes);
     this.dayCoverages = this.weekDays.map(day => computeDayCoverage(day, this.filteredEmployees, lookup, this.shiftTypes));
+    this.updateExportParams();
   }
 
   private shiftMatchesAttributeFilters(shift: Shift): boolean {
@@ -654,6 +677,7 @@ export class ShiftsComponent implements OnInit, OnDestroy {
       .subscribe({
         next: res => {
           this.checkingId = null;
+          this.api.notifyNavBadgesChanged();
           this.toast.success('Clocked in cleanly.');
           if (this.detailShift?.id === shift.id && res?.data) {
             this.detailShift = res.data;
@@ -676,6 +700,7 @@ export class ShiftsComponent implements OnInit, OnDestroy {
       .subscribe({
         next: res => {
           this.checkingId = null;
+          this.api.notifyNavBadgesChanged();
           this.toast.success('Clocked out — shift completed.');
           if (this.detailShift?.id === shift.id && res?.data) {
             this.detailShift = res.data;
@@ -704,6 +729,7 @@ export class ShiftsComponent implements OnInit, OnDestroy {
         next: () => {
           this.showFormModal = false;
           if (this.detailShift?.id === shift.id) this.detailShift = null;
+          this.api.notifyNavBadgesChanged();
           this.loadShifts();
           this.toast.success('Shift entry deleted.');
         },
@@ -747,6 +773,7 @@ export class ShiftsComponent implements OnInit, OnDestroy {
         next: res => {
           this.copyingWeek = false;
           this.showCopyWeekModal = false;
+          this.api.notifyNavBadgesChanged();
           this.loadShifts();
           const d = res?.data || {};
           this.toast.success(

@@ -143,25 +143,42 @@ module.exports = {
           model: SimulatorDailyShift,
           as: 'shifts',
           include: [{ model: SimulatorShiftEntry, as: 'entries' }]
-        }]
+        }],
+        order: [['log_date', 'ASC'], ['id', 'ASC']]
       })
     ]);
+
+    const groupBySimId = (rows) => {
+      const map = new Map();
+      for (const r of rows) {
+        const plain = r.get({ plain: true });
+        const sid = Number(plain.simulator_id);
+        if (!map.has(sid)) map.set(sid, []);
+        map.get(sid).push(plain);
+      }
+      return map;
+    };
+
+    const subsBySim = groupBySimId(subs);
+    const maintBySim = groupBySimId(maint);
+    const sortiesBySim = groupBySimId(sorties);
+    const qtgBySim = groupBySimId(qtg);
 
     const now = new Date();
     const enriched = sims.map(s => {
       const plain = s.get({ plain: true });
       const simId = Number(plain.id);
-      const simSubs = subs.filter(x => Number(x.simulator_id) === simId).map(x => x.get({ plain: true }));
-      const simMaint = maint.filter(x => Number(x.simulator_id) === simId).map(x => x.get({ plain: true }));
+      const simSubs = subsBySim.get(simId) || [];
+      const simMaint = maintBySim.get(simId) || [];
       const activeMel = simMaint.filter(m => ['SCHEDULED', 'IN_PROGRESS', 'DEFERRED'].includes(m.status) && m.mel_category && m.mel_category !== 'NONE');
       return {
         ...plain,
         subsystems: simSubs,
         activeMelCount: activeMel.length,
         telemetry: computeSimulatorTelemetry(plain, {
-          sorties: sorties.filter(x => Number(x.simulator_id) === simId).map(x => x.get({ plain: true })),
+          sorties: sortiesBySim.get(simId) || [],
           maintenance: simMaint,
-          qtgRecords: qtg.filter(x => Number(x.simulator_id) === simId).map(x => x.get({ plain: true })),
+          qtgRecords: qtgBySim.get(simId) || [],
           subsystems: simSubs,
           now
         })
@@ -185,21 +202,23 @@ module.exports = {
     const totalPowerHours = primaryFleet.reduce((acc, s) => acc + (Number(s.power_on_hours) || 0), 0);
     const totalMel = enriched.reduce((acc, s) => acc + s.activeMelCount, 0);
 
-    // Map today's live shift usage for Test Places and IOS Consoles
+    // Map live shift usage deterministically (chronological logs & shifts) for Test Places and IOS Consoles
     const liveEntryMap = new Map();
     for (const log of todayLogs) {
-      const sortedShifts = [...(log.shifts || [])].sort((a, b) => (a.shift_number || 0) - (b.shift_number || 0));
-      sortedShifts.forEach((sh, idx) => {
+      const sortedShifts = [...(log.shifts || [])].sort(
+        (a, b) => (Number(a.shift_number) || 0) - (Number(b.shift_number) || 0) || (Number(a.id) || 0) - (Number(b.id) || 0)
+      );
+      sortedShifts.forEach((sh) => {
         for (const e of (sh.entries || [])) {
           const simId = Number(e.simulator_id);
           const durMin = computeTestingDurationMinutes(e.sim_testing_start, e.sim_testing_end);
-          const cur = liveEntryMap.get(simId) || { status: e.usage_status, minutes: 0, notes: e.notes || '' };
-          if (idx === 0) {
+          const cur = liveEntryMap.get(simId) || { status: 'READY', minutes: 0, notes: '' };
+          if (e.usage_status === 'NA' || e.usage_status === 'IN_USE') {
             cur.status = e.usage_status;
-            if (e.notes) cur.notes = e.notes;
-          } else if (!cur.notes && e.notes) {
-            cur.notes = e.notes;
+          } else if (e.usage_status === 'READY' && cur.status === 'NA') {
+            cur.status = 'READY';
           }
+          if (e.notes) cur.notes = e.notes;
           cur.minutes += durMin;
           liveEntryMap.set(simId, cur);
         }

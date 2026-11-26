@@ -104,6 +104,9 @@ export class WarehouseComponent implements OnInit, OnDestroy {
       }
 
       const act = qp['action'];
+      if (act !== 'new') {
+        this.actionHandled = false;
+      }
       if (act === 'movement') {
         this.activeTab = 'movements';
         this.router.navigate([], {
@@ -138,22 +141,22 @@ export class WarehouseComponent implements OnInit, OnDestroy {
   }
 
   loadReferenceData(): void {
-    this.api.get<any>('/warehouse/categories').subscribe({
+    this.api.get<any>('/warehouse/categories').pipe(takeUntil(this.destroy$)).subscribe({
       next: r => { this.categories = r?.data || []; this.cdr.markForCheck(); }
     });
-    this.api.get<any>('/warehouse/locations').subscribe({
+    this.api.get<any>('/warehouse/locations').pipe(takeUntil(this.destroy$)).subscribe({
       next: r => { this.locations = r?.data || []; this.cdr.markForCheck(); }
     });
-    this.api.get<any>('/warehouse/suppliers').subscribe({
+    this.api.get<any>('/warehouse/suppliers').pipe(takeUntil(this.destroy$)).subscribe({
       next: r => { this.suppliers = r?.data || []; this.cdr.markForCheck(); }
     });
-    this.api.get<any>('/simulators').subscribe({
+    this.api.get<any>('/simulators').pipe(takeUntil(this.destroy$)).subscribe({
       next: r => { this.simulators = r?.data || []; this.cdr.markForCheck(); }
     });
   }
 
   loadSummary(): void {
-    this.api.get<any>('/warehouse/summary').subscribe({
+    this.api.get<any>('/warehouse/summary').pipe(takeUntil(this.destroy$)).subscribe({
       next: r => {
         this.summary = r?.data || null;
         this.cdr.markForCheck();
@@ -231,6 +234,7 @@ export class WarehouseComponent implements OnInit, OnDestroy {
 
   onMutated(): void {
     this.refreshTick += 1;
+    this.api.notifyNavBadgesChanged();
     this.loadSummary();
     this.loadReferenceData();
     this.cdr.markForCheck();

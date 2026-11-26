@@ -75,7 +75,12 @@ module.exports = {
       if (range.from) where.start_date[Op.gte] = range.from;
       if (range.to) where.start_date[Op.lte] = range.to;
     }
-    if (status) where.status = status;
+    if (status === 'OVERDUE') {
+      where.status = { [Op.in]: ['PLANNED', 'IN_PROGRESS', 'ON_HOLD'] };
+      where.end_date = { [Op.lt]: new Date() };
+    } else if (status) {
+      where.status = status;
+    }
     if (priority) where.priority = priority;
     if (simulator_id && Number(simulator_id) > 0) where.simulator_id = Number(simulator_id);
     if (outcome && String(outcome).trim()) where.outcome = String(outcome).trim().toUpperCase();
@@ -354,7 +359,7 @@ module.exports = {
         lost_min: lostM,
         snag: o.snag_summary ? cleanText(o.snag_summary, 110) : '—',
         creator: fullName(o.creator),
-        _flag: lostM > 0 || o.outcome === 'INTERRUPTED_TECH' || o.outcome === 'CANCELLED_TECH' ? 'danger' : STATUS_TONE[o.status]
+        _flag: lostM > 0 || o.outcome === 'INTERRUPTED_TECH' || o.outcome === 'CANCELLED' ? 'danger' : STATUS_TONE[o.status]
       }))
     };
 

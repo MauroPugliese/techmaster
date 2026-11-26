@@ -14,7 +14,7 @@
         <app-export-menu
           *ngIf="activeView === 'fleet'"
           endpoint="simulators"
-          filename="cae-simulator-fleet-report"
+          filename="simulator-fleet-report"
           [params]="fleetExportParams"
           [includeDateRange]="false">
         </app-export-menu>
@@ -186,6 +186,17 @@
             <strong>{{ summary.open_snags_count }}</strong> Open DR
           </span>
         </div>
+      </div>
+
+      <!-- Error State -->
+      <div *ngIf="loadError && !loading" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;padding:12px 16px;border-radius:10px;background:#fef2f2;border:1px solid #fecaca;color:#991b1b">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="mat-i">error_outline</span>
+          <span>Could not load simulator fleet data. Please check your connection and try again.</span>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" (click)="loadData()">
+          <span class="btn-icon">refresh</span> Retry
+        </button>
       </div>
 
       <!-- Loading -->
@@ -411,6 +422,7 @@
     [initialTab]="workspaceTab"
     (closeWorkspace)="closeWorkspace()"
     (switchSimulator)="openWorkspace($event, workspaceTab)"
+    (tabChanged)="onWorkspaceTabChanged($event)"
     (editSimulatorRequested)="openEditModal($event)"
     (fleetChanged)="loadData()">
   </app-simulator-workspace>

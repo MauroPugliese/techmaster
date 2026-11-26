@@ -31,7 +31,8 @@ module.exports = {
 
   async build(req) {
     const range = parseRange(req.query);
-    const period = req.query.period || 'all';
+    const period = String(req.query.period || 'all').trim().toLowerCase();
+    const hasExplicitRange = Boolean(range.from || range.to);
     const granularity = ['hour', 'day', 'week', 'month'].includes(req.query.granularity)
       ? req.query.granularity
       : 'day';
@@ -39,29 +40,49 @@ module.exports = {
     let dateFilter = '';
     let shiftDateFilter = '';
     const replacements = {};
-    if (period === 'daily') {
-      dateFilter = 'AND DATE(o.start_date) = CURDATE()';
-      shiftDateFilter = 'AND dl.log_date = CURDATE()';
-    } else if (period === 'weekly') {
-      dateFilter = 'AND YEARWEEK(o.start_date, 1) = YEARWEEK(CURDATE(), 1)';
-      shiftDateFilter = 'AND YEARWEEK(dl.log_date, 1) = YEARWEEK(CURDATE(), 1)';
-    } else if (period === 'monthly') {
-      dateFilter = 'AND YEAR(o.start_date) = YEAR(CURDATE()) AND MONTH(o.start_date) = MONTH(CURDATE())';
-      shiftDateFilter = 'AND YEAR(dl.log_date) = YEAR(CURDATE()) AND MONTH(dl.log_date) = MONTH(CURDATE())';
-    } else if (period === 'yearly') {
-      dateFilter = 'AND YEAR(o.start_date) = YEAR(CURDATE())';
-      shiftDateFilter = 'AND YEAR(dl.log_date) = YEAR(CURDATE())';
-    } else {
-      if (range.from) {
-        dateFilter += ' AND o.start_date >= :startDate';
-        shiftDateFilter += ' AND dl.log_date >= DATE(:startDate)';
-        replacements.startDate = range.from;
+    let effectiveFrom = range.from;
+    let effectiveTo = range.to;
+
+    if (!hasExplicitRange && period !== 'all') {
+      const now = new Date();
+      const dayMs = 86400000;
+      const todayStartUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0);
+      const todayEndUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999);
+      if (period === '7d') {
+        effectiveFrom = new Date(todayStartUtc - 6 * dayMs);
+        effectiveTo = new Date(todayEndUtc);
+      } else if (period === '30d') {
+        effectiveFrom = new Date(todayStartUtc - 29 * dayMs);
+        effectiveTo = new Date(todayEndUtc);
+      } else if (period === '90d') {
+        effectiveFrom = new Date(todayStartUtc - 89 * dayMs);
+        effectiveTo = new Date(todayEndUtc);
+      } else if (period === 'ytd' || period === 'yearly') {
+        effectiveFrom = new Date(Date.UTC(now.getUTCFullYear(), 0, 1, 0, 0, 0, 0));
+        effectiveTo = new Date(todayEndUtc);
+      } else if (period === 'daily') {
+        effectiveFrom = new Date(todayStartUtc);
+        effectiveTo = new Date(todayEndUtc);
+      } else if (period === 'weekly') {
+        const dow = now.getUTCDay();
+        const monOffset = dow === 0 ? -6 : 1 - dow;
+        effectiveFrom = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + monOffset, 0, 0, 0, 0));
+        effectiveTo = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + monOffset + 6, 23, 59, 59, 999));
+      } else if (period === 'monthly') {
+        effectiveFrom = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
+        effectiveTo = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0, 23, 59, 59, 999));
       }
-      if (range.to) {
-        dateFilter += ' AND o.start_date <= :endDate';
-        shiftDateFilter += ' AND dl.log_date <= DATE(:endDate)';
-        replacements.endDate = range.to;
-      }
+    }
+
+    if (effectiveFrom) {
+      dateFilter += ' AND o.start_date >= :startDate';
+      shiftDateFilter += ' AND dl.log_date >= DATE(:startDate)';
+      replacements.startDate = effectiveFrom;
+    }
+    if (effectiveTo) {
+      dateFilter += ' AND o.start_date <= :endDate';
+      shiftDateFilter += ' AND dl.log_date <= DATE(:endDate)';
+      replacements.endDate = effectiveTo;
     }
 
     let selectExpr = 'DATE(o.start_date)';
@@ -71,10 +92,10 @@ module.exports = {
       groupExpr = selectExpr;
     } else if (granularity === 'week') {
       selectExpr = "DATE_FORMAT(DATE_SUB(o.start_date, INTERVAL WEEKDAY(o.start_date) DAY), '%Y-%m-%d')";
-      groupExpr = 'YEARWEEK(o.start_date, 1)';
+      groupExpr = selectExpr;
     } else if (granularity === 'month') {
       selectExpr = "DATE_FORMAT(o.start_date, '%Y-%m-01')";
-      groupExpr = "DATE_FORMAT(o.start_date, '%Y-%m')";
+      groupExpr = selectExpr;
     }
 
     const [
@@ -349,7 +370,7 @@ module.exports = {
         { label: 'Completion Rate', value: fmtPercent(completionRate, 1) }
       ],
       filters: [
-        { label: 'Period', value: period !== 'all' ? period.toUpperCase() : rangeLabel(range) },
+        { label: 'Period', value: (effectiveFrom || effectiveTo) ? rangeLabel({ from: effectiveFrom, to: effectiveTo }) : (period !== 'all' ? period.toUpperCase() : 'All time') },
         { label: 'Granularity', value: granularity.toUpperCase() },
         { label: 'Total Operations', value: fmtNumber(totalOps) }
       ],

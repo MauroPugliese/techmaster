@@ -151,7 +151,10 @@ export class MaintenanceModalsComponent {
       labor_cost: null as number | null,
       mel_category: 'NONE' as MelCategory,
       mel_expiry_date: null as Date | null,
-      wiki_article_id: null as number | null
+      wiki_article_id: null as number | null,
+      part_number: '',
+      broken_serial_number: '',
+      new_serial_number: ''
     };
   }
 
@@ -211,7 +214,10 @@ export class MaintenanceModalsComponent {
         labor_cost: record.labor_cost ?? null,
         mel_category: (record.mel_category || 'NONE') as MelCategory,
         mel_expiry_date: record.mel_expiry_date ? new Date(`${String(record.mel_expiry_date).slice(0, 10)}T00:00:00`) : null,
-        wiki_article_id: record.wiki_article_id ?? record.wikiArticle?.id ?? null
+        wiki_article_id: record.wiki_article_id ?? record.wikiArticle?.id ?? null,
+        part_number: record.part_number ?? (Array.isArray(record.parts_used) && record.parts_used[0]?.part_number) ?? '',
+        broken_serial_number: record.broken_serial_number ?? (Array.isArray(record.parts_used) && record.parts_used[0]?.broken_serial_number) ?? '',
+        new_serial_number: record.new_serial_number ?? (Array.isArray(record.parts_used) && record.parts_used[0]?.new_serial_number) ?? ''
       };
       const split = splitDowntimeHours(record.downtime_hours);
       this.downtimeHoursPart = split.hours;
@@ -240,7 +246,10 @@ export class MaintenanceModalsComponent {
         labor_cost: prefill?.labor_cost ?? null,
         mel_category: (prefill?.mel_category || 'NONE') as MelCategory,
         mel_expiry_date: prefill?.mel_expiry_date ? new Date(`${String(prefill.mel_expiry_date).slice(0, 10)}T00:00:00`) : null,
-        wiki_article_id: prefill?.wiki_article_id ?? null
+        wiki_article_id: prefill?.wiki_article_id ?? null,
+        part_number: prefill?.part_number ?? '',
+        broken_serial_number: prefill?.broken_serial_number ?? '',
+        new_serial_number: prefill?.new_serial_number ?? ''
       };
       this.downtimeHoursPart = 0;
       this.downtimeMinutesPart = 0;
@@ -267,13 +276,81 @@ export class MaintenanceModalsComponent {
     this.cdr.markForCheck();
   }
 
+  onAssetSelected(assetId: number | undefined): void {
+    if (!assetId) return;
+    const asset = this.assets.find(a => Number(a.id) === Number(assetId));
+    if (asset?.serial_number && !String(this.recordForm.broken_serial_number || '').trim()) {
+      this.recordForm.broken_serial_number = asset.serial_number;
+      this.cdr.markForCheck();
+    }
+  }
+
+  onWarehousePartSelected(itemId: number | null): void {
+    if (!itemId) return;
+    const item = this.warehouseItems.find(w => Number(w.id) === Number(itemId));
+    if (!item) return;
+
+    const resolvedPn = String(item.part_number || item.sku || '').trim();
+    const resolvedNewSn = String(item.serial_number || '').trim();
+    let resolvedBrokenSn = '';
+
+    // 1. Check installed LRU matching this part on the selected simulator bay
+    if (this.recordForm.simulator_id && resolvedPn) {
+      const installedMatch = this.warehouseItems.find(w =>
+        Number(w.installed_simulator_id) === Number(this.recordForm.simulator_id) &&
+        w.id !== item.id &&
+        ((w.part_number && w.part_number.toLowerCase() === resolvedPn.toLowerCase()) ||
+         (w.sku && w.sku.toLowerCase() === String(item.sku || '').toLowerCase())) &&
+        Boolean(w.serial_number)
+      );
+      if (installedMatch?.serial_number) {
+        resolvedBrokenSn = installedMatch.serial_number;
+      }
+    }
+
+    // 2. Fallback to selected simulator subsystem serial number
+    if (!resolvedBrokenSn && this.recordForm.simulator_id) {
+      const sim = this.simulators.find(s => Number(s.id) === Number(this.recordForm.simulator_id));
+      const matchedSub = sim?.subsystems?.find(sub =>
+        (this.recordForm.subsystem_code && sub.subsystem_code === this.recordForm.subsystem_code && sub.serial_number) ||
+        (resolvedPn && sub.part_number && sub.part_number.toLowerCase() === resolvedPn.toLowerCase() && sub.serial_number)
+      );
+      if (matchedSub?.serial_number) {
+        resolvedBrokenSn = matchedSub.serial_number;
+      }
+    }
+
+    // 3. Fallback to selected asset serial number
+    if (!resolvedBrokenSn && this.recordForm.asset_id) {
+      const asset = this.assets.find(a => Number(a.id) === Number(this.recordForm.asset_id));
+      if (asset?.serial_number) {
+        resolvedBrokenSn = asset.serial_number;
+      }
+    }
+
+    this.recordForm.part_number = resolvedPn;
+    this.recordForm.new_serial_number = resolvedNewSn;
+    if (resolvedBrokenSn) {
+      this.recordForm.broken_serial_number = resolvedBrokenSn;
+    }
+    this.cdr.markForCheck();
+  }
+
   addWarehousePart(): void {
     if (!this.selectedWarehouseItemId) return;
     const item = this.warehouseItems.find(w => Number(w.id) === Number(this.selectedWarehouseItemId));
     if (!item) return;
 
     const qty = Math.max(1, Math.floor(Number(this.selectedPartQty) || 1));
-    const idx = this.partsList.findIndex(p => Number(p.item_id) === Number(item.id));
+    const pn = String(this.recordForm.part_number || item.part_number || item.sku || '').trim() || null;
+    const brokenSn = String(this.recordForm.broken_serial_number || '').trim() || null;
+    const newSn = String(this.recordForm.new_serial_number || item.serial_number || '').trim() || null;
+
+    const idx = this.partsList.findIndex(p =>
+      Number(p.item_id) === Number(item.id) &&
+      (p.broken_serial_number || null) === brokenSn &&
+      (p.new_serial_number || null) === newSn
+    );
     if (idx >= 0) {
       this.partsList = this.partsList.map((p, i) => i === idx ? { ...p, quantity: p.quantity + qty } : p);
     } else {
@@ -282,6 +359,9 @@ export class MaintenanceModalsComponent {
         {
           item_id: item.id,
           sku: item.sku,
+          part_number: pn,
+          broken_serial_number: brokenSn,
+          new_serial_number: newSn,
           name: item.name,
           quantity: qty,
           unit: item.unit || 'pcs'
@@ -289,9 +369,167 @@ export class MaintenanceModalsComponent {
       ];
     }
 
+    if (!this.recordForm.part_number && pn) this.recordForm.part_number = pn;
+    if (!this.recordForm.broken_serial_number && brokenSn) this.recordForm.broken_serial_number = brokenSn;
+    if (!this.recordForm.new_serial_number && newSn) this.recordForm.new_serial_number = newSn;
+
     this.selectedWarehouseItemId = null;
     this.selectedPartQty = 1;
     this.cdr.markForCheck();
+  }
+
+  // ── Inline Dropdown Quick-Create Handlers ──────────────────────────────────
+  quickCreateSimulator(rawLabel: string): void {
+    const label = rawLabel.trim();
+    if (!label) return;
+    const cleanCode = label.toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 16) || `SIM-${Date.now().toString().slice(-4)}`;
+    this.api.post<any>('/simulators', {
+      code: cleanCode,
+      name: label,
+      bay_code: cleanCode.slice(0, 12),
+      station_kind: 'FFS_BAY',
+      status: 'READY'
+    }).subscribe({
+      next: res => {
+        const created: Simulator = res?.data;
+        if (created) {
+          this.simulators = [...this.simulators, created];
+          this.recordForm.simulator_id = created.id;
+          this.toast.success(`Simulator "${created.name}" created and selected.`);
+          this.assetsMutated.emit();
+          this.cdr.markForCheck();
+        }
+      },
+      error: (e: any) => this.toast.error(e?.error?.message || 'Unable to create simulator bay.')
+    });
+  }
+
+  quickCreateAsset(rawName: string): void {
+    const name = rawName.trim();
+    if (!name) return;
+    const fallbackCatId = this.assetCategories[0]?.id;
+    const proceed = (catId: number) => {
+      this.api.post<any>('/maintenance/assets', { name, category_id: catId, status: 'ACTIVE' }).subscribe({
+        next: res => {
+          const created: Asset = res?.data;
+          if (created) {
+            this.assets = [...this.assets, created];
+            this.recordForm.asset_id = created.id;
+            this.toast.success(`Asset "${created.name}" created and selected.`);
+            this.assetsMutated.emit();
+            this.cdr.markForCheck();
+          }
+        },
+        error: (e: any) => this.toast.error(e?.error?.message || 'Unable to create asset.')
+      });
+    };
+
+    if (fallbackCatId) {
+      proceed(fallbackCatId);
+    } else {
+      this.api.post<any>('/maintenance/asset-categories', { name: 'General', type: 'HARDWARE' }).subscribe({
+        next: r => {
+          const cat: AssetCategory = r?.data;
+          if (cat) {
+            this.assetCategories = [...this.assetCategories, cat];
+            proceed(cat.id);
+          }
+        },
+        error: (e: any) => this.toast.error(e?.error?.message || 'Unable to create default asset category.')
+      });
+    }
+  }
+
+  quickCreateAssetCategory(rawName: string): void {
+    const name = rawName.trim();
+    if (!name) return;
+    this.api.post<any>('/maintenance/asset-categories', { name, type: 'HARDWARE' }).subscribe({
+      next: res => {
+        const created: AssetCategory = res?.data;
+        if (created) {
+          if (!this.assetCategories.some(c => c.id === created.id)) {
+            this.assetCategories = [...this.assetCategories, created];
+          }
+          this.assetForm.category_id = created.id;
+          this.toast.success(`Category "${created.name}" added.`);
+          this.assetsMutated.emit();
+          this.cdr.markForCheck();
+        }
+      },
+      error: (e: any) => this.toast.error(e?.error?.message || 'Unable to create asset category.')
+    });
+  }
+
+  quickCreateWikiSop(rawTitle: string): void {
+    const title = rawTitle.trim();
+    if (!title) return;
+    this.api.post<any>('/wiki/articles', {
+      title,
+      content: `# ${title}\n\nStandard operating procedure created from Maintenance Work Order.`,
+      status: 'PUBLISHED'
+    }).subscribe({
+      next: res => {
+        const created = res?.data;
+        if (created) {
+          this.wikiArticles = [{ id: created.id, title: created.title, slug: created.slug }, ...this.wikiArticles];
+          this.recordForm.wiki_article_id = created.id;
+          this.toast.success(`Wiki SOP "${created.title}" created and linked.`);
+          this.cdr.markForCheck();
+        }
+      },
+      error: (e: any) => this.toast.error(e?.error?.message || 'Unable to create Wiki SOP.')
+    });
+  }
+
+  quickCreateWarehousePart(rawInput: string): void {
+    const raw = rawInput.trim();
+    if (!raw) return;
+    const [rawName, rawPn] = raw.includes('|') ? raw.split('|').map(s => s.trim()) : [raw, ''];
+    const name = rawName || raw;
+    const partNumber = rawPn || '';
+    const skuBase = (partNumber || name).toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 14) || 'SPARE';
+    const sku = `${skuBase}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    const createPart = (categoryId: number) => {
+      this.api.post<any>('/warehouse', {
+        name,
+        sku,
+        part_number: partNumber || sku,
+        category_id: categoryId,
+        quantity: 1,
+        unit: 'pcs',
+        min_stock: 0,
+        reorder_point: 0
+      }).subscribe({
+        next: res => {
+          const created: InventoryItem = res?.data;
+          if (created) {
+            this.warehouseItems = [created, ...this.warehouseItems];
+            this.selectedWarehouseItemId = created.id;
+            this.onWarehousePartSelected(created.id);
+            this.toast.success(`Spare part "${created.name}" created in Warehouse.`);
+            this.assetsMutated.emit();
+            this.cdr.markForCheck();
+          }
+        },
+        error: (e: any) => this.toast.error(e?.error?.message || 'Unable to create spare part.')
+      });
+    };
+
+    this.api.get<any>('/warehouse/categories').subscribe({
+      next: r => {
+        const cats = r?.data || [];
+        if (cats.length > 0) {
+          createPart(cats[0].id);
+        } else {
+          this.api.post<any>('/warehouse/categories', { name: 'General Spares' }).subscribe({
+            next: cRes => cRes?.data?.id && createPart(cRes.data.id),
+            error: () => this.toast.error('Unable to resolve warehouse category.')
+          });
+        }
+      },
+      error: () => this.toast.error('Unable to load warehouse categories.')
+    });
   }
 
   removePart(index: number): void {
@@ -328,6 +566,9 @@ export class MaintenanceModalsComponent {
       is_snag: Boolean(this.recordForm.is_snag),
       downtime_hours: downtime,
       parts_used: this.partsList,
+      part_number: String(this.recordForm.part_number || '').trim() || null,
+      broken_serial_number: String(this.recordForm.broken_serial_number || '').trim() || null,
+      new_serial_number: String(this.recordForm.new_serial_number || '').trim() || null,
       labor_cost: this.recordForm.labor_cost !== null && this.recordForm.labor_cost !== '' ? Number(this.recordForm.labor_cost) : null,
       mel_category: this.recordForm.mel_category || 'NONE',
       mel_expiry_date: this.recordForm.mel_expiry_date ? formatLocalYmd(new Date(this.recordForm.mel_expiry_date)) : null,

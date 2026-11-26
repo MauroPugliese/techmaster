@@ -3,7 +3,7 @@
 // =============================================================================
 const router = require('express').Router();
 const { Op } = require('sequelize');
-const { Shift, ShiftType, ShiftHandover, Operation, User } = require('../models');
+const { Shift, ShiftType, ShiftHandover, Operation, User, sequelize } = require('../models');
 const { authorize } = require('../middleware/auth.middleware');
 const { parseDateFilter } = require('../middleware/error.middleware');
 const { validateIdParam } = require('../middleware/validation.middleware');
@@ -34,13 +34,14 @@ function buildShiftInclude(department) {
   ];
 }
 
-async function clearSoftDeletedTombstone(userId, date) {
+async function clearSoftDeletedTombstone(userId, date, transaction = null) {
   const tombstone = await Shift.findOne({
     where: { user_id: userId, date },
     paranoid: false,
+    ...(transaction ? { transaction } : {})
   });
   if (tombstone && tombstone.deleted_at) {
-    await tombstone.destroy({ force: true });
+    await tombstone.destroy({ force: true, ...(transaction ? { transaction } : {}) });
   }
 }
 
@@ -89,37 +90,49 @@ async function upsertSingleShift({ body, shiftType, overwrite = false }) {
   }
 
   const { data } = sanitized;
-  const existingActive = await Shift.findOne({
-    where: { user_id: data.user_id, date: data.date },
-  });
+  const transaction = await sequelize.transaction();
+  try {
+    const existingActive = await Shift.findOne({
+      where: { user_id: data.user_id, date: data.date },
+      transaction,
+      lock: transaction.LOCK.UPDATE
+    });
 
-  if (existingActive && !overwrite) {
-    return {
-      outcome: 'conflict',
-      statusCode: 409,
-      message: `Employee already has a shift scheduled on ${data.date}`,
-    };
+    if (existingActive && !overwrite) {
+      await transaction.rollback();
+      return {
+        outcome: 'conflict',
+        statusCode: 409,
+        message: `Employee already has a shift scheduled on ${data.date}`,
+      };
+    }
+
+    const lawCheck = await validateLaborLawForUser(
+      data.user_id,
+      shiftType,
+      data.date,
+      data,
+      existingActive ? existingActive.id : null
+    );
+    if (!lawCheck.valid) {
+      await transaction.rollback();
+      return { outcome: 'error', statusCode: 400, message: lawCheck.message };
+    }
+
+    if (existingActive && overwrite) {
+      await existingActive.update(data, { transaction });
+      await transaction.commit();
+      return { outcome: 'updated', shift: await hydrateShift(existingActive.id) };
+    }
+
+    await clearSoftDeletedTombstone(data.user_id, data.date, transaction);
+    const created = await Shift.create(data, { transaction });
+    await transaction.commit();
+    return { outcome: 'created', shift: await hydrateShift(created.id) };
+  } catch (err) {
+    await transaction.rollback().catch(() => {});
+    throw err;
   }
-
-  const lawCheck = await validateLaborLawForUser(
-    data.user_id,
-    shiftType,
-    data.date,
-    data,
-    existingActive ? existingActive.id : null
-  );
-  if (!lawCheck.valid) {
-    return { outcome: 'error', statusCode: 400, message: lawCheck.message };
-  }
-
-  if (existingActive && overwrite) {
-    await existingActive.update(data);
-    return { outcome: 'updated', shift: await hydrateShift(existingActive.id) };
-  }
-
-  await clearSoftDeletedTombstone(data.user_id, data.date);
-  const created = await Shift.create(data);
-  return { outcome: 'created', shift: await hydrateShift(created.id) };
 }
 
 function addDaysToIsoDate(dateStr, deltaDays) {
@@ -136,7 +149,7 @@ router.get('/types', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/types', authorize('admin', 'manager'), async (req, res, next) => {
+router.post('/types', authorize('admin', 'manager', 'tech'), async (req, res, next) => {
   try {
     const sanitized = sanitizeShiftTypePayload(req.body, { isCreate: true });
     if (sanitized.error) {
@@ -278,7 +291,7 @@ router.get('/', parseDateFilter, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/', async (req, res, next) => {
+router.post('/', authorize('admin', 'manager', 'tech'), async (req, res, next) => {
   try {
     const shiftType = req.body.shift_type_id ? await ShiftType.findByPk(req.body.shift_type_id) : null;
     if (!shiftType) {
@@ -294,7 +307,7 @@ router.post('/', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/bulk', async (req, res, next) => {
+router.post('/bulk', authorize('admin', 'manager'), async (req, res, next) => {
   try {
     const {
       user_id,
@@ -352,7 +365,7 @@ router.post('/bulk', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/copy-week', async (req, res, next) => {
+router.post('/copy-week', authorize('admin', 'manager'), async (req, res, next) => {
   try {
     const {
       source_from,
@@ -523,7 +536,7 @@ router.get('/handovers', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/handovers', async (req, res, next) => {
+router.post('/handovers', authorize('admin', 'manager', 'tech'), async (req, res, next) => {
   try {
     const shiftDate = isValidIsoDate(req.body?.shift_date)
       ? req.body.shift_date
@@ -550,7 +563,7 @@ router.post('/handovers', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.patch('/handovers/:id/acknowledge', validateIdParam, async (req, res, next) => {
+router.patch('/handovers/:id/acknowledge', authorize('admin', 'manager', 'tech'), validateIdParam, async (req, res, next) => {
   try {
     const row = await ShiftHandover.findByPk(req.params.id);
     if (!row) return res.status(404).json({ success: false, message: 'Handover entry not found' });
@@ -560,19 +573,25 @@ router.patch('/handovers/:id/acknowledge', validateIdParam, async (req, res, nex
   } catch (err) { next(err); }
 });
 
-router.put('/:id', validateIdParam, async (req, res, next) => {
+router.put('/:id', authorize('admin', 'manager', 'tech'), validateIdParam, async (req, res, next) => {
+  const transaction = await sequelize.transaction();
   try {
-    const shift = await Shift.findByPk(req.params.id);
-    if (!shift) return res.status(404).json({ success: false, message: 'Not found' });
+    const shift = await Shift.findByPk(req.params.id, { transaction, lock: transaction.LOCK.UPDATE });
+    if (!shift) {
+      await transaction.rollback();
+      return res.status(404).json({ success: false, message: 'Not found' });
+    }
 
     const targetTypeId = req.body.shift_type_id || shift.shift_type_id;
-    const shiftType = await ShiftType.findByPk(targetTypeId);
+    const shiftType = await ShiftType.findByPk(targetTypeId, { transaction });
     if (!shiftType) {
+      await transaction.rollback();
       return res.status(400).json({ success: false, message: 'Valid shift_type_id required' });
     }
 
     const sanitized = sanitizeShiftPayload(req.body, shiftType, { isCreate: false, existing: shift });
     if (sanitized.error) {
+      await transaction.rollback();
       return res.status(400).json({ success: false, message: sanitized.error });
     }
 
@@ -585,27 +604,34 @@ router.put('/:id', validateIdParam, async (req, res, next) => {
           date: data.date,
           id: { [Op.ne]: shift.id },
         },
+        transaction,
       });
       if (collision) {
+        await transaction.rollback();
         return res.status(409).json({
           success: false,
           message: `Employee already has a shift scheduled on ${data.date}`,
         });
       }
-      await clearSoftDeletedTombstone(data.user_id, data.date);
+      await clearSoftDeletedTombstone(data.user_id, data.date, transaction);
     }
 
     const lawCheck = await validateLaborLawForUser(data.user_id, shiftType, data.date, data, shift.id);
     if (!lawCheck.valid) {
+      await transaction.rollback();
       return res.status(400).json({ success: false, message: lawCheck.message });
     }
 
-    await shift.update(data);
+    await shift.update(data, { transaction });
+    await transaction.commit();
     res.json({ success: true, data: await hydrateShift(shift.id) });
-  } catch (err) { next(err); }
+  } catch (err) {
+    await transaction.rollback().catch(() => {});
+    next(err);
+  }
 });
 
-router.delete('/:id', validateIdParam, async (req, res, next) => {
+router.delete('/:id', authorize('admin', 'manager'), validateIdParam, async (req, res, next) => {
   try {
     const shift = await Shift.findByPk(req.params.id);
     if (!shift) return res.status(404).json({ success: false, message: 'Not found' });
@@ -614,10 +640,15 @@ router.delete('/:id', validateIdParam, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/:id/checkin', validateIdParam, async (req, res, next) => {
+router.post('/:id/checkin', authorize('admin', 'manager', 'tech'), validateIdParam, async (req, res, next) => {
   try {
     const shift = await Shift.findByPk(req.params.id);
     if (!shift) return res.status(404).json({ success: false, message: 'Not found' });
+    const roleName = req.user?.role?.name;
+    const isPrivileged = roleName === 'admin' || roleName === 'manager';
+    if (!isPrivileged && Number(shift.user_id) !== Number(req.user.id)) {
+      return res.status(403).json({ success: false, message: 'You can only check in to your own shift' });
+    }
     if (shift.entry_kind === 'LEAVE' || shift.status === 'ON_LEAVE') {
       return res.status(400).json({ success: false, message: 'Cannot check in to a leave entry' });
     }
@@ -626,10 +657,15 @@ router.post('/:id/checkin', validateIdParam, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/:id/checkout', validateIdParam, async (req, res, next) => {
+router.post('/:id/checkout', authorize('admin', 'manager', 'tech'), validateIdParam, async (req, res, next) => {
   try {
     const shift = await Shift.findByPk(req.params.id);
     if (!shift) return res.status(404).json({ success: false, message: 'Not found' });
+    const roleName = req.user?.role?.name;
+    const isPrivileged = roleName === 'admin' || roleName === 'manager';
+    if (!isPrivileged && Number(shift.user_id) !== Number(req.user.id)) {
+      return res.status(403).json({ success: false, message: 'You can only check out of your own shift' });
+    }
     if (shift.entry_kind === 'LEAVE' || shift.status === 'ON_LEAVE') {
       return res.status(400).json({ success: false, message: 'Cannot check out of a leave entry' });
     }

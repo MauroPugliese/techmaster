@@ -19,6 +19,7 @@ const {
   sequelize
 } = require('../models');
 const { parseDateFilter } = require('../middleware/error.middleware');
+const { authorize } = require('../middleware/auth.middleware');
 const { validateIdParam } = require('../middleware/validation.middleware');
 const {
   sanitizeMaintenancePayload,
@@ -143,11 +144,12 @@ async function syncMaintenancePartsAndStock({
   }
 
   const updateCostFields = { stock_deducted_snapshot: nextSnapshot };
+  const hadPartsCost = rec.parts_cost != null && Number(rec.parts_cost) > 0;
   if (partsList.length > 0 || rec.parts_cost != null) {
     updateCostFields.parts_cost = computedPartsCost;
   }
   const laborCost = Number(rec.labor_cost) || 0;
-  if (!explicitCostProvided && (computedPartsCost > 0 || laborCost > 0)) {
+  if (!explicitCostProvided && (computedPartsCost > 0 || laborCost > 0 || hadPartsCost)) {
     updateCostFields.cost = Number((computedPartsCost + laborCost).toFixed(2));
   }
   await rec.update(updateCostFields, { transaction });
@@ -266,6 +268,22 @@ router.get('/asset-categories', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// POST /maintenance/asset-categories — quick-create asset category from form dropdown
+router.post('/asset-categories', authorize('admin', 'manager', 'tech'), async (req, res, next) => {
+  try {
+    const name = String(req.body?.name || '').trim().slice(0, 100);
+    if (!name) return res.status(400).json({ success: false, message: 'Asset category name is required.' });
+    const existing = await AssetCategory.findOne({ where: { name } });
+    if (existing) return res.json({ success: true, data: existing });
+
+    const rawType = String(req.body?.type || 'HARDWARE').trim().toUpperCase();
+    const type = ['HARDWARE', 'SOFTWARE', 'NETWORK', 'OTHER'].includes(rawType) ? rawType : 'OTHER';
+    const description = String(req.body?.description || '').trim().slice(0, 500) || null;
+    const created = await AssetCategory.create({ name, type, description });
+    res.status(201).json({ success: true, data: created });
+  } catch (err) { next(err); }
+});
+
 // GET /maintenance/assets — list assets with optional search/status/category & open maintenance count
 router.get('/assets', async (req, res, next) => {
   try {
@@ -319,7 +337,7 @@ router.get('/assets', async (req, res, next) => {
 });
 
 // POST /maintenance/assets — create asset
-router.post('/assets', async (req, res, next) => {
+router.post('/assets', authorize('admin', 'manager', 'tech'), async (req, res, next) => {
   try {
     const { data, error } = sanitizeAssetPayload(req.body, { isCreate: true });
     if (error) return res.status(400).json({ success: false, message: error });
@@ -331,7 +349,7 @@ router.post('/assets', async (req, res, next) => {
 });
 
 // PUT /maintenance/assets/:id — update asset
-router.put('/assets/:id', validateIdParam, async (req, res, next) => {
+router.put('/assets/:id', authorize('admin', 'manager', 'tech'), validateIdParam, async (req, res, next) => {
   try {
     const asset = await Asset.findByPk(req.params.id);
     if (!asset) return res.status(404).json({ success: false, message: 'Asset not found' });
@@ -346,7 +364,7 @@ router.put('/assets/:id', validateIdParam, async (req, res, next) => {
 });
 
 // DELETE /maintenance/assets/:id — retire if referenced by records, otherwise delete
-router.delete('/assets/:id', validateIdParam, async (req, res, next) => {
+router.delete('/assets/:id', authorize('admin', 'manager'), validateIdParam, async (req, res, next) => {
   try {
     const asset = await Asset.findByPk(req.params.id);
     if (!asset) return res.status(404).json({ success: false, message: 'Asset not found' });
@@ -444,13 +462,22 @@ router.get('/summary', parseDateFilter, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// PATCH /maintenance/bulk — bulk status, priority, or soft-delete
-router.patch('/bulk', async (req, res, next) => {
+// PATCH /maintenance/bulk — bulk status, priority, or soft-delete (transactional with stock return & bay sync)
+router.patch('/bulk', authorize('admin', 'manager'), async (req, res, next) => {
+  const transaction = await sequelize.transaction();
   try {
     const { data, error } = sanitizeBulkMaintenanceAction(req.body);
-    if (error) return res.status(400).json({ success: false, message: error });
+    if (error) {
+      await transaction.rollback();
+      return res.status(400).json({ success: false, message: error });
+    }
 
     const { ids, action, value } = data;
+    const records = await MaintenanceRecord.findAll({
+      where: { id: { [Op.in]: ids } },
+      transaction,
+      lock: transaction.LOCK.UPDATE
+    });
     let affected = 0;
 
     if (action === 'status') {
@@ -459,21 +486,74 @@ router.patch('/bulk', async (req, res, next) => {
         updateFields.completed_date = new Date();
       }
       const [count] = await MaintenanceRecord.update(updateFields, {
-        where: { id: { [Op.in]: ids } }
+        where: { id: { [Op.in]: ids } },
+        transaction
       });
       affected = count;
+
+      for (const rec of records) {
+        if (!rec.simulator_id) continue;
+        const prevStatus = rec.status;
+        rec.status = value;
+        await syncSimulatorAndSubsystemHealth({
+          rec,
+          previousStatus: prevStatus,
+          previousSeverity: rec.severity,
+          userId: req.user.id,
+          transaction
+        });
+      }
     } else if (action === 'priority') {
       const [count] = await MaintenanceRecord.update(
         { priority: value },
-        { where: { id: { [Op.in]: ids } } }
+        { where: { id: { [Op.in]: ids } }, transaction }
       );
       affected = count;
     } else if (action === 'delete') {
-      affected = await MaintenanceRecord.destroy({ where: { id: { [Op.in]: ids } } });
+      for (const rec of records) {
+        const prevSnapshot = Array.isArray(rec.stock_deducted_snapshot) ? rec.stock_deducted_snapshot : [];
+        if (prevSnapshot.length > 0) {
+          for (const entry of prevSnapshot) {
+            const item = await InventoryItem.findByPk(entry.item_id, { transaction, lock: transaction.LOCK.UPDATE });
+            if (!item || !(Number(entry.quantity) > 0)) continue;
+            const qtyBefore = Number(item.quantity) || 0;
+            const qtyAfter = qtyBefore + Number(entry.quantity);
+            await StockMovement.create({
+              item_id: item.id,
+              user_id: req.user.id,
+              simulator_id: rec.simulator_id || null,
+              maintenance_record_id: rec.id,
+              type: 'RETURN',
+              quantity: Number(entry.quantity),
+              quantity_before: qtyBefore,
+              quantity_after: qtyAfter,
+              reference: `MAINT-#${rec.id}`,
+              reason: `Auto-returned upon bulk deletion of WO #${rec.id}: ${rec.title}`
+            }, { transaction });
+            await item.update({ quantity: qtyAfter }, { transaction });
+          }
+          await rec.update({ stock_deducted_snapshot: [] }, { transaction });
+        }
+      }
+      affected = await MaintenanceRecord.destroy({ where: { id: { [Op.in]: ids } }, transaction });
+      const touchedSims = new Set();
+      for (const rec of records) {
+        if (!rec.simulator_id || touchedSims.has(rec.simulator_id)) continue;
+        touchedSims.add(rec.simulator_id);
+        await syncSimulatorAndSubsystemHealth({
+          rec: { id: rec.id, simulator_id: rec.simulator_id, subsystem_code: rec.subsystem_code, status: 'COMPLETED', severity: 'MINOR' },
+          userId: req.user.id,
+          transaction
+        });
+      }
     }
 
+    await transaction.commit();
     res.json({ success: true, data: { affected, ids, action, value } });
-  } catch (err) { next(err); }
+  } catch (err) {
+    await transaction.rollback().catch(() => {});
+    next(err);
+  }
 });
 
 // ── Maintenance Work Orders CRUD ─────────────────────────────────────────────
@@ -553,6 +633,9 @@ router.get('/', parseDateFilter, async (req, res, next) => {
           { title: { [Op.like]: searchTerm } },
           { description: { [Op.like]: searchTerm } },
           { findings: { [Op.like]: searchTerm } },
+          { part_number: { [Op.like]: searchTerm } },
+          { broken_serial_number: { [Op.like]: searchTerm } },
+          { new_serial_number: { [Op.like]: searchTerm } },
           sqlWhere(col('asset.name'), { [Op.like]: searchTerm }),
           sqlWhere(col('asset.serial_number'), { [Op.like]: searchTerm }),
           sqlWhere(col('simulator.name'), { [Op.like]: searchTerm }),
@@ -582,7 +665,7 @@ router.get('/', parseDateFilter, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/', async (req, res, next) => {
+router.post('/', authorize('admin', 'manager', 'tech'), async (req, res, next) => {
   const shouldDeduct = req.body?.deduct_stock === true;
   const transaction = await sequelize.transaction();
 
@@ -625,7 +708,7 @@ router.post('/', async (req, res, next) => {
         type: 'SIMULATOR_AOG',
         title: `AOG Alert: ${healthSync.simulator.bay_code} (${healthSync.simulator.name})`,
         body: `Work Order #${rec.id} opened as AOG${rec.subsystem_code ? ` [${rec.subsystem_code}]` : ''}: ${rec.title}`,
-        link: '/maintenance',
+        link: `/maintenance?simulatorId=${healthSync.simulator.id}`,
         excludeUserId: req.user.id
       });
     }
@@ -635,7 +718,7 @@ router.post('/', async (req, res, next) => {
         type: 'AOG_SPARE_LOW',
         title: `AOG Critical Spare Low: ${spare.sku}`,
         body: `${spare.name} dropped to ${spare.quantity} units (reorder point: ${spare.reorder_point}) after WO #${rec.id}.`,
-        link: '/warehouse',
+        link: `/warehouse?tab=reorder&search=${encodeURIComponent(spare.sku || '')}`,
         excludeUserId: req.user.id
       });
     }
@@ -659,12 +742,12 @@ router.get('/:id', validateIdParam, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.put('/:id', validateIdParam, async (req, res, next) => {
+router.put('/:id', authorize('admin', 'manager', 'tech'), validateIdParam, async (req, res, next) => {
   const shouldDeduct = req.body?.deduct_stock === true;
   const transaction = await sequelize.transaction();
 
   try {
-    const rec = await MaintenanceRecord.findByPk(req.params.id, { transaction });
+    const rec = await MaintenanceRecord.findByPk(req.params.id, { transaction, lock: transaction.LOCK.UPDATE });
     if (!rec) {
       await transaction.rollback();
       return res.status(404).json({ success: false, message: 'Not found' });
@@ -704,7 +787,8 @@ router.put('/:id', validateIdParam, async (req, res, next) => {
     if (rec.status === 'COMPLETED' && previousStatus !== 'COMPLETED' && rec.next_scheduled) {
       const cycleWhere = {
         scheduled_date: rec.next_scheduled,
-        status: 'SCHEDULED'
+        status: 'SCHEDULED',
+        title: rec.title
       };
       if (rec.simulator_id) cycleWhere.simulator_id = rec.simulator_id;
       else cycleWhere.asset_id = rec.asset_id;
@@ -742,7 +826,7 @@ router.put('/:id', validateIdParam, async (req, res, next) => {
         type: 'SIMULATOR_AOG',
         title: `AOG Escalation: ${healthSync.simulator.bay_code} (${healthSync.simulator.name})`,
         body: `Work Order #${rec.id} escalated to AOG${rec.subsystem_code ? ` [${rec.subsystem_code}]` : ''}: ${rec.title}`,
-        link: '/maintenance',
+        link: `/maintenance?simulatorId=${healthSync.simulator.id}`,
         excludeUserId: req.user.id
       });
     }
@@ -752,7 +836,7 @@ router.put('/:id', validateIdParam, async (req, res, next) => {
         type: 'AOG_SPARE_LOW',
         title: `AOG Critical Spare Low: ${spare.sku}`,
         body: `${spare.name} dropped to ${spare.quantity} units (reorder point: ${spare.reorder_point}) after WO #${rec.id}.`,
-        link: '/warehouse',
+        link: `/warehouse?tab=reorder&search=${encodeURIComponent(spare.sku || '')}`,
         excludeUserId: req.user.id
       });
     }
@@ -768,10 +852,10 @@ router.put('/:id', validateIdParam, async (req, res, next) => {
   }
 });
 
-router.delete('/:id', validateIdParam, async (req, res, next) => {
+router.delete('/:id', authorize('admin', 'manager'), validateIdParam, async (req, res, next) => {
   const transaction = await sequelize.transaction();
   try {
-    const rec = await MaintenanceRecord.findByPk(req.params.id, { transaction });
+    const rec = await MaintenanceRecord.findByPk(req.params.id, { transaction, lock: transaction.LOCK.UPDATE });
     if (!rec) {
       await transaction.rollback();
       return res.status(404).json({ success: false, message: 'Not found' });

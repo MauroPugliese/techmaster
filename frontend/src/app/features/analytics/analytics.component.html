@@ -203,8 +203,8 @@
     <!-- Executive Overview Charts -->
     <app-executive-overview-charts
       [activityTrend]="overview?.activityTrend ?? null"
-      [opsByType]="overview?.opsByType ?? []"
-      [opsByStatus]="overview?.opsByStatus ?? []"
+      [opsByType]="overview?.opsByType ?? emptyArr"
+      [opsByStatus]="overview?.opsByStatus ?? emptyArr"
       [loading]="loading">
     </app-executive-overview-charts>
 
@@ -220,8 +220,8 @@
   <!-- ── Tab 3: Maintenance & Assets ─────────────────────────────────────── -->
   <app-maintenance-analytics
     *ngIf="activeTab === 'maintenance'"
-    [maintSummary]="overview?.maintSummary ?? []"
-    [topAssets]="overview?.topAssets ?? []"
+    [maintSummary]="overview?.maintSummary ?? emptyArr"
+    [topAssets]="overview?.topAssets ?? emptyArr"
     [uiPrefs]="uiPrefs"
     [loading]="loading">
   </app-maintenance-analytics>
@@ -230,8 +230,8 @@
   <app-workforce-warehouse-analytics
     *ngIf="activeTab === 'workforce'"
     [stockFlow]="overview?.stockFlow ?? null"
-    [stockByType]="overview?.stockByType ?? []"
-    [taskCadence]="overview?.taskCadence ?? []"
+    [stockByType]="overview?.stockByType ?? emptyArr"
+    [taskCadence]="overview?.taskCadence ?? emptyArr"
     [shiftCoverage]="overview?.shiftCoverage ?? null"
     [loading]="loading">
   </app-workforce-warehouse-analytics>

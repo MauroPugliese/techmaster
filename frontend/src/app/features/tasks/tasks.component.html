@@ -40,14 +40,7 @@
       </div>
 
       <app-export-menu endpoint="tasks" filename="Tasks"
-                       [params]="{
-                         status: statusFilter,
-                         priority: priorityFilter,
-                         interval_type: activeInterval,
-                         assigned_to: assigneeFilter,
-                         simulator_id: simulatorFilter,
-                         search: searchTerm
-                       }"></app-export-menu>
+                       [params]="exportParams"></app-export-menu>
 
       <button type="button" class="btn btn-primary" (click)="openDrawerForCreate()" title="New task (N)">
         <span class="btn-icon">add</span> New Task
@@ -63,8 +56,9 @@
              type="text"
              class="form-control"
              placeholder="Search tasks, assignee, tags… (/)"
-             [(ngModel)]="searchTerm">
-      <button *ngIf="searchTerm" class="clear" type="button" (click)="searchTerm=''" title="Clear search">
+             [(ngModel)]="searchTerm"
+             (ngModelChange)="onClientFilterChange()">
+      <button *ngIf="searchTerm" class="clear" type="button" (click)="clearSearch()" title="Clear search">
         <span class="mat-i">close</span>
       </button>
     </div>
@@ -79,6 +73,7 @@
 
     <app-dropdown class="form-control control-md"
                   [(ngModel)]="assigneeFilter"
+                  (ngModelChange)="onClientFilterChange()"
                   placeholder="All Assignees">
       <app-dropdown-option value="">All Assignees</app-dropdown-option>
       <app-dropdown-option value="unassigned">Unassigned</app-dropdown-option>
@@ -90,6 +85,7 @@
     <app-dropdown *ngIf="simulators.length > 0"
                   class="form-control control-md"
                   [(ngModel)]="simulatorFilter"
+                  (ngModelChange)="onClientFilterChange()"
                   placeholder="All Simulator Bays">
       <app-dropdown-option [ngValue]="''">All Simulator Bays</app-dropdown-option>
       <app-dropdown-option *ngFor="let s of simulators" [ngValue]="s.id">
@@ -97,7 +93,10 @@
       </app-dropdown-option>
     </app-dropdown>
 
-    <app-dropdown class="form-control control-sm" [(ngModel)]="priorityFilter" placeholder="All Priorities">
+    <app-dropdown class="form-control control-sm"
+                  [(ngModel)]="priorityFilter"
+                  (ngModelChange)="onClientFilterChange()"
+                  placeholder="All Priorities">
       <app-dropdown-option value="">All Priorities</app-dropdown-option>
       <app-dropdown-option value="CRITICAL">Critical</app-dropdown-option>
       <app-dropdown-option value="HIGH">High</app-dropdown-option>

@@ -4,7 +4,12 @@
     <p>Search, filter by role or department, inspect activity footprints, and manage credentials</p>
   </div>
   <div class="admin-head-actions">
-    <app-export-menu endpoint="users" filename="Users" label="Export" [includeDateRange]="false"></app-export-menu>
+    <app-export-menu endpoint="users"
+                     filename="Users"
+                     label="Export"
+                     [includeDateRange]="false"
+                     [showPeriodSelector]="false"
+                     [params]="exportParams"></app-export-menu>
     <button type="button" class="btn btn-primary" (click)="openUserModal()">
       <span class="btn-icon">person_add</span> New User
     </button>
@@ -209,7 +214,7 @@
 
 <!-- User Detail Modal -->
 <div class="modal-overlay" *ngIf="detailSummary" (click)="closeDetail()">
-  <div class="modal detail-modal" (click)="$event.stopPropagation()">
+  <div class="modal detail-modal" role="dialog" aria-modal="true" (click)="$event.stopPropagation()">
     <div class="modal-header">
       <div class="detail-header-title">
         <h2>{{detailSummary.user.first_name}} {{detailSummary.user.last_name}}</h2>
@@ -309,7 +314,7 @@
 
 <!-- Create / Edit User Modal -->
 <div class="modal-overlay" *ngIf="showUserModal" (click)="showUserModal = false">
-  <div class="modal" style="max-width:580px" (click)="$event.stopPropagation()">
+  <div class="modal" role="dialog" aria-modal="true" style="max-width:580px" (click)="$event.stopPropagation()">
     <div class="modal-header">
       <h3>{{editingUser ? 'Edit User' : 'New User'}}</h3>
       <button type="button" class="btn btn-ghost btn-icon-only" (click)="showUserModal = false">
@@ -351,6 +356,7 @@
           <app-dropdown class="form-control"
                         [(ngModel)]="userForm.role_id"
                         [disabled]="editingUser && isSelf(editingUser)"
+                        [searchable]="true"
                         placeholder="— Select role —">
             <app-dropdown-option [ngValue]="null">— Select role —</app-dropdown-option>
             <app-dropdown-option *ngFor="let r of roles" [ngValue]="r.id">{{r.name | titlecase}}</app-dropdown-option>
@@ -358,7 +364,17 @@
         </div>
         <div class="form-group">
           <label class="form-label">Department</label>
-          <input class="form-control" [(ngModel)]="userForm.department" placeholder="e.g. Operations">
+          <app-dropdown class="form-control"
+                        [(ngModel)]="userForm.department"
+                        [searchable]="true"
+                        [creatable]="true"
+                        storageKey="user_departments"
+                        createLabel="Create new department"
+                        createPlaceholder="e.g. Simulator Engineering"
+                        placeholder="— Select or create department —">
+            <app-dropdown-option value="">— Unassigned —</app-dropdown-option>
+            <app-dropdown-option *ngFor="let d of departments" [value]="d">{{d}}</app-dropdown-option>
+          </app-dropdown>
         </div>
       </div>
 
@@ -432,7 +448,7 @@
 
 <!-- Reset Password Modal -->
 <div class="modal-overlay" *ngIf="showResetModal" (click)="showResetModal = false">
-  <div class="modal" style="max-width:440px" (click)="$event.stopPropagation()">
+  <div class="modal" role="dialog" aria-modal="true" style="max-width:440px" (click)="$event.stopPropagation()">
     <div class="modal-header">
       <h3>Reset Password — {{resetTargetUser?.username}}</h3>
       <button type="button" class="btn btn-ghost btn-icon-only" (click)="showResetModal = false">

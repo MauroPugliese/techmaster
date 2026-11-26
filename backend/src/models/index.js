@@ -76,6 +76,8 @@ const SimulatorSubsystem = sequelize.define('SimulatorSubsystem', {
   operating_hours:     { type: DataTypes.DECIMAL(10,1), defaultValue: 0 },
   last_calibrated_at:  { type: DataTypes.DATEONLY },
   next_calibration_due:{ type: DataTypes.DATEONLY },
+  last_checked_at:     { type: DataTypes.DATE },
+  updated_by:          { type: DataTypes.INTEGER.UNSIGNED },
   notes:               { type: DataTypes.TEXT }
 }, { tableName: 'simulator_subsystems' });
 
@@ -228,6 +230,9 @@ const MaintenanceRecord = sequelize.define('MaintenanceRecord', {
   parts_cost:              { type: DataTypes.DECIMAL(10,2) },
   labor_cost:              { type: DataTypes.DECIMAL(10,2) },
   parts_used:              { type: DataTypes.JSON },
+  part_number:             { type: DataTypes.STRING(100) },
+  broken_serial_number:    { type: DataTypes.STRING(100) },
+  new_serial_number:       { type: DataTypes.STRING(100) },
   stock_deducted_snapshot: { type: DataTypes.JSON },
   mel_category:            { type: DataTypes.ENUM('NONE','CAT_A','CAT_B','CAT_C','CAT_D'), defaultValue: 'NONE' },
   mel_expiry_date:         { type: DataTypes.DATEONLY },

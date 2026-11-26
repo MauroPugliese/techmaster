@@ -635,7 +635,7 @@ router.get('/operations-metrics', parseDateFilter, async (req, res, next) => {
         SUM(CASE WHEN severity = 'AOG' THEN 1 ELSE 0 END) AS aog_count,
         COALESCE(SUM(COALESCE(lost_training_hours, 0)), 0) AS lost_hours
       FROM maintenance_records
-      WHERE deleted_at IS NULL AND (simulator_id IS NOT NULL OR is_snag = 1)
+      WHERE deleted_at IS NULL AND (simulator_id IS NOT NULL OR is_snag = 1) ${maintRelCond}
       GROUP BY COALESCE(subsystem_code, 'GENERAL')
       ORDER BY count DESC
       LIMIT 8
@@ -656,7 +656,7 @@ router.get('/operations-metrics', parseDateFilter, async (req, res, next) => {
 
     const [[simScorecardRows], [snagSubRows], [custRows], [shiftEntriesRows], [maintRelRows]] = await Promise.all([
       sequelize.query(simScorecardQuery, { replacements }).catch(() => [[]]),
-      sequelize.query(snagsBySubsystemQuery).catch(() => [[]]),
+      sequelize.query(snagsBySubsystemQuery, { replacements }).catch(() => [[]]),
       sequelize.query(hoursByCustomerQuery, { replacements }).catch(() => [[]]),
       sequelize.query(shiftEntriesQuery, { replacements }).catch(() => [[]]),
       sequelize.query(maintReliabilityQuery, { replacements }).catch(() => [[]])

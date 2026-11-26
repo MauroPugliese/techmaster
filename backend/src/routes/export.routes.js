@@ -11,19 +11,46 @@
 
 const router = require('express').Router();
 const { authenticate } = require('../middleware/auth.middleware');
+const { isSectionHiddenForUser, getHiddenSectionKeysForUser } = require('../middleware/section-access.middleware');
 const { render } = require('../exports/core/export.service');
 const { streamDailyTemplateExport } = require('../exports/core/planned-daily-template.service');
 const { fullName, normalizeFilters, resolveReportPeriod } = require('../exports/core/helpers');
 const { COMPANY } = require('../exports/core/branding');
 const { MODULES, wiki, simulators } = require('../exports/modules');
 
-/** Ensure the current user may export the given module. Sends 403 if not. */
-const ensureRole = (mod, req, res) => {
-  if (!mod.roles || !mod.roles.length) return true;
+const EXPORT_SECTION_MAP = {
+  dashboard: 'dashboard',
+  simulators: 'simulators',
+  'daily-station-ops': 'simulators',
+  operations: 'operations',
+  'operations-analytics': 'operations_analytics',
+  maintenance: 'maintenance',
+  'planned-maintenance': 'maintenance',
+  warehouse: 'warehouse',
+  shifts: 'shifts',
+  tasks: 'tasks',
+  wiki: 'wiki',
+  analytics: 'analytics',
+  users: 'admin',
+  audit: 'admin'
+};
+
+/** Ensure the current user may export the given module (RBAC + section access). */
+const ensureExportAuthorized = async (mod, req, res) => {
   const roleName = req.user?.role?.name;
-  if (roleName === 'admin' || mod.roles.includes(roleName)) return true;
-  res.status(403).json({ success: false, message: 'Insufficient permissions for this export' });
-  return false;
+  if (mod.roles && mod.roles.length && roleName !== 'admin' && !mod.roles.includes(roleName)) {
+    res.status(403).json({ success: false, message: 'Insufficient permissions for this export' });
+    return false;
+  }
+  const sectionKey = EXPORT_SECTION_MAP[mod.key];
+  if (sectionKey) {
+    const hidden = await isSectionHiddenForUser(req.user, sectionKey);
+    if (hidden) {
+      res.status(403).json({ success: false, message: 'This section is hidden for the current user.' });
+      return false;
+    }
+  }
+  return true;
 };
 
 /** Compose a full ReportSpec v4 from a module build result and stream it. */
@@ -76,7 +103,7 @@ const composeAndRender = async (mod, built, req, res) => {
 // ── Single wiki article (full Markdown content) ──────────────────────────────
 router.get('/wiki/:id', authenticate, async (req, res, next) => {
   try {
-    if (!ensureRole(wiki, req, res)) return undefined;
+    if (!(await ensureExportAuthorized(wiki, req, res))) return undefined;
     const built = await wiki.buildArticle(req);
     return await composeAndRender(wiki, built, req, res);
   } catch (err) { return next(err); }
@@ -85,7 +112,7 @@ router.get('/wiki/:id', authenticate, async (req, res, next) => {
 // ── Single Simulator / Test Place / IOS Station Dossier & Annual MNT Records ─
 router.get('/simulators/:id', authenticate, async (req, res, next) => {
   try {
-    if (!ensureRole(simulators, req, res)) return undefined;
+    if (!(await ensureExportAuthorized(simulators, req, res))) return undefined;
     const built = await simulators.buildSingleStation(req);
     return await composeAndRender(simulators, built, req, res);
   } catch (err) { return next(err); }
@@ -95,7 +122,7 @@ router.get('/simulators/:id', authenticate, async (req, res, next) => {
 router.get('/shift-report', authenticate, async (req, res, next) => {
   try {
     const mod = MODULES.shifts;
-    if (!ensureRole(mod, req, res)) return undefined;
+    if (!(await ensureExportAuthorized(mod, req, res))) return undefined;
     return await composeAndRender(mod, await mod.build(req), req, res);
   } catch (err) { return next(err); }
 });
@@ -103,7 +130,7 @@ router.get('/shift-report', authenticate, async (req, res, next) => {
 router.get('/planned-maintenance-report', authenticate, async (req, res, next) => {
   try {
     const mod = MODULES['planned-maintenance'];
-    if (!ensureRole(mod, req, res)) return undefined;
+    if (!(await ensureExportAuthorized(mod, req, res))) return undefined;
     return await composeAndRender(mod, await mod.build(req), req, res);
   } catch (err) { return next(err); }
 });
@@ -112,26 +139,34 @@ router.get('/planned-maintenance-report', authenticate, async (req, res, next) =
 router.get('/planned-maintenance-daily/:date/:template', authenticate, async (req, res, next) => {
   try {
     const mod = MODULES['planned-maintenance'];
-    if (!ensureRole(mod, req, res)) return undefined;
+    if (!(await ensureExportAuthorized(mod, req, res))) return undefined;
     return await streamDailyTemplateExport({ req, res });
   } catch (err) { return next(err); }
 });
 
 // ── Discovery: list of available export modules ──────────────────────────────
-router.get('/', authenticate, (req, res) => {
-  const roleName = req.user?.role?.name;
-  const list = Object.values(MODULES).map((m) => ({
-    key: m.key,
-    docCode: m.docCode,
-    theme: m.theme || m.key,
-    title: m.title,
-    subtitle: m.subtitle,
-    category: m.category,
-    formats: ['xlsx', 'pdf', 'docx', 'pptx'],
-    restricted: !!(m.roles && m.roles.length),
-    allowed: !m.roles || !m.roles.length || roleName === 'admin' || m.roles.includes(roleName)
-  }));
-  res.json({ success: true, data: list });
+router.get('/', authenticate, async (req, res, next) => {
+  try {
+    const roleName = req.user?.role?.name;
+    const hiddenSections = await getHiddenSectionKeysForUser(req.user);
+    const list = Object.values(MODULES).map((m) => {
+      const roleAllowed = !m.roles || !m.roles.length || roleName === 'admin' || m.roles.includes(roleName);
+      const secKey = EXPORT_SECTION_MAP[m.key];
+      const sectionAllowed = !secKey || !hiddenSections.has(secKey);
+      return {
+        key: m.key,
+        docCode: m.docCode,
+        theme: m.theme || m.key,
+        title: m.title,
+        subtitle: m.subtitle,
+        category: m.category,
+        formats: ['xlsx', 'pdf', 'docx', 'pptx'],
+        restricted: !!(m.roles && m.roles.length),
+        allowed: roleAllowed && sectionAllowed
+      };
+    });
+    res.json({ success: true, data: list });
+  } catch (err) { next(err); }
 });
 
 // ── Generic module export ────────────────────────────────────────────────────
@@ -141,7 +176,7 @@ router.get('/:module', authenticate, async (req, res, next) => {
     if (!mod) {
       return res.status(404).json({ success: false, message: `Unknown export module: ${req.params.module}` });
     }
-    if (!ensureRole(mod, req, res)) return undefined;
+    if (!(await ensureExportAuthorized(mod, req, res))) return undefined;
     return await composeAndRender(mod, await mod.build(req), req, res);
   } catch (err) { return next(err); }
 });

@@ -108,6 +108,7 @@ async function loadKindSnapshot(dateStr, stationKind) {
   let na = 0;
   let totalMinutes = 0;
   const naAlerts = [];
+  const effectiveStatusByStation = new Map(stationPlain.map(st => [Number(st.id), 'READY']));
 
   const hydratedShifts = effectiveShifts.map((sh, shiftIdx) => {
     const entryBySim = new Map((sh.entries || []).map(e => [Number(e.simulator_id), e]));
@@ -132,10 +133,11 @@ async function loadKindSnapshot(dateStr, stationKind) {
       else if (statusKey === 'NA') shiftNa += 1;
       else shiftReady += 1;
 
-      if (shiftIdx === 0) {
-        if (statusKey === 'IN_USE') inUse += 1;
-        else if (statusKey === 'NA') na += 1;
-        else ready += 1;
+      const sid = Number(st.id);
+      if (statusKey === 'NA' || statusKey === 'IN_USE') {
+        effectiveStatusByStation.set(sid, statusKey);
+      } else if (statusKey === 'READY' && effectiveStatusByStation.get(sid) === 'NA') {
+        effectiveStatusByStation.set(sid, 'READY');
       }
 
       if (statusKey === 'NA') {
@@ -175,6 +177,12 @@ async function loadKindSnapshot(dateStr, stationKind) {
     };
   });
 
+  for (const st of effectiveStatusByStation.values()) {
+    if (st === 'IN_USE') inUse += 1;
+    else if (st === 'NA') na += 1;
+    else ready += 1;
+  }
+
   return {
     stationKind,
     label: kindTitle(stationKind),
@@ -190,16 +198,22 @@ async function loadKindSnapshot(dateStr, stationKind) {
 }
 
 async function loadRangeRollup(fromYmd, toYmd, kinds) {
+  const logWhere = { station_kind: { [Op.in]: kinds } };
+  if (fromYmd && toYmd) {
+    logWhere.log_date = { [Op.between]: [fromYmd, toYmd] };
+  } else if (fromYmd) {
+    logWhere.log_date = { [Op.gte]: fromYmd };
+  } else if (toYmd) {
+    logWhere.log_date = { [Op.lte]: toYmd };
+  }
+
   const [stations, logs] = await Promise.all([
     Simulator.findAll({
       where: { station_kind: { [Op.in]: kinds } },
       order: [['station_kind', 'ASC'], ['sort_order', 'ASC'], ['bay_code', 'ASC'], ['id', 'ASC']]
     }),
     SimulatorDailyLog.findAll({
-      where: {
-        station_kind: { [Op.in]: kinds },
-        log_date: { [Op.between]: [fromYmd, toYmd] }
-      },
+      where: logWhere,
       include: [
         { model: User, as: 'updater', attributes: ['id', 'first_name', 'last_name', 'username'], required: false },
         {
@@ -354,12 +368,13 @@ module.exports = {
       : [VALID_STATION_KINDS.has(rawKind) ? rawKind : 'TEST_PLACE'];
     const scopeLabel = rawKind === 'ALL' ? 'Test Places & IOS Consoles' : kindTitle(kinds[0]);
 
-    // Multi-day Weekly / Monthly / Custom Range rollup mode
-    if (range.isMultiDay || (range.periodType && ['weekly', 'monthly', 'custom'].includes(range.periodType) && range.fromYmd && range.toYmd)) {
-      const fromYmd = range.fromYmd;
-      const toYmd = range.toYmd;
+    // Multi-day Weekly / Monthly / Custom Range rollup mode (including open-ended ranges)
+    if (range.isMultiDay || (range.periodType && ['weekly', 'monthly', 'custom'].includes(range.periodType) && (range.fromYmd || range.toYmd))) {
+      const fromYmd = range.fromYmd || null;
+      const toYmd = range.toYmd || null;
       const rollup = await loadRangeRollup(fromYmd, toYmd, kinds);
       const periodHeading = range.periodLabel || 'Period Report';
+      const rangeSpanTag = `${fromYmd || 'start'} to ${toYmd || 'present'}`;
 
       return {
         moduleKey: 'daily-station-ops',
@@ -431,7 +446,7 @@ module.exports = {
                 type: 'table',
                 showHeading: false,
                 table: {
-                  name: `${scopeLabel} Period Utilization (${fromYmd} to ${toYmd})`,
+                  name: `${scopeLabel} Period Utilization (${rangeSpanTag})`,
                   columns: [
                     { header: 'Station', key: 'station', width: 24, type: 'mono' },
                     { header: 'Kind', key: 'kind', width: 8, type: 'mono', align: 'center', printHidden: true },
@@ -542,7 +557,7 @@ module.exports = {
       for (const sh of snap.shifts) {
         const shiftHours = (sh.shiftMinutes / 60).toFixed(1);
         pages.push({
-          eyebrow: `SECTION 0${sectionIdx} · ${snap.label.toUpperCase()} — ${sh.shift_name}`,
+          eyebrow: `SECTION ${String(sectionIdx).padStart(2, '0')} · ${snap.label.toUpperCase()} — ${sh.shift_name}`,
           title: `${snap.label} — ${sh.shift_name} Utilization & Handover`,
           subtitle: `Pre-Flight: ${sh.pre_flight_test_time} · Test Leader: ${sh.lead_name} · ${sh.signed_off_label}`,
           blocks: [

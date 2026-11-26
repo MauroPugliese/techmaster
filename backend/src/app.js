@@ -29,6 +29,7 @@ const simulatorRoutes         = require('./routes/simulator.routes');
 
 const { errorHandler } = require('./middleware/error.middleware');
 const { authenticate, authorize } = require('./middleware/auth.middleware');
+const { requireSectionAccess } = require('./middleware/section-access.middleware');
 const { auditLog } = require('./middleware/audit.middleware');
 
 const app = express();
@@ -90,23 +91,25 @@ app.use(auditLog);
 
 // ── Public Routes ─────────────────────────────────────────────────────────────
 app.post('/api/auth/login', authLimiter);
+app.post('/api/auth/register', authLimiter);
+app.post('/api/auth/refresh', authLimiter);
 app.use('/api/auth', authRoutes);
 
 // ── Protected Routes ──────────────────────────────────────────────────────────
 app.use('/api/users',       authenticate, userRoutes);
-app.use('/api/dashboard',   authenticate, dashboardRoutes);
-app.use('/api/simulators',  authenticate, simulatorRoutes);
-app.use('/api/operations',  authenticate, operationRoutes);
-app.use('/api/maintenance/planned', authenticate, plannedMaintenanceRoutes);
-app.use('/api/maintenance', authenticate, maintenanceRoutes);
-app.use('/api/warehouse',   authenticate, warehouseRoutes);
-app.use('/api/shifts',      authenticate, shiftRoutes);
-app.use('/api/tasks',       authenticate, taskRoutes);
-app.use('/api/wiki',        authenticate, wikiRoutes);
-app.use('/api/analytics',   authenticate, analyticsRoutes);
+app.use('/api/dashboard',   authenticate, requireSectionAccess('dashboard'), dashboardRoutes);
+app.use('/api/simulators',  authenticate, requireSectionAccess('simulators'), simulatorRoutes);
+app.use('/api/operations',  authenticate, requireSectionAccess('operations'), operationRoutes);
+app.use('/api/maintenance/planned', authenticate, requireSectionAccess('maintenance'), plannedMaintenanceRoutes);
+app.use('/api/maintenance', authenticate, requireSectionAccess('maintenance'), maintenanceRoutes);
+app.use('/api/warehouse',   authenticate, requireSectionAccess('warehouse'), warehouseRoutes);
+app.use('/api/shifts',      authenticate, requireSectionAccess('shifts'), shiftRoutes);
+app.use('/api/tasks',       authenticate, requireSectionAccess('tasks'), taskRoutes);
+app.use('/api/wiki',        authenticate, requireSectionAccess('wiki'), wikiRoutes);
+app.use('/api/analytics',   authenticate, requireSectionAccess('analytics'), analyticsRoutes);
 app.use('/api/notifications', authenticate, notificationRoutes);
-app.use('/api/export',        exportRoutes);
-app.use('/api/admin', authenticate, authorize('admin'), adminRoutes);
+app.use('/api/export',        authenticate, exportRoutes);
+app.use('/api/admin', authenticate, authorize('admin'), requireSectionAccess('admin'), adminRoutes);
 app.use('/api/ui', authenticate, uiRoutes);
 app.use('/api/search', authenticate, searchRoutes);
 

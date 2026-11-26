@@ -10,6 +10,7 @@ const {
   WarehouseLocation,
   Simulator,
   User,
+  Role,
   sequelize,
   Notification,
   Task
@@ -21,7 +22,7 @@ const {
   validateStockMovement,
   validateIdParam
 } = require('../middleware/validation.middleware');
-const { authenticate } = require('../middleware/auth.middleware');
+const { authenticate, authorize } = require('../middleware/auth.middleware');
 const {
   computeReorderMetrics,
   sanitizeInventoryPayload,
@@ -47,6 +48,22 @@ router.get('/categories', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// POST /warehouse/categories — quick-create warehouse category from form dropdown
+router.post('/categories', authorize('admin', 'manager', 'tech'), async (req, res, next) => {
+  try {
+    const name = String(req.body?.name || '').trim().slice(0, 100);
+    if (!name) return res.status(400).json({ success: false, message: 'Category name is required.' });
+    const existing = await ItemCategory.findOne({ where: { name } });
+    if (existing) return res.json({ success: true, data: existing });
+
+    const colorRaw = String(req.body?.color || '#1565C0').trim();
+    const color = /^#[0-9A-Fa-f]{6}$/.test(colorRaw) ? colorRaw : '#1565C0';
+    const description = String(req.body?.description || '').trim().slice(0, 500) || null;
+    const created = await ItemCategory.create({ name, color, description });
+    res.status(201).json({ success: true, data: created });
+  } catch (err) { next(err); }
+});
+
 // GET /warehouse/locations — active (or all) warehouse storage locations
 router.get('/locations', async (req, res, next) => {
   try {
@@ -57,6 +74,30 @@ router.get('/locations', async (req, res, next) => {
       order: [['name', 'ASC']]
     });
     res.json({ success: true, data: locations });
+  } catch (err) { next(err); }
+});
+
+// POST /warehouse/locations — quick-create storage location from form dropdown
+router.post('/locations', authorize('admin', 'manager', 'tech'), async (req, res, next) => {
+  try {
+    const name = String(req.body?.name || '').trim().slice(0, 100);
+    if (!name) return res.status(400).json({ success: false, message: 'Location name is required.' });
+
+    const rawCode = String(req.body?.code || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+    const baseCode = (rawCode || name.toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '') || 'LOC').slice(0, 16);
+
+    const byName = await WarehouseLocation.findOne({ where: { name } });
+    if (byName) return res.json({ success: true, data: byName });
+
+    let code = baseCode;
+    let suffix = 1;
+    while (await WarehouseLocation.findOne({ where: { code } })) {
+      code = `${baseCode.slice(0, 14)}-${suffix++}`;
+    }
+
+    const description = String(req.body?.description || '').trim().slice(0, 500) || null;
+    const created = await WarehouseLocation.create({ name, code, description, is_active: true });
+    res.status(201).json({ success: true, data: created });
   } catch (err) { next(err); }
 });
 
@@ -277,7 +318,7 @@ router.get('/reorder', async (req, res, next) => {
 });
 
 // PATCH /warehouse/bulk — bulk category/location assignment or deactivation
-router.patch('/bulk', authenticate, async (req, res, next) => {
+router.patch('/bulk', authenticate, authorize('admin', 'manager'), async (req, res, next) => {
   try {
     const { error, data } = sanitizeBulkWarehouseAction(req.body);
     if (error) {
@@ -408,7 +449,7 @@ router.get('/', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/', authenticate, validateInventoryItem, async (req, res, next) => {
+router.post('/', authenticate, authorize('admin', 'manager', 'tech'), validateInventoryItem, async (req, res, next) => {
   try {
     const { data, error } = sanitizeInventoryPayload(req.body, { isCreate: true });
     if (error) return res.status(400).json({ success: false, message: error });
@@ -424,13 +465,15 @@ router.post('/', authenticate, validateInventoryItem, async (req, res, next) => 
   } catch (err) { next(err); }
 });
 
-router.put('/:id', authenticate, validateIdParam, validateInventoryItem, async (req, res, next) => {
+router.put('/:id', authenticate, authorize('admin', 'manager', 'tech'), validateIdParam, validateInventoryItem, async (req, res, next) => {
   try {
     const item = await InventoryItem.findByPk(req.params.id);
     if (!item) return res.status(404).json({ success: false, message: 'Not found' });
 
     const { data, error } = sanitizeInventoryPayload(req.body, { isCreate: false });
     if (error) return res.status(400).json({ success: false, message: error });
+    // Prevent bypassing stock movement audit ledger via direct PUT quantity edits
+    delete data.quantity;
 
     if (data.location_id) {
       const loc = await WarehouseLocation.findByPk(data.location_id);
@@ -443,7 +486,7 @@ router.put('/:id', authenticate, validateIdParam, validateInventoryItem, async (
   } catch (err) { next(err); }
 });
 
-router.delete('/:id', authenticate, validateIdParam, async (req, res, next) => {
+router.delete('/:id', authenticate, authorize('admin', 'manager'), validateIdParam, async (req, res, next) => {
   try {
     const item = await InventoryItem.findByPk(req.params.id);
     if (!item) return res.status(404).json({ success: false, message: 'Item not found' });
@@ -453,13 +496,14 @@ router.delete('/:id', authenticate, validateIdParam, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/:id/movement', authenticate, validateIdParam, validateStockMovement, async (req, res, next) => {
+router.post('/:id/movement', authenticate, authorize('admin', 'manager', 'tech'), validateIdParam, validateStockMovement, async (req, res, next) => {
   const transaction = await sequelize.transaction();
 
   try {
     const item = await InventoryItem.findByPk(req.params.id, {
       include: [{ model: WarehouseLocation, as: 'location', attributes: ['id', 'name', 'code'] }],
-      transaction
+      transaction,
+      lock: transaction.LOCK.UPDATE
     });
     if (!item) {
       await transaction.rollback();
@@ -528,66 +572,64 @@ router.post('/:id/movement', authenticate, validateIdParam, validateStockMovemen
 
     await transaction.commit();
 
-    // Automated Low Stock Warning
+    // Automated Low Stock & AOG Warning (persisted first so emitted socket rows carry real id & created_at)
     const minStock = Number(item.min_stock) || 0;
     const reorderPoint = Number(item.reorder_point) || 0;
     const crossedMin = minStock > 0 && transition.qty_after < minStock && transition.qty_before >= minStock;
     const crossedReorder = reorderPoint > 0 && transition.qty_after <= reorderPoint && transition.qty_before > reorderPoint;
+    const isAogAlert = Boolean(item.aog_critical) && (crossedMin || crossedReorder || transition.qty_after <= 0);
 
-    if (crossedMin || crossedReorder) {
+    if (crossedMin || crossedReorder || isAogAlert) {
       try {
         const staffToNotify = await User.findAll({
-          where: { role_id: { [Op.in]: [1, 2] } }
+          where: { is_active: true },
+          include: [{ model: Role, as: 'role', where: { name: { [Op.in]: ['admin', 'manager'] } }, required: true }],
+          attributes: ['id']
         });
+        const recipientIds = new Set(staffToNotify.map(u => Number(u.id)));
+        if (req.user?.id) recipientIds.add(Number(req.user.id));
+
         const thresholdLimit = Math.max(minStock, reorderPoint);
-        const notifications = staffToNotify.map(u => ({
-          user_id: u.id,
-          type: 'LOW_STOCK',
-          title: `Low Stock Warning: ${item.name}`,
-          body: `Stock for item "${item.name}" (SKU: ${item.sku}) is now at ${transition.qty_after}, at/below threshold (${thresholdLimit}).`,
-          link: `/warehouse?search=${encodeURIComponent(item.sku)}`
+        const notifType = isAogAlert ? 'AOG_SPARE_LOW' : 'LOW_STOCK';
+        const notifTitle = isAogAlert
+          ? `AOG Critical Spare Alert: ${item.sku}`
+          : `Low Stock Warning: ${item.name}`;
+        const notifBody = isAogAlert
+          ? `"${item.name}" is at ${transition.qty_after} ${item.unit || 'pcs'} (threshold ${thresholdLimit}). Expedite procurement.`
+          : `Stock for item "${item.name}" (SKU: ${item.sku}) is now at ${transition.qty_after}, at/below threshold (${thresholdLimit}).`;
+        const notifLink = `/warehouse?search=${encodeURIComponent(item.sku)}`;
+
+        const rowsToCreate = [...recipientIds].map(uid => ({
+          user_id: uid,
+          type: notifType,
+          title: notifTitle,
+          body: notifBody,
+          link: notifLink
         }));
 
-        if (!staffToNotify.some(u => u.id === req.user.id)) {
-          notifications.push({
-            user_id: req.user.id,
-            type: 'LOW_STOCK',
-            title: `Low Stock Warning: ${item.name}`,
-            body: `Stock for item "${item.name}" (SKU: ${item.sku}) is now at ${transition.qty_after}, at/below threshold (${thresholdLimit}).`,
-            link: `/warehouse?search=${encodeURIComponent(item.sku)}`
+        const createdNotifications = await Notification.bulkCreate(rowsToCreate, { returning: true });
+
+        if (crossedMin || crossedReorder) {
+          await Task.create({
+            created_by: req.user.id,
+            title: `Restock Request: ${item.name}`,
+            description: `Automated restock request: Inventory item "${item.name}" (SKU: ${item.sku}) requires replenishment.\n\nCurrent Stock: ${transition.qty_after} ${item.unit || 'pcs'}\nMin Stock: ${minStock}\nReorder Point: ${reorderPoint}`,
+            status: 'TODO',
+            priority: transition.qty_after <= 0 ? 'CRITICAL' : 'HIGH',
+            due_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
           });
         }
-        await Notification.bulkCreate(notifications);
 
-        await Task.create({
-          created_by: req.user.id,
-          category_id: 1,
-          title: `Restock Request: ${item.name}`,
-          description: `Automated restock request: Inventory item "${item.name}" (SKU: ${item.sku}) requires replenishment.\n\nCurrent Stock: ${transition.qty_after} ${item.unit || 'pcs'}\nMin Stock: ${minStock}\nReorder Point: ${reorderPoint}`,
-          status: 'TODO',
-          priority: transition.qty_after <= 0 ? 'CRITICAL' : 'HIGH',
-          due_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
-        });
-
-        if (req.app.get('io')) {
-          notifications.forEach(n => {
-            req.app.get('io').to(`user_${n.user_id}`).emit('notification', n);
+        const io = req.app.get('io');
+        if (io) {
+          createdNotifications.forEach(n => {
+            const plain = typeof n.get === 'function' ? n.get({ plain: true }) : n;
+            io.to(`user_${plain.user_id}`).emit('notification', plain);
           });
         }
       } catch (errCheck) {
         console.error('Failed to run automated low-stock warnings:', errCheck);
       }
-    }
-
-    if (item.aog_critical && (crossedMin || crossedReorder || transition.qty_after <= 0)) {
-      await broadcastOperationalAlert({
-        req,
-        type: 'AOG_SPARE_LOW',
-        title: `AOG Critical Spare Alert: ${item.sku}`,
-        body: `"${item.name}" is at ${transition.qty_after} ${item.unit || 'pcs'} (threshold ${Math.max(minStock, reorderPoint)}). Expedite procurement.`,
-        link: `/warehouse?search=${encodeURIComponent(item.sku)}`,
-        excludeUserId: req.user.id
-      });
     }
 
     res.status(201).json({
@@ -606,7 +648,7 @@ router.post('/:id/movement', authenticate, validateIdParam, validateStockMovemen
 });
 
 // POST /warehouse/:id/restock-task — create an operational restock task for an item
-router.post('/:id/restock-task', authenticate, validateIdParam, async (req, res, next) => {
+router.post('/:id/restock-task', authenticate, authorize('admin', 'manager', 'tech'), validateIdParam, async (req, res, next) => {
   try {
     const item = await InventoryItem.findByPk(req.params.id, { include: ITEM_INCLUDES });
     if (!item || !item.is_active) {
@@ -620,7 +662,6 @@ router.post('/:id/restock-task', authenticate, validateIdParam, async (req, res,
 
     const task = await Task.create({
       created_by: req.user.id,
-      category_id: 1,
       title: `Restock Request: ${plain.name} (${plain.sku})`,
       description: [
         `Replenishment order requested from Warehouse Reorder Planner.`,

@@ -5,12 +5,15 @@ import {
   EventEmitter,
   Input,
   OnChanges,
+  OnDestroy,
   Output,
   SimpleChanges
 } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { ApiService, ConfirmService, ToastService } from '../../../core/services/services';
 import {
   QtgCategory,
@@ -44,7 +47,10 @@ export type SimulatorWorkspaceTab = 'overview' | 'subsystems' | 'qtg' | 'mainten
   styleUrls: ['./simulator-workspace.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class SimulatorWorkspaceComponent implements OnChanges {
+export class SimulatorWorkspaceComponent implements OnChanges, OnDestroy {
+  private readonly destroy$ = new Subject<void>();
+  private dossierReqSeq = 0;
+
   @Input() simulatorId: number | null = null;
   @Input() fleet: Simulator[] = [];
   @Input() initialTab: SimulatorWorkspaceTab = 'overview';
@@ -53,6 +59,7 @@ export class SimulatorWorkspaceComponent implements OnChanges {
   @Output() switchSimulator = new EventEmitter<number>();
   @Output() editSimulatorRequested = new EventEmitter<Simulator>();
   @Output() fleetChanged = new EventEmitter<void>();
+  @Output() tabChanged = new EventEmitter<SimulatorWorkspaceTab>();
 
   activeTab: SimulatorWorkspaceTab = 'overview';
   loading = false;
@@ -138,12 +145,19 @@ export class SimulatorWorkspaceComponent implements OnChanges {
     };
   }
 
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
   loadDossier(id: number): void {
+    const seq = ++this.dossierReqSeq;
     this.loading = true;
     this.cdr.markForCheck();
 
-    this.api.get<any>(`/simulators/${id}`).subscribe({
+    this.api.get<any>(`/simulators/${id}`).pipe(takeUntil(this.destroy$)).subscribe({
       next: (res) => {
+        if (seq !== this.dossierReqSeq) return;
         this.dossier = res?.data || null;
         if (this.dossier) {
           this.quickStatus = this.dossier.status;
@@ -153,6 +167,7 @@ export class SimulatorWorkspaceComponent implements OnChanges {
         this.cdr.markForCheck();
       },
       error: () => {
+        if (seq !== this.dossierReqSeq) return;
         this.loading = false;
         this.toast.error('Failed to load simulator dossier.');
         this.cdr.markForCheck();
@@ -162,6 +177,7 @@ export class SimulatorWorkspaceComponent implements OnChanges {
 
   selectTab(tab: SimulatorWorkspaceTab): void {
     this.activeTab = tab;
+    this.tabChanged.emit(tab);
   }
 
   get currentFleetIndex(): number {
@@ -373,12 +389,13 @@ export class SimulatorWorkspaceComponent implements OnChanges {
     const ok = await this.confirm.confirm(`Delete QTG check "${q.test_code}"?`, 'Delete QTG Record', true);
     if (!ok) return;
 
-    this.api.delete(`/simulators/${this.dossier.id}/qtg/${q.id}`).subscribe({
+    this.api.delete(`/simulators/${this.dossier.id}/qtg/${q.id}`).pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {
         this.toast.success('QTG record removed.');
         this.loadDossier(this.dossier!.id);
         this.fleetChanged.emit();
-      }
+      },
+      error: (err) => this.toast.error(err?.error?.message || 'Unable to delete QTG record.')
     });
   }
 

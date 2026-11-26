@@ -25,6 +25,16 @@ const F_MONO = OFFICE_FONTS.xlsx.mono;
 const MIN_COL_WIDTH = 10;
 const MAX_COL_WIDTH = 44;
 
+/** Neutralize Excel formula injection on string cells (OWASP CSV/Spreadsheet Injection defense). */
+function sanitizeExcelText(val) {
+  const s = str(val);
+  if (!s) return '';
+  if (/^[=@\t\r]/.test(s) || (/^[+-]/.test(s) && !/^[+-]\s?\d[\d,.]*(?:\s?(?:%|h|u|units|min|m|IN|OUT).*)?$/i.test(s))) {
+    return `'${s}`;
+  }
+  return s;
+}
+
 const thinBorder = () => ({
   top:    { style: 'thin', color: { argb: argb(COLORS.border) } },
   left:   { style: 'thin', color: { argb: argb(COLORS.border) } },
@@ -183,7 +193,7 @@ function writeDataTableSheet(wb, sheetName, table, spec, theme) {
       } else if (isNumCol && typeof raw === 'string' && raw.trim() !== '' && Number.isFinite(Number(raw))) {
         cellVal = Number(raw);
       } else {
-        cellVal = str(raw);
+        cellVal = sanitizeExcelText(raw);
       }
 
       cell.value = cellVal;
@@ -298,7 +308,7 @@ function buildSummarySheet(wb, spec, data, theme) {
 
   const meta = spec.meta || {};
   const generatedStr = new Date(meta.generatedAt || Date.now()).toLocaleString('en-GB', {
-    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'UTC'
   });
 
   pushRow('Report Info', 'Title', str(spec.title || 'Report'));
@@ -320,8 +330,10 @@ function buildSummarySheet(wb, spec, data, theme) {
   }
 
   (data.kpis || []).forEach((k) => {
-    const val = typeof k.rawValue === 'number' && Number.isFinite(k.rawValue) ? k.rawValue : str(k.value);
-    pushRow('KPI', k.label, val, k.sublabel || '', k.numFmt || null);
+    const isComposite = typeof k.value === 'string' && k.value.includes('/');
+    const useRaw = !isComposite && typeof k.rawValue === 'number' && Number.isFinite(k.rawValue);
+    const val = useRaw ? k.rawValue : sanitizeExcelText(k.value);
+    pushRow('KPI', k.label, val, k.sublabel || '', useRaw ? (k.numFmt || null) : null);
   });
 
   (data.scorecards || []).forEach((sc) => {
@@ -371,11 +383,12 @@ function buildSummarySheet(wb, spec, data, theme) {
     const values = [item.section, item.field, item.value, item.details];
     values.forEach((val, cIdx) => {
       const cell = row.getCell(cIdx + 1);
-      cell.value = val;
-      if (cIdx === 2 && typeof val === 'number' && item.numFmt) {
+      const safeVal = typeof val === 'string' ? sanitizeExcelText(val) : val;
+      cell.value = safeVal;
+      if (cIdx === 2 && typeof safeVal === 'number' && item.numFmt) {
         cell.numFmt = item.numFmt;
       }
-      const len = estimateCellDisplayLen(val, typeof val === 'number' ? 'number' : 'text');
+      const len = estimateCellDisplayLen(safeVal, typeof safeVal === 'number' ? 'number' : 'text');
       if (len > maxLens[cIdx]) maxLens[cIdx] = len;
 
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(bgHex) } };
@@ -554,4 +567,4 @@ async function streamXlsx(spec, res, filename) {
   res.end();
 }
 
-module.exports = { buildWorkbook, streamXlsx };
+module.exports = { buildWorkbook, streamXlsx, sanitizeExcelText };

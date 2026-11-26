@@ -4,8 +4,8 @@
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterModule, Router, Routes } from '@angular/router';
-import { AuthService } from '../../core/services/services';
+import { ActivatedRoute, RouterModule, Router } from '@angular/router';
+import { AuthService, SectionAccessService } from '../../core/services/services';
 
 @Component({
   selector: 'app-login',
@@ -95,7 +95,12 @@ export class LoginComponent {
   showPwd = false;
   showForgotHelp = false;
 
-  constructor(private auth: AuthService, private router: Router) {}
+  constructor(
+    private auth: AuthService,
+    private sectionAccess: SectionAccessService,
+    private route: ActivatedRoute,
+    private router: Router
+  ) {}
 
   toggleForgotHelp(): void {
     this.showForgotHelp = !this.showForgotHelp;
@@ -110,9 +115,22 @@ export class LoginComponent {
     this.error = '';
     this.auth.login({ email: this.email, password: this.password }).subscribe({
       next: () => {
-        this.loading = false;
-        this.router.navigate(['/dashboard']).catch(() => {
-          this.error = 'Login succeeded but navigation failed. Reload the page.';
+        const rawReturn = this.route.snapshot.queryParamMap.get('returnUrl') || '';
+        const safeReturn = rawReturn.startsWith('/') && !rawReturn.startsWith('//') && !rawReturn.startsWith('/auth')
+          ? rawReturn
+          : '';
+        this.sectionAccess.refresh().subscribe({
+          next: (sections) => {
+            this.loading = false;
+            const target = safeReturn || this.sectionAccess.getFirstVisiblePath(sections);
+            this.router.navigateByUrl(target).catch(() => {
+              this.error = 'Login succeeded but navigation failed. Reload the page.';
+            });
+          },
+          error: () => {
+            this.loading = false;
+            this.router.navigateByUrl(safeReturn || '/profile');
+          }
         });
       },
       error: (err) => {
@@ -189,6 +207,7 @@ export class LoginComponent {
           [type]="showPwd ? 'text' : 'password'"
           class="form-control auth-input auth-input-pw"
           [(ngModel)]="form.password"
+          (keyup.enter)="register()"
           placeholder="Min. 8 characters" />
         <button
           type="button"
@@ -299,8 +318,13 @@ export class RegisterComponent {
     this.loading = true;
     this.error = '';
     this.auth.register(this.form).subscribe({
-      next: () => {
+      next: (res) => {
         this.loading = false;
+        if (res?.data?.pending_activation) {
+          this.error = '';
+          this.router.navigate(['/auth/login']);
+          return;
+        }
         this.router.navigate(['/dashboard']).catch(() => {
           this.error = 'Account created but navigation failed. Reload the page.';
         });
@@ -315,9 +339,3 @@ export class RegisterComponent {
     });
   }
 }
-
-export const AUTH_ROUTES: Routes = [
-  { path: 'login', component: LoginComponent },
-  { path: 'register', component: RegisterComponent },
-  { path: '', redirectTo: 'login', pathMatch: 'full' }
-];

@@ -10,10 +10,15 @@ export class SocketService {
   private notificationsSubject = new Subject<Notification>();
   notifications$ = this.notificationsSubject.asObservable();
 
-  connect(token: string): void {
-    if (!token) return;
+  connect(token?: string | null): void {
+    const resolveToken = () => localStorage.getItem('access_token') || token || '';
+    const initialToken = resolveToken();
+    if (!initialToken) return;
 
     if (this.socket?.connected) return;
+    if (this.socket) {
+      this.disconnect();
+    }
 
     const apiUrl = environment.apiUrl || '';
     let socketBaseUrl = '';
@@ -27,13 +32,20 @@ export class SocketService {
     }
 
     this.socket = io(socketBaseUrl || undefined, {
-      auth: { token },
+      auth: (cb) => cb({ token: resolveToken() }),
       transports: ['websocket', 'polling']
     });
 
     this.socket.on('notification', (payload: Notification) => {
       this.notificationsSubject.next(payload);
     });
+  }
+
+  reconnectWithFreshToken(): void {
+    const freshToken = localStorage.getItem('access_token');
+    if (!freshToken) return;
+    this.disconnect();
+    this.connect(freshToken);
   }
 
   disconnect(): void {

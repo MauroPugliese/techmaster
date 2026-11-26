@@ -57,6 +57,7 @@ function buildIamAlerts(dormantCount, inactiveCount, privilegedCount, total) {
 
 module.exports = {
   key: 'users',
+  roles: ['admin', 'manager'],
   docCode: 'CAE-IAM-11',
   theme: 'users',
   title: 'Users & Access Control Governance Report',
@@ -65,7 +66,7 @@ module.exports = {
   orientation: 'portrait',
 
   async build(req) {
-    const { role, is_active } = req.query;
+    const { role, role_id, is_active, status, department, search } = req.query;
 
     const allUsers = await User.findAll({
       attributes: ['id', 'role_id', 'username', 'email', 'first_name', 'last_name', 'department', 'job_title', 'phone', 'is_active', 'last_login', 'created_at'],
@@ -73,14 +74,32 @@ module.exports = {
       order: [['last_name', 'ASC'], ['first_name', 'ASC']]
     });
 
+    const roleFilter = role_id || role;
+    const normStatus = status ? String(status).trim().toLowerCase() : '';
+    const deptFilter = department ? String(department).trim().toLowerCase() : '';
+    const searchQ = search ? String(search).trim().toLowerCase() : '';
+
     const filtered = allUsers.filter((u) => {
-      if (role) {
+      if (roleFilter) {
         const rName = (u.role?.name || '').toUpperCase();
-        const qRole = String(role).toUpperCase();
-        if (rName !== qRole && String(u.role_id) !== String(role)) return false;
+        const qRole = String(roleFilter).toUpperCase();
+        if (rName !== qRole && String(u.role_id) !== String(roleFilter)) return false;
       }
-      if (is_active === 'true' || is_active === '1') return Boolean(u.is_active);
-      if (is_active === 'false' || is_active === '0') return !u.is_active;
+      if (is_active === 'true' || is_active === '1' || normStatus === 'active') {
+        if (!u.is_active) return false;
+      }
+      if (is_active === 'false' || is_active === '0' || normStatus === 'inactive') {
+        if (u.is_active) return false;
+      }
+      if (deptFilter && String(u.department || '').trim().toLowerCase() !== deptFilter) {
+        return false;
+      }
+      if (searchQ) {
+        const hay = [
+          u.first_name, u.last_name, u.username, u.email, u.department, u.job_title, u.role?.name
+        ].filter(Boolean).join(' ').toLowerCase();
+        if (!hay.includes(searchQ)) return false;
+      }
       return true;
     });
 
@@ -174,9 +193,13 @@ module.exports = {
     };
 
     const filters = { Scope: 'System User Directory' };
-    if (role) filters['Role Filter'] = String(role).toUpperCase();
+    if (roleFilter) filters['Role Filter'] = String(roleFilter).toUpperCase();
+    if (department) filters.Department = department;
+    if (search) filters.Search = search;
     if (is_active !== undefined && is_active !== '') {
       filters['Account Status'] = (is_active === 'true' || is_active === '1') ? 'Active Only' : 'Inactive Only';
+    } else if (normStatus === 'active' || normStatus === 'inactive') {
+      filters['Account Status'] = normStatus === 'active' ? 'Active Only' : 'Inactive Only';
     }
 
     const largestDept = deptTop[0];

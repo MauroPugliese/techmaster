@@ -73,6 +73,7 @@ export class SimulatorsComponent implements OnInit, OnDestroy {
   @ViewChild('mntRecordsModal') mntRecordsModal?: StationMntRecordsModalComponent;
 
   private destroy$ = new Subject<void>();
+  private loadSeq = 0;
 
   activeView: SimulatorTopView = 'test-places';
   dailyRefreshTick = 0;
@@ -80,6 +81,11 @@ export class SimulatorsComponent implements OnInit, OnDestroy {
 
   simulators: Simulator[] = [];
   filtered: Simulator[] = [];
+  testPlaceCount = 0;
+  iosConsoleCount = 0;
+  ffsBayCount = 0;
+  fleetExportParams: Record<string, string> = {};
+  loadError = false;
   summary: FleetApiSummary = {
     total_simulators: 0,
     ready_count: 0,
@@ -137,14 +143,19 @@ export class SimulatorsComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.route.queryParams.pipe(takeUntil(this.destroy$)).subscribe((params) => {
-      const idParam = params['id'] ? Number(params['id']) : null;
+      const rawId = params['id'] ?? params['simulatorId'];
+      const idParam = rawId ? Number(rawId) : null;
       const tabParam = params['tab'] as SimulatorWorkspaceTab | undefined;
       const viewParam = params['view'] as SimulatorTopView | undefined;
       const dateParam = typeof params['date'] === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(params['date'])
         ? params['date']
         : null;
 
-      this.workspaceTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'overview';
+      if (tabParam && VALID_TABS.includes(tabParam)) {
+        this.workspaceTab = tabParam;
+      } else if (!idParam) {
+        this.workspaceTab = 'overview';
+      }
       this.selectedSimId = idParam && Number.isFinite(idParam) ? idParam : null;
       if (viewParam && VALID_TOP_VIEWS.includes(viewParam)) {
         this.activeView = viewParam;
@@ -184,18 +195,6 @@ export class SimulatorsComponent implements OnInit, OnDestroy {
     return 'Manage simulator bays, Test Places and IOS Consoles configuration, readiness telemetry and technical dossiers.';
   }
 
-  get testPlaceCount(): number {
-    return this.simulators.filter((s) => s.station_kind === 'TEST_PLACE').length;
-  }
-
-  get iosConsoleCount(): number {
-    return this.simulators.filter((s) => s.station_kind === 'IOS_CONSOLE').length;
-  }
-
-  get ffsBayCount(): number {
-    return this.simulators.filter((s) => (s.station_kind || 'FFS_BAY') === 'FFS_BAY').length;
-  }
-
   get hasActiveFleetFilters(): boolean {
     return (
       this.searchQuery.trim() !== '' ||
@@ -205,35 +204,61 @@ export class SimulatorsComponent implements OnInit, OnDestroy {
     );
   }
 
-  get fleetExportParams(): Record<string, string> {
+  private recomputeStationCounts(): void {
+    let tp = 0;
+    let ios = 0;
+    let ffs = 0;
+    for (const s of this.simulators) {
+      const k = s.station_kind || 'FFS_BAY';
+      if (k === 'TEST_PLACE') tp += 1;
+      else if (k === 'IOS_CONSOLE') ios += 1;
+      else ffs += 1;
+    }
+    this.testPlaceCount = tp;
+    this.iosConsoleCount = ios;
+    this.ffsBayCount = ffs;
+  }
+
+  private syncFleetExportParams(): void {
     const p: Record<string, string> = {};
     if (this.stationKindFilter !== 'ALL') p['station_kind'] = this.stationKindFilter;
     if (this.categoryFilter !== 'ALL') p['platform_category'] = this.categoryFilter;
     if (this.statusFilter !== 'ALL') p['status'] = this.statusFilter;
     if (this.searchQuery.trim()) p['search'] = this.searchQuery.trim();
-    return p;
+    this.fleetExportParams = p;
   }
 
   loadData(): void {
+    const seq = ++this.loadSeq;
     this.loading = true;
     this.cdr.markForCheck();
 
     forkJoin({
-      list: this.api.get<any>('/simulators').pipe(catchError(() => of({ data: [] }))),
-      sum: this.api.get<any>('/simulators/summary').pipe(catchError(() => of({ data: null })))
-    }).subscribe({
+      list: this.api.get<any>('/simulators').pipe(catchError(() => of({ __error: true, data: [] }))),
+      sum: this.api.get<any>('/simulators/summary').pipe(catchError(() => of({ __error: true, data: null })))
+    }).pipe(takeUntil(this.destroy$)).subscribe({
       next: ({ list, sum }) => {
-        this.simulators = list?.data || [];
+        if (seq !== this.loadSeq) return;
+        if (list?.__error) {
+          this.loadError = true;
+          this.toast.error('Failed to load simulator fleet.');
+        } else {
+          this.loadError = false;
+          this.simulators = list?.data || [];
+        }
         if (sum?.data) {
           this.summary = sum.data;
         }
+        this.recomputeStationCounts();
         this.applyFilters();
         this.loading = false;
         this.consumePendingCreate();
         this.cdr.markForCheck();
       },
       error: () => {
+        if (seq !== this.loadSeq) return;
         this.loading = false;
+        this.loadError = true;
         this.toast.error('Failed to load simulator fleet.');
         this.cdr.markForCheck();
       }
@@ -303,6 +328,7 @@ export class SimulatorsComponent implements OnInit, OnDestroy {
 
       return true;
     });
+    this.syncFleetExportParams();
     this.cdr.markForCheck();
   }
 
@@ -336,6 +362,7 @@ export class SimulatorsComponent implements OnInit, OnDestroy {
   }
 
   onSimulatorSaved(saved: Simulator): void {
+    this.api.notifyNavBadgesChanged();
     this.loadData();
     this.dailyRefreshTick += 1;
     if (this.selectedSimId && saved?.id === this.selectedSimId) {
@@ -355,7 +382,8 @@ export class SimulatorsComponent implements OnInit, OnDestroy {
   }
 
   onDailySheetUpdated(): void {
-    this.api.get<any>('/simulators/summary').pipe(catchError(() => of({ data: null }))).subscribe((sum) => {
+    this.api.notifyNavBadgesChanged();
+    this.api.get<any>('/simulators/summary').pipe(catchError(() => of({ data: null })), takeUntil(this.destroy$)).subscribe((sum) => {
       if (sum?.data) {
         this.summary = sum.data;
         this.cdr.markForCheck();
@@ -364,6 +392,7 @@ export class SimulatorsComponent implements OnInit, OnDestroy {
   }
 
   onMntMutated(): void {
+    this.api.notifyNavBadgesChanged();
     this.loadData();
     this.dailyRefreshTick += 1;
   }
@@ -378,6 +407,17 @@ export class SimulatorsComponent implements OnInit, OnDestroy {
       replaceUrl: true
     });
     this.cdr.markForCheck();
+  }
+
+  onWorkspaceTabChanged(tab: SimulatorWorkspaceTab): void {
+    this.workspaceTab = tab;
+    if (this.selectedSimId !== null) {
+      this.router.navigate([], {
+        queryParams: { tab },
+        queryParamsHandling: 'merge',
+        replaceUrl: true
+      });
+    }
   }
 
   closeWorkspace(): void {
@@ -399,8 +439,9 @@ export class SimulatorsComponent implements OnInit, OnDestroy {
 
   quickChangeStatus(sim: Simulator, status: SimulatorStatus): void {
     if (!sim || sim.status === status) return;
-    this.api.patch<any>(`/simulators/${sim.id}/status`, { status }).subscribe({
+    this.api.patch<any>(`/simulators/${sim.id}/status`, { status }).pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {
+        this.api.notifyNavBadgesChanged();
         this.toast.success(`${sim.code} status updated to ${status}.`);
         this.loadData();
       },
@@ -417,8 +458,9 @@ export class SimulatorsComponent implements OnInit, OnDestroy {
     );
     if (!ok) return;
 
-    this.api.delete(`/simulators/${sim.id}`).subscribe({
+    this.api.delete(`/simulators/${sim.id}`).pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {
+        this.api.notifyNavBadgesChanged();
         this.toast.success(`Station ${sim.code} removed.`);
         this.dailyRefreshTick += 1;
         if (this.selectedSimId === sim.id) {

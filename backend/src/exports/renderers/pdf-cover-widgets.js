@@ -17,7 +17,8 @@ function formatGeneratedDate(meta) {
     month: 'short',
     year: 'numeric',
     hour: '2-digit',
-    minute: '2-digit'
+    minute: '2-digit',
+    timeZone: 'UTC'
   });
 }
 
@@ -319,12 +320,15 @@ function drawPageBanner(doc, pageNum, eyebrow, title, subtitle, y, contentW, F, 
   return cursorY + 15;
 }
 
-/** Narrative executive brief card with spacious padding. */
-function drawExecutiveBrief(doc, title, text, y, contentW, F, theme) {
-  if (!text) return y;
+/** Narrative executive brief card with spacious padding and page-break safety. */
+function drawExecutiveBrief(doc, title, text, startY, contentW, F, theme, ensurePageFn = null, spec = null) {
+  if (!text) return startY;
   doc.font(F.body).fontSize(8.9);
   const textH = doc.heightOfString(str(text), { width: contentW - 28, lineGap: 2.6 });
   const boxH = textH + 30;
+  const y = typeof ensurePageFn === 'function'
+    ? ensurePageFn(doc, spec, startY, boxH + 15, F, theme)
+    : startY;
 
   doc.save();
   doc.roundedRect(MARGIN, y, contentW, boxH, 5).fillAndStroke(theme.tint || COLORS.zebra, COLORS.border);

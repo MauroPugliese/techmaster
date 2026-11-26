@@ -20,7 +20,7 @@ import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import { Markdown } from 'tiptap-markdown';
 
-import { ConfirmService, UiCustomizationService, UiSectionPreferences } from '../../../../core/services/services';
+import { ApiService, ConfirmService, ToastService, UiCustomizationService, UiSectionPreferences } from '../../../../core/services/services';
 import { ArticleStatus, WikiArticle, WikiCategory } from '../../../../core/models/interfaces';
 import { DropdownComponent, DropdownOptionComponent } from '../../../../shared/components/dropdown/dropdown.component';
 import { RenderedMarkdown, WikiMarkdownService } from '../../wiki-markdown.service';
@@ -63,6 +63,7 @@ export class WikiEditorComponent implements OnChanges, OnDestroy {
 
   @Output() close = new EventEmitter<void>();
   @Output() save  = new EventEmitter<{ id: number | null; payload: any }>();
+  @Output() categoriesChanged = new EventEmitter<void>();
 
   @ViewChild('tiptapHost')  tiptapHostRef?: ElementRef<HTMLDivElement>;
   @ViewChild('mdTextarea')  mdTextareaRef?: ElementRef<HTMLTextAreaElement>;
@@ -153,7 +154,12 @@ export class WikiEditorComponent implements OnChanges, OnDestroy {
     }
   ];
 
+  flatCategories: FlatCategoryOption[] = [];
+  wordCount = 0;
+
   constructor(
+    private api: ApiService,
+    private toast: ToastService,
     private mdSvc: WikiMarkdownService,
     private confirm: ConfirmService,
     private uiCustomization: UiCustomizationService,
@@ -161,6 +167,9 @@ export class WikiEditorComponent implements OnChanges, OnDestroy {
   ) {}
 
   ngOnChanges(changes: SimpleChanges): void {
+    if (changes['categories']) {
+      this.flatCategories = flattenCategories(this.categories);
+    }
     const openedNow = !!changes['open']?.currentValue && !changes['open']?.previousValue;
     const closedNow = !changes['open']?.currentValue && !!changes['open']?.previousValue;
 
@@ -174,13 +183,28 @@ export class WikiEditorComponent implements OnChanges, OnDestroy {
     }
   }
 
-  get flatCategories(): FlatCategoryOption[] {
-    return flattenCategories(this.categories);
+  private recomputeWordCount(md?: string): void {
+    const text = (md !== undefined ? md : this.currentMarkdown()).trim();
+    this.wordCount = text ? text.split(/\s+/).filter(Boolean).length : 0;
   }
 
-  get wordCount(): number {
-    const md = this.currentMarkdown();
-    return md.trim() ? md.trim().split(/\s+/).filter(Boolean).length : 0;
+  quickCreateCategory(rawName: string): void {
+    const name = rawName.trim();
+    if (!name) return;
+    this.api.post<any>('/wiki/categories', { name }).subscribe({
+      next: res => {
+        const created: WikiCategory = res?.data;
+        if (created) {
+          this.categories = [...this.categories, created];
+          this.flatCategories = flattenCategories(this.categories);
+          this.categoryId = created.id;
+          this.toast.success(`Wiki category "${created.name}" created.`);
+          this.categoriesChanged.emit();
+          this.cdr.markForCheck();
+        }
+      },
+      error: (e: any) => this.toast.error(e?.error?.message || 'Unable to create wiki category.')
+    });
   }
 
   private initFromArticle(): void {
@@ -209,6 +233,7 @@ export class WikiEditorComponent implements OnChanges, OnDestroy {
     }
 
     this.initialSnapshot = this.buildSnapshot(this.markdownSource);
+    this.recomputeWordCount(this.markdownSource);
     this.destroyEditor();
 
     if (this.editorMode === 'visual') {
@@ -277,6 +302,7 @@ export class WikiEditorComponent implements OnChanges, OnDestroy {
         handleKeyDown: (_view, event) => this.handleEditorKeydown(event)
       },
       onUpdate: () => {
+        this.recomputeWordCount();
         this.detectSlashQuery();
         this.cdr.markForCheck();
       },
@@ -469,6 +495,7 @@ export class WikiEditorComponent implements OnChanges, OnDestroy {
   }
 
   private refreshSplitPreview(): void {
+    this.recomputeWordCount(this.markdownSource);
     this.livePreview = this.mdSvc.renderMarkdown(this.markdownSource);
     if (this.mermaidTimer) clearTimeout(this.mermaidTimer);
     if (this.livePreview.hasMermaid) {

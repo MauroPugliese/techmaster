@@ -17,12 +17,21 @@ const errorHandler = (err, req, res, next) => {
 };
 
 const parseDateFilter = (req, res, next) => {
-  const from = req.headers['x-date-from'] || req.query.from;
-  const to   = req.headers['x-date-to']   || req.query.to;
+  const rawFrom = req.headers['x-date-from'] || req.query.from;
+  const rawTo   = req.headers['x-date-to']   || req.query.to;
+
+  const normalizeBoundary = (raw, isEnd) => {
+    if (!raw) return null;
+    const str = String(raw).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+      return new Date(isEnd ? `${str}T23:59:59.999Z` : `${str}T00:00:00.000Z`);
+    }
+    return new Date(str);
+  };
 
   req.dateRange = {
-    from: from ? new Date(from) : null,
-    to:   to   ? new Date(to)   : null
+    from: normalizeBoundary(rawFrom, false),
+    to:   normalizeBoundary(rawTo, true)
   };
 
   if (req.dateRange.from && isNaN(req.dateRange.from)) {

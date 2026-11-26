@@ -1,6 +1,7 @@
 import {
   AfterViewInit,
   ChangeDetectionStrategy,
+  ChangeDetectorRef,
   Component,
   ElementRef,
   EventEmitter,
@@ -65,12 +66,15 @@ export class DashboardChartsComponent implements AfterViewInit, OnChanges, OnDes
   private velocityChart: Chart | null = null;
   private breakdownChart: Chart | null = null;
 
+  constructor(private cdr: ChangeDetectorRef) {}
+
   ngAfterViewInit(): void {
     this.viewReady = true;
     this.initVelocityChart();
     this.initBreakdownChart();
     this.renderVelocityChart();
     this.renderBreakdownChart();
+    this.cdr.markForCheck();
   }
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -328,5 +332,6 @@ export class DashboardChartsComponent implements AfterViewInit, OnChanges, OnDes
       : ['#E2E8F0'];
 
     this.breakdownChart.update('none');
+    this.cdr.markForCheck();
   }
 }

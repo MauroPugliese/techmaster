@@ -1,8 +1,10 @@
 import {
-  Component, OnInit, OnChanges, SimpleChanges, Input, ChangeDetectionStrategy, ChangeDetectorRef
+  Component, OnInit, OnChanges, OnDestroy, SimpleChanges, Input, ChangeDetectionStrategy, ChangeDetectorRef
 } from '@angular/core';
 import { CommonModule, TitleCasePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { ApiService, SectionAccessService, ToastService, ConfirmService } from '../../../core/services/services';
 import { DropdownComponent, DropdownOptionComponent } from '../../../shared/components/dropdown/dropdown.component';
 
@@ -33,7 +35,10 @@ export interface AccessSummaryItem {
   styleUrls: ['./section-access-manager.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class SectionAccessManagerComponent implements OnInit, OnChanges {
+export class SectionAccessManagerComponent implements OnInit, OnChanges, OnDestroy {
+  private readonly destroy$ = new Subject<void>();
+  private prefReqSeq = 0;
+
   @Input() roles: any[] = [];
   @Input() initialTarget: AccessTarget | null = null;
   @Input() initialRole: string | null = null;
@@ -100,10 +105,15 @@ export class SectionAccessManagerComponent implements OnInit, OnChanges {
     }
   }
 
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
   // ── Catalog & Preferences Loading ─────────────────────────────────────────
   loadCatalog(): void {
     this.loading = true;
-    this.api.get<any>('/admin/ui-navigation/catalog').subscribe({
+    this.api.get<any>('/admin/ui-navigation/catalog').pipe(takeUntil(this.destroy$)).subscribe({
       next: (res) => {
         this.catalog = res.data || {};
         this.loadPreferences();
@@ -118,7 +128,7 @@ export class SectionAccessManagerComponent implements OnInit, OnChanges {
 
   loadUsers(): void {
     this.usersLoading = true;
-    this.api.get<any>('/admin/users', { page: 1, limit: 500 }).subscribe({
+    this.api.get<any>('/admin/users', { page: 1, limit: 500 }).pipe(takeUntil(this.destroy$)).subscribe({
       next: (res) => {
         this.users = res.data?.items || [];
         this.usersLoading = false;
@@ -133,6 +143,7 @@ export class SectionAccessManagerComponent implements OnInit, OnChanges {
   }
 
   loadPreferences(): void {
+    const seq = ++this.prefReqSeq;
     if (!Object.keys(this.catalog).length) {
       this.loading = false;
       this.cdr.markForCheck();
@@ -147,8 +158,9 @@ export class SectionAccessManagerComponent implements OnInit, OnChanges {
     }
 
     this.loading = true;
-    this.api.get<any>('/admin/ui-navigation/access', this.buildParams()).subscribe({
+    this.api.get<any>('/admin/ui-navigation/access', this.buildParams()).pipe(takeUntil(this.destroy$)).subscribe({
       next: (res) => {
+        if (seq !== this.prefReqSeq) return;
         const data = res.data || [];
         const rawList = Array.isArray(data)
           ? data
@@ -168,6 +180,7 @@ export class SectionAccessManagerComponent implements OnInit, OnChanges {
         this.cdr.markForCheck();
       },
       error: (err: any) => {
+        if (seq !== this.prefReqSeq) return;
         this.loading = false;
         this.toast.error(err?.error?.message || 'Failed to load section preferences.');
         this.cdr.markForCheck();
@@ -297,11 +310,11 @@ export class SectionAccessManagerComponent implements OnInit, OnChanges {
       }))
     };
 
-    this.api.put<any>('/admin/ui-navigation/access', payload).subscribe({
+    this.api.put<any>('/admin/ui-navigation/access', payload).pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {
         this.saving = false;
         this.toast.success('Section access settings saved successfully.');
-        this.sectionAccess.refresh().subscribe();
+        this.sectionAccess.refresh().pipe(takeUntil(this.destroy$)).subscribe();
         this.loadPreferences();
       },
       error: (err: any) => {
@@ -320,11 +333,11 @@ export class SectionAccessManagerComponent implements OnInit, OnChanges {
     };
 
     this.saving = true;
-    this.api.delete<any>('/admin/ui-navigation/access', params).subscribe({
+    this.api.delete<any>('/admin/ui-navigation/access', params).pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {
         this.saving = false;
         this.toast.success(`Restored section "${sectionKey}" to inherited default.`);
-        this.sectionAccess.refresh().subscribe();
+        this.sectionAccess.refresh().pipe(takeUntil(this.destroy$)).subscribe();
         this.loadPreferences();
       },
       error: (err: any) => {
@@ -355,11 +368,11 @@ export class SectionAccessManagerComponent implements OnInit, OnChanges {
     if (!confirmed) return;
 
     this.saving = true;
-    this.api.delete<any>('/admin/ui-navigation/access', this.buildParams()).subscribe({
+    this.api.delete<any>('/admin/ui-navigation/access', this.buildParams()).pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {
         this.saving = false;
         this.toast.success('Section access has been reset to defaults.');
-        this.sectionAccess.refresh().subscribe();
+        this.sectionAccess.refresh().pipe(takeUntil(this.destroy$)).subscribe();
         this.loadPreferences();
       },
       error: (err: any) => {

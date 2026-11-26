@@ -6,6 +6,7 @@ import {
   HostListener,
   Input,
   OnChanges,
+  OnDestroy,
   OnInit,
   Output,
   SimpleChanges,
@@ -13,6 +14,8 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import {
   ShiftUsageStatus,
   SimulatorDailySheetResponse,
@@ -74,7 +77,10 @@ function shiftLocalDate(yyyyMmDd: string, deltaDays: number): string {
   styleUrls: ['./station-daily-ops.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class StationDailyOpsComponent implements OnInit, OnChanges {
+export class StationDailyOpsComponent implements OnInit, OnChanges, OnDestroy {
+  private readonly destroy$ = new Subject<void>();
+  private loadSeq = 0;
+
   @Input() stationKind: 'TEST_PLACE' | 'IOS_CONSOLE' = 'TEST_PLACE';
   @Input() refreshTick = 0;
   @Input() initialDate: string | null = null;
@@ -125,6 +131,11 @@ export class StationDailyOpsComponent implements OnInit, OnChanges {
   savingEntryIds = new Set<number>();
   savedEntryId: number | null = null;
 
+  exportParams: Record<string, string> = {
+    date: toLocalYyyyMmDd(new Date()),
+    station_kind: 'TEST_PLACE'
+  };
+
   readonly statusChoices: ShiftUsageStatus[] = ['IN_USE', 'READY', 'NA'];
 
   constructor(
@@ -164,13 +175,20 @@ export class StationDailyOpsComponent implements OnInit, OnChanges {
     if (this.initialDate && /^\d{4}-\d{2}-\d{2}$/.test(this.initialDate)) {
       this.setSelectedDate(this.initialDate);
     }
+    this.syncExportParams();
     this.loadSheet();
+  }
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
   }
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['initialDate'] && this.initialDate && /^\d{4}-\d{2}-\d{2}$/.test(this.initialDate) && this.initialDate !== this.selectedDate) {
       this.setSelectedDate(this.initialDate);
       this.activeShiftId = null;
+      this.syncExportParams();
       if (!changes['initialDate'].firstChange) {
         this.loadSheet();
         return;
@@ -180,10 +198,18 @@ export class StationDailyOpsComponent implements OnInit, OnChanges {
       this.activeShiftId = null;
       this.statusFilter = 'ALL';
       this.openStatusMenuEntryId = null;
+      this.syncExportParams();
       this.loadSheet();
     } else if (changes['refreshTick'] && !changes['refreshTick'].firstChange) {
       this.loadSheet();
     }
+  }
+
+  private syncExportParams(): void {
+    this.exportParams = {
+      date: this.selectedDate,
+      station_kind: this.stationKind
+    };
   }
 
   get preFlightTooltip(): string {
@@ -222,13 +248,6 @@ export class StationDailyOpsComponent implements OnInit, OnChanges {
 
   get staffList(): { id: number; first_name: string; last_name: string; username: string }[] {
     return ((this.sheet as any)?.staff || []) as any[];
-  }
-
-  get exportParams(): Record<string, string> {
-    return {
-      date: this.selectedDate,
-      station_kind: this.stationKind
-    };
   }
 
   copyPreviousDay(): void {
@@ -413,8 +432,10 @@ export class StationDailyOpsComponent implements OnInit, OnChanges {
   }
 
   loadSheet(): void {
+    const seq = ++this.loadSeq;
     this.loading = true;
     this.openStatusMenuEntryId = null;
+    this.syncExportParams();
     this.cdr.markForCheck();
 
     this.api
@@ -422,8 +443,10 @@ export class StationDailyOpsComponent implements OnInit, OnChanges {
         date: this.selectedDate,
         station_kind: this.stationKind
       })
+      .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (res) => {
+          if (seq !== this.loadSeq) return;
           const data = res?.data;
           this.sheet = data || null;
           this.loading = false;
@@ -451,6 +474,7 @@ export class StationDailyOpsComponent implements OnInit, OnChanges {
           this.cdr.markForCheck();
         },
         error: (err) => {
+          if (seq !== this.loadSeq) return;
           this.loading = false;
           this.toast.error(err?.error?.message || 'Failed to load daily operating sheet.');
           this.cdr.markForCheck();
@@ -777,17 +801,26 @@ export class StationDailyOpsComponent implements OnInit, OnChanges {
 
   private recomputeSummary(): void {
     if (!this.sheet) return;
-    let inUse = 0;
-    let ready = 0;
-    let na = 0;
+    const rank: Record<string, number> = { READY: 1, IN_USE: 2, NA: 3 };
+    const effectiveBySim = new Map<number, ShiftUsageStatus>();
     let totalMinutes = 0;
     for (const s of this.sheet.shifts) {
       for (const e of s.entries || []) {
-        if (e.usage_status === 'IN_USE') inUse += 1;
-        else if (e.usage_status === 'NA') na += 1;
-        else ready += 1;
+        const cur = effectiveBySim.get(e.simulator_id);
+        const st = e.usage_status || 'READY';
+        if (!cur || (rank[st] || 0) >= (rank[cur] || 0)) {
+          effectiveBySim.set(e.simulator_id, st);
+        }
         totalMinutes += Number(e.duration_minutes) || 0;
       }
+    }
+    let inUse = 0;
+    let ready = 0;
+    let na = 0;
+    for (const st of effectiveBySim.values()) {
+      if (st === 'IN_USE') inUse += 1;
+      else if (st === 'NA') na += 1;
+      else ready += 1;
     }
     this.sheet.summary = {
       ...this.sheet.summary,

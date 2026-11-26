@@ -13,11 +13,17 @@ import { ToastService, Toast } from '../../../core/services/toast.service';
   imports: [CommonModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-<div style="position:fixed;bottom:24px;right:24px;z-index:9999;
-            display:flex;flex-direction:column;gap:10px;pointer-events:none">
+<div role="region"
+     aria-live="polite"
+     aria-label="Notifications"
+     style="position:fixed;bottom:16px;right:16px;z-index:9999;
+            display:flex;flex-direction:column;gap:10px;pointer-events:none;
+            max-width:calc(100vw - 24px)">
 
   <div *ngFor="let t of toasts; trackBy: trackById"
-       style="pointer-events:all;min-width:300px;max-width:380px;
+       [attr.role]="t.type === 'error' ? 'alert' : 'status'"
+       style="pointer-events:all;width:min(360px, calc(100vw - 24px));
+              max-width:100%;box-sizing:border-box;
               border-radius:12px;padding:14px 16px;
               display:flex;align-items:flex-start;gap:12px;
               box-shadow:0 8px 32px rgba(0,0,0,0.18);
@@ -26,19 +32,22 @@ import { ToastService, Toast } from '../../../core/services/toast.service';
        [style.border-left]="'4px solid ' + accentColor(t.type)">
 
     <!-- Icon -->
-    <span style="font-family:'Material Icons Round';font-style:normal;font-size:22px;flex-shrink:0;margin-top:1px"
+    <span aria-hidden="true"
+          style="font-family:'Material Icons Round';font-style:normal;font-size:22px;flex-shrink:0;margin-top:1px"
           [style.color]="accentColor(t.type)">
       {{icon(t.type)}}
     </span>
 
     <!-- Text -->
-    <div style="flex:1;min-width:0">
+    <div style="flex:1;min-width:0;overflow-wrap:anywhere">
       <div style="font-weight:700;font-size:0.875rem;color:var(--blue-950);margin-bottom:2px">{{t.title}}</div>
       <div style="font-size:0.8rem;color:var(--blue-900);line-height:1.4">{{t.message}}</div>
     </div>
 
     <!-- Dismiss -->
-    <button (click)="toast.dismiss(t.id)"
+    <button type="button"
+            aria-label="Dismiss notification"
+            (click)="toast.dismiss(t.id)"
             style="background:none;border:none;cursor:pointer;padding:2px;
                    color:var(--text-subtle);font-family:'Material Icons Round';
                    font-style:normal;font-size:18px;flex-shrink:0;line-height:1">

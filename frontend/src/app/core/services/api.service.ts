@@ -22,7 +22,8 @@ export class ApiService {
 
   buildParams(extra: Record<string, any> = {}, dateRange?: DateRange): HttpParams {
     let params = new HttpParams();
-    const range = dateRange ?? this.dateFilter.currentRange;
+    const hasExplicitDateParam = Boolean(extra && (extra['from'] || extra['to'] || extra['date']));
+    const range = dateRange ?? (hasExplicitDateParam ? { from: null, to: null } : this.dateFilter.effectiveRange);
     if (range.from) params = params.set('from', range.from.toISOString());
     if (range.to)   params = params.set('to',   range.to.toISOString());
     Object.entries(extra).forEach(([k, v]) => {

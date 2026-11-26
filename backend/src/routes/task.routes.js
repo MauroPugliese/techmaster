@@ -3,8 +3,10 @@
 // =============================================================================
 const router = require('express').Router();
 const { Op } = require('sequelize');
-const { Task, Simulator, User, TaskComment, Notification } = require('../models');
+const { Task, Simulator, User, TaskComment, Notification, sequelize } = require('../models');
+const { authorize } = require('../middleware/auth.middleware');
 const { parseDateFilter } = require('../middleware/error.middleware');
+const { validateIdParam } = require('../middleware/validation.middleware');
 const {
   sanitizeTaskPayload,
   sanitizeBulkAction,
@@ -65,36 +67,45 @@ router.get('/assignees', async (req, res, next) => {
 });
 
 // PATCH /api/tasks/bulk — Batch status / priority / assignment / delete
-router.patch('/bulk', async (req, res, next) => {
+router.patch('/bulk', authorize('admin', 'manager'), async (req, res, next) => {
+  const transaction = await sequelize.transaction();
   try {
     const { error, data } = sanitizeBulkAction(req.body);
-    if (error) return res.status(400).json({ success: false, message: error });
+    if (error) {
+      await transaction.rollback();
+      return res.status(400).json({ success: false, message: error });
+    }
 
     const { ids, action, value } = data;
 
     if (action === 'status') {
       await Task.update(
         { status: value, completed_at: value === 'DONE' ? new Date() : null },
-        { where: { id: { [Op.in]: ids } } }
+        { where: { id: { [Op.in]: ids } }, transaction }
       );
     } else if (action === 'priority') {
-      await Task.update({ priority: value }, { where: { id: { [Op.in]: ids } } });
+      await Task.update({ priority: value }, { where: { id: { [Op.in]: ids } }, transaction });
     } else if (action === 'assign') {
-      await Task.update({ assigned_to: value }, { where: { id: { [Op.in]: ids } } });
+      await Task.update({ assigned_to: value }, { where: { id: { [Op.in]: ids } }, transaction });
     } else if (action === 'delete') {
       const childSubtasks = await Task.findAll({
         where: { parent_id: { [Op.in]: ids } },
-        attributes: ['id']
+        attributes: ['id'],
+        transaction
       });
       const childIds = childSubtasks.map(s => s.id);
       const commentTaskIds = [...ids, ...childIds];
-      await TaskComment.destroy({ where: { task_id: { [Op.in]: commentTaskIds } } });
-      await Task.destroy({ where: { parent_id: { [Op.in]: ids } } });
-      await Task.destroy({ where: { id: { [Op.in]: ids } } });
+      await TaskComment.destroy({ where: { task_id: { [Op.in]: commentTaskIds } }, transaction });
+      await Task.destroy({ where: { parent_id: { [Op.in]: ids } }, transaction });
+      await Task.destroy({ where: { id: { [Op.in]: ids } }, transaction });
     }
 
+    await transaction.commit();
     res.json({ success: true, data: { affected: ids.length, ids, action } });
-  } catch (err) { next(err); }
+  } catch (err) {
+    await transaction.rollback().catch(() => {});
+    next(err);
+  }
 });
 
 // ── Collection & item CRUD ───────────────────────────────────────────────────
@@ -160,18 +171,30 @@ router.get('/:id', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/', async (req, res, next) => {
+router.post('/', authorize('admin', 'manager', 'tech'), async (req, res, next) => {
   try {
     const { error, data } = sanitizeTaskPayload(req.body, { isCreate: true });
     if (error) return res.status(400).json({ success: false, message: error });
 
     const created = await Task.create({ ...data, created_by: req.user.id });
+    if (created.assigned_to && Number(created.assigned_to) !== Number(req.user.id)) {
+      const notif = await Notification.create({
+        user_id: created.assigned_to,
+        type: 'TASK_ASSIGNED',
+        title: `Task Assigned: ${created.title}`,
+        body: `${req.user.first_name} ${req.user.last_name} assigned you task #${created.id}: "${created.title}".`,
+        link: `/tasks?id=${created.id}`
+      }).catch(() => null);
+      const io = req.app.get('io');
+      if (io && notif) io.to(`user_${created.assigned_to}`).emit('notification', notif.get({ plain: true }));
+    }
+
     const hydrated = await Task.findByPk(created.id, { include: TASK_INCLUDES });
     res.status(201).json({ success: true, data: serializeTask(hydrated || created) });
   } catch (err) { next(err); }
 });
 
-router.put('/:id', async (req, res, next) => {
+router.put('/:id', authorize('admin', 'manager', 'tech'), validateIdParam, async (req, res, next) => {
   try {
     const task = await Task.findByPk(req.params.id);
     if (!task) return res.status(404).json({ success: false, message: 'Not found' });
@@ -179,30 +202,57 @@ router.put('/:id', async (req, res, next) => {
     const { error, data } = sanitizeTaskPayload(req.body, { isCreate: false, taskId: task.id });
     if (error) return res.status(400).json({ success: false, message: error });
 
+    const previousAssignee = task.assigned_to;
     await task.update(data);
+    if (data.assigned_to && Number(data.assigned_to) !== Number(previousAssignee) && Number(data.assigned_to) !== Number(req.user.id)) {
+      const notif = await Notification.create({
+        user_id: data.assigned_to,
+        type: 'TASK_ASSIGNED',
+        title: `Task Assigned: ${task.title}`,
+        body: `${req.user.first_name} ${req.user.last_name} assigned you task #${task.id}: "${task.title}".`,
+        link: `/tasks?id=${task.id}`
+      }).catch(() => null);
+      const io = req.app.get('io');
+      if (io && notif) io.to(`user_${data.assigned_to}`).emit('notification', notif.get({ plain: true }));
+    }
+
     const hydrated = await Task.findByPk(task.id, { include: TASK_INCLUDES });
     res.json({ success: true, data: serializeTask(hydrated || task) });
   } catch (err) { next(err); }
 });
 
-router.delete('/:id', async (req, res, next) => {
+router.delete('/:id', authorize('admin', 'manager', 'tech'), validateIdParam, async (req, res, next) => {
+  const transaction = await sequelize.transaction();
   try {
-    const task = await Task.findByPk(req.params.id);
-    if (!task) return res.status(404).json({ success: false, message: 'Not found' });
+    const task = await Task.findByPk(req.params.id, { transaction });
+    if (!task) {
+      await transaction.rollback();
+      return res.status(404).json({ success: false, message: 'Not found' });
+    }
+    const roleName = req.user?.role?.name;
+    if (roleName === 'tech' && Number(task.created_by) !== Number(req.user.id)) {
+      await transaction.rollback();
+      return res.status(403).json({ success: false, message: 'Only managers, admins, or the task creator can delete this task' });
+    }
 
     const subtasks = await Task.findAll({
       where: { parent_id: task.id },
-      attributes: ['id']
+      attributes: ['id'],
+      transaction
     });
     const subtaskIds = subtasks.map(s => s.id);
-    await TaskComment.destroy({ where: { task_id: { [Op.in]: [task.id, ...subtaskIds] } } });
+    await TaskComment.destroy({ where: { task_id: { [Op.in]: [task.id, ...subtaskIds] } }, transaction });
     if (subtaskIds.length) {
-      await Task.destroy({ where: { parent_id: task.id } });
+      await Task.destroy({ where: { parent_id: task.id }, transaction });
     }
-    await Task.destroy({ where: { id: task.id } });
+    await Task.destroy({ where: { id: task.id }, transaction });
+    await transaction.commit();
 
     res.json({ success: true });
-  } catch (err) { next(err); }
+  } catch (err) {
+    await transaction.rollback().catch(() => {});
+    next(err);
+  }
 });
 
 // ── Comments & @mentions ─────────────────────────────────────────────────────
@@ -222,7 +272,7 @@ router.get('/:id/comments', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/:id/comments', async (req, res, next) => {
+router.post('/:id/comments', authorize('admin', 'manager', 'tech'), validateIdParam, async (req, res, next) => {
   try {
     const task = await Task.findByPk(req.params.id);
     if (!task) return res.status(404).json({ success: false, message: 'Task not found' });

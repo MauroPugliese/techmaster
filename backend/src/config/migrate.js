@@ -719,6 +719,61 @@ const MIGRATIONS = [
       await addIfMissing('stock_movements', 'simulator_id', { type: Sequelize.INTEGER.UNSIGNED, allowNull: true });
       await addIfMissing('stock_movements', 'maintenance_record_id', { type: Sequelize.INTEGER.UNSIGNED, allowNull: true });
     }
+  },
+  {
+    name: '009_maintenance_serials_subsystems_and_indexes',
+    description: 'Add part_number/broken_serial_number/new_serial_number on maintenance_records, last_checked_at/updated_by on simulator_subsystems, and performance indexes',
+    up: async (queryInterface) => {
+      const addIfMissing = async (table, col, def) => {
+        const cols = await queryInterface.describeTable(table).catch(() => ({}));
+        if (!cols[col]) {
+          await queryInterface.addColumn(table, col, def);
+        }
+      };
+
+      const addIndexIfMissing = async (table, name, fields) => {
+        const existing = await queryInterface.showIndex(table).catch(() => []);
+        if (existing.some(idx => idx.name === name)) return;
+        await queryInterface.addIndex(table, fields, { name }).catch((err) => {
+          logger.warn(`Skipping index ${name} on ${table}: ${err.message}`);
+        });
+      };
+
+      // 1. maintenance_records: spare part & serial number swap traceability
+      await addIfMissing('maintenance_records', 'part_number', { type: Sequelize.STRING(100), allowNull: true });
+      await addIfMissing('maintenance_records', 'broken_serial_number', { type: Sequelize.STRING(100), allowNull: true });
+      await addIfMissing('maintenance_records', 'new_serial_number', { type: Sequelize.STRING(100), allowNull: true });
+
+      // 2. simulator_subsystems: health check audit columns
+      await addIfMissing('simulator_subsystems', 'last_checked_at', { type: Sequelize.DATE, allowNull: true });
+      await addIfMissing('simulator_subsystems', 'updated_by', { type: Sequelize.INTEGER.UNSIGNED, allowNull: true });
+
+      // 3. Hot-path composite & lookup indexes
+      await addIndexIfMissing('audit_logs', 'idx_audit_created', ['created_at']);
+      await addIndexIfMissing('audit_logs', 'idx_audit_status_created', ['status', 'created_at']);
+      await addIndexIfMissing('audit_logs', 'idx_audit_method_created', ['method', 'created_at']);
+      await addIndexIfMissing('audit_logs', 'idx_audit_user_created', ['user_id', 'created_at']);
+
+      await addIndexIfMissing('maintenance_records', 'idx_mr_sim_status_sev', ['simulator_id', 'status', 'severity']);
+      await addIndexIfMissing('maintenance_records', 'idx_mr_status_sched', ['status', 'scheduled_date']);
+      await addIndexIfMissing('maintenance_records', 'idx_mr_part_number', ['part_number']);
+      await addIndexIfMissing('maintenance_records', 'idx_mr_deleted', ['deleted_at']);
+
+      await addIndexIfMissing('inventory_items', 'idx_inv_active_del', ['is_active', 'deleted_at']);
+      await addIndexIfMissing('inventory_items', 'idx_inv_part_number', ['part_number']);
+      await addIndexIfMissing('inventory_items', 'idx_inv_cat_loc', ['category_id', 'location_id']);
+
+      await addIndexIfMissing('stock_movements', 'idx_sm_item_date', ['item_id', 'movement_date']);
+      await addIndexIfMissing('stock_movements', 'idx_sm_type_date', ['type', 'movement_date']);
+
+      await addIndexIfMissing('operations', 'idx_ops_sim_status_start', ['simulator_id', 'status', 'start_date']);
+      await addIndexIfMissing('operations', 'idx_ops_status_start', ['status', 'start_date']);
+
+      await addIndexIfMissing('simulators', 'idx_sim_kind_status', ['station_kind', 'status']);
+      await addIndexIfMissing('refresh_tokens', 'idx_rt_user_revoked', ['user_id', 'revoked', 'expires_at']);
+      await addIndexIfMissing('shifts', 'idx_shifts_date_del', ['date', 'deleted_at']);
+      await addIndexIfMissing('tasks', 'idx_tasks_status_due', ['status', 'due_date']);
+    }
   }
 ];
 
@@ -738,36 +793,52 @@ async function getAppliedMigrations() {
 }
 
 async function runMigrations() {
-  await ensureMigrationTable();
-  const applied = await getAppliedMigrations();
-  const queryInterface = sequelize.getQueryInterface();
+  const lockName = 'smart_platform_schema_migrations';
+  let lockAcquired = false;
+  try {
+    const [lockRows] = await sequelize.query(`SELECT GET_LOCK(?, 30) AS acquired;`, {
+      replacements: [lockName]
+    });
+    lockAcquired = Number(lockRows?.[0]?.acquired) === 1;
+    if (!lockAcquired) {
+      throw new Error('Could not acquire database migration lock within 30s.');
+    }
 
-  let executedCount = 0;
-  for (const migration of MIGRATIONS) {
-    if (!applied.has(migration.name)) {
-      logger.info(`Applying migration: ${migration.name} - ${migration.description}`);
-      try {
-        await migration.up(queryInterface, Sequelize);
-        await sequelize.query(
-          `INSERT INTO schema_migrations (name) VALUES (?);`,
-          { replacements: [migration.name] }
-        );
-        logger.info(`✅ Applied migration: ${migration.name}`);
-        executedCount++;
-      } catch (err) {
-        logger.error(`❌ Migration failed: ${migration.name}`, err);
-        throw err;
+    await ensureMigrationTable();
+    const applied = await getAppliedMigrations();
+    const queryInterface = sequelize.getQueryInterface();
+
+    let executedCount = 0;
+    for (const migration of MIGRATIONS) {
+      if (!applied.has(migration.name)) {
+        logger.info(`Applying migration: ${migration.name} - ${migration.description}`);
+        try {
+          await migration.up(queryInterface, Sequelize);
+          await sequelize.query(
+            `INSERT INTO schema_migrations (name) VALUES (?);`,
+            { replacements: [migration.name] }
+          );
+          logger.info(`✅ Applied migration: ${migration.name}`);
+          executedCount++;
+        } catch (err) {
+          logger.error(`❌ Migration failed: ${migration.name}`, err);
+          throw err;
+        }
       }
     }
-  }
 
-  if (executedCount === 0) {
-    logger.info('Database schema is already up to date (no pending migrations).');
-  } else {
-    logger.info(`Successfully applied ${executedCount} migration(s).`);
-  }
+    if (executedCount === 0) {
+      logger.info('Database schema is already up to date (no pending migrations).');
+    } else {
+      logger.info(`Successfully applied ${executedCount} migration(s).`);
+    }
 
-  return { success: true, executedCount };
+    return { success: true, executedCount };
+  } finally {
+    if (lockAcquired) {
+      await sequelize.query(`SELECT RELEASE_LOCK(?);`, { replacements: [lockName] }).catch(() => {});
+    }
+  }
 }
 
 // Standalone CLI execution

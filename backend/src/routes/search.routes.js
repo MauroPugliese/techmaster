@@ -18,6 +18,7 @@ const {
   buildSearchGroups
 } = require('../services/search-helpers.service');
 const { getTasksForDate } = require('../services/planned-recurrence.service');
+const { getHiddenSectionKeysForUser } = require('../middleware/section-access.middleware');
 
 // GET /api/search?q=...
 router.get('/', async (req, res, next) => {
@@ -30,11 +31,14 @@ router.get('/', async (req, res, next) => {
       });
     }
 
+    const hiddenSections = await getHiddenSectionKeysForUser(req.user).catch(() => new Set());
+    const canSee = (key) => !hiddenSections.has(key);
+
     const pattern = `%${escapeLikePattern(query)}%`;
     const limit = 5;
 
     const [simulators, operations, maintenance, assets, inventory, tasks, wiki] = await Promise.all([
-      Simulator.findAll({
+      canSee('simulators') ? Simulator.findAll({
         where: {
           [Op.or]: [
             { code: { [Op.like]: pattern } },
@@ -46,8 +50,8 @@ router.get('/', async (req, res, next) => {
         attributes: ['id', 'code', 'name', 'bay_code', 'aircraft_type', 'qualification_level', 'status'],
         order: [['bay_code', 'ASC']],
         limit
-      }),
-      Operation.findAll({
+      }) : Promise.resolve([]),
+      canSee('operations') ? Operation.findAll({
         where: {
           [Op.or]: [
             { title: { [Op.like]: pattern } },
@@ -60,20 +64,23 @@ router.get('/', async (req, res, next) => {
         attributes: ['id', 'sortie_code', 'title', 'customer_operator', 'status', 'priority', 'location'],
         order: [['updated_at', 'DESC']],
         limit
-      }),
-      MaintenanceRecord.findAll({
+      }) : Promise.resolve([]),
+      canSee('maintenance') ? MaintenanceRecord.findAll({
         where: {
           [Op.or]: [
             { title: { [Op.like]: pattern } },
-            { description: { [Op.like]: pattern } }
+            { description: { [Op.like]: pattern } },
+            { part_number: { [Op.like]: pattern } },
+            { broken_serial_number: { [Op.like]: pattern } },
+            { new_serial_number: { [Op.like]: pattern } }
           ]
         },
         include: [{ model: Asset, as: 'asset', attributes: ['id', 'name'], required: false }],
         attributes: ['id', 'title', 'status', 'priority', 'type'],
         order: [['updated_at', 'DESC']],
         limit
-      }),
-      Asset.findAll({
+      }) : Promise.resolve([]),
+      canSee('maintenance') ? Asset.findAll({
         where: {
           [Op.or]: [
             { name: { [Op.like]: pattern } },
@@ -84,8 +91,8 @@ router.get('/', async (req, res, next) => {
         attributes: ['id', 'name', 'serial_number', 'location', 'status'],
         order: [['updated_at', 'DESC']],
         limit
-      }),
-      InventoryItem.findAll({
+      }) : Promise.resolve([]),
+      canSee('warehouse') ? InventoryItem.findAll({
         where: {
           is_active: true,
           [Op.or]: [
@@ -97,8 +104,8 @@ router.get('/', async (req, res, next) => {
         attributes: ['id', 'name', 'sku', 'part_number', 'quantity', 'unit', 'reorder_point'],
         order: [['updated_at', 'DESC']],
         limit
-      }),
-      Task.findAll({
+      }) : Promise.resolve([]),
+      canSee('tasks') ? Task.findAll({
         where: {
           [Op.or]: [
             { title: { [Op.like]: pattern } },
@@ -108,8 +115,8 @@ router.get('/', async (req, res, next) => {
         attributes: ['id', 'title', 'status', 'priority', 'interval_type'],
         order: [['updated_at', 'DESC']],
         limit
-      }),
-      WikiArticle.findAll({
+      }) : Promise.resolve([]),
+      canSee('wiki') ? WikiArticle.findAll({
         where: {
           [Op.or]: [
             { title: { [Op.like]: pattern } },
@@ -120,7 +127,7 @@ router.get('/', async (req, res, next) => {
         attributes: ['id', 'title', 'slug', 'excerpt', 'status'],
         order: [['updated_at', 'DESC']],
         limit
-      })
+      }) : Promise.resolve([])
     ]);
 
     const groups = buildSearchGroups({

@@ -5,7 +5,7 @@ const router  = require('express').Router();
 const bcrypt  = require('bcryptjs');
 const { Op }  = require('sequelize');
 const {
-  sequelize, User, Role, AuditLog,
+  sequelize, User, Role, RefreshToken, AuditLog,
   OperationType, ShiftType,
   AssetCategory, WikiCategory,
 } = require('../models');
@@ -36,6 +36,10 @@ const SYSTEM_COLUMN_DENYLIST = new Set(['id', 'created_at', 'updated_at', 'delet
 const SAFE_IDENTIFIER = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 
 const UI_SECTION_CATALOG = {
+  simulators: {
+    table: ['code', 'name', 'bay_code', 'aircraft_type', 'qualification_level', 'certificate_expiry', 'status'],
+    form: ['code', 'name', 'bay_code', 'platform_category', 'aircraft_type', 'manufacturer', 'authority', 'qualification_level', 'certificate_code', 'certificate_expiry', 'visual_system', 'motion_system', 'airac_cycle', 'status', 'limitations_mel']
+  },
   operations: {
     table: ['id', 'title', 'type', 'status', 'priority', 'location', 'start_date', 'creator'],
     form: ['title', 'type_id', 'priority', 'status', 'location', 'start_date', 'end_date', 'description', 'notes']
@@ -80,6 +84,12 @@ const NAV_SECTION_CATALOG = {
     label: 'Dashboard',
     group: 'Overview',
     icon: 'dashboard'
+  },
+  simulators: {
+    path: '/simulators',
+    label: 'Flight Simulators',
+    group: 'Operations',
+    icon: 'flight'
   },
   operations: {
     path: '/operations',
@@ -162,13 +172,24 @@ function buildColumnTypeSql(type, length) {
   const plainTypes = new Set(['TEXT', 'LONGTEXT', 'INT', 'BIGINT', 'FLOAT', 'DOUBLE', 'DATE', 'DATETIME', 'TIMESTAMP', 'BOOLEAN', 'JSON']);
 
   if (lengthTypes.has(t)) {
-    if (!Number.isFinite(len) || len <= 0) {
-      const err = new Error('Length is required and must be greater than zero for type ' + t);
+    if (!Number.isInteger(len) || len <= 0) {
+      const err = new Error('Length must be a positive integer for type ' + t);
       err.status = 400;
       throw err;
     }
     if (t === 'DECIMAL') {
+      if (len > 38) {
+        const err = new Error('DECIMAL precision cannot exceed 38');
+        err.status = 400;
+        throw err;
+      }
       return 'DECIMAL(' + len + ',2)';
+    }
+    const maxLen = t === 'CHAR' ? 255 : 2000;
+    if (len > maxLen) {
+      const err = new Error(t + ' length cannot exceed ' + maxLen);
+      err.status = 400;
+      throw err;
     }
     return t + '(' + len + ')';
   }
@@ -194,8 +215,38 @@ function buildDefaultSql(defaultValue) {
     return 'DEFAULT CURRENT_TIMESTAMP';
   }
 
-  const escaped = raw.replace(/'/g, "''");
-  return "DEFAULT '" + escaped + "'";
+  // Use Sequelize dialect-aware escaping to prevent backslash/quote SQL breakout
+  return 'DEFAULT ' + sequelize.escape(raw);
+}
+
+function isCoreModelColumn(tableName, columnName) {
+  for (const model of Object.values(sequelize.models)) {
+    if (model.getTableName() === tableName) {
+      if (model.rawAttributes && Object.prototype.hasOwnProperty.call(model.rawAttributes, columnName)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function pickUserPayload(body = {}, { isCreate = false } = {}) {
+  const allowed = ['username', 'email', 'first_name', 'last_name', 'department', 'job_title', 'phone', 'role_id', 'is_active', 'avatar_url'];
+  const out = {};
+  for (const key of allowed) {
+    if (body[key] !== undefined) {
+      if (!isCreate && key === 'username') continue; // username is immutable on update
+      out[key] = typeof body[key] === 'string' ? body[key].trim() : body[key];
+    }
+  }
+  if (out.email) out.email = String(out.email).toLowerCase();
+  if (out.role_id !== undefined && out.role_id !== null && out.role_id !== '') {
+    out.role_id = Number(out.role_id);
+  }
+  if (out.is_active !== undefined) {
+    out.is_active = Boolean(out.is_active);
+  }
+  return out;
 }
 
 async function ensureCustomizationPrefsTable() {
@@ -779,6 +830,7 @@ router.get('/users', async (req, res, next) => {
 });
 
 router.patch('/users/bulk', async (req, res, next) => {
+  const transaction = await sequelize.transaction();
   try {
     const { user_ids, action, role_id, department } = req.body || {};
     const ids = Array.isArray(user_ids)
@@ -786,16 +838,19 @@ router.patch('/users/bulk', async (req, res, next) => {
       : [];
 
     if (!ids.length) {
+      await transaction.rollback();
       return res.status(400).json({ success: false, message: 'Select at least one user' });
     }
     if (!['activate', 'deactivate', 'set_role', 'set_department'].includes(action)) {
+      await transaction.rollback();
       return res.status(400).json({ success: false, message: 'Unsupported bulk action' });
     }
 
     let nextRole = null;
     if (action === 'set_role') {
-      nextRole = await Role.findByPk(role_id);
+      nextRole = await Role.findByPk(role_id, { transaction });
       if (!nextRole) {
+        await transaction.rollback();
         return res.status(400).json({ success: false, message: 'Valid target role is required' });
       }
     }
@@ -803,11 +858,21 @@ router.patch('/users/bulk', async (req, res, next) => {
     const users = await User.findAll({
       where: { id: { [Op.in]: ids } },
       include: [{ model: Role, as: 'role' }],
+      transaction,
+      lock: transaction.LOCK.UPDATE
     });
 
-    let activeAdminCount = await getActiveAdminCount();
+    const activeAdmins = await User.findAll({
+      where: { is_active: true },
+      include: [{ model: Role, as: 'role', where: { name: 'admin' }, required: true }],
+      attributes: ['id'],
+      transaction,
+      lock: transaction.LOCK.UPDATE
+    });
+    let activeAdminCount = activeAdmins.length;
     let updatedCount = 0;
     const skippedReasons = [];
+    const deactivatedIds = [];
 
     for (const targetUser of users) {
       const isCurrentActiveAdmin = targetUser.role?.name === 'admin' && Boolean(targetUser.is_active);
@@ -823,12 +888,13 @@ router.patch('/users/bulk', async (req, res, next) => {
           skippedReasons.push(`${targetUser.username}: ${guard.message}`);
           continue;
         }
-        await targetUser.update({ is_active: false });
+        await targetUser.update({ is_active: false }, { transaction });
+        deactivatedIds.push(targetUser.id);
         if (isCurrentActiveAdmin) activeAdminCount -= 1;
         updatedCount += 1;
       } else if (action === 'activate') {
         if (!targetUser.is_active) {
-          await targetUser.update({ is_active: true });
+          await targetUser.update({ is_active: true }, { transaction });
           if (targetUser.role?.name === 'admin') activeAdminCount += 1;
         }
         updatedCount += 1;
@@ -844,15 +910,24 @@ router.patch('/users/bulk', async (req, res, next) => {
           skippedReasons.push(`${targetUser.username}: ${guard.message}`);
           continue;
         }
-        await targetUser.update({ role_id: nextRole.id });
+        await targetUser.update({ role_id: nextRole.id }, { transaction });
         if (isCurrentActiveAdmin && nextRole.name !== 'admin') activeAdminCount -= 1;
         else if (!isCurrentActiveAdmin && targetUser.is_active && nextRole.name === 'admin') activeAdminCount += 1;
         updatedCount += 1;
       } else if (action === 'set_department') {
-        await targetUser.update({ department: department ? String(department).trim() : null });
+        await targetUser.update({ department: department ? String(department).trim() : null }, { transaction });
         updatedCount += 1;
       }
     }
+
+    if (deactivatedIds.length) {
+      await RefreshToken.update(
+        { is_revoked: true },
+        { where: { user_id: { [Op.in]: deactivatedIds }, is_revoked: false }, transaction }
+      );
+    }
+
+    await transaction.commit();
 
     res.json({
       success: true,
@@ -862,7 +937,10 @@ router.patch('/users/bulk', async (req, res, next) => {
         skipped_reasons: skippedReasons,
       }
     });
-  } catch (err) { next(err); }
+  } catch (err) {
+    await transaction.rollback().catch(() => {});
+    next(err);
+  }
 });
 
 router.get('/users/:id/summary', async (req, res, next) => {
@@ -928,8 +1006,10 @@ router.post('/users', async (req, res, next) => {
     if (!pwdCheck.valid) {
       return res.status(400).json({ success: false, message: pwdCheck.message });
     }
-    const payload = Object.assign({}, req.body);
-    delete payload.password;
+    const payload = pickUserPayload(req.body, { isCreate: true });
+    if (!payload.username || !payload.email || !payload.role_id) {
+      return res.status(400).json({ success: false, message: 'Username, email, and role_id are required.' });
+    }
     payload.password_hash = await bcrypt.hash(password, 12);
     const user = await User.create(payload);
     const created = await User.findByPk(user.id, {
@@ -947,18 +1027,20 @@ router.put('/users/:id', async (req, res, next) => {
     });
     if (!user) return res.status(404).json({ success: false, message: 'Not found' });
 
-    const updates = Object.assign({}, req.body);
-    if (updates.password) {
-      const pwdCheck = validatePasswordStrength(updates.password);
+    const updates = pickUserPayload(req.body, { isCreate: false });
+    let revokeSessions = false;
+    if (req.body?.password) {
+      const pwdCheck = validatePasswordStrength(req.body.password);
       if (!pwdCheck.valid) {
         return res.status(400).json({ success: false, message: pwdCheck.message });
       }
-      updates.password_hash = await bcrypt.hash(updates.password, 12);
+      updates.password_hash = await bcrypt.hash(req.body.password, 12);
+      revokeSessions = true;
     }
-    delete updates.password;
 
     const changingRole = updates.role_id !== undefined && Number(updates.role_id) !== Number(user.role_id);
     const deactivating = updates.is_active === false && Boolean(user.is_active);
+    if (deactivating) revokeSessions = true;
     if (changingRole || deactivating) {
       const activeAdminCount = await getActiveAdminCount();
       if (deactivating) {
@@ -991,6 +1073,12 @@ router.put('/users/:id', async (req, res, next) => {
     }
 
     await user.update(updates);
+    if (revokeSessions) {
+      await RefreshToken.update(
+        { is_revoked: true },
+        { where: { user_id: user.id, is_revoked: false } }
+      );
+    }
     const updated = await User.findByPk(user.id, {
       attributes: { exclude: ['password_hash'] },
       include: [{ model: Role, as: 'role' }],
@@ -1015,7 +1103,17 @@ router.delete('/users/:id', async (req, res, next) => {
     if (!guard.allowed) {
       return res.status(guard.status).json({ success: false, message: guard.message });
     }
-    await User.destroy({ where: { id: req.params.id } });
+    try {
+      await User.destroy({ where: { id: req.params.id } });
+    } catch (delErr) {
+      if (delErr?.name === 'SequelizeForeignKeyConstraintError' || delErr?.parent?.errno === 1451) {
+        return res.status(409).json({
+          success: false,
+          message: 'Cannot delete user because historical operational records reference this account. Deactivate the user instead.'
+        });
+      }
+      throw delErr;
+    }
     res.json({ success: true });
   } catch (err) { next(err); }
 });
@@ -1038,7 +1136,14 @@ router.patch('/users/:id/toggle', async (req, res, next) => {
         return res.status(guard.status).json({ success: false, message: guard.message });
       }
     }
-    await user.update({ is_active: !user.is_active });
+    const nextActive = !user.is_active;
+    await user.update({ is_active: nextActive });
+    if (!nextActive) {
+      await RefreshToken.update(
+        { is_revoked: true },
+        { where: { user_id: user.id, is_revoked: false } }
+      );
+    }
     res.json({ success: true, data: { is_active: user.is_active } });
   } catch (err) { next(err); }
 });
@@ -1053,6 +1158,10 @@ router.patch('/users/:id/reset-password', async (req, res, next) => {
     const user = await User.findByPk(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: 'Not found' });
     await user.update({ password_hash: await bcrypt.hash(new_password, 12) });
+    await RefreshToken.update(
+      { is_revoked: true },
+      { where: { user_id: user.id, is_revoked: false } }
+    );
     res.json({ success: true, message: 'Password reset successfully' });
   } catch (err) { next(err); }
 });
@@ -1075,7 +1184,12 @@ router.get('/operation-types', async (req, res, next) => {
 
 router.post('/operation-types', async (req, res, next) => {
   try {
-    const t = await OperationType.create(req.body);
+    const name = String(req.body?.name || '').trim().slice(0, 100);
+    if (!name) return res.status(400).json({ success: false, message: 'Name is required.' });
+    const color = /^#[0-9A-Fa-f]{6}$/.test(String(req.body?.color || '')) ? req.body.color : '#1565C0';
+    const icon = req.body?.icon ? String(req.body.icon).trim().slice(0, 50) : null;
+    const description = req.body?.description ? String(req.body.description).trim().slice(0, 1000) : null;
+    const t = await OperationType.create({ name, color, icon, description });
     res.status(201).json({ success: true, data: t });
   } catch (err) { next(err); }
 });
@@ -1084,7 +1198,12 @@ router.put('/operation-types/:id', async (req, res, next) => {
   try {
     const t = await OperationType.findByPk(req.params.id);
     if (!t) return res.status(404).json({ success: false, message: 'Not found' });
-    await t.update(req.body);
+    const updates = {};
+    if (req.body?.name !== undefined) updates.name = String(req.body.name).trim().slice(0, 100);
+    if (req.body?.color !== undefined && /^#[0-9A-Fa-f]{6}$/.test(String(req.body.color))) updates.color = req.body.color;
+    if (req.body?.icon !== undefined) updates.icon = req.body.icon ? String(req.body.icon).trim().slice(0, 50) : null;
+    if (req.body?.description !== undefined) updates.description = req.body.description ? String(req.body.description).trim().slice(0, 1000) : null;
+    await t.update(updates);
     res.json({ success: true, data: t });
   } catch (err) { next(err); }
 });
@@ -1165,7 +1284,12 @@ router.get('/asset-categories', async (req, res, next) => {
 
 router.post('/asset-categories', async (req, res, next) => {
   try {
-    const c = await AssetCategory.create(req.body);
+    const name = String(req.body?.name || '').trim().slice(0, 100);
+    if (!name) return res.status(400).json({ success: false, message: 'Category name is required.' });
+    const rawType = String(req.body?.type || 'HARDWARE').trim().toUpperCase();
+    const type = ['HARDWARE', 'SOFTWARE', 'NETWORK', 'OTHER'].includes(rawType) ? rawType : 'OTHER';
+    const description = req.body?.description ? String(req.body.description).trim().slice(0, 1000) : null;
+    const c = await AssetCategory.create({ name, type, description });
     res.status(201).json({ success: true, data: c });
   } catch (err) { next(err); }
 });
@@ -1174,7 +1298,14 @@ router.put('/asset-categories/:id', async (req, res, next) => {
   try {
     const c = await AssetCategory.findByPk(req.params.id);
     if (!c) return res.status(404).json({ success: false, message: 'Not found' });
-    await c.update(req.body);
+    const updates = {};
+    if (req.body?.name !== undefined) updates.name = String(req.body.name).trim().slice(0, 100);
+    if (req.body?.type !== undefined) {
+      const rawType = String(req.body.type).trim().toUpperCase();
+      if (['HARDWARE', 'SOFTWARE', 'NETWORK', 'OTHER'].includes(rawType)) updates.type = rawType;
+    }
+    if (req.body?.description !== undefined) updates.description = req.body.description ? String(req.body.description).trim().slice(0, 1000) : null;
+    await c.update(updates);
     res.json({ success: true, data: c });
   } catch (err) { next(err); }
 });
@@ -1471,8 +1602,8 @@ router.patch('/schema/tables/:table/columns/:column', async (req, res, next) => 
     const currentColumn = validateIdentifier(req.params.column, 'column');
     const newName = req.body.newName ? validateIdentifier(req.body.newName, 'new column') : currentColumn;
 
-    if (SYSTEM_COLUMN_DENYLIST.has(currentColumn)) {
-      return res.status(400).json({ success: false, message: 'System columns cannot be modified' });
+    if (SYSTEM_COLUMN_DENYLIST.has(currentColumn) || isCoreModelColumn(tableName, currentColumn)) {
+      return res.status(400).json({ success: false, message: 'Core system columns cannot be modified.' });
     }
 
     const [existingRows] = await sequelize.query(
@@ -1530,8 +1661,8 @@ router.delete('/schema/tables/:table/columns/:column', async (req, res, next) =>
     assertCustomizableTable(tableName);
     const column = validateIdentifier(req.params.column, 'column');
 
-    if (SYSTEM_COLUMN_DENYLIST.has(column)) {
-      return res.status(400).json({ success: false, message: 'System columns cannot be deleted' });
+    if (SYSTEM_COLUMN_DENYLIST.has(column) || isCoreModelColumn(tableName, column)) {
+      return res.status(400).json({ success: false, message: 'Core system columns cannot be deleted.' });
     }
 
     const [existingRows] = await sequelize.query(

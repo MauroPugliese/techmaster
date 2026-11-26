@@ -5,16 +5,39 @@ const jwt    = require('jsonwebtoken');
 const { User, Role, RefreshToken } = require('../models');
 const { Op } = require('sequelize');
 
-// In-memory brute force tracker (use Redis in production)
+// In-memory brute force tracker keyed on (ip, email) with bounded eviction
 const loginAttempts = new Map();
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_TIME_MS = 15 * 60 * 1000; // 15 minutes
 const ATTEMPT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+const MAX_TRACKED_KEYS = 5000;
 
-const recordFailedAttempt = (email) => {
+function makeAttemptKey(email, ip = '') {
+  const normEmail = String(email || '').trim().toLowerCase();
+  const normIp = String(ip || '').trim();
+  return normIp ? `${normIp}|${normEmail}` : normEmail;
+}
+
+function pruneExpiredAttempts(now) {
+  if (loginAttempts.size <= MAX_TRACKED_KEYS) return;
+  for (const [k, v] of loginAttempts.entries()) {
+    const expiredWindow = now - v.firstAttempt > ATTEMPT_WINDOW_MS;
+    const expiredLock = !v.lockedUntil || now >= v.lockedUntil;
+    if (expiredWindow && expiredLock) {
+      loginAttempts.delete(k);
+    }
+  }
+}
+
+const recordFailedAttempt = (email, ip = '') => {
   const now = Date.now();
-  const attempts = loginAttempts.get(email) || { count: 0, firstAttempt: now, lockedUntil: 0 };
-  
+  pruneExpiredAttempts(now);
+  const key = makeAttemptKey(email, ip);
+  const prev = loginAttempts.get(key);
+  const attempts = prev
+    ? { ...prev }
+    : { count: 0, firstAttempt: now, lockedUntil: 0 };
+
   // Reset if outside the window
   if (now - attempts.firstAttempt > ATTEMPT_WINDOW_MS) {
     attempts.count = 1;
@@ -26,14 +49,15 @@ const recordFailedAttempt = (email) => {
       attempts.lockedUntil = now + LOCKOUT_TIME_MS;
     }
   }
-  
-  loginAttempts.set(email, attempts);
+
+  loginAttempts.set(key, attempts);
 };
 
-const checkBruteForce = (email) => {
-  const attempts = loginAttempts.get(email);
-  if (!attempts) return null; // No attempts recorded
-  
+const checkBruteForce = (email, ip = '') => {
+  const key = makeAttemptKey(email, ip);
+  const attempts = loginAttempts.get(key);
+  if (!attempts) return null;
+
   const now = Date.now();
   if (now < attempts.lockedUntil) {
     const remainingMs = attempts.lockedUntil - now;
@@ -43,12 +67,15 @@ const checkBruteForce = (email) => {
       message: `Account temporarily locked. Try again in ${Math.ceil(remainingMs / 1000)}s`
     };
   }
-  
+
+  if (now - attempts.firstAttempt > ATTEMPT_WINDOW_MS) {
+    loginAttempts.delete(key);
+  }
   return null;
 };
 
-const clearLoginAttempts = (email) => {
-  loginAttempts.delete(email);
+const clearLoginAttempts = (email, ip = '') => {
+  loginAttempts.delete(makeAttemptKey(email, ip));
 };
 
 const authenticate = async (req, res, next) => {
@@ -60,6 +87,9 @@ const authenticate = async (req, res, next) => {
 
     const token   = header.split(' ')[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (decoded?.type && decoded.type !== 'access') {
+      return res.status(401).json({ success: false, message: 'Invalid token type' });
+    }
 
     const user = await User.findByPk(decoded.id, {
       include: [{ model: Role, as: 'role' }],

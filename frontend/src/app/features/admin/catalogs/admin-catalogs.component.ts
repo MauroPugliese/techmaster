@@ -2,11 +2,13 @@
 // features/admin/catalogs/admin-catalogs.component.ts
 // =============================================================================
 import {
-  Component, OnChanges, SimpleChanges, Input, Output, EventEmitter,
-  ChangeDetectionStrategy, ChangeDetectorRef
+  Component, OnChanges, OnDestroy, SimpleChanges, Input, Output, EventEmitter,
+  ChangeDetectionStrategy, ChangeDetectorRef, HostListener
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../../core/services/services';
 import { ToastService } from '../../../core/services/toast.service';
 import { ConfirmService } from '../../../core/services/confirm.service';
@@ -35,7 +37,9 @@ export type CatalogTab =
   styleUrls: ['./admin-catalogs.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class AdminCatalogsComponent implements OnChanges {
+export class AdminCatalogsComponent implements OnChanges, OnDestroy {
+  private readonly destroy$ = new Subject<void>();
+  private loadSeq = 0;
   Math = Math;
 
   @Input() activeTab: CatalogTab = 'operation-types';
@@ -152,15 +156,32 @@ export class AdminCatalogsComponent implements OnChanges {
     return formatShiftDuration(this.itemForm?.start_time, this.itemForm?.end_time);
   }
 
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
+  @HostListener('document:keydown.escape')
+  onEscapeKey(): void {
+    if (this.showModal && !this.saving) {
+      this.showModal = false;
+      this.cdr.markForCheck();
+    }
+  }
+
   loadItems(): void {
+    const seq = ++this.loadSeq;
+    const requestedTab = this.activeTab;
     this.loading = true;
-    this.api.get<any>(this.apiPath(this.activeTab)).subscribe({
+    this.api.get<any>(this.apiPath(requestedTab)).pipe(takeUntil(this.destroy$)).subscribe({
       next: res => {
+        if (seq !== this.loadSeq) return;
         this.items = res.data || [];
         this.loading = false;
         this.cdr.markForCheck();
       },
       error: (err: any) => {
+        if (seq !== this.loadSeq) return;
         this.loading = false;
         this.toast.error(err?.error?.message || 'Failed to load items.');
         this.cdr.markForCheck();
@@ -266,7 +287,7 @@ export class AdminCatalogsComponent implements OnChanges {
       ? this.api.put<any>(this.apiPath(this.activeTab) + '/' + this.editingItem.id, payload)
       : this.api.post<any>(this.apiPath(this.activeTab), payload);
 
-    req$.subscribe({
+    req$.pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {
         this.saving = false;
         this.showModal = false;
@@ -284,7 +305,7 @@ export class AdminCatalogsComponent implements OnChanges {
   }
 
   toggleLocationActive(item: any): void {
-    this.api.patch<any>('/admin/warehouse-locations/' + item.id + '/toggle', {}).subscribe({
+    this.api.patch<any>('/admin/warehouse-locations/' + item.id + '/toggle', {}).pipe(takeUntil(this.destroy$)).subscribe({
       next: res => {
         const nextActive = Boolean(res.data?.is_active);
         this.items = this.items.map(row => row.id === item.id ? { ...row, is_active: nextActive } : row);
@@ -309,7 +330,7 @@ export class AdminCatalogsComponent implements OnChanges {
     );
     if (!ok) return;
 
-    this.api.delete<any>(this.apiPath(this.activeTab) + '/' + item.id).subscribe({
+    this.api.delete<any>(this.apiPath(this.activeTab) + '/' + item.id).pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {
         this.toast.success('Item deleted.');
         this.loadItems();

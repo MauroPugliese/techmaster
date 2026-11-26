@@ -527,9 +527,10 @@ export class ExportMenuComponent {
       return { mergedParams: base, useGlobalRange: this.includeDateRange };
     }
 
-    // Multi-day explicit cadence overrides single-day `date` or single-year `year` filters
+    // Multi-day explicit cadence overrides single-day `date`, single-year `year`, or preset `period` filters
     delete base['date'];
     delete base['year'];
+    delete base['period'];
 
     if (this.periodMode === 'weekly') {
       const { start, end } = computeIsoWeekBounds(this.weekOffset);

@@ -28,16 +28,18 @@ function colLetter(idx) {
  * into `{ title, labels: string[], series: [{ name, data: number[] }] }`.
  */
 function resolvePrimaryChartData(collected, spec) {
-  const candidates = (collected.charts || []).filter((ch) => {
-    if (!ch || !Array.isArray(ch.labels) || !ch.labels.length) return false;
-    const rawSeries = Array.isArray(ch.series) && ch.series.length
-      ? ch.series
-      : [{ name: ch.seriesName || 'Count', data: ch.values || [] }];
-    return rawSeries.some((s) => (s.data || []).some((v) => toNumber(v, 0) > 0));
-  });
+  const indexedCandidates = (collected.charts || [])
+    .map((ch, idx) => ({ ch, idx }))
+    .filter(({ ch }) => {
+      if (!ch || !Array.isArray(ch.labels) || !ch.labels.length) return false;
+      const rawSeries = Array.isArray(ch.series) && ch.series.length
+        ? ch.series
+        : [{ name: ch.seriesName || 'Count', data: ch.values || [] }];
+      return rawSeries.some((s) => (s.data || []).some((v) => toNumber(v, 0) > 0));
+    });
 
-  if (candidates.length > 0) {
-    const ch = candidates[0];
+  if (indexedCandidates.length > 0) {
+    const { ch, idx: usedChartIndex } = indexedCandidates[0];
     const labels = ch.labels.slice(0, 8).map((l) => cleanText(String(l || 'Item'), 28));
     const rawSeries = (Array.isArray(ch.series) && ch.series.length
       ? ch.series
@@ -53,7 +55,8 @@ function resolvePrimaryChartData(collected, spec) {
       title: cleanText(ch.title || `${spec.title} — Overview`, 68),
       labels,
       series,
-      hasRealChart: true
+      hasRealChart: true,
+      usedChartIndex
     };
   }
 
@@ -68,7 +71,8 @@ function resolvePrimaryChartData(collected, spec) {
         name: 'Score (%)',
         data: items.map((it) => Number(toNumber(it.percent, 0).toFixed(1)))
       }],
-      hasRealChart: true
+      hasRealChart: true,
+      usedChartIndex: -1
     };
   }
 

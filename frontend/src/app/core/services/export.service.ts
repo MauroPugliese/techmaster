@@ -46,7 +46,7 @@ export class ExportService {
     {
       value: 'pptx',
       label: 'PowerPoint',
-      description: 'CAE slides & editable charts',
+      description: 'Executive slides & editable charts',
       icon: 'slideshow',
     },
   ];

@@ -139,12 +139,14 @@
 
   <app-warehouse-movements
     *ngIf="activeTab === 'movements'"
-    [refreshTick]="refreshTick">
+    [refreshTick]="refreshTick"
+    [externalSearch]="externalSearch">
   </app-warehouse-movements>
 
   <app-warehouse-reorder
     *ngIf="activeTab === 'reorder'"
     [refreshTick]="refreshTick"
+    [externalSearch]="externalSearch"
     (quickRestockRequested)="openQuickRestock($event)"
     (detailRequested)="openDetail($event)"
     (mutated)="onMutated()">

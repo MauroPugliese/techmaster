@@ -154,7 +154,7 @@ export class WikiComponent implements OnInit, OnDestroy {
       });
 
     this.route.queryParamMap.pipe(takeUntil(this.destroy$)).subscribe(params => {
-      const slug = params.get('article');
+      const slug = params.get('article') || params.get('slug');
       if (slug && this.viewingArticle?.slug !== slug) {
         this.openArticleBySlug(slug, false);
       } else if (!slug && this.viewingArticle) {

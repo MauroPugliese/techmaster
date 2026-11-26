@@ -12,8 +12,33 @@ const { detectLibreOfficeBinary } = require('./exports/core/planned-daily-templa
 
 const PORT = process.env.PORT || 3000;
 
+function assertSecuritySecrets() {
+  const jwtSecret = String(process.env.JWT_SECRET || '').trim();
+  const refreshSecret = String(process.env.JWT_REFRESH_SECRET || '').trim();
+  const isProd = process.env.NODE_ENV === 'production';
+
+  if (!jwtSecret) {
+    throw new Error('JWT_SECRET environment variable is required.');
+  }
+  if (isProd) {
+    if (jwtSecret.length < 16 || /CHANGE_ME|changeme|dev_secret/i.test(jwtSecret)) {
+      throw new Error('Production JWT_SECRET must be a strong, non-placeholder secret (min 16 chars).');
+    }
+    if (!refreshSecret || refreshSecret.length < 16 || /CHANGE_ME|changeme/i.test(refreshSecret)) {
+      throw new Error('Production JWT_REFRESH_SECRET must be a strong, non-placeholder secret (min 16 chars).');
+    }
+    if (jwtSecret === refreshSecret) {
+      throw new Error('JWT_SECRET and JWT_REFRESH_SECRET must be distinct values in production.');
+    }
+  } else if (refreshSecret && jwtSecret === refreshSecret) {
+    logger.warn('JWT_SECRET and JWT_REFRESH_SECRET are identical; configure distinct secrets before deploying to production.');
+  }
+}
+
 async function bootstrap() {
   try {
+    assertSecuritySecrets();
+
     const libreOffice = detectLibreOfficeBinary();
     if (libreOffice.available) {
       logger.info(`Template PDF conversion enabled (binary: ${libreOffice.binary})`);
@@ -24,13 +49,8 @@ async function bootstrap() {
     await sequelize.authenticate();
     logger.info('✅ Database connection established.');
 
-    // Ensure all migrations are applied cleanly
+    // Ensure all migrations are applied cleanly (migrations are the single schema authority)
     await runMigrations();
-
-    // In development mode, ensure any new Sequelize model updates are synced
-    if (process.env.NODE_ENV !== 'production') {
-      await sequelize.sync();
-    }
 
     const server = http.createServer(app);
     const io = initSocket(server);

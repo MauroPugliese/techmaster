@@ -33,6 +33,8 @@
           <app-dropdown class="form-control"
                         [(ngModel)]="form.user_id"
                         (ngModelChange)="refreshLaborLawAdvisory()"
+                        [searchable]="true"
+                        searchPlaceholder="Search employee name…"
                         placeholder="— Select employee —">
             <app-dropdown-option [ngValue]="null">— Select employee —</app-dropdown-option>
             <app-dropdown-option *ngFor="let e of allEmployees" [ngValue]="e.id">
@@ -45,6 +47,8 @@
           <label class="form-label">{{fieldLabel('supervisor_id','Supervisor')}}</label>
           <app-dropdown class="form-control"
                         [(ngModel)]="form.supervisor_id"
+                        [searchable]="true"
+                        searchPlaceholder="Search supervisor…"
                         placeholder="— Optional —">
             <app-dropdown-option [ngValue]="null">— Optional —</app-dropdown-option>
             <app-dropdown-option *ngFor="let e of allEmployees" [ngValue]="e.id">
@@ -60,6 +64,11 @@
         <app-dropdown class="form-control"
                       [(ngModel)]="form.shift_type_id"
                       (ngModelChange)="selectShiftType($event)"
+                      [searchable]="true"
+                      [creatable]="true"
+                      createLabel="Create new shift pattern"
+                      createPlaceholder="e.g. Swing Shift"
+                      (createOption)="quickCreateShiftType($event)"
                       placeholder="— Select pattern —">
           <app-dropdown-option *ngFor="let st of workShiftTypes" [ngValue]="st.id">
             {{st.name}} ({{st.code}} · {{formatTime(st.start_time)}}–{{formatTime(st.end_time)}})

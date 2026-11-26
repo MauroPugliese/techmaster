@@ -55,11 +55,9 @@ export class SectionAccessService {
         this.pendingRequest$ = null;
       }),
       catchError(() => {
-        const fallback = this.cloneDefaults();
-        this.cache = fallback;
-        this.sectionsSubject.next(fallback);
+        // Fail-closed on network/API error: never cache DEFAULT_SECTIONS (which includes 'admin')
         this.pendingRequest$ = null;
-        return of(fallback);
+        return of([]);
       }),
       shareReplay(1)
     );
@@ -74,8 +72,14 @@ export class SectionAccessService {
     return this.load(true);
   }
 
+  reset(): void {
+    this.cache = null;
+    this.pendingRequest$ = null;
+    this.sectionsSubject.next([]);
+  }
+
   isVisible(section: NavSectionAccess | null | undefined): boolean {
-    if (!section) return true;
+    if (!section) return false;
     const value = section.is_visible;
     return !(value === false || value === 0 || value === '0');
   }
@@ -83,16 +87,17 @@ export class SectionAccessService {
   canAccessSection(sectionKey: string): Observable<boolean> {
     return this.load(false).pipe(
       map(sections => {
+        if (!sections.length) return false;
         const section = sections.find(item => item.section_key === sectionKey);
-        return !section || this.isVisible(section);
+        return Boolean(section && this.isVisible(section));
       }),
-      catchError(() => of(true))
+      catchError(() => of(false))
     );
   }
 
   getFirstVisiblePath(sections: NavSectionAccess[]): string {
     const visible = (sections || []).find(section => this.isVisible(section));
-    return visible?.path || '/dashboard';
+    return visible?.path || '/profile';
   }
 
   private normalizeSections(input: any): NavSectionAccess[] {

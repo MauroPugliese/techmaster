@@ -113,7 +113,9 @@ module.exports = {
       ? pct(expandedInPeriod.filter((o) => o.status === 'DONE').length, expandedInPeriod.length)
       : completion;
     const weeklyShare = pct(byType.WEEK || 0, total);
-    const activeSeriesPct = pct(total - deletedCount, Math.max(total, 1));
+    const activeSeriesPct = expandedInPeriod.length > 0
+      ? Math.max(0, Math.min(100, pct(expandedInPeriod.length, expandedInPeriod.length + deletedCount)))
+      : Math.max(0, Math.min(100, pct(Math.max(0, total - deletedCount), Math.max(total, 1))));
 
     const insights = [];
     if (todo > 0) {

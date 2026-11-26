@@ -630,7 +630,7 @@ function buildTimelineShiftBlocks(sheets = []) {
  */
 function buildTimelineMaintenanceBlocks(dateStr, maintRecords = [], plannedOccurrences = [], simulators = []) {
   const blocks = [];
-  const toHhMm = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const toHhMm = (d) => `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
 
   for (const m of maintRecords || []) {
     if (!m || !m.simulator_id || !m.scheduled_date) continue;

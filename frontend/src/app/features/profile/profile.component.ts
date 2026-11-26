@@ -33,6 +33,7 @@ interface SessionRow {
 })
 export class ProfileComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();
+  private syncedUserId: number | null = null;
 
   currentUser: User | null = null;
   avatarLoadError = false;
@@ -72,7 +73,10 @@ export class ProfileComponent implements OnInit, OnDestroy {
     this.auth.currentUser$.pipe(takeUntil(this.destroy$)).subscribe((user) => {
       if (!user) return;
       this.currentUser = user;
-      this.syncFormFromUser(user);
+      if (this.syncedUserId !== user.id) {
+        this.syncedUserId = user.id;
+        this.syncFormFromUser(user);
+      }
       this.cdr.markForCheck();
     });
 
@@ -183,15 +187,18 @@ export class ProfileComponent implements OnInit, OnDestroy {
       avatar_url: this.avatarUrl.trim()
     };
 
-    this.auth.updateProfile(payload).subscribe({
-      next: () => {
+    this.auth.updateProfile(payload).pipe(takeUntil(this.destroy$)).subscribe({
+      next: (res) => {
         this.savingProfile = false;
+        if (res?.data) {
+          this.syncFormFromUser(res.data);
+        }
         this.toast.success('Your profile information has been updated.');
         this.cdr.markForCheck();
       },
       error: (err) => {
         this.savingProfile = false;
-        const msg = err?.error?.errors?.[0]?.msg || err?.error?.message || 'Unable to update profile.';
+        const msg = err?.error?.errors?.[0]?.message || err?.error?.errors?.[0]?.msg || err?.error?.message || 'Unable to update profile.';
         this.toast.error(msg, 'Update Failed');
         this.cdr.markForCheck();
       }
@@ -206,18 +213,19 @@ export class ProfileComponent implements OnInit, OnDestroy {
     this.auth.updateProfile({
       current_password: this.currentPassword,
       new_password: this.newPassword
-    } as any).subscribe({
+    } as any).pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {
         this.savingPassword = false;
         this.currentPassword = '';
         this.newPassword = '';
         this.confirmPassword = '';
         this.toast.success('Password updated successfully.');
+        this.loadSessions();
         this.cdr.markForCheck();
       },
       error: (err) => {
         this.savingPassword = false;
-        const msg = err?.error?.errors?.[0]?.msg || err?.error?.message || 'Unable to update password.';
+        const msg = err?.error?.errors?.[0]?.message || err?.error?.errors?.[0]?.msg || err?.error?.message || 'Unable to update password.';
         this.toast.error(msg, 'Password Error');
         this.cdr.markForCheck();
       }
@@ -228,7 +236,7 @@ export class ProfileComponent implements OnInit, OnDestroy {
     this.loadingSessions = true;
     this.cdr.markForCheck();
 
-    this.api.get<any>('/auth/sessions').subscribe({
+    this.api.get<any>('/auth/sessions').pipe(takeUntil(this.destroy$)).subscribe({
       next: (res) => {
         this.loadingSessions = false;
         this.sessions = res?.data?.sessions || [];
@@ -258,7 +266,7 @@ export class ProfileComponent implements OnInit, OnDestroy {
     this.revokingSessions = true;
     this.cdr.markForCheck();
 
-    this.api.post<any>('/auth/revoke-sessions', {}).subscribe({
+    this.api.post<any>('/auth/revoke-sessions', {}).pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {
         this.revokingSessions = false;
         this.toast.info('All sessions revoked. Signing out…');

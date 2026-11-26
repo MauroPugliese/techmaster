@@ -208,7 +208,10 @@ async function buildDocxBuffer(spec) {
   const chartData = await updateTemplateChart(zip, collected, spec);
 
   // 2. Build module-tailored data-first sections
-  const content = buildTemplateContent(spec, { hasRealChart: Boolean(chartData?.hasRealChart) });
+  const content = buildTemplateContent(spec, {
+    hasRealChart: Boolean(chartData?.hasRealChart),
+    usedChartIndex: typeof chartData?.usedChartIndex === 'number' ? chartData.usedChartIndex : 0
+  });
 
   // 3. Rebuild `word/document.xml` keeping exact namespaces, cover logo drawing & sectPr
   const origDocXml = zip.file('word/document.xml').asText();

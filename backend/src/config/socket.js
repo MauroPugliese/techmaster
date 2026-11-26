@@ -17,15 +17,18 @@ function initSocket(server) {
     }
   });
 
-  // JWT Authentication Middleware for Handshake
+  // JWT Authentication Middleware for Handshake (auth payload only — never query string)
   io.use(async (socket, next) => {
     try {
-      const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+      const token = socket.handshake.auth?.token;
       if (!token) {
         return next(new Error('Authentication error: No token provided'));
       }
 
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      if (decoded?.type && decoded.type !== 'access') {
+        return next(new Error('Authentication error: Invalid token type'));
+      }
       const user = await User.findByPk(decoded.id, {
         include: [{ model: Role, as: 'role' }],
         attributes: { exclude: ['password_hash'] }

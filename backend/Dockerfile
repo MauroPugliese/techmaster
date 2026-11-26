@@ -28,10 +28,8 @@ FROM base AS deps
 
 COPY package.json package-lock.json* ./
 
-# --omit=dev: skip devDependencies (nodemon, etc.) to keep the final image lean
-# --ignore-scripts: skip postinstall hooks for security (native modules are OK)
-RUN rm -f package-lock.json \
-    && npm install --omit=dev
+# Deterministic production install using package-lock.json when available
+RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi
 
 # =============================================================================
 # Stage: production — the final, minimal runtime image
@@ -70,22 +68,15 @@ RUN if [ "$INSTALL_LIBREOFFICE" = "true" ]; then \
 # ── Switch to non-root user ───────────────────────────────────────────────────
 USER node
 
-# ── Environment defaults (overridden by docker-compose.yml / .env) ────────────
+# ── Environment defaults (secrets MUST be injected at runtime via .env / orchestrator) ──
 ENV NODE_ENV=production \
     PORT=3000 \
-    # DB — overridden at runtime, shown here for documentation
     DB_HOST=db \
     DB_PORT=3306 \
     DB_NAME=smart \
     DB_USER=smart \
-    DB_PASSWORD=changeme \
-    # JWT — MUST be overridden to a secret value in production
-    JWT_SECRET=CHANGE_ME_IN_PRODUCTION \
-    JWT_REFRESH_SECRET=CHANGE_ME_REFRESH_IN_PRODUCTION \
     JWT_EXPIRES_IN=15m \
-    # Logging
     LOG_LEVEL=info \
-    # CORS — set to the frontend origin in production
     FRONTEND_URL=http://localhost:4200
 
 # ── Expose the API port ───────────────────────────────────────────────────────

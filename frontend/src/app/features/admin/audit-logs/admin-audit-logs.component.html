@@ -7,7 +7,7 @@
     <button type="button" class="btn btn-secondary" [disabled]="loading" (click)="loadLogs()">
       <span class="btn-icon">refresh</span> Refresh
     </button>
-    <app-export-menu endpoint="audit" filename="Audit_Logs" label="Export Audit Logs" [params]="exportParams"></app-export-menu>
+    <app-export-menu endpoint="audit" filename="Audit_Logs" label="Export Audit Logs" [includeDateRange]="false" [params]="exportParams"></app-export-menu>
   </div>
 </div>
 
@@ -207,7 +207,7 @@
 
 <!-- Audit Event Detail Modal -->
 <div class="modal-overlay" *ngIf="selectedLog" (click)="selectedLog = null">
-  <div class="modal detail-modal" (click)="$event.stopPropagation()">
+  <div class="modal detail-modal" role="dialog" aria-modal="true" aria-label="Audit Event Inspection" (click)="$event.stopPropagation()">
     <div class="modal-header">
       <div class="detail-header-title">
         <h2>Audit Event Inspection</h2>

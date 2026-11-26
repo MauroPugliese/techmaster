@@ -140,14 +140,30 @@ function drawDocumentBlocks(doc, spec, blocks, startY, F, theme) {
       }
       case 'code': {
         doc.font(F.mono).fontSize(8);
-        const h = doc.heightOfString(b.content || '', { width: w - 22 }) + 16;
-        y = ensurePage(doc, spec, y, Math.min(h + 6, 150), F, theme);
-        doc.save();
-        doc.roundedRect(MARGIN, y, w, h, 4).fillAndStroke(COLORS.surface, COLORS.border);
-        doc.font(F.mono).fontSize(8).fillColor(COLORS.ink)
-          .text(b.content || '', MARGIN + 11, y + 8, { width: w - 22 });
-        doc.restore();
-        y += h + 7;
+        const lines = String(b.content || '').split('\n');
+        const innerW = w - 22;
+        let idx = 0;
+        while (idx < lines.length) {
+          y = ensurePage(doc, spec, y, 36, F, theme);
+          const availH = Math.max(24, bottomLimit(doc) - y - 20);
+          const chunk = [];
+          let chunkH = 0;
+          while (idx < lines.length) {
+            const lh = Math.max(10.5, doc.heightOfString(lines[idx] || ' ', { width: innerW }));
+            if (chunk.length > 0 && chunkH + lh > availH) break;
+            chunk.push(lines[idx]);
+            chunkH += lh;
+            idx += 1;
+          }
+          const chunkText = chunk.join('\n');
+          const boxH = Math.min(availH + 16, doc.heightOfString(chunkText || ' ', { width: innerW }) + 16);
+          doc.save();
+          doc.roundedRect(MARGIN, y, w, boxH, 4).fillAndStroke(COLORS.surface, COLORS.border);
+          doc.font(F.mono).fontSize(8).fillColor(COLORS.ink)
+            .text(chunkText, MARGIN + 11, y + 8, { width: innerW });
+          doc.restore();
+          y += boxH + 7;
+        }
         break;
       }
       case 'divider': {
@@ -348,7 +364,7 @@ function drawTable(doc, spec, table, startY, F, theme, opts = {}) {
 function renderBlueprintBlock(doc, spec, page, block, y, w, F, theme) {
   switch (block.type) {
     case 'brief':
-      return drawExecutiveBrief(doc, block.title, block.text, y, w, F, theme);
+      return drawExecutiveBrief(doc, block.title, block.text, y, w, F, theme, ensurePage, spec);
 
     case 'kpis':
       return drawThemedKpis(doc, spec, block.items, block.variant || 'grid-2col', y, w, F, theme, ensurePage);
@@ -406,8 +422,8 @@ function renderBlueprintBlock(doc, spec, page, block, y, w, F, theme) {
 
 function drawFooters(doc, spec, F, theme) {
   const range = doc.bufferedPageRange();
-  const generated = new Date().toLocaleString('en-GB', {
-    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+  const generated = new Date(spec.meta?.generatedAt || Date.now()).toLocaleString('en-GB', {
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'UTC'
   });
   const docCode = theme.docCode || spec.docCode || 'CAE-RPT';
 
@@ -479,7 +495,7 @@ function buildPdfBuffer(spec) {
 
       if (hasExec) {
         y = drawPageBanner(doc, sectionNum++, 'SECTION 01 · OVERVIEW', 'Executive Overview', theme.coverTagline || '', y, w, F, theme);
-        y = drawExecutiveBrief(doc, 'Executive Brief', spec.executiveBrief, y, w, F, theme);
+        y = drawExecutiveBrief(doc, 'Executive Brief', spec.executiveBrief, y, w, F, theme, ensurePage, spec);
         y = drawThemedKpis(doc, spec, spec.kpis, 'grid-2col', y, w, F, theme, ensurePage);
         (spec.scorecards || []).forEach((sc) => { y = drawScorecards(doc, spec, sc, y, w, F, theme, ensurePage); });
         y = drawHighlights(doc, spec, null, spec.highlights, y, w, F, theme, ensurePage);

@@ -59,6 +59,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   overview: DashboardOverview | null = null;
   loading = true;
+  loadError = false;
   refreshing = false;
   autoRefreshEnabled = true;
   trendDays: 7 | 30 | 90 = 30;
@@ -66,6 +67,13 @@ export class DashboardComponent implements OnInit, OnDestroy {
   today = new Date();
   dateFilterLabel = 'All time';
   uiPrefs: UiSectionPreferences | null = null;
+  readonly emptyArr: any[] = [];
+  wallSimulators: Simulator[] = [];
+  simKindCounts: Record<'FFS_BAY' | 'TEST_PLACE' | 'IOS_CONSOLE', number> = {
+    FFS_BAY: 0,
+    TEST_PLACE: 0,
+    IOS_CONSOLE: 0
+  };
 
   constructor(
     private api: ApiService,
@@ -103,8 +111,12 @@ export class DashboardComponent implements OnInit, OnDestroy {
       .subscribe(res => {
         if (res?.data) {
           this.overview = res.data;
+          this.loadError = false;
           this.lastRefreshed = new Date();
           this.today = new Date();
+          this.recomputeSimWall();
+        } else {
+          this.loadError = true;
         }
         this.loading = false;
         this.refreshing = false;
@@ -164,18 +176,40 @@ export class DashboardComponent implements OnInit, OnDestroy {
   }
 
   get simulators(): Simulator[] {
-    return this.overview?.simulators || [];
+    return this.overview?.simulators || this.emptyArr;
   }
 
   wallKindFilter: 'FFS_BAY' | 'TEST_PLACE' | 'IOS_CONSOLE' = 'FFS_BAY';
 
-  get wallSimulators(): Simulator[] {
-    const filtered = this.simulators.filter(s => (s.station_kind || 'FFS_BAY') === this.wallKindFilter);
-    return filtered.length > 0 ? filtered : this.simulators;
+  setWallKindFilter(kind: 'FFS_BAY' | 'TEST_PLACE' | 'IOS_CONSOLE'): void {
+    if (this.wallKindFilter === kind) return;
+    this.wallKindFilter = kind;
+    this.recomputeSimWall();
+    this.cdr.markForCheck();
+  }
+
+  private recomputeSimWall(): void {
+    const sims = this.simulators;
+    let ffs = 0;
+    let tp = 0;
+    let ios = 0;
+    for (const s of sims) {
+      const k = s.station_kind || 'FFS_BAY';
+      if (k === 'TEST_PLACE') tp += 1;
+      else if (k === 'IOS_CONSOLE') ios += 1;
+      else ffs += 1;
+    }
+    this.simKindCounts = { FFS_BAY: ffs, TEST_PLACE: tp, IOS_CONSOLE: ios };
+    const filtered = sims.filter(s => (s.station_kind || 'FFS_BAY') === this.wallKindFilter);
+    this.wallSimulators = filtered.length > 0 ? filtered : sims;
   }
 
   countSimKind(kind: 'FFS_BAY' | 'TEST_PLACE' | 'IOS_CONSOLE'): number {
-    return this.simulators.filter(s => (s.station_kind || 'FFS_BAY') === kind).length;
+    return this.simKindCounts[kind] || 0;
+  }
+
+  trackById(_: number, item: { id?: number | string }): number | string {
+    return item?.id ?? _;
   }
 
   get simSummary(): SimulatorDashboardSummary | undefined {

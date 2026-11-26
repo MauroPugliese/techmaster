@@ -130,18 +130,18 @@
             </div>
             <div class="form-group">
               <label class="form-label">Aircraft / Station Type</label>
-              <input class="form-control" [(ngModel)]="form.aircraft_type" placeholder="Airbus A320neo / CAE Test Place">
+              <input class="form-control" [(ngModel)]="form.aircraft_type" placeholder="Airbus A320neo / Test Place">
             </div>
             <div class="form-group">
               <label class="form-label">Manufacturer</label>
-              <input class="form-control" [(ngModel)]="form.manufacturer" placeholder="CAE 7000XR">
+              <input class="form-control" [(ngModel)]="form.manufacturer" placeholder="e.g. FSTD OEM / 7000XR">
             </div>
           </div>
 
           <div class="sim-grid-3">
             <div class="form-group">
               <label class="form-label">Serial Number</label>
-              <input class="form-control sim-num" [(ngModel)]="form.serial_number" placeholder="CAE-7000XR-xxx">
+              <input class="form-control sim-num" [(ngModel)]="form.serial_number" placeholder="SIM-7000XR-xxx">
             </div>
             <div class="form-group">
               <label class="form-label">Daily Available Hours</label>
@@ -172,11 +172,37 @@
           <div class="sim-grid-3">
             <div class="form-group">
               <label class="form-label">Authority</label>
-              <input class="form-control" [(ngModel)]="form.authority" placeholder="EASA / FAA / ENAC">
+              <app-dropdown class="form-control"
+                            [(ngModel)]="form.authority"
+                            [searchable]="true"
+                            [creatable]="true"
+                            storageKey="sim_authorities"
+                            createLabel="Add authority"
+                            placeholder="— Select authority —">
+                <app-dropdown-option value="EASA">EASA</app-dropdown-option>
+                <app-dropdown-option value="FAA">FAA</app-dropdown-option>
+                <app-dropdown-option value="ENAC">ENAC</app-dropdown-option>
+                <app-dropdown-option value="UK CAA">UK CAA</app-dropdown-option>
+                <app-dropdown-option value="TCCA">TCCA</app-dropdown-option>
+                <app-dropdown-option value="ICAO">ICAO</app-dropdown-option>
+              </app-dropdown>
             </div>
             <div class="form-group">
               <label class="form-label">Qualification Level</label>
-              <input class="form-control" [(ngModel)]="form.qualification_level" placeholder="CS-FSTD Level D">
+              <app-dropdown class="form-control"
+                            [(ngModel)]="form.qualification_level"
+                            [searchable]="true"
+                            [creatable]="true"
+                            storageKey="sim_qual_levels"
+                            createLabel="Add qualification level"
+                            placeholder="— Select level —">
+                <app-dropdown-option value="CS-FSTD Level D">CS-FSTD Level D</app-dropdown-option>
+                <app-dropdown-option value="CS-FSTD Level C">CS-FSTD Level C</app-dropdown-option>
+                <app-dropdown-option value="FTD Level 3">FTD Level 3</app-dropdown-option>
+                <app-dropdown-option value="FTD Level 2">FTD Level 2</app-dropdown-option>
+                <app-dropdown-option value="FNPT II MCC">FNPT II MCC</app-dropdown-option>
+                <app-dropdown-option value="Internal Engineering">Internal Engineering</app-dropdown-option>
+              </app-dropdown>
             </div>
             <div class="form-group">
               <label class="form-label">Certificate Code</label>
@@ -229,18 +255,18 @@
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">Visual System</label>
-              <input class="form-control" [(ngModel)]="form.visual_system" placeholder="CAE Tropos 6000XR · Laser">
+              <input class="form-control" [(ngModel)]="form.visual_system" placeholder="e.g. Collimated Laser Visual System">
             </div>
             <div class="form-group">
               <label class="form-label">Motion Platform</label>
-              <input class="form-control" [(ngModel)]="form.motion_system" placeholder="CAE 6-DOF Electric eMotion">
+              <input class="form-control" [(ngModel)]="form.motion_system" placeholder="e.g. 6-DOF Electric Motion Platform">
             </div>
           </div>
 
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">Control Loading (CLS)</label>
-              <input class="form-control" [(ngModel)]="form.control_loading" placeholder="CAE Digital CLS-500">
+              <input class="form-control" [(ngModel)]="form.control_loading" placeholder="e.g. Digital Control Loading System">
             </div>
             <div class="form-group">
               <label class="form-label">Instructor Station (IOS)</label>

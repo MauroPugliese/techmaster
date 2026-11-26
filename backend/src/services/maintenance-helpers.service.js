@@ -71,7 +71,10 @@ function sanitizePartsUsed(rawParts) {
     }
     const name = String(part.name || '').trim().slice(0, 200);
     const sku = String(part.sku || '').trim().slice(0, 80);
-    if (!name && !sku && !part.item_id) {
+    const partNumber = String(part.part_number || '').trim().slice(0, 100);
+    const brokenSerial = String(part.broken_serial_number || '').trim().slice(0, 100);
+    const newSerial = String(part.new_serial_number || '').trim().slice(0, 100);
+    if (!name && !sku && !partNumber && !part.item_id) {
       return { error: 'Each part entry must reference an item or name.' };
     }
     const itemId = part.item_id != null && part.item_id !== '' ? Number(part.item_id) : null;
@@ -81,7 +84,10 @@ function sanitizePartsUsed(rawParts) {
     normalized.push({
       item_id: itemId,
       sku: sku || null,
-      name: name || sku || `Item #${itemId}`,
+      part_number: partNumber || null,
+      broken_serial_number: brokenSerial || null,
+      new_serial_number: newSerial || null,
+      name: name || partNumber || sku || `Item #${itemId}`,
       quantity: qty,
       unit: String(part.unit || 'pcs').trim().slice(0, 30) || 'pcs'
     });
@@ -227,6 +233,31 @@ function sanitizeMaintenancePayload(body = {}, { isCreate = false } = {}) {
   const partsParsed = sanitizePartsUsed(body.parts_used);
   if (partsParsed.error) return { error: partsParsed.error };
   if (partsParsed.provided) payload.parts_used = partsParsed.data;
+
+  const firstPart = Array.isArray(payload.parts_used) && payload.parts_used.length > 0
+    ? payload.parts_used[0]
+    : null;
+
+  if (body.part_number !== undefined) {
+    const pn = String(body.part_number ?? '').trim().slice(0, 100);
+    payload.part_number = pn || (firstPart?.part_number || firstPart?.sku || null);
+  } else if (firstPart && (firstPart.part_number || firstPart.sku)) {
+    payload.part_number = firstPart.part_number || firstPart.sku;
+  }
+
+  if (body.broken_serial_number !== undefined) {
+    const bsn = String(body.broken_serial_number ?? '').trim().slice(0, 100);
+    payload.broken_serial_number = bsn || (firstPart?.broken_serial_number || null);
+  } else if (firstPart?.broken_serial_number) {
+    payload.broken_serial_number = firstPart.broken_serial_number;
+  }
+
+  if (body.new_serial_number !== undefined) {
+    const nsn = String(body.new_serial_number ?? '').trim().slice(0, 100);
+    payload.new_serial_number = nsn || (firstPart?.new_serial_number || null);
+  } else if (firstPart?.new_serial_number) {
+    payload.new_serial_number = firstPart.new_serial_number;
+  }
 
   if (body.sortie_id !== undefined) {
     if (body.sortie_id === null || body.sortie_id === '') {

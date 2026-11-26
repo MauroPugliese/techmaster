@@ -91,12 +91,19 @@ export class AdminAuditLogsComponent implements OnInit, OnDestroy {
     return `${y}-${m}-${d}`;
   }
 
-  get exportParams(): Record<string, string | number> {
+  exportParams: Record<string, string | number> = {};
+
+  private syncExportParams(): void {
     const out: Record<string, string | number> = {};
     if (this.method) out['method'] = this.method;
+    if (this.statusGroup) out['status_group'] = this.statusGroup;
     if (this.userId) out['user_id'] = this.userId;
-    if (this.search.trim()) out['action'] = this.search.trim();
-    return out;
+    if (this.search.trim()) out['search'] = this.search.trim();
+    const fromStr = this.toIsoDateOnly(this.fromDate);
+    const toStr = this.toIsoDateOnly(this.toDate);
+    if (fromStr) out['from'] = fromStr;
+    if (toStr) out['to'] = toStr;
+    this.exportParams = out;
   }
 
   get hasActiveFilters(): boolean {
@@ -114,6 +121,7 @@ export class AdminAuditLogsComponent implements OnInit, OnDestroy {
   }
 
   loadLogs(): void {
+    this.syncExportParams();
     this.loading = true;
     const params: Record<string, any> = {
       page: this.page,

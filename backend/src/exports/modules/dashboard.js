@@ -164,21 +164,32 @@ module.exports = {
     let iosShiftMin = 0;
     let tpNa = 0;
     let iosNa = 0;
+    const tpStatusBySim = new Map(tpList.map(s => [Number(s.id), 'READY']));
+    const iosStatusBySim = new Map(iosList.map(s => [Number(s.id), 'READY']));
     for (const log of todayLogs) {
       const sorted = [...(log.shifts || [])].sort((a, b) => (a.shift_number || 0) - (b.shift_number || 0));
-      sorted.forEach((sh, idx) => {
+      sorted.forEach((sh) => {
         for (const e of (sh.entries || [])) {
           const m = computeTestingDurationMinutes(e.sim_testing_start, e.sim_testing_end);
+          const sid = Number(e.simulator_id);
           if (log.station_kind === 'TEST_PLACE') {
             tpShiftMin += m;
-            if (idx === 0 && e.usage_status === 'NA') tpNa += 1;
+            if (tpStatusBySim.has(sid)) {
+              if (e.usage_status === 'NA' || e.usage_status === 'IN_USE') tpStatusBySim.set(sid, e.usage_status);
+              else if (e.usage_status === 'READY' && tpStatusBySim.get(sid) === 'NA') tpStatusBySim.set(sid, 'READY');
+            }
           } else if (log.station_kind === 'IOS_CONSOLE') {
             iosShiftMin += m;
-            if (idx === 0 && e.usage_status === 'NA') iosNa += 1;
+            if (iosStatusBySim.has(sid)) {
+              if (e.usage_status === 'NA' || e.usage_status === 'IN_USE') iosStatusBySim.set(sid, e.usage_status);
+              else if (e.usage_status === 'READY' && iosStatusBySim.get(sid) === 'NA') iosStatusBySim.set(sid, 'READY');
+            }
           }
         }
       });
     }
+    for (const st of tpStatusBySim.values()) if (st === 'NA') tpNa += 1;
+    for (const st of iosStatusBySim.values()) if (st === 'NA') iosNa += 1;
     const tpShiftHrs = Number((tpShiftMin / 60).toFixed(1));
     const iosShiftHrs = Number((iosShiftMin / 60).toFixed(1));
 
@@ -278,7 +289,7 @@ module.exports = {
       columns: [
         { header: 'Module', key: 'domain', width: 18, type: 'badge' },
         { header: 'Metric', key: 'metric', width: 52 },
-        { header: 'Value', key: 'value', width: 16, type: 'number', align: 'right', total: 'sum' }
+        { header: 'Value', key: 'value', width: 16, type: 'number', align: 'right' }
       ],
       rows: [
         kpiRow('SIMULATORS', 'FFS Bays — Operational / Ready', ffsOperational, ffsAog.length > 0 ? 'warning' : 'success'),

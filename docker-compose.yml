@@ -98,9 +98,9 @@ services:
       db:
         condition: service_healthy
 
-    # Host port 8081 -> container port 8080 (Adminer web UI)
+    # Host port 8081 -> container port 8080 (Adminer web UI, localhost-only by default)
     ports:
-      - "${ADMINER_PORT:-8081}:8080"
+      - "${ADMINER_BIND_HOST:-127.0.0.1}:${ADMINER_PORT:-8081}:8080"
 
     environment:
       ADMINER_DEFAULT_SERVER: db
@@ -162,8 +162,9 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
 
     # ── Port mapping ──────────────────────────────────────────────────────
+    # Bound to localhost by default; external clients enter via Nginx (/api & /socket.io)
     ports:
-      - "${BACKEND_PORT:-3000}:3000"
+      - "${BACKEND_BIND_HOST:-127.0.0.1}:${BACKEND_PORT:-3000}:3000"
 
     # ── Read-only source mount (dev only — remove in strict prod) ─────────
     # Uncomment for live-reload development with nodemon:

@@ -27,7 +27,7 @@ import {
   PlannedMaintenanceTask
 } from '../../../core/models/interfaces';
 import { PlannedMaintenanceService } from './planned-maintenance.service';
-import { ConfirmService, ToastService, UiCustomizationService, UiSectionPreferences } from '../../../core/services/services';
+import { ApiService, ConfirmService, ToastService, UiCustomizationService, UiSectionPreferences } from '../../../core/services/services';
 import { ExportService } from '../../../core/services/export.service';
 import { DateTimePickerComponent } from '../../../shared/components/datetime-picker/datetime-picker.component';
 import { formatLocalYmd, parseIncomingDate } from '../../../shared/components/datetime-picker/datetime-picker.utils';
@@ -55,11 +55,16 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnChanges, 
   private destroy$ = new Subject<void>();
   private searchInput$ = new Subject<string>();
   private initialized = false;
+  private tasksReqSeq = 0;
+  private dayReqSeq = 0;
+  private indicatorsReqSeq = 0;
+  exportParams: Record<string, string> = {};
   Math = Math;
 
   // Table & Filters
   tasks: PlannedMaintenanceTask[] = [];
   systems: string[] = [];
+  subsystemsList: string[] = [];
   summary: PlannedMaintenanceSummary | null = null;
   total = 0;
   page = 1;
@@ -103,6 +108,7 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnChanges, 
 
   constructor(
     private svc: PlannedMaintenanceService,
+    private api: ApiService,
     private uiCustomization: UiCustomizationService,
     private toast: ToastService,
     private confirm: ConfirmService,
@@ -183,13 +189,13 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnChanges, 
     }
   }
 
-  get exportParams(): Record<string, string> {
+  private syncExportParams(): void {
     const p: Record<string, string> = {};
     if (this.searchTerm.trim()) p['search'] = this.searchTerm.trim();
     if (this.systemFilter) p['system'] = this.systemFilter;
     if (this.repeatTypeFilter) p['repeat_task_type'] = this.repeatTypeFilter;
     if (this.statusFilter) p['status'] = this.statusFilter;
-    return p;
+    this.exportParams = p;
   }
 
   // ── Data Loading ───────────────────────────────────────────────────────────
@@ -214,8 +220,10 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnChanges, 
   }
 
   loadTasks(): void {
+    const seq = ++this.tasksReqSeq;
     this.loading = true;
     this.openMenuTaskId = null;
+    this.syncExportParams();
     const params: Record<string, any> = {
       search: this.searchTerm.trim(),
       system: this.systemFilter,
@@ -236,12 +244,19 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnChanges, 
 
     this.svc.getAll(params).pipe(takeUntil(this.destroy$)).subscribe({
       next: result => {
+        if (seq !== this.tasksReqSeq) return;
         this.tasks = result.items;
         this.total = result.total;
+        const subSet = new Set<string>(this.subsystemsList);
+        for (const t of this.tasks) {
+          if (t.subsystem && t.subsystem.trim()) subSet.add(t.subsystem.trim());
+        }
+        this.subsystemsList = [...subSet].sort((a, b) => a.localeCompare(b));
         this.loading = false;
         this.cdr.markForCheck();
       },
       error: () => {
+        if (seq !== this.tasksReqSeq) return;
         this.loading = false;
         this.toast.error('Failed to load planned tasks');
         this.cdr.markForCheck();
@@ -371,11 +386,11 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnChanges, 
       subsystem: task.subsystem,
       task: task.task,
       reference: task.reference || '',
-      operationDateStart: task.operationDateStart ? new Date(task.operationDateStart) : null,
-      operationDateEnd: task.operationDateEnd ? new Date(task.operationDateEnd) : null,
+      operationDateStart: parseIncomingDate(task.operationDateStart),
+      operationDateEnd: parseIncomingDate(task.operationDateEnd),
       repeatTaskType: task.repeatTaskType || 'WEEK',
       repeatTaskNumber: task.repeatTaskNumber || 1,
-      recurrenceEndDate: task.recurrenceEndDate ? new Date(task.recurrenceEndDate) : null,
+      recurrenceEndDate: parseIncomingDate(task.recurrenceEndDate),
       reportTemplate: task.reportTemplate || '',
       status: task.status || 'TODO',
       optional: task.optional || false
@@ -497,6 +512,7 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnChanges, 
         this.toast.success(this.editing ? 'Planned task updated.' : 'Planned task created.');
         this.showModal = false;
         this.saving = false;
+        this.api.notifyNavBadgesChanged();
         this.loadSystems();
         this.loadSummary();
         this.loadTasks();
@@ -518,6 +534,7 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnChanges, 
       if (!confirmed) return;
       this.svc.delete(task.id).pipe(takeUntil(this.destroy$)).subscribe({
         next: () => {
+          this.api.notifyNavBadgesChanged();
           this.toast.success('Planned task deleted.');
           this.loadSystems();
           this.loadSummary();
@@ -537,6 +554,7 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnChanges, 
       if (!confirmed) return;
       this.svc.deleteOccurrence(masterId, occurrenceDate).pipe(takeUntil(this.destroy$)).subscribe({
         next: () => {
+          this.api.notifyNavBadgesChanged();
           this.toast.success('Occurrence deleted.');
           this.loadSummary();
           this.loadTasks();
@@ -558,6 +576,7 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnChanges, 
 
     obs.pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {
+        this.api.notifyNavBadgesChanged();
         this.toast.success(`Marked ${newStatus}.`);
         this.loadSummary();
         this.loadTasks();
@@ -581,11 +600,20 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnChanges, 
   }
 
   loadIndicators(): void {
+    const seq = ++this.indicatorsReqSeq;
     this.svc.getCalendarIndicators(this.calYear, this.calMonth)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
-        next: ind => { this.indicators = ind; this.cdr.markForCheck(); },
-        error: () => {}
+        next: ind => {
+          if (seq !== this.indicatorsReqSeq) return;
+          this.indicators = ind;
+          this.cdr.markForCheck();
+        },
+        error: () => {
+          if (seq !== this.indicatorsReqSeq) return;
+          this.indicators = {};
+          this.cdr.markForCheck();
+        }
       });
   }
 
@@ -649,11 +677,21 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnChanges, 
 
   // ── Daily Agenda ───────────────────────────────────────────────────────────
   loadDayTasks(): void {
+    const seq = ++this.dayReqSeq;
     this.svc.getTasksForDate(this.selectedDate)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
-        next: tasks => { this.dayTasks = tasks; this.cdr.markForCheck(); },
-        error: () => {}
+        next: tasks => {
+          if (seq !== this.dayReqSeq) return;
+          this.dayTasks = tasks;
+          this.cdr.markForCheck();
+        },
+        error: () => {
+          if (seq !== this.dayReqSeq) return;
+          this.dayTasks = [];
+          this.toast.error('Failed to load scheduled tasks for selected date.');
+          this.cdr.markForCheck();
+        }
       });
   }
 

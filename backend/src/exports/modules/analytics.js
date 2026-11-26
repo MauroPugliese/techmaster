@@ -21,7 +21,41 @@ module.exports = {
   orientation: 'portrait',
 
   async build(req) {
-    const range = parseRange(req.query);
+    const parsedRange = parseRange(req.query);
+    let from = parsedRange.from;
+    let to = parsedRange.to;
+
+    if (!from && !to && req.query.period) {
+      const p = String(req.query.period).trim().toLowerCase();
+      const now = new Date();
+      const dayMs = 86400000;
+      if (p === '7d') {
+        to = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
+        from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0) - 6 * dayMs);
+      } else if (p === '30d') {
+        to = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
+        from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0) - 29 * dayMs);
+      } else if (p === '90d') {
+        to = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
+        from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0) - 89 * dayMs);
+      } else if (p === 'ytd' || p === 'yearly') {
+        to = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
+        from = new Date(Date.UTC(now.getUTCFullYear(), 0, 1, 0, 0, 0, 0));
+      } else if (p === 'daily') {
+        from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+        to = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
+      } else if (p === 'weekly') {
+        const dow = now.getUTCDay();
+        const monOffset = dow === 0 ? -6 : 1 - dow;
+        from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + monOffset, 0, 0, 0, 0));
+        to = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + monOffset + 6, 23, 59, 59, 999));
+      } else if (p === 'monthly') {
+        from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
+        to = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0, 23, 59, 59, 999));
+      }
+    }
+
+    const range = { ...parsedRange, from, to };
     const replacements = {};
     const dateCond = (colName) => {
       let sql = '';

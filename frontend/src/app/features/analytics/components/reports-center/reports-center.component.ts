@@ -232,7 +232,7 @@ export class ReportsCenterComponent implements OnInit, OnDestroy {
     const { params, includeDateRange } = this.buildPeriodParams();
     const extraParams: Record<string, string | number> = { ...params };
 
-    if (mod.key === 'daily-station-ops' && this.dailyOpsStationKind !== 'ALL') {
+    if (mod.key === 'daily-station-ops') {
       extraParams['station_kind'] = this.dailyOpsStationKind;
     }
 

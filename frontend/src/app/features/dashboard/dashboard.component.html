@@ -16,12 +16,14 @@
     <div class="dash-head-actions">
       <button type="button"
               class="dash-status-pill"
-              [class.has-alerts]="hasUrgentAlerts"
-              (click)="scrollToUrgent()"
-              [title]="hasUrgentAlerts ? 'Jump to Urgent Action Center' : 'All systems nominal'">
+              [class.has-alerts]="loadError || hasUrgentAlerts"
+              (click)="loadError ? triggerLoad(false) : scrollToUrgent()"
+              [title]="loadError ? 'Failed to fetch live telemetry — click to retry' : (hasUrgentAlerts ? 'Jump to Urgent Action Center' : 'All systems nominal')">
         <span class="dash-status-dot"></span>
-        <span *ngIf="!hasUrgentAlerts">All Systems Nominal</span>
-        <span *ngIf="hasUrgentAlerts">{{urgentTotal}} Urgent Attention</span>
+        <span *ngIf="loadError">Telemetry Offline · Retry</span>
+        <span *ngIf="!loadError && loading && !overview">Loading Telemetry…</span>
+        <span *ngIf="!loadError && (!loading || overview) && !hasUrgentAlerts">All Systems Nominal</span>
+        <span *ngIf="!loadError && hasUrgentAlerts">{{urgentTotal}} Urgent Attention</span>
       </button>
 
       <button type="button"
@@ -44,6 +46,17 @@
 
       <app-export-menu endpoint="dashboard" filename="Dashboard_Summary" label="Export"></app-export-menu>
     </div>
+  </div>
+
+  <!-- ── Telemetry Error Banner ──────────────────────────────────────────── -->
+  <div *ngIf="loadError" class="alert-banner alert-danger" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;padding:10px 14px;border-radius:10px;background:#fef2f2;border:1px solid #fecaca;color:#991b1b">
+    <div style="display:flex;align-items:center;gap:8px">
+      <span class="mat-i">cloud_off</span>
+      <span>Unable to load live dashboard telemetry. {{overview ? 'Showing last cached snapshot.' : 'Check your connection or retry.'}}</span>
+    </div>
+    <button type="button" class="btn btn-secondary btn-sm" (click)="triggerLoad(false)" [disabled]="refreshing">
+      <span class="btn-icon">refresh</span> Retry
+    </button>
   </div>
 
   <!-- ── Compact 6-KPI Command Strip ─────────────────────────────────────── -->
@@ -213,22 +226,22 @@
     </div>
 
     <!-- Clean Station Class Tabs so 22 stations never clutter the Command Center -->
-    <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px;flex-wrap:wrap" *ngIf="countSimKind('TEST_PLACE') > 0 || countSimKind('IOS_CONSOLE') > 0">
-      <button type="button" class="btn btn-sm" [ngClass]="wallKindFilter === 'FFS_BAY' ? 'btn-primary' : 'btn-ghost'" (click)="wallKindFilter = 'FFS_BAY'">
-        FFS Bays ({{countSimKind('FFS_BAY')}})
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px;flex-wrap:wrap" *ngIf="simKindCounts.TEST_PLACE > 0 || simKindCounts.IOS_CONSOLE > 0">
+      <button type="button" class="btn btn-sm" [ngClass]="wallKindFilter === 'FFS_BAY' ? 'btn-primary' : 'btn-ghost'" (click)="setWallKindFilter('FFS_BAY')">
+        FFS Bays ({{simKindCounts.FFS_BAY}})
       </button>
-      <button type="button" class="btn btn-sm" [ngClass]="wallKindFilter === 'TEST_PLACE' ? 'btn-primary' : 'btn-ghost'" (click)="wallKindFilter = 'TEST_PLACE'">
-        Test Places ({{countSimKind('TEST_PLACE')}})
+      <button type="button" class="btn btn-sm" [ngClass]="wallKindFilter === 'TEST_PLACE' ? 'btn-primary' : 'btn-ghost'" (click)="setWallKindFilter('TEST_PLACE')">
+        Test Places ({{simKindCounts.TEST_PLACE}})
       </button>
-      <button type="button" class="btn btn-sm" [ngClass]="wallKindFilter === 'IOS_CONSOLE' ? 'btn-primary' : 'btn-ghost'" (click)="wallKindFilter = 'IOS_CONSOLE'">
-        IOS Consoles ({{countSimKind('IOS_CONSOLE')}})
+      <button type="button" class="btn btn-sm" [ngClass]="wallKindFilter === 'IOS_CONSOLE' ? 'btn-primary' : 'btn-ghost'" (click)="setWallKindFilter('IOS_CONSOLE')">
+        IOS Consoles ({{simKindCounts.IOS_CONSOLE}})
       </button>
     </div>
 
     <div class="dash-sim-grid">
       <a
         class="dash-sim-card"
-        *ngFor="let sim of wallSimulators"
+        *ngFor="let sim of wallSimulators; trackBy: trackById"
         [class.sim-aog]="sim.status === 'AOG'"
         [class.sim-degraded]="sim.status === 'DEGRADED' || sim.status === 'MAINTENANCE'"
         routerLink="/simulators"
@@ -436,10 +449,10 @@
   <div class="dash-main-grid">
 
     <app-dashboard-activity-panel
-      [recentOps]="overview?.recentActivity?.operations ?? []"
-      [recentMaintenance]="overview?.recentActivity?.maintenance ?? []"
-      [recentTasks]="overview?.recentActivity?.tasks ?? []"
-      [recentMovements]="overview?.recentActivity?.movements ?? []"
+      [recentOps]="overview?.recentActivity?.operations ?? emptyArr"
+      [recentMaintenance]="overview?.recentActivity?.maintenance ?? emptyArr"
+      [recentTasks]="overview?.recentActivity?.tasks ?? emptyArr"
+      [recentMovements]="overview?.recentActivity?.movements ?? emptyArr"
       [loading]="loading">
     </app-dashboard-activity-panel>
 

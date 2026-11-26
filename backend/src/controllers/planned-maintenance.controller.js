@@ -33,8 +33,21 @@ const ALLOWED_SORT_COLUMNS = new Set([
 
 function normalizeTaskPayload(body) {
   const payload = {};
+  const rawSimId = body.simulator_id ?? body.simulatorId;
+  let normalizedSimId;
+  if (rawSimId !== undefined) {
+    if (rawSimId === null || rawSimId === '') {
+      normalizedSimId = null;
+    } else {
+      const parsedSim = Number(rawSimId);
+      if (Number.isInteger(parsedSim) && parsedSim > 0) {
+        normalizedSimId = parsedSim;
+      }
+    }
+  }
 
   const map = {
+    simulator_id: normalizedSimId,
     system: body.system,
     subsystem: body.subsystem,
     task: body.task,
@@ -248,13 +261,18 @@ const update = async (req, res, next) => {
 };
 
 const updateOccurrence = async (req, res, next) => {
+  const { PlannedMaintenanceTask, PlannedMaintenanceTaskInstance, sequelize } = require('../models');
+  const transaction = await sequelize.transaction();
   try {
-    const { PlannedMaintenanceTask, PlannedMaintenanceTaskInstance } = require('../models');
-    const master = await PlannedMaintenanceTask.findByPk(req.params.id);
-    if (!master) return res.status(404).json({ success: false, message: 'Planned task not found' });
+    const master = await PlannedMaintenanceTask.findByPk(req.params.id, { transaction });
+    if (!master) {
+      await transaction.rollback();
+      return res.status(404).json({ success: false, message: 'Planned task not found' });
+    }
 
     const { date } = req.params;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      await transaction.rollback();
       return res.status(400).json({ success: false, message: 'Invalid date format. Use YYYY-MM-DD.' });
     }
 
@@ -264,11 +282,14 @@ const updateOccurrence = async (req, res, next) => {
       where: {
         planned_task_id: master.id,
         occurrence_date: date
-      }
+      },
+      transaction,
+      lock: transaction.LOCK.UPDATE
     });
     const canOverride = taskOccursOnDate(master, targetDate) || !!existingRecord;
 
     if (!canOverride) {
+      await transaction.rollback();
       return res.status(400).json({ success: false, message: 'This date is not a valid occurrence for the selected task.' });
     }
 
@@ -305,23 +326,32 @@ const updateOccurrence = async (req, res, next) => {
 
     let instance = existingRecord;
     if (instance) {
-      await instance.update(instancePayload);
+      await instance.update(instancePayload, { transaction });
     } else {
-      instance = await PlannedMaintenanceTaskInstance.create(instancePayload);
+      instance = await PlannedMaintenanceTaskInstance.create(instancePayload, { transaction });
     }
 
+    await transaction.commit();
     res.json({ success: true, data: instance });
-  } catch (err) { next(err); }
+  } catch (err) {
+    await transaction.rollback();
+    next(err);
+  }
 };
 
 const deleteOccurrence = async (req, res, next) => {
+  const { PlannedMaintenanceTask, PlannedMaintenanceTaskInstance, sequelize } = require('../models');
+  const transaction = await sequelize.transaction();
   try {
-    const { PlannedMaintenanceTask, PlannedMaintenanceTaskInstance } = require('../models');
-    const master = await PlannedMaintenanceTask.findByPk(req.params.id);
-    if (!master) return res.status(404).json({ success: false, message: 'Planned task not found' });
+    const master = await PlannedMaintenanceTask.findByPk(req.params.id, { transaction });
+    if (!master) {
+      await transaction.rollback();
+      return res.status(404).json({ success: false, message: 'Planned task not found' });
+    }
 
     const { date } = req.params;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      await transaction.rollback();
       return res.status(400).json({ success: false, message: 'Invalid date format. Use YYYY-MM-DD.' });
     }
 
@@ -331,10 +361,13 @@ const deleteOccurrence = async (req, res, next) => {
       where: {
         planned_task_id: master.id,
         occurrence_date: date
-      }
+      },
+      transaction,
+      lock: transaction.LOCK.UPDATE
     });
 
     if (!taskOccursOnDate(master, targetDate) && !existingRecord) {
+      await transaction.rollback();
       return res.status(400).json({ success: false, message: 'This date is not a valid occurrence for the selected task.' });
     }
 
@@ -353,18 +386,22 @@ const deleteOccurrence = async (req, res, next) => {
         report_template: existingRecord.report_template,
         status: existingRecord.status,
         optional: existingRecord.optional
-      });
+      }, { transaction });
     } else {
       await PlannedMaintenanceTaskInstance.create({
         planned_task_id: master.id,
         occurrence_date: date,
         exception_type: 'DELETED',
         created_by: req.user.id
-      });
+      }, { transaction });
     }
 
+    await transaction.commit();
     res.json({ success: true, data: { planned_task_id: master.id, occurrence_date: date, exception_type: 'DELETED' } });
-  } catch (err) { next(err); }
+  } catch (err) {
+    await transaction.rollback();
+    next(err);
+  }
 };
 
 const remove = async (req, res, next) => {
@@ -379,7 +416,7 @@ const remove = async (req, res, next) => {
 
 const createWorkOrder = async (req, res, next) => {
   try {
-    const { PlannedMaintenanceTask, MaintenanceRecord, Asset, AssetCategory, User } = require('../models');
+    const { PlannedMaintenanceTask, MaintenanceRecord, Asset, AssetCategory, Simulator, User } = require('../models');
     const planned = await PlannedMaintenanceTask.findByPk(req.params.id);
     if (!planned) return res.status(404).json({ success: false, message: 'Planned task not found' });
 
@@ -390,8 +427,12 @@ const createWorkOrder = async (req, res, next) => {
     const defaultScheduled = req.body?.scheduled_date
       || (occDate ? `${occDate}T09:00:00.000Z` : planned.operation_date_start);
 
+    const resolvedSimulatorId = req.body?.simulator_id ?? planned.simulator_id ?? null;
+
     const candidateBody = {
       asset_id: req.body?.asset_id,
+      simulator_id: resolvedSimulatorId,
+      subsystem_code: req.body?.subsystem_code,
       type: req.body?.type || 'PREVENTIVE',
       priority: req.body?.priority || 'MEDIUM',
       status: req.body?.status || 'SCHEDULED',
@@ -417,6 +458,7 @@ const createWorkOrder = async (req, res, next) => {
     const full = await MaintenanceRecord.findByPk(created.id, {
       include: [
         { model: Asset, as: 'asset', include: [{ model: AssetCategory, as: 'category' }] },
+        { model: Simulator, as: 'simulator', attributes: ['id', 'code', 'bay_code', 'name', 'station_kind'] },
         { model: User, as: 'technician', attributes: ['id', 'first_name', 'last_name', 'username'] }
       ]
     });

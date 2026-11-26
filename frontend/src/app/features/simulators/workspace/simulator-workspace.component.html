@@ -81,7 +81,7 @@
         <p class="sim-ws-sub">
           <span>{{ d.aircraft_type }}</span>
           <span>·</span>
-          <span>{{ d.manufacturer || 'CAE' }}</span>
+          <span>{{ d.manufacturer || 'OEM' }}</span>
           <span *ngIf="d.software_load">· {{ d.software_load }}</span>
           <span *ngIf="d.airac_cycle">· {{ d.airac_cycle }}</span>
         </p>
@@ -263,7 +263,7 @@
           </div>
           <div class="form-group">
             <label class="form-label">Part Number</label>
-            <input class="form-control sim-num" [(ngModel)]="subForm.part_number" placeholder="CAE-PN-xxxx">
+            <input class="form-control sim-num" [(ngModel)]="subForm.part_number" placeholder="PN-xxxx">
           </div>
           <div class="form-group">
             <label class="form-label">Serial Number</label>

@@ -3,6 +3,7 @@
 // =============================================================================
 const router = require('express').Router();
 const { body, param, query } = require('express-validator');
+const { authorize } = require('../middleware/auth.middleware');
 const ctrl = require('../controllers/planned-maintenance.controller');
 
 // ── Validation middleware ────────────────────────────────────────────────────
@@ -66,24 +67,24 @@ router.get('/calendar/:year/:month', ctrl.getCalendarIndicators);
 router.get('/date/:date', ctrl.getByDate);
 
 // POST /api/maintenance/planned/:id/work-order — create work order from planned task
-router.post('/:id/work-order', ctrl.createWorkOrder);
+router.post('/:id/work-order', authorize('admin', 'manager', 'tech'), ctrl.createWorkOrder);
 
 // PUT /api/maintenance/planned/:id/occurrence/:date — update a single occurrence
-router.put('/:id/occurrence/:date', validateOccurrenceUpdate, handleValidation, ctrl.updateOccurrence);
+router.put('/:id/occurrence/:date', authorize('admin', 'manager', 'tech'), validateOccurrenceUpdate, handleValidation, ctrl.updateOccurrence);
 
 // DELETE /api/maintenance/planned/:id/occurrence/:date — delete one occurrence only
-router.delete('/:id/occurrence/:date', ctrl.deleteOccurrence);
+router.delete('/:id/occurrence/:date', authorize('admin', 'manager'), ctrl.deleteOccurrence);
 
 // GET /api/maintenance/planned/:id — single task
 router.get('/:id', ctrl.getById);
 
 // POST /api/maintenance/planned — create
-router.post('/', validateCreate, handleValidation, ctrl.create);
+router.post('/', authorize('admin', 'manager', 'tech'), validateCreate, handleValidation, ctrl.create);
 
 // PUT /api/maintenance/planned/:id — update
-router.put('/:id', validateUpdate, handleValidation, ctrl.update);
+router.put('/:id', authorize('admin', 'manager', 'tech'), validateUpdate, handleValidation, ctrl.update);
 
 // DELETE /api/maintenance/planned/:id — delete
-router.delete('/:id', ctrl.remove);
+router.delete('/:id', authorize('admin', 'manager'), ctrl.remove);
 
 module.exports = router;

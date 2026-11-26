@@ -27,8 +27,8 @@
     <div class="wh-search-wrap">
       <div class="search-bar">
         <span class="search-icon">search</span>
-        <input [(ngModel)]="search" placeholder="Filter queue by item, SKU, supplier, location…">
-        <button *ngIf="search" type="button" class="wh-search-clear" (click)="search = ''" title="Clear">
+        <input [ngModel]="search" (ngModelChange)="onSearchChange($event)" placeholder="Filter queue by item, SKU, supplier, location…">
+        <button *ngIf="search" type="button" class="wh-search-clear" (click)="clearSearch()" title="Clear">
           <span class="mat-i" style="font-size:16px">close</span>
         </button>
       </div>

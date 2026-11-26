@@ -70,7 +70,7 @@ module.exports = {
 
   async build(req) {
     const range = parseRange(req.query);
-    const { status, date, user_id } = req.query;
+    const { status, date, user_id, department, entry_kind, shift_type_id, search } = req.query;
 
     const where = {};
     if (range.from || range.to) {
@@ -81,16 +81,44 @@ module.exports = {
     if (date) where.date = date;
     if (status) where.status = status;
     if (user_id) where.user_id = user_id;
+    if (entry_kind && String(entry_kind).trim()) where.entry_kind = String(entry_kind).trim().toUpperCase();
+    if (shift_type_id && Number(shift_type_id) > 0) where.shift_type_id = Number(shift_type_id);
 
-    const shifts = await Shift.findAll({
+    const employeeWhere = {};
+    if (department && String(department).trim()) {
+      employeeWhere.department = String(department).trim();
+    }
+
+    const rawShifts = await Shift.findAll({
       where,
       include: [
         { model: ShiftType, as: 'shiftType' },
-        { model: User, as: 'employee', attributes: ['id', 'first_name', 'last_name', 'department'] },
+        {
+          model: User,
+          as: 'employee',
+          attributes: ['id', 'first_name', 'last_name', 'department'],
+          ...(Object.keys(employeeWhere).length ? { where: employeeWhere, required: true } : {})
+        },
         { model: User, as: 'supervisor', attributes: ['first_name', 'last_name'] }
       ],
       order: [['date', 'DESC'], ['id', 'DESC']]
     });
+
+    const searchQ = search && String(search).trim() ? String(search).trim().toLowerCase() : '';
+    const shifts = searchQ
+      ? rawShifts.filter((s) => {
+          const hay = [
+            fullName(s.employee, ''),
+            s.employee?.department || '',
+            s.shiftType?.name || '',
+            s.shiftType?.code || '',
+            s.status || '',
+            s.notes || '',
+            s.adjustment_reason || ''
+          ].join(' ').toLowerCase();
+          return hay.includes(searchQ);
+        })
+      : rawShifts;
 
     const total = shifts.length;
     const byStatus = {};
@@ -247,6 +275,10 @@ module.exports = {
     if (status) filters.Status = status;
     if (date) filters.Date = date;
     if (user_id) filters['User ID'] = user_id;
+    if (department) filters.Department = department;
+    if (entry_kind) filters['Entry Kind'] = String(entry_kind).toUpperCase();
+    if (shift_type_id) filters['Shift Pattern ID'] = shift_type_id;
+    if (search) filters.Search = search;
 
     const pages = [
       {

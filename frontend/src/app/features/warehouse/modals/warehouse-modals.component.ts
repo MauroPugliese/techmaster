@@ -220,6 +220,73 @@ export class WarehouseModalsComponent {
     this.cdr.markForCheck();
   }
 
+  quickCreateCategory(rawName: string): void {
+    const name = rawName.trim();
+    if (!name) return;
+    this.api.post<any>('/warehouse/categories', { name }).subscribe({
+      next: res => {
+        const created = res?.data;
+        if (created) {
+          if (!this.categories.some(c => c.id === created.id)) {
+            this.categories = [...this.categories, created];
+          }
+          this.itemForm.category_id = created.id;
+          this.toast.success(`Category "${created.name}" created.`);
+          this.mutated.emit();
+          this.cdr.markForCheck();
+        }
+      },
+      error: (e: any) => this.toast.error(e?.error?.message || 'Unable to create category.')
+    });
+  }
+
+  quickCreateLocation(rawName: string, target: 'item' | 'movement'): void {
+    const name = rawName.trim();
+    if (!name) return;
+    this.api.post<any>('/warehouse/locations', { name }).subscribe({
+      next: res => {
+        const created: WarehouseLocation = res?.data;
+        if (created) {
+          if (!this.locations.some(l => l.id === created.id)) {
+            this.locations = [...this.locations, created];
+          }
+          if (target === 'item') this.itemForm.location_id = created.id;
+          else this.movementForm.to_location_id = created.id;
+          this.toast.success(`Location "${created.code} — ${created.name}" created.`);
+          this.mutated.emit();
+          this.cdr.markForCheck();
+        }
+      },
+      error: (e: any) => this.toast.error(e?.error?.message || 'Unable to create location.')
+    });
+  }
+
+  quickCreateSimulator(rawLabel: string, target: 'item' | 'movement'): void {
+    const label = rawLabel.trim();
+    if (!label) return;
+    const cleanCode = label.toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 16) || `SIM-${Date.now().toString().slice(-4)}`;
+    this.api.post<any>('/simulators', {
+      code: cleanCode,
+      name: label,
+      bay_code: cleanCode.slice(0, 12),
+      station_kind: 'FFS_BAY',
+      status: 'READY'
+    }).subscribe({
+      next: res => {
+        const created: Simulator = res?.data;
+        if (created) {
+          this.simulators = [...this.simulators, created];
+          if (target === 'item') this.itemForm.installed_simulator_id = created.id;
+          else this.movementForm.simulator_id = created.id;
+          this.toast.success(`Simulator "${created.name}" created.`);
+          this.mutated.emit();
+          this.cdr.markForCheck();
+        }
+      },
+      error: (e: any) => this.toast.error(e?.error?.message || 'Unable to create simulator.')
+    });
+  }
+
   get itemThresholdWarning(): string {
     const min = Number(this.itemForm.min_stock) || 0;
     const rop = Number(this.itemForm.reorder_point) || 0;

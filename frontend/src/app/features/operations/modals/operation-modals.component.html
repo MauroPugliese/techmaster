@@ -51,9 +51,17 @@
           <app-dropdown class="form-control"
                         [(ngModel)]="form.simulator_id"
                         (ngModelChange)="checkBayConflict()"
+                        [searchable]="true"
+                        [creatable]="true"
+                        searchPlaceholder="Search bay code, name, or aircraft…"
+                        createLabel="Create new simulator bay"
+                        createPlaceholder="e.g. BAY-05 · A350 FFS"
+                        (createOption)="quickCreateSimulator($event)"
                         placeholder="— Select FSTD Bay —">
             <app-dropdown-option [ngValue]="null">— Unassigned —</app-dropdown-option>
-            <app-dropdown-option *ngFor="let s of simulators" [ngValue]="s.id">
+            <app-dropdown-option *ngFor="let s of simulators"
+                                 [ngValue]="s.id"
+                                 [searchText]="(s.bay_code || '') + ' ' + (s.code || '') + ' ' + (s.name || '') + ' ' + (s.aircraft_type || '')">
               {{s.bay_code}} · {{s.code}} ({{s.aircraft_type}} · {{s.status}})
             </app-dropdown-option>
           </app-dropdown>
@@ -61,7 +69,14 @@
 
         <div class="form-group" *ngIf="showFormField('type_id')">
           <label class="form-label">{{fieldLabel('form','type_id','Training Profile')}} *</label>
-          <app-dropdown class="form-control" [(ngModel)]="form.type_id" placeholder="— Select profile —">
+          <app-dropdown class="form-control"
+                        [(ngModel)]="form.type_id"
+                        [searchable]="true"
+                        [creatable]="true"
+                        createLabel="Create new training profile"
+                        createPlaceholder="e.g. Recurrent LPC / OPC"
+                        (createOption)="quickCreateOperationType($event)"
+                        placeholder="— Select profile —">
             <app-dropdown-option [ngValue]="undefined">— Select profile —</app-dropdown-option>
             <app-dropdown-option *ngFor="let t of opTypes" [ngValue]="t.id">{{t.name}}</app-dropdown-option>
           </app-dropdown>
@@ -204,6 +219,8 @@
           <div class="ops-crew-picker">
             <app-dropdown class="form-control ops-crew-select"
                           [(ngModel)]="selectedDraftUserId"
+                          [searchable]="true"
+                          searchPlaceholder="Search crew name or title…"
                           placeholder="— Select crew member —">
               <app-dropdown-option [ngValue]="null">— Select crew member —</app-dropdown-option>
               <app-dropdown-option *ngFor="let u of availableDraftStaff" [ngValue]="u.id">
@@ -395,7 +412,12 @@
         <div class="form-row" *ngIf="debriefForm.open_snag_wo && (detailOp.simulator_id || detailOp.simulator?.id)">
           <div class="form-group">
             <label>Affected Subsystem</label>
-            <app-dropdown class="form-control" [(ngModel)]="debriefForm.subsystem_code">
+            <app-dropdown class="form-control"
+                          [(ngModel)]="debriefForm.subsystem_code"
+                          [searchable]="true"
+                          [creatable]="true"
+                          storageKey="maint_subsystems"
+                          createLabel="Add custom subsystem">
               <app-dropdown-option *ngFor="let sub of subsystemOptions" [value]="sub.code">{{sub.label}}</app-dropdown-option>
             </app-dropdown>
           </div>
@@ -498,7 +520,13 @@
             </div>
             <div class="form-group">
               <label>Affected Subsystem</label>
-              <app-dropdown class="form-control" [(ngModel)]="snagForm.subsystem_code" ariaLabel="Affected Subsystem">
+              <app-dropdown class="form-control"
+                            [(ngModel)]="snagForm.subsystem_code"
+                            [searchable]="true"
+                            [creatable]="true"
+                            storageKey="maint_subsystems"
+                            createLabel="Add custom subsystem"
+                            ariaLabel="Affected Subsystem">
                 <app-dropdown-option *ngFor="let sub of subsystemOptions" [value]="sub.code">{{sub.label}}</app-dropdown-option>
               </app-dropdown>
             </div>

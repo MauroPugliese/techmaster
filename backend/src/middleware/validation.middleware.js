@@ -4,18 +4,23 @@
 const { body, query, param, validationResult } = require('express-validator');
 
 // ── Validation Error Handler ──────────────────────────────────────────────────
+const SENSITIVE_FIELD_RE = /password|token|secret/i;
+
 const handleValidationErrors = (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(422).json({
       success: false,
       message: 'Validation failed',
-      errors: errors.array().map(err => ({
-        field: err.param,
-        value: err.value,
-        message: err.msg,
-        location: err.location
-      }))
+      errors: errors.array().map(err => {
+        const field = err.path || err.param || 'unknown';
+        return {
+          field,
+          value: SENSITIVE_FIELD_RE.test(field) ? '[REDACTED]' : err.value,
+          message: err.msg,
+          location: err.location
+        };
+      })
     });
   }
   next();

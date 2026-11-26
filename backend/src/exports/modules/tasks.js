@@ -83,20 +83,36 @@ module.exports = {
     const { status, priority, interval_type, assigned_to, simulator_id, search } = req.query;
 
     const where = {};
+    const andClauses = [];
     if (range.from || range.to) {
-      where.created_at = {};
-      if (range.from) where.created_at[Op.gte] = range.from;
-      if (range.to) where.created_at[Op.lte] = range.to;
+      where.due_date = {};
+      if (range.from) where.due_date[Op.gte] = range.from;
+      if (range.to) where.due_date[Op.lte] = range.to;
     }
-    if (status) where.status = status;
+    if (status === 'OVERDUE') {
+      where.status = { [Op.in]: ['TODO', 'IN_PROGRESS', 'REVIEW', 'OVERDUE'] };
+      andClauses.push({
+        [Op.or]: [
+          { status: 'OVERDUE' },
+          { due_date: { [Op.lt]: new Date() } }
+        ]
+      });
+    } else if (status) {
+      where.status = status;
+    }
     if (priority) where.priority = priority;
     if (interval_type) where.interval_type = interval_type;
-    if (assigned_to) where.assigned_to = assigned_to;
+    if (assigned_to === 'unassigned') {
+      where.assigned_to = { [Op.is]: null };
+    } else if (assigned_to) {
+      where.assigned_to = Number(assigned_to) || assigned_to;
+    }
     if (simulator_id && Number(simulator_id) > 0) where.simulator_id = Number(simulator_id);
     if (search && String(search).trim()) {
       const q = `%${String(search).trim()}%`;
-      where[Op.or] = [{ title: { [Op.like]: q } }, { description: { [Op.like]: q } }];
+      andClauses.push({ [Op.or]: [{ title: { [Op.like]: q } }, { description: { [Op.like]: q } }] });
     }
+    if (andClauses.length) where[Op.and] = andClauses;
 
     const tasks = await Task.findAll({
       where,
@@ -235,11 +251,11 @@ module.exports = {
       rows: taskRows
     };
 
-    const filters = { 'Creation Window': rangeLabel(range) };
+    const filters = { 'Due Date Window': rangeLabel(range) };
     if (status) filters.Status = status;
     if (priority) filters.Priority = priority;
     if (interval_type) filters.Recurrence = interval_type;
-    if (assigned_to) filters['Assignee ID'] = assigned_to;
+    if (assigned_to) filters.Assignee = assigned_to === 'unassigned' ? 'Unassigned' : `User #${assigned_to}`;
     if (search) filters.Search = search;
 
     const pages = [

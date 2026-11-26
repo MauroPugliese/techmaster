@@ -18,12 +18,14 @@ services:
           cpus:   "0.75"
 
   backend:
+    # Note: container_name + host port bindings in docker-compose.yml require single replica
+    # in standard Docker Compose. Remove container_name & fixed ports when deploying on Swarm/K8s.
     deploy:
-      replicas: 2            # Scale horizontally behind a load balancer
+      replicas: 1
       resources:
         limits:
-          memory: 256M
-          cpus:   "0.50"
+          memory: 512M
+          cpus:   "0.75"
       restart_policy:
         condition: on-failure
         delay:     5s
@@ -36,10 +38,10 @@ services:
 
   frontend:
     deploy:
-      replicas: 2
+      replicas: 1
       resources:
         limits:
-          memory: 64M
+          memory: 128M
           cpus:   "0.25"
     read_only: true
     tmpfs:

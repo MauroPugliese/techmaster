@@ -66,7 +66,7 @@
           </div>
 
           <app-export-menu endpoint="wiki" filename="Wiki_Articles" label="Export" [includeDateRange]="false"
-                           [params]="{ status: statusFilter==='ALL' ? '' : statusFilter, category_id: selectedCategory, search: searchQuery }">
+                           [params]="{ status: statusFilter==='ALL' ? '' : statusFilter, category_id: selectedCategory, tag: selectedTag, search: searchQuery }">
           </app-export-menu>
 
           <button type="button" class="btn btn-primary" (click)="openEditor(null)">
@@ -350,5 +350,6 @@
   [uiPrefs]="uiPrefs"
   [saving]="saving"
   (close)="showEditor=false"
-  (save)="onEditorSave($event)">
+  (save)="onEditorSave($event)"
+  (categoriesChanged)="loadCategories()">
 </app-wiki-editor>

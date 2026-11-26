@@ -5,9 +5,18 @@ import { DateRange } from '../models/interfaces';
 @Injectable({ providedIn: 'root' })
 export class DateFilterService {
   private rangeSubject = new BehaviorSubject<DateRange>({ from: null, to: null });
+  private routeEnabled = true;
   range$ = this.rangeSubject.asObservable();
 
   get currentRange(): DateRange { return this.rangeSubject.value; }
+
+  get effectiveRange(): DateRange {
+    return this.routeEnabled ? this.rangeSubject.value : { from: null, to: null };
+  }
+
+  setRouteEnabled(enabled: boolean): void {
+    this.routeEnabled = enabled;
+  }
 
   setRange(range: DateRange): void {
     this.rangeSubject.next(range);

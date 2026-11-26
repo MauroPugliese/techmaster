@@ -95,7 +95,7 @@ router.get('/categories', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/categories', authorize('admin', 'manager'), async (req, res, next) => {
+router.post('/categories', authorize('admin', 'manager', 'tech'), async (req, res, next) => {
   try {
     const { error, data } = sanitizeCategoryPayload(req.body, { isCreate: true });
     if (error) return res.status(400).json({ success: false, message: error });
@@ -262,7 +262,7 @@ router.get('/articles/:slug', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/articles', async (req, res, next) => {
+router.post('/articles', authorize('admin', 'manager', 'tech'), async (req, res, next) => {
   try {
     const { error, data } = sanitizeArticlePayload(req.body, { isCreate: true });
     if (error) return res.status(400).json({ success: false, message: error });
@@ -281,7 +281,7 @@ router.post('/articles', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.put('/articles/:id', async (req, res, next) => {
+router.put('/articles/:id', authorize('admin', 'manager', 'tech'), async (req, res, next) => {
   try {
     const article = await WikiArticle.findByPk(req.params.id);
     if (!article) return res.status(404).json({ success: false, message: 'Not found' });
@@ -304,7 +304,7 @@ router.put('/articles/:id', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.patch('/articles/:id/pin', async (req, res, next) => {
+router.patch('/articles/:id/pin', authorize('admin', 'manager', 'tech'), async (req, res, next) => {
   try {
     const article = await WikiArticle.findByPk(req.params.id);
     if (!article) return res.status(404).json({ success: false, message: 'Not found' });
@@ -317,7 +317,7 @@ router.patch('/articles/:id/pin', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.delete('/articles/:id', async (req, res, next) => {
+router.delete('/articles/:id', authorize('admin', 'manager'), async (req, res, next) => {
   try {
     const article = await WikiArticle.findByPk(req.params.id);
     if (!article) return res.status(404).json({ success: false, message: 'Not found' });

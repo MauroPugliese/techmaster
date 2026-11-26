@@ -181,6 +181,52 @@ export class TaskDetailDrawerComponent implements OnChanges, OnDestroy {
     this.form = { ...this.form, assigned_to: this.currentUser.id };
   }
 
+  quickCreateParentTask(rawTitle: string): void {
+    const title = rawTitle.trim();
+    if (!title) return;
+    this.api.post<any>('/tasks', {
+      title,
+      interval_type: 'ONCE',
+      status: 'TODO',
+      priority: 'MEDIUM'
+    }).pipe(takeUntil(this.destroy$)).subscribe({
+      next: res => {
+        const created: Task = res?.data;
+        if (created) {
+          this.allTasks = [created, ...this.allTasks];
+          this.form = { ...this.form, parent_id: created.id };
+          this.toast.success(`Parent task "${created.title}" created.`);
+          this.cdr.markForCheck();
+        }
+      },
+      error: (e: any) => this.toast.error(e?.error?.message || 'Unable to create parent task.')
+    });
+  }
+
+  quickCreateSimulator(rawLabel: string): void {
+    const label = rawLabel.trim();
+    if (!label) return;
+    const cleanCode = label.toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 16) || `SIM-${Date.now().toString().slice(-4)}`;
+    this.api.post<any>('/simulators', {
+      code: cleanCode,
+      name: label,
+      bay_code: cleanCode.slice(0, 12),
+      station_kind: 'FFS_BAY',
+      status: 'READY'
+    }).pipe(takeUntil(this.destroy$)).subscribe({
+      next: res => {
+        const created: Simulator = res?.data;
+        if (created) {
+          this.simulators = [...this.simulators, created];
+          this.form = { ...this.form, simulator_id: created.id };
+          this.toast.success(`Simulator "${created.name}" created.`);
+          this.cdr.markForCheck();
+        }
+      },
+      error: (e: any) => this.toast.error(e?.error?.message || 'Unable to create simulator bay.')
+    });
+  }
+
   onBackdropClick(event: MouseEvent): void {
     if ((event.target as HTMLElement).classList.contains('drawer-backdrop')) {
       this.close.emit();

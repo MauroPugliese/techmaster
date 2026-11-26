@@ -40,26 +40,33 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
       }
 
       isRefreshing = true;
+      let settled = false;
       refreshState$.next({ status: 'pending', token: null });
 
       return auth.refreshToken().pipe(
         switchMap((res: any) => {
           const newToken = res?.data?.access_token || auth.getAccessToken();
           if (!newToken) {
+            settled = true;
             refreshState$.next({ status: 'failed', token: null });
             auth.logout();
             return throwError(() => err);
           }
+          settled = true;
           refreshState$.next({ status: 'success', token: newToken });
           return next(req.clone({ setHeaders: { Authorization: `Bearer ${newToken}` } }));
         }),
         catchError((refreshErr) => {
+          settled = true;
           refreshState$.next({ status: 'failed', token: null });
           auth.logout();
           return throwError(() => refreshErr);
         }),
         finalize(() => {
           isRefreshing = false;
+          if (!settled) {
+            refreshState$.next({ status: 'failed', token: null });
+          }
         })
       );
     })

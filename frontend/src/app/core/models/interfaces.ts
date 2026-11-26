@@ -551,6 +551,9 @@ export interface Asset {
 export interface MaintenancePartUsage {
   item_id?: number | null;
   sku?: string | null;
+  part_number?: string | null;
+  broken_serial_number?: string | null;
+  new_serial_number?: string | null;
   name: string;
   quantity: number;
   unit?: string;
@@ -583,6 +586,9 @@ export interface MaintenanceRecord {
   wikiArticle?: { id: number; title: string; slug: string } | null;
   findings?: string | null;
   parts_used?: MaintenancePartUsage[];
+  part_number?: string | null;
+  broken_serial_number?: string | null;
+  new_serial_number?: string | null;
   next_scheduled?: string | null;
   asset?: Asset;
   simulator?: Partial<Simulator>;

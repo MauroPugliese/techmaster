@@ -52,17 +52,27 @@ module.exports = {
 
   async build(req) {
     const range = parseRange(req.query);
-    const { status, priority, type, search, simulator_id, is_snag, severity, subsystem_code, mel_category } = req.query;
+    const { status, priority, type, search, asset_id, simulator_id, is_snag, severity, subsystem_code, mel_category } = req.query;
 
     const where = {};
+    const andConditions = [];
     if (range.from || range.to) {
       where.scheduled_date = {};
       if (range.from) where.scheduled_date[Op.gte] = range.from;
       if (range.to) where.scheduled_date[Op.lte] = range.to;
     }
-    if (status) where.status = status;
-    if (priority) where.priority = priority;
-    if (type) where.type = type;
+    const normalizedStatus = String(status || '').trim().toUpperCase();
+    if (normalizedStatus === 'OVERDUE') {
+      andConditions.push({
+        status: { [Op.in]: ['SCHEDULED', 'IN_PROGRESS', 'DEFERRED'] },
+        scheduled_date: { [Op.lt]: new Date() }
+      });
+    } else if (normalizedStatus) {
+      where.status = normalizedStatus;
+    }
+    if (priority) where.priority = String(priority).trim().toUpperCase();
+    if (type) where.type = String(type).trim().toUpperCase();
+    if (asset_id && Number(asset_id) > 0) where.asset_id = Number(asset_id);
     if (simulator_id && Number(simulator_id) > 0) where.simulator_id = Number(simulator_id);
     if (is_snag === 'true') where.is_snag = true;
     if (severity && String(severity).trim()) where.severity = String(severity).trim().toUpperCase();
@@ -73,12 +83,18 @@ module.exports = {
     }
     if (search && String(search).trim()) {
       const q = `%${String(search).trim()}%`;
-      where[Op.or] = [
-        { title: { [Op.like]: q } },
-        { description: { [Op.like]: q } },
-        { findings: { [Op.like]: q } }
-      ];
+      andConditions.push({
+        [Op.or]: [
+          { title: { [Op.like]: q } },
+          { description: { [Op.like]: q } },
+          { findings: { [Op.like]: q } },
+          { part_number: { [Op.like]: q } },
+          { broken_serial_number: { [Op.like]: q } },
+          { new_serial_number: { [Op.like]: q } }
+        ]
+      });
     }
+    if (andConditions.length) where[Op.and] = andConditions;
 
     const records = await MaintenanceRecord.findAll({
       where,
@@ -210,6 +226,9 @@ module.exports = {
         { header: 'MEL', key: 'mel', width: 48, printHidden: true },
         { header: 'Status', key: 'status', width: 64, type: 'badge', align: 'center' },
         { header: 'Scheduled', key: 'scheduled', width: 74, printHidden: true },
+        { header: 'Part Number', key: 'part_number', width: 82, type: 'mono', printHidden: true },
+        { header: 'Broken S/N', key: 'broken_sn', width: 82, type: 'mono', printHidden: true },
+        { header: 'New S/N', key: 'new_sn', width: 82, type: 'mono', printHidden: true },
         { header: 'Parts Used', key: 'parts', width: 105, printHidden: true },
         { header: 'Down (h)', key: 'downtime', width: 46, type: 'number', decimals: 1, align: 'right', total: 'sum' },
         { header: 'Parts ($)', key: 'parts_cost', width: 60, type: 'currency', align: 'right', total: 'sum', printHidden: true },
@@ -229,6 +248,9 @@ module.exports = {
         status: r.status,
         status_tone: STATUS_TONE[r.status] || 'neutral',
         scheduled: fmtDateTime(r.scheduled_date),
+        part_number: r.part_number || (Array.isArray(r.parts_used) && r.parts_used[0]?.part_number) || '—',
+        broken_sn: r.broken_serial_number || (Array.isArray(r.parts_used) && r.parts_used[0]?.broken_serial_number) || '—',
+        new_sn: r.new_serial_number || (Array.isArray(r.parts_used) && r.parts_used[0]?.new_serial_number) || '—',
         parts: formatPartsSummary(r.parts_used),
         downtime: r.downtime_hours != null ? toNumber(r.downtime_hours, 0) : 0,
         parts_cost: r.parts_cost != null ? toNumber(r.parts_cost, 0) : 0,

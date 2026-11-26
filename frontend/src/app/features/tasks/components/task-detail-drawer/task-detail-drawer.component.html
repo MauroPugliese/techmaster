@@ -105,7 +105,11 @@
                 Assign to me
               </button>
             </div>
-            <app-dropdown class="form-control" [(ngModel)]="form.assigned_to" placeholder="— Unassigned —">
+            <app-dropdown class="form-control"
+                          [(ngModel)]="form.assigned_to"
+                          [searchable]="true"
+                          searchPlaceholder="Search teammate name or username…"
+                          placeholder="— Unassigned —">
               <app-dropdown-option [ngValue]="null">— Unassigned —</app-dropdown-option>
               <app-dropdown-option *ngFor="let u of assignees" [value]="u.id" [label]="userName(u)">
                 {{userName(u)}} ({{'@'}}{{u.username}})
@@ -115,7 +119,14 @@
 
           <div class="form-group" *ngIf="showFormField('parent_id')">
             <label class="form-label">{{fieldLabel('form','parent_id','Parent Task')}}</label>
-            <app-dropdown class="form-control" [(ngModel)]="form.parent_id" placeholder="— None (top-level) —">
+            <app-dropdown class="form-control"
+                          [(ngModel)]="form.parent_id"
+                          [searchable]="true"
+                          [creatable]="true"
+                          createLabel="Create new parent task"
+                          createPlaceholder="e.g. Monthly Bay Overhaul"
+                          (createOption)="quickCreateParentTask($event)"
+                          placeholder="— None (top-level) —">
               <app-dropdown-option [ngValue]="null">— None (top-level) —</app-dropdown-option>
               <app-dropdown-option *ngFor="let t of parentTaskOptions" [value]="t.id">{{t.title}}</app-dropdown-option>
             </app-dropdown>
@@ -124,7 +135,13 @@
 
         <div class="form-group" *ngIf="simulators.length > 0">
           <label class="form-label">Simulator Bay (Optional)</label>
-          <app-dropdown class="form-control" [(ngModel)]="form.simulator_id" placeholder="— General Center Task —">
+          <app-dropdown class="form-control"
+                        [(ngModel)]="form.simulator_id"
+                        [searchable]="true"
+                        [creatable]="true"
+                        createLabel="Create new simulator bay"
+                        (createOption)="quickCreateSimulator($event)"
+                        placeholder="— General Center Task —">
             <app-dropdown-option [ngValue]="null">— General Center Task —</app-dropdown-option>
             <app-dropdown-option *ngFor="let s of simulators" [value]="s.id">{{s.bay_code}} · {{s.code}} ({{s.aircraft_type}})</app-dropdown-option>
           </app-dropdown>

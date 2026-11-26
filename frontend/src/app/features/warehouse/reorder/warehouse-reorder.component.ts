@@ -5,12 +5,15 @@ import {
   EventEmitter,
   Input,
   OnChanges,
+  OnDestroy,
   OnInit,
   Output,
   SimpleChanges
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../../core/services/api.service';
 import { ToastService } from '../../../core/services/toast.service';
 import { InventoryItem, WarehouseReorderItem } from '../../../core/models/interfaces';
@@ -31,18 +34,23 @@ export interface ReorderSupplierGroup {
   styleUrls: ['./warehouse-reorder.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class WarehouseReorderComponent implements OnInit, OnChanges {
+export class WarehouseReorderComponent implements OnInit, OnChanges, OnDestroy {
   @Input() refreshTick = 0;
+  @Input() externalSearch = '';
   @Output() quickRestockRequested = new EventEmitter<{ item: InventoryItem; quantity: number }>();
   @Output() detailRequested = new EventEmitter<InventoryItem>();
   @Output() mutated = new EventEmitter<void>();
 
+  private readonly destroy$ = new Subject<void>();
   private initialized = false;
+  private loadSeq = 0;
   loading = true;
   viewMode: 'urgency' | 'supplier' = 'urgency';
   search = '';
 
   items: WarehouseReorderItem[] = [];
+  filteredItems: WarehouseReorderItem[] = [];
+  supplierGroups: ReorderSupplierGroup[] = [];
   totals = {
     items_count: 0,
     critical_count: 0,
@@ -62,44 +70,75 @@ export class WarehouseReorderComponent implements OnInit, OnChanges {
   ) {}
 
   ngOnInit(): void {
+    if (this.externalSearch) {
+      this.search = this.externalSearch;
+    }
     this.initialized = true;
     this.loadQueue();
   }
 
   ngOnChanges(changes: SimpleChanges): void {
+    if (this.initialized && changes['externalSearch'] && !changes['externalSearch'].firstChange) {
+      const next = this.externalSearch || '';
+      if (this.search !== next) {
+        this.search = next;
+        this.recomputeView();
+        this.cdr.markForCheck();
+      }
+    }
     if (this.initialized && changes['refreshTick'] && !changes['refreshTick'].firstChange) {
       this.loadQueue();
     }
   }
 
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
   loadQueue(): void {
+    const seq = ++this.loadSeq;
     this.loading = true;
-    this.api.get<any>('/warehouse/reorder').subscribe({
+    this.api.get<any>('/warehouse/reorder').pipe(takeUntil(this.destroy$)).subscribe({
       next: r => {
+        if (seq !== this.loadSeq) return;
         this.items = r?.data?.items || [];
         if (r?.data?.totals) this.totals = r.data.totals;
+        this.recomputeView();
         this.loading = false;
         this.cdr.markForCheck();
       },
       error: () => {
+        if (seq !== this.loadSeq) return;
         this.loading = false;
         this.cdr.markForCheck();
       }
     });
   }
 
-  get filteredItems(): WarehouseReorderItem[] {
-    const q = this.search.trim().toLowerCase();
-    if (!q) return this.items;
-    return this.items.filter(i =>
-      i.name.toLowerCase().includes(q) ||
-      i.sku.toLowerCase().includes(q) ||
-      (i.supplier || '').toLowerCase().includes(q) ||
-      (i.location?.name || '').toLowerCase().includes(q)
-    );
+  onSearchChange(val: string): void {
+    this.search = val;
+    this.recomputeView();
+    this.cdr.markForCheck();
   }
 
-  get supplierGroups(): ReorderSupplierGroup[] {
+  clearSearch(): void {
+    this.search = '';
+    this.recomputeView();
+    this.cdr.markForCheck();
+  }
+
+  private recomputeView(): void {
+    const q = this.search.trim().toLowerCase();
+    this.filteredItems = !q
+      ? this.items
+      : this.items.filter(i =>
+          i.name.toLowerCase().includes(q) ||
+          i.sku.toLowerCase().includes(q) ||
+          (i.supplier || '').toLowerCase().includes(q) ||
+          (i.location?.name || '').toLowerCase().includes(q)
+        );
+
     const map = new Map<string, ReorderSupplierGroup>();
     for (const item of this.filteredItems) {
       const sup = (item.supplier || '').trim() || 'Unspecified Supplier';
@@ -115,7 +154,7 @@ export class WarehouseReorderComponent implements OnInit, OnChanges {
       map.set(sup, existing);
     }
 
-    return Array.from(map.values())
+    this.supplierGroups = Array.from(map.values())
       .map(g => ({ ...g, totalEstimatedCost: Number(g.totalEstimatedCost.toFixed(2)) }))
       .sort((a, b) => b.totalEstimatedCost - a.totalEstimatedCost || b.items.length - a.items.length);
   }
@@ -137,10 +176,11 @@ export class WarehouseReorderComponent implements OnInit, OnChanges {
     this.creatingTaskIds.add(item.id);
     this.cdr.markForCheck();
 
-    this.api.post<any>(`/warehouse/${item.id}/restock-task`, {}).subscribe({
+    this.api.post<any>(`/warehouse/${item.id}/restock-task`, {}).pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {
         this.creatingTaskIds.delete(item.id);
         this.createdTaskIds.add(item.id);
+        this.api.notifyNavBadgesChanged();
         this.toast.success(`Restock task created for ${item.sku}.`);
         this.cdr.markForCheck();
       },
@@ -171,7 +211,7 @@ export class WarehouseReorderComponent implements OnInit, OnChanges {
       reference: 'PO-RECEIPT',
       reason: `Received inbound PO (+${qty} ${item.unit || 'pcs'}) via Reorder Planner`,
       clear_on_order: true
-    }).subscribe({
+    }).pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {
         this.receivingPoIds.delete(item.id);
         this.toast.success(`Received +${qty} ${item.unit || 'pcs'} of ${item.sku} into stock.`);

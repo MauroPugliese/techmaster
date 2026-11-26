@@ -2,7 +2,7 @@
 // features/admin/users/admin-users.component.ts — Enterprise User Management
 // =============================================================================
 import {
-  Component, OnInit, OnDestroy, OnChanges, SimpleChanges,
+  Component, OnInit, OnDestroy, OnChanges, SimpleChanges, HostListener,
   Input, Output, EventEmitter, ChangeDetectionStrategy, ChangeDetectorRef
 } from '@angular/core';
 import { CommonModule, DatePipe, TitleCasePipe } from '@angular/common';
@@ -55,6 +55,7 @@ export class AdminUsersComponent implements OnInit, OnChanges, OnDestroy {
   roleFilterId: number | null = null;
   statusFilter: '' | 'active' | 'inactive' = '';
   departmentFilter = '';
+  exportParams: Record<string, any> = {};
 
   page = 1;
   pageSize = 20;
@@ -146,6 +147,20 @@ export class AdminUsersComponent implements OnInit, OnChanges, OnDestroy {
     this.destroy$.complete();
   }
 
+  @HostListener('document:keydown.escape')
+  onEscapeKey(): void {
+    if (this.showResetModal && !this.saving) {
+      this.showResetModal = false;
+      this.cdr.markForCheck();
+    } else if (this.showUserModal && !this.saving) {
+      this.showUserModal = false;
+      this.cdr.markForCheck();
+    } else if (this.detailSummary) {
+      this.detailSummary = null;
+      this.cdr.markForCheck();
+    }
+  }
+
   isSelf(user: any): boolean {
     return this.currentUserId !== null && Number(user?.id) === Number(this.currentUserId);
   }
@@ -161,7 +176,14 @@ export class AdminUsersComponent implements OnInit, OnChanges, OnDestroy {
     if (this.statusFilter) params['status'] = this.statusFilter;
     if (this.departmentFilter) params['department'] = this.departmentFilter;
 
-    this.api.get<any>('/admin/users', params).subscribe({
+    this.exportParams = {
+      search: this.search.trim() || undefined,
+      role_id: this.roleFilterId || undefined,
+      status: this.statusFilter || undefined,
+      department: this.departmentFilter || undefined
+    };
+
+    this.api.get<any>('/admin/users', params).pipe(takeUntil(this.destroy$)).subscribe({
       next: res => {
         this.users = res.data?.items || [];
         this.total = Number(res.data?.total) || 0;

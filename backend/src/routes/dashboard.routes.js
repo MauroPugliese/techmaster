@@ -463,16 +463,32 @@ router.get('/overview', parseDateFilter, async (req, res, next) => {
       return new Date(a.start_date).getTime() - new Date(b.start_date).getTime();
     });
 
+    const groupBySimId = (rows) => {
+      const map = new Map();
+      for (const r of rows) {
+        const p = r.toJSON();
+        const sid = Number(p.simulator_id);
+        if (!map.has(sid)) map.set(sid, []);
+        map.get(sid).push(p);
+      }
+      return map;
+    };
+
+    const sortiesBySim = groupBySimId(simSorties);
+    const maintBySim = groupBySimId(simMaint);
+    const qtgBySim = groupBySimId(simQtg);
+    const subsBySim = groupBySimId(simSubsystems);
+
     const simulators = allSimulators.map((simRow) => {
       const plain = simRow.toJSON();
       const simId = Number(plain.id);
       return {
         ...plain,
         telemetry: computeSimulatorTelemetry(plain, {
-          sorties: simSorties.filter(x => Number(x.simulator_id) === simId).map(x => x.toJSON()),
-          maintenance: simMaint.filter(x => Number(x.simulator_id) === simId).map(x => x.toJSON()),
-          qtgRecords: simQtg.filter(x => Number(x.simulator_id) === simId).map(x => x.toJSON()),
-          subsystems: simSubsystems.filter(x => Number(x.simulator_id) === simId).map(x => x.toJSON()),
+          sorties: sortiesBySim.get(simId) || [],
+          maintenance: maintBySim.get(simId) || [],
+          qtgRecords: qtgBySim.get(simId) || [],
+          subsystems: subsBySim.get(simId) || [],
           now
         })
       };
@@ -505,16 +521,24 @@ router.get('/overview', parseDateFilter, async (req, res, next) => {
       let totalMin = 0;
       if (log && Array.isArray(log.shifts) && log.shifts.length > 0) {
         const sortedShifts = [...log.shifts].sort((a, b) => (a.shift_number || 0) - (b.shift_number || 0));
-        sortedShifts.forEach((sh, idx) => {
+        const effectiveBySim = new Map(subset.map(st => [Number(st.id), 'READY']));
+        sortedShifts.forEach((sh) => {
           for (const e of (sh.entries || [])) {
             totalMin += computeTestingDurationMinutes(e.sim_testing_start, e.sim_testing_end);
-            if (idx === 0) {
-              if (e.usage_status === 'IN_USE') inUse += 1;
-              else if (e.usage_status === 'NA') na += 1;
-              else ready += 1;
+            const sid = Number(e.simulator_id);
+            if (!effectiveBySim.has(sid)) continue;
+            if (e.usage_status === 'NA' || e.usage_status === 'IN_USE') {
+              effectiveBySim.set(sid, e.usage_status);
+            } else if (e.usage_status === 'READY' && effectiveBySim.get(sid) === 'NA') {
+              effectiveBySim.set(sid, 'READY');
             }
           }
         });
+        for (const st of effectiveBySim.values()) {
+          if (st === 'IN_USE') inUse += 1;
+          else if (st === 'NA') na += 1;
+          else ready += 1;
+        }
       } else {
         for (const st of subset) {
           if (st.status === 'AOG') na += 1;

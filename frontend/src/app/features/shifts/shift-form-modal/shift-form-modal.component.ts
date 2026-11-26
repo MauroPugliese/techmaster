@@ -85,6 +85,7 @@ export class ShiftFormModalComponent implements OnChanges, OnDestroy {
   @Output() close = new EventEmitter<void>();
   @Output() saved = new EventEmitter<void>();
   @Output() deleted = new EventEmitter<Shift>();
+  @Output() shiftTypesChanged = new EventEmitter<void>();
 
   saving = false;
   formMode: ShiftFormMode = 'WORK';
@@ -125,7 +126,45 @@ export class ShiftFormModalComponent implements OnChanges, OnDestroy {
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['open'] && this.open) {
       this.initializeFormState();
+    } else if (changes['shiftTypes'] && this.open && !this.form.shift_type_id) {
+      const defaultType = this.pickDefaultType(this.formMode);
+      if (defaultType) {
+        this.selectShiftType(defaultType.id);
+      }
     }
+  }
+
+  quickCreateShiftType(rawName: string): void {
+    const name = rawName.trim();
+    if (!name) return;
+    const base = name.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) || 'SHF';
+    const existingCodes = new Set(this.shiftTypes.map(s => String(s.code || '').toUpperCase()));
+    let code = base;
+    let i = 1;
+    while (existingCodes.has(code)) {
+      code = `${base.slice(0, 4)}${i++}`;
+    }
+
+    this.api.post<any>('/shifts/types', {
+      name,
+      code,
+      start_time: '08:00:00',
+      end_time: '16:00:00',
+      color: '#1565C0',
+      category: 'WORK'
+    }).pipe(takeUntil(this.destroy$)).subscribe({
+      next: res => {
+        const created: ShiftType = res?.data;
+        if (created) {
+          this.shiftTypes = [...this.shiftTypes, created];
+          this.selectShiftType(created.id);
+          this.toast.success(`Shift pattern "${created.name}" (${created.code}) created.`);
+          this.shiftTypesChanged.emit();
+          this.cdr.markForCheck();
+        }
+      },
+      error: (e: any) => this.toast.error(e?.error?.message || 'Unable to create shift pattern.')
+    });
   }
 
   ngOnDestroy(): void {

@@ -53,6 +53,8 @@ export class AnalyticsComponent implements OnInit, OnDestroy {
   dateLabel = 'All time';
   uiPrefs: UiSectionPreferences | null = null;
   overview: AnalyticsOverview | null = null;
+  readonly emptyArr: any[] = [];
+  exportMenuParams: Record<string, string | number | boolean | null | undefined> = {};
 
   readonly periodOptions: Array<{ value: AnalyticsPeriod; label: string }> = [
     { value: '7d', label: '7D' },
@@ -91,6 +93,7 @@ export class AnalyticsComponent implements OnInit, OnDestroy {
         switchMap(() => {
           this.loading = true;
           this.dateLabel = this.buildScopeLabel();
+          this.exportMenuParams = (this.period === 'all' || this.period === 'custom') ? {} : { period: this.period };
           this.cdr.markForCheck();
 
           const apiPeriod = this.period === 'custom' ? 'all' : this.period;
@@ -163,11 +166,6 @@ export class AnalyticsComponent implements OnInit, OnDestroy {
 
   get deltas() {
     return this.overview?.deltas;
-  }
-
-  get exportMenuParams(): Record<string, string | number | boolean | null | undefined> {
-    if (this.period === 'all' || this.period === 'custom') return {};
-    return { period: this.period };
   }
 
   money(val?: number | null): string {

@@ -195,7 +195,7 @@ function buildCoverSlide(pptx, spec, theme) {
   // Metadata + Tagline anchored safely inside bottom zone (y <= 7.26 < 7.50)
   const meta = spec.meta || {};
   const generatedStr = new Date(meta.generatedAt || Date.now()).toLocaleString('en-GB', {
-    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'UTC'
   });
   const metaParts = [
     `Generated: ${generatedStr}`,

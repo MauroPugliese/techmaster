@@ -66,9 +66,9 @@
 
     <button type="button"
             class="kpi-card ops-kpi-card ops-kpi-clickable"
-            [class.active]="statusFilter === 'OVERDUE'"
+            [class.active]="outcomeFilter === 'COMPLETED_WITH_SNAGS'"
             style="--kpi-color:#D97706"
-            (click)="filterByKpi('OVERDUE')">
+            (click)="filterBySnags()">
       <div class="kpi-icon-wrap">report_problem</div>
       <div class="ops-kpi-body">
         <div class="ops-kpi-value ops-num">{{summary?.snag_sorties_count ?? summary?.overdue_count ?? 0}}</div>

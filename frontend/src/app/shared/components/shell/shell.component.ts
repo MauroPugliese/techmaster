@@ -34,7 +34,7 @@ const SIDEBAR_STORAGE_KEY = 'smart_sidebar_collapsed';
 const PAGE_MAP: Record<string, NavPage> = {
   '/admin':                 { path: '/admin',                 group: 'Administration',    title: 'Admin Settings',       subtitle: 'Platform configuration and user management',      showDateFilter: false },
   '/dashboard':             { path: '/dashboard',             group: 'Overview',          title: 'Control Room',         subtitle: 'Live simulator bays, sorties & center health',    showDateFilter: true  },
-  '/simulators':            { path: '/simulators',            group: 'Simulator Center',  title: 'Flight Simulators',    subtitle: 'CAE FSTD bays, subsystems, QTG & airworthiness',  showDateFilter: false },
+  '/simulators':            { path: '/simulators',            group: 'Simulator Center',  title: 'Flight Simulators',    subtitle: 'FSTD bays, subsystems, QTG & airworthiness',      showDateFilter: false },
   '/operations':            { path: '/operations',            group: 'Simulator Center',  title: 'Sorties & Dispatch',   subtitle: '24h bay timeline, sorties & crew dispatch',       showDateFilter: true  },
   '/maintenance/planned':   { path: '/maintenance/planned',   group: 'Engineering',       title: 'Planned Maintenance',  subtitle: 'Recurring preventive calendar',                   showDateFilter: false },
   '/maintenance':           { path: '/maintenance',           group: 'Engineering',       title: 'Maintenance & QTG',    subtitle: 'Work orders, snags (DR), QTG & assets',           showDateFilter: true  },
@@ -43,7 +43,7 @@ const PAGE_MAP: Record<string, NavPage> = {
   '/analytics/operations':  { path: '/analytics/operations',  group: 'Intelligence',      title: 'Sorties Analytics',    subtitle: 'Dispatch reliability, bay utilization & snags',   showDateFilter: true  },
   '/analytics':             { path: '/analytics',             group: 'Intelligence',      title: 'Analytics & Reports',  subtitle: 'Executive reporting and data visualization',      showDateFilter: true  },
   '/tasks':                 { path: '/tasks',                 group: 'Intelligence',      title: 'Task Manager',         subtitle: 'Engineering tasks and recurring checklists',      showDateFilter: true  },
-  '/wiki':                  { path: '/wiki',                  group: 'Knowledge',         title: 'Wiki & Docs',          subtitle: 'CAE SOPs, QTG runbooks & LOTO guides',            showDateFilter: false },
+  '/wiki':                  { path: '/wiki',                  group: 'Knowledge',         title: 'Wiki & Docs',          subtitle: 'SOPs, QTG runbooks & LOTO guides',                showDateFilter: false },
   '/profile':               { path: '/profile',               group: 'Account',           title: 'My Profile',           subtitle: 'Personal info, password and active sessions',     showDateFilter: false },
 };
 
@@ -128,7 +128,7 @@ export class ShellComponent implements OnInit, OnDestroy {
       this.currentUser = user;
       this.loadNotifications();
       this.loadNavBadges();
-      this.sectionAccess.load(true).subscribe();
+      this.sectionAccess.load(true).pipe(takeUntil(this.destroy$)).subscribe();
 
       const token = this.auth.getAccessToken();
       if (token) {
@@ -140,7 +140,7 @@ export class ShellComponent implements OnInit, OnDestroy {
 
     this.socketService.notifications$.pipe(takeUntil(this.destroy$)).subscribe((notif) => {
       this.notifications = [{ ...notif, is_read: false }, ...this.notifications].slice(0, 50);
-      this.unreadNotifications = this.notifications.filter(n => !n.is_read).length;
+      this.unreadNotifications = Math.max(this.unreadNotifications + 1, this.notifications.filter(n => !n.is_read).length);
       this.loadNavBadges();
       this.cdr.markForCheck();
     });
@@ -195,6 +195,10 @@ export class ShellComponent implements OnInit, OnDestroy {
 
     if (event.key === 'Escape') {
       let changed = false;
+      if (this.showDatePicker) {
+        this.showDatePicker = false;
+        changed = true;
+      }
       if (this.showNotifications) {
         this.showNotifications = false;
         changed = true;
@@ -293,10 +297,16 @@ export class ShellComponent implements OnInit, OnDestroy {
   }
 
   applyDatePicker(): void {
-    this.dateFilter.setRange({
-      from: this.pickerFrom,
-      to: this.pickerTo
-    });
+    let from = this.pickerFrom;
+    let to = this.pickerTo;
+    if (from && to && from.getTime() > to.getTime()) {
+      const swap = from;
+      from = to;
+      to = swap;
+      this.pickerFrom = from;
+      this.pickerTo = to;
+    }
+    this.dateFilter.setRange({ from, to });
     this.activePreset = null;
     this.showDatePicker = false;
   }
@@ -310,6 +320,9 @@ export class ShellComponent implements OnInit, OnDestroy {
   toggleNotifications(event?: MouseEvent): void {
     event?.stopPropagation();
     this.showNotifications = !this.showNotifications;
+    if (this.showNotifications && this.currentUser) {
+      this.loadNotifications();
+    }
   }
 
   setNotifFilter(mode: 'all' | 'unread'): void {
@@ -320,28 +333,38 @@ export class ShellComponent implements OnInit, OnDestroy {
     event?.stopPropagation();
     if (notification.is_read) return;
 
-    this.api.put<ApiResponse<Notification>>(`/notifications/${notification.id}/read`, {}).subscribe({
-      next: () => {
-        this.notifications = this.notifications.map(n =>
-          n.id === notification.id ? { ...n, is_read: true } : n
-        );
-        this.unreadNotifications = this.notifications.filter(n => !n.is_read).length;
-        this.cdr.markForCheck();
-      }
-    });
+    this.api.put<ApiResponse<Notification>>(`/notifications/${notification.id}/read`, {})
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: () => {
+          this.notifications = this.notifications.map(n =>
+            n.id === notification.id ? { ...n, is_read: true } : n
+          );
+          this.unreadNotifications = Math.max(0, this.unreadNotifications - 1);
+          this.cdr.markForCheck();
+        },
+        error: () => {
+          this.loadNotifications();
+        }
+      });
   }
 
   markAllAsRead(event?: MouseEvent): void {
     event?.stopPropagation();
     if (!this.unreadNotifications) return;
 
-    this.api.put<ApiResponse<unknown>>('/notifications/read-all', {}).subscribe({
-      next: () => {
-        this.notifications = this.notifications.map(n => ({ ...n, is_read: true }));
-        this.unreadNotifications = 0;
-        this.cdr.markForCheck();
-      }
-    });
+    this.api.put<ApiResponse<unknown>>('/notifications/read-all', {})
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: () => {
+          this.notifications = this.notifications.map(n => ({ ...n, is_read: true }));
+          this.unreadNotifications = 0;
+          this.cdr.markForCheck();
+        },
+        error: () => {
+          this.loadNotifications();
+        }
+      });
   }
 
   openNotification(notification: Notification, event?: MouseEvent): void {
@@ -369,19 +392,23 @@ export class ShellComponent implements OnInit, OnDestroy {
       this.pageTitle = page.title;
       this.pageSubtitle = page.subtitle;
       this.showGlobalDateFilter = page.showDateFilter !== false;
+      this.dateFilter.setRouteEnabled(this.showGlobalDateFilter);
     }
   }
 
   private loadNotifications(): void {
-    this.api.get<ApiResponse<Notification[]>>('/notifications').subscribe({
+    this.api.get<ApiResponse<Notification[]>>('/notifications').pipe(takeUntil(this.destroy$)).subscribe({
       next: (res) => {
         this.notifications = res.data || [];
-        this.unreadNotifications = this.notifications.filter(n => !n.is_read).length;
+        const localUnread = this.notifications.filter(n => !n.is_read).length;
+        // Preserve authoritative DB count when there are more than 50 notifications
+        this.unreadNotifications = this.notifications.length >= 50
+          ? Math.max(this.unreadNotifications, localUnread)
+          : localUnread;
         this.cdr.markForCheck();
       },
       error: () => {
         this.notifications = [];
-        this.unreadNotifications = 0;
         this.cdr.markForCheck();
       }
     });
@@ -400,7 +427,7 @@ export class ShellComponent implements OnInit, OnDestroy {
   }
 
   private loadNavBadges(): void {
-    this.api.get<any>('/search/nav-badges', { date: this.localTodayIso() }).subscribe({
+    this.api.get<any>('/search/nav-badges', { date: this.localTodayIso() }).pipe(takeUntil(this.destroy$)).subscribe({
       next: (res) => {
         const d = res?.data;
         if (!d) return;
@@ -410,6 +437,9 @@ export class ShellComponent implements OnInit, OnDestroy {
         this.pendingPlannedMaintCount = Number(d.plannedMaintenance) || 0;
         this.lowStockCount = Number(d.warehouse) || 0;
         this.openTasksCount = Number(d.tasks) || 0;
+        if (d.notifications !== undefined) {
+          this.unreadNotifications = Number(d.notifications) || 0;
+        }
         this.cdr.markForCheck();
       },
       error: () => {

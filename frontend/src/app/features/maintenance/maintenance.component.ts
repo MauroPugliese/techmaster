@@ -88,15 +88,24 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
       if (qp['simulatorId'] !== undefined) {
         const simId = Number(qp['simulatorId']);
         this.externalSimulatorId = Number.isFinite(simId) && simId > 0 ? simId : null;
+      } else {
+        this.externalSimulatorId = null;
       }
       if (qp['status'] !== undefined) {
         const st = String(qp['status'] || '').toUpperCase();
         if (['', 'SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'FAILED', 'DEFERRED', 'OVERDUE'].includes(st)) {
           this.externalStatusFilter = st;
         }
+      } else {
+        this.externalStatusFilter = '';
       }
       if (qp['search'] !== undefined) {
         this.externalSearch = String(qp['search'] || '');
+      } else {
+        this.externalSearch = '';
+      }
+      if (qp['action'] !== 'new') {
+        this.actionHandled = false;
       }
       if (qp['action'] === 'new' && !this.actionHandled) {
         this.actionHandled = true;
@@ -136,10 +145,10 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
     this.api.get<any>('/maintenance/asset-categories').subscribe({
       next: r => { this.assetCategories = r?.data || []; this.cdr.markForCheck(); }
     });
-    this.api.get<any>('/warehouse', { limit: 100, page: 1 }).subscribe({
+    this.api.get<any>('/warehouse', { limit: 500, page: 1 }).pipe(takeUntil(this.destroy$)).subscribe({
       next: r => { this.warehouseItems = r?.data?.items || r?.data || []; this.cdr.markForCheck(); }
     });
-    this.api.get<any>('/maintenance/summary').subscribe({
+    this.api.get<any>('/maintenance/summary').pipe(takeUntil(this.destroy$)).subscribe({
       next: r => { this.maintSummary = r?.data || null; this.cdr.markForCheck(); }
     });
   }
@@ -227,15 +236,16 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
 
   onMutated(): void {
     this.refreshTick += 1;
-    this.api.get<any>('/maintenance/summary').subscribe({
+    this.api.notifyNavBadgesChanged();
+    this.api.get<any>('/maintenance/summary').pipe(takeUntil(this.destroy$)).subscribe({
       next: r => { this.maintSummary = r?.data || null; this.cdr.markForCheck(); }
     });
     this.cdr.markForCheck();
   }
 
   onAssetsMutated(): void {
-    this.refreshTick += 1;
     this.loadReferenceData();
+    this.api.notifyNavBadgesChanged();
     this.cdr.markForCheck();
   }
 }

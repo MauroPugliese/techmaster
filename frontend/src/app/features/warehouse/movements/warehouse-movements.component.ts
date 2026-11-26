@@ -38,10 +38,12 @@ import {
 })
 export class WarehouseMovementsComponent implements OnInit, OnChanges, OnDestroy {
   @Input() refreshTick = 0;
+  @Input() externalSearch = '';
 
   private destroy$ = new Subject<void>();
   private searchInput$ = new Subject<string>();
   private initialized = false;
+  private loadSeq = 0;
   Math = Math;
 
   readonly movementTypes = MOVEMENT_TYPES;
@@ -70,6 +72,10 @@ export class WarehouseMovementsComponent implements OnInit, OnChanges, OnDestroy
   ) {}
 
   ngOnInit(): void {
+    if (this.externalSearch) {
+      this.search = this.externalSearch;
+    }
+
     this.searchInput$
       .pipe(debounceTime(280), distinctUntilChanged(), takeUntil(this.destroy$))
       .subscribe(val => {
@@ -89,6 +95,15 @@ export class WarehouseMovementsComponent implements OnInit, OnChanges, OnDestroy
   }
 
   ngOnChanges(changes: SimpleChanges): void {
+    if (this.initialized && changes['externalSearch'] && !changes['externalSearch'].firstChange) {
+      const nextSearch = this.externalSearch || '';
+      if (this.search !== nextSearch) {
+        this.search = nextSearch;
+        this.page = 1;
+        this.loadMovements();
+        return;
+      }
+    }
     if (this.initialized && changes['refreshTick'] && !changes['refreshTick'].firstChange) {
       this.loadMovements();
     }
@@ -100,14 +115,16 @@ export class WarehouseMovementsComponent implements OnInit, OnChanges, OnDestroy
   }
 
   loadMovements(): void {
+    const seq = ++this.loadSeq;
     this.loading = true;
     this.api.get<any>('/warehouse/movements', {
       type: this.typeFilter !== 'ALL' ? this.typeFilter : '',
       search: this.search.trim(),
       page: this.page,
       limit: this.pageSize
-    }).subscribe({
+    }).pipe(takeUntil(this.destroy$)).subscribe({
       next: r => {
+        if (seq !== this.loadSeq) return;
         this.movements = r?.data?.movements || [];
         this.total = r?.data?.total ?? 0;
         if (r?.data?.type_counts) {
@@ -117,6 +134,7 @@ export class WarehouseMovementsComponent implements OnInit, OnChanges, OnDestroy
         this.cdr.markForCheck();
       },
       error: () => {
+        if (seq !== this.loadSeq) return;
         this.loading = false;
         this.cdr.markForCheck();
       }

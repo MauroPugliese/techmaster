@@ -2,9 +2,11 @@
 // features/admin/roles/admin-roles.component.ts — Role & Permission Directory
 // =============================================================================
 import {
-  Component, OnInit, Output, EventEmitter, ChangeDetectionStrategy, ChangeDetectorRef
+  Component, OnInit, OnDestroy, Output, EventEmitter, ChangeDetectionStrategy, ChangeDetectorRef
 } from '@angular/core';
 import { CommonModule, TitleCasePipe } from '@angular/common';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../../core/services/services';
 import { ToastService } from '../../../core/services/toast.service';
 import { getRoleColor } from '../admin-helpers';
@@ -23,12 +25,14 @@ interface RoleCapabilityRow {
   styleUrls: ['./admin-roles.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class AdminRolesComponent implements OnInit {
+export class AdminRolesComponent implements OnInit, OnDestroy {
+  private readonly destroy$ = new Subject<void>();
   @Output() viewRoleUsers = new EventEmitter<number>();
   @Output() configureSectionAccess = new EventEmitter<string>();
 
   roles: any[] = [];
   loading = false;
+  private parsedPermissionsCache = new Map<number, string[]>();
 
   readonly capabilities: RoleCapabilityRow[] = [
     {
@@ -63,13 +67,22 @@ export class AdminRolesComponent implements OnInit {
     this.loadRoles();
   }
 
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
   getRoleColor = getRoleColor;
 
   loadRoles(): void {
     this.loading = true;
-    this.api.get<any>('/admin/roles').subscribe({
+    this.api.get<any>('/admin/roles').pipe(takeUntil(this.destroy$)).subscribe({
       next: res => {
         this.roles = res.data || [];
+        this.parsedPermissionsCache.clear();
+        for (const r of this.roles) {
+          this.parsedPermissionsCache.set(r.id, this.decodePermissions(r));
+        }
         this.loading = false;
         this.cdr.markForCheck();
       },
@@ -81,7 +94,7 @@ export class AdminRolesComponent implements OnInit {
     });
   }
 
-  parsePermissions(role: any): string[] {
+  private decodePermissions(role: any): string[] {
     if (Array.isArray(role?.permissions)) return role.permissions;
     if (typeof role?.permissions === 'string') {
       try {
@@ -92,6 +105,13 @@ export class AdminRolesComponent implements OnInit {
       }
     }
     return [];
+  }
+
+  parsePermissions(role: any): string[] {
+    if (role?.id !== undefined && this.parsedPermissionsCache.has(role.id)) {
+      return this.parsedPermissionsCache.get(role.id)!;
+    }
+    return this.decodePermissions(role);
   }
 
   hasCapability(role: any, cap: RoleCapabilityRow): boolean {

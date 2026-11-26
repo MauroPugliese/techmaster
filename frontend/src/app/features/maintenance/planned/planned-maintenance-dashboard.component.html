@@ -394,12 +394,30 @@
       <div class="form-row">
         <div class="form-group" *ngIf="showFormField('system')">
           <label class="form-label">{{fieldLabel('form','system','System')}} *</label>
-          <input class="form-control" [(ngModel)]="form.system" placeholder="e.g. Server Room">
+          <app-dropdown class="form-control"
+                        [(ngModel)]="form.system"
+                        [searchable]="true"
+                        [creatable]="true"
+                        storageKey="planned_systems"
+                        createLabel="Create new system"
+                        createPlaceholder="e.g. Server Room"
+                        placeholder="— Select or create system —">
+            <app-dropdown-option *ngFor="let sys of systems" [value]="sys">{{sys}}</app-dropdown-option>
+          </app-dropdown>
         </div>
 
         <div class="form-group" *ngIf="showFormField('subsystem')">
           <label class="form-label">{{fieldLabel('form','subsystem','Subsystem')}} *</label>
-          <input class="form-control" [(ngModel)]="form.subsystem" placeholder="e.g. Dehumidifier">
+          <app-dropdown class="form-control"
+                        [(ngModel)]="form.subsystem"
+                        [searchable]="true"
+                        [creatable]="true"
+                        storageKey="planned_subsystems"
+                        createLabel="Create new subsystem"
+                        createPlaceholder="e.g. Dehumidifier"
+                        placeholder="— Select or create subsystem —">
+            <app-dropdown-option *ngFor="let sub of subsystemsList" [value]="sub">{{sub}}</app-dropdown-option>
+          </app-dropdown>
         </div>
 
         <div class="form-group" style="grid-column:1 / -1" *ngIf="showFormField('task')">

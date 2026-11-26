@@ -18,6 +18,7 @@ const {
   sequelize
 } = require('../models');
 const { parseDateFilter } = require('../middleware/error.middleware');
+const { authorize } = require('../middleware/auth.middleware');
 const { validateIdParam } = require('../middleware/validation.middleware');
 const {
   sanitizeMembersInput,
@@ -37,7 +38,7 @@ const { broadcastOperationalAlert } = require('../services/proactive-alerts.serv
  */
 async function syncSimulatorOnSortieTransition({ op, previousStatus = null, transaction }) {
   if (!op?.simulator_id) return;
-  const sim = await Simulator.findByPk(op.simulator_id, { transaction });
+  const sim = await Simulator.findByPk(op.simulator_id, { transaction, lock: transaction ? transaction.LOCK.UPDATE : undefined });
   if (!sim) return;
 
   if (op.status === 'IN_PROGRESS' && previousStatus !== 'IN_PROGRESS') {
@@ -119,6 +120,23 @@ router.get('/types', async (req, res, next) => {
   try {
     const types = await OperationType.findAll({ order: [['name', 'ASC']] });
     res.json({ success: true, data: types });
+  } catch (err) { next(err); }
+});
+
+// POST /operations/types — quick-create training profile / operation type
+router.post('/types', authorize('admin', 'manager', 'tech'), async (req, res, next) => {
+  try {
+    const name = String(req.body?.name || '').trim().slice(0, 100);
+    if (!name) return res.status(400).json({ success: false, message: 'Operation type name is required.' });
+    const existing = await OperationType.findOne({ where: { name } });
+    if (existing) return res.json({ success: true, data: existing });
+
+    const colorRaw = String(req.body?.color || '#1565C0').trim();
+    const color = /^#[0-9A-Fa-f]{6}$/.test(colorRaw) ? colorRaw : '#1565C0';
+    const icon = String(req.body?.icon || 'flight_takeoff').trim().slice(0, 50) || 'flight_takeoff';
+    const description = String(req.body?.description || '').trim().slice(0, 500) || null;
+    const created = await OperationType.create({ name, color, icon, description });
+    res.status(201).json({ success: true, data: created });
   } catch (err) { next(err); }
 });
 
@@ -244,12 +262,21 @@ router.get('/check-conflict', async (req, res, next) => {
 });
 
 // PATCH /operations/bulk — batch status, priority, or delete
-router.patch('/bulk', async (req, res, next) => {
+router.patch('/bulk', authorize('admin', 'manager'), async (req, res, next) => {
+  const transaction = await sequelize.transaction();
   try {
     const { data, error } = sanitizeBulkOperationAction(req.body);
-    if (error) return res.status(400).json({ success: false, message: error });
+    if (error) {
+      await transaction.rollback();
+      return res.status(400).json({ success: false, message: error });
+    }
 
     const { ids, action, value } = data;
+    const targetOps = await Operation.findAll({
+      where: { id: { [Op.in]: ids } },
+      transaction,
+      lock: transaction.LOCK.UPDATE
+    });
     let affected = 0;
 
     if (action === 'status') {
@@ -258,29 +285,49 @@ router.patch('/bulk', async (req, res, next) => {
         updateFields.actual_end_date = new Date();
       }
       const [count] = await Operation.update(updateFields, {
-        where: { id: { [Op.in]: ids } }
+        where: { id: { [Op.in]: ids } },
+        transaction
       });
       affected = count;
 
       await OperationLog.bulkCreate(
-        ids.map(opId => ({
-          operation_id: opId,
+        targetOps.map(op => ({
+          operation_id: op.id,
           user_id: req.user.id,
           action: `Bulk status update: ${value}`
-        }))
-      ).catch(() => {});
+        })),
+        { transaction }
+      );
+
+      for (const op of targetOps) {
+        const prev = op.status;
+        op.status = value;
+        await syncSimulatorOnSortieTransition({ op, previousStatus: prev, transaction });
+      }
     } else if (action === 'priority') {
       const [count] = await Operation.update(
         { priority: value },
-        { where: { id: { [Op.in]: ids } } }
+        { where: { id: { [Op.in]: ids } }, transaction }
       );
       affected = count;
     } else if (action === 'delete') {
-      affected = await Operation.destroy({ where: { id: { [Op.in]: ids } } });
+      const affectedSimIds = [...new Set(targetOps.map(o => o.simulator_id).filter(Boolean))];
+      affected = await Operation.destroy({ where: { id: { [Op.in]: ids } }, transaction });
+      for (const simId of affectedSimIds) {
+        const sim = await Simulator.findByPk(simId, { transaction, lock: transaction.LOCK.UPDATE });
+        if (sim && sim.status === 'IN_SORTIE') {
+          const otherLive = await Operation.count({ where: { simulator_id: simId, status: 'IN_PROGRESS' }, transaction });
+          if (otherLive === 0) await sim.update({ status: 'READY' }, { transaction });
+        }
+      }
     }
 
+    await transaction.commit();
     res.json({ success: true, data: { affected, ids, action, value } });
-  } catch (err) { next(err); }
+  } catch (err) {
+    await transaction.rollback().catch(() => {});
+    next(err);
+  }
 });
 
 // ── Collection & Item CRUD ───────────────────────────────────────────────────
@@ -380,7 +427,7 @@ router.get('/', parseDateFilter, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/', async (req, res, next) => {
+router.post('/', authorize('admin', 'manager', 'tech'), async (req, res, next) => {
   const transaction = await sequelize.transaction();
   try {
     const { data, error } = sanitizeOperationPayload(req.body, { isCreate: true });
@@ -484,10 +531,10 @@ router.get('/:id', validateIdParam, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.put('/:id', validateIdParam, async (req, res, next) => {
+router.put('/:id', authorize('admin', 'manager', 'tech'), validateIdParam, async (req, res, next) => {
   const transaction = await sequelize.transaction();
   try {
-    const op = await Operation.findByPk(req.params.id, { transaction });
+    const op = await Operation.findByPk(req.params.id, { transaction, lock: transaction.LOCK.UPDATE });
     if (!op) {
       await transaction.rollback();
       return res.status(404).json({ success: false, message: 'Not found' });
@@ -531,7 +578,7 @@ router.put('/:id', validateIdParam, async (req, res, next) => {
         type: 'SORTIE_INTERRUPTED',
         title: `Sortie Tech Interruption: ${op.sortie_code || `#${op.id}`}`,
         body: `${op.title} interrupted due to technical snag${op.lost_training_minutes ? ` (${op.lost_training_minutes} min lost)` : ''}.`,
-        link: '/operations',
+        link: op.simulator_id ? `/operations?simulatorId=${op.simulator_id}` : '/operations',
         excludeUserId: req.user.id
       });
     }
@@ -545,7 +592,7 @@ router.put('/:id', validateIdParam, async (req, res, next) => {
 });
 
 // POST /operations/:id/duplicate — clone operation + crew roster into PLANNED draft
-router.post('/:id/duplicate', validateIdParam, async (req, res, next) => {
+router.post('/:id/duplicate', authorize('admin', 'manager', 'tech'), validateIdParam, async (req, res, next) => {
   const transaction = await sequelize.transaction();
   try {
     const source = await Operation.findByPk(req.params.id, {
@@ -619,7 +666,7 @@ router.get('/:id/members', validateIdParam, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/:id/members', validateIdParam, async (req, res, next) => {
+router.post('/:id/members', authorize('admin', 'manager', 'tech'), validateIdParam, async (req, res, next) => {
   try {
     const op = await Operation.findByPk(req.params.id, { attributes: ['id'] });
     if (!op) return res.status(404).json({ success: false, message: 'Operation not found' });
@@ -657,7 +704,7 @@ router.post('/:id/members', validateIdParam, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.delete('/:id/members/:userId', validateIdParam, async (req, res, next) => {
+router.delete('/:id/members/:userId', authorize('admin', 'manager', 'tech'), validateIdParam, async (req, res, next) => {
   try {
     const userId = Number(req.params.userId);
     if (!Number.isInteger(userId) || userId < 1) {
@@ -688,7 +735,7 @@ router.get('/:id/logs', validateIdParam, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/:id/logs', validateIdParam, async (req, res, next) => {
+router.post('/:id/logs', authorize('admin', 'manager', 'tech'), validateIdParam, async (req, res, next) => {
   try {
     const op = await Operation.findByPk(req.params.id, { attributes: ['id'] });
     if (!op) return res.status(404).json({ success: false, message: 'Operation not found' });
@@ -711,10 +758,10 @@ router.post('/:id/logs', validateIdParam, async (req, res, next) => {
 });
 
 // POST /operations/:id/debrief — 1-click post-sortie close, hub meter accrual & optional Corrective DR WO
-router.post('/:id/debrief', validateIdParam, async (req, res, next) => {
+router.post('/:id/debrief', authorize('admin', 'manager', 'tech'), validateIdParam, async (req, res, next) => {
   const transaction = await sequelize.transaction();
   try {
-    const op = await Operation.findByPk(req.params.id, { transaction });
+    const op = await Operation.findByPk(req.params.id, { transaction, lock: transaction.LOCK.UPDATE });
     if (!op) {
       await transaction.rollback();
       return res.status(404).json({ success: false, message: 'Sortie not found' });
@@ -790,12 +837,13 @@ router.post('/:id/debrief', validateIdParam, async (req, res, next) => {
     await transaction.commit();
 
     if (outcome === 'INTERRUPTED_TECH' || createdWo?.severity === 'AOG') {
+      const simQs = op.simulator_id ? `?simulatorId=${op.simulator_id}` : '';
       await broadcastOperationalAlert({
         req,
         type: 'SORTIE_INTERRUPTED',
         title: `Sortie Debrief Alert: ${op.sortie_code || `#${op.id}`}`,
         body: `${op.title} closed as ${outcome} (${lostMinutes}m lost)${createdWo ? ` — WO #${createdWo.id} opened.` : '.'}`,
-        link: createdWo ? '/maintenance' : '/operations',
+        link: createdWo ? `/maintenance${simQs}` : `/operations${simQs}`,
         excludeUserId: req.user.id
       });
     }
@@ -809,7 +857,7 @@ router.post('/:id/debrief', validateIdParam, async (req, res, next) => {
 });
 
 // POST /operations/:id/snag — 1-click Post-Sortie Discrepancy Report (DR) linked to Simulator
-router.post('/:id/snag', validateIdParam, async (req, res, next) => {
+router.post('/:id/snag', authorize('admin', 'manager', 'tech'), validateIdParam, async (req, res, next) => {
   const transaction = await sequelize.transaction();
   try {
     const op = await Operation.findByPk(req.params.id, { transaction });
@@ -883,13 +931,29 @@ router.post('/:id/snag', validateIdParam, async (req, res, next) => {
   }
 });
 
-router.delete('/:id', validateIdParam, async (req, res, next) => {
+router.delete('/:id', authorize('admin', 'manager'), validateIdParam, async (req, res, next) => {
+  const transaction = await sequelize.transaction();
   try {
-    const op = await Operation.findByPk(req.params.id);
-    if (!op) return res.status(404).json({ success: false, message: 'Not found' });
-    await op.destroy();
+    const op = await Operation.findByPk(req.params.id, { transaction, lock: transaction.LOCK.UPDATE });
+    if (!op) {
+      await transaction.rollback();
+      return res.status(404).json({ success: false, message: 'Not found' });
+    }
+    const simId = op.simulator_id;
+    await op.destroy({ transaction });
+    if (simId) {
+      const sim = await Simulator.findByPk(simId, { transaction, lock: transaction.LOCK.UPDATE });
+      if (sim && sim.status === 'IN_SORTIE') {
+        const otherLive = await Operation.count({ where: { simulator_id: simId, status: 'IN_PROGRESS' }, transaction });
+        if (otherLive === 0) await sim.update({ status: 'READY' }, { transaction });
+      }
+    }
+    await transaction.commit();
     res.json({ success: true, message: 'Deleted' });
-  } catch (err) { next(err); }
+  } catch (err) {
+    await transaction.rollback().catch(() => {});
+    next(err);
+  }
 });
 
 module.exports = router;

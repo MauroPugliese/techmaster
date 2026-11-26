@@ -22,6 +22,7 @@ const {
   sequelize
 } = require('../models');
 const { validateIdParam } = require('../middleware/validation.middleware');
+const { authorize } = require('../middleware/auth.middleware');
 const { broadcastOperationalAlert } = require('../services/proactive-alerts.service');
 const {
   DEFAULT_SUBSYSTEM_TEMPLATES,
@@ -53,6 +54,50 @@ function resolveStationKind(raw, fallback = 'TEST_PLACE') {
   return VALID_STATION_KINDS.has(up) ? up : fallback;
 }
 
+function summarizeEffectiveStationStatuses(shifts, stationIds) {
+  const ordered = [...(shifts || [])].sort(
+    (a, b) => (Number(a.shift_number) || 0) - (Number(b.shift_number) || 0) || (Number(a.id) || 0) - (Number(b.id) || 0)
+  );
+  const effectiveByStation = new Map();
+  for (const sid of stationIds) {
+    effectiveByStation.set(Number(sid), 'READY');
+  }
+
+  for (const sh of ordered) {
+    for (const e of (sh.entries || [])) {
+      const sid = Number(e.simulator_id);
+      if (!effectiveByStation.has(sid)) continue;
+      if (e.usage_status === 'NA' || e.usage_status === 'IN_USE') {
+        effectiveByStation.set(sid, e.usage_status);
+      } else if (e.usage_status === 'READY' && effectiveByStation.get(sid) === 'NA') {
+        // Station recovered on a later shift
+        effectiveByStation.set(sid, 'READY');
+      }
+    }
+  }
+
+  let inUseCount = 0;
+  let readyCount = 0;
+  let naCount = 0;
+  for (const status of effectiveByStation.values()) {
+    if (status === 'IN_USE') inUseCount += 1;
+    else if (status === 'NA') naCount += 1;
+    else readyCount += 1;
+  }
+  return { inUseCount, readyCount, naCount };
+}
+
+function groupBySimulatorId(rows) {
+  const map = new Map();
+  for (const r of rows) {
+    const plain = typeof r.get === 'function' ? r.get({ plain: true }) : r;
+    const simId = Number(plain.simulator_id);
+    if (!map.has(simId)) map.set(simId, []);
+    map.get(simId).push(plain);
+  }
+  return map;
+}
+
 async function ensureDailySheetData(dateStr, stationKind, userId = null) {
   const [stations, activeStaff] = await Promise.all([
     Simulator.findAll({
@@ -66,17 +111,23 @@ async function ensureDailySheetData(dateStr, stationKind, userId = null) {
     })
   ]);
 
-  const [dailyLog] = await SimulatorDailyLog.findOrCreate({
-    where: { log_date: dateStr, station_kind: stationKind },
-    defaults: {
-      log_date: dateStr,
-      station_kind: stationKind,
-      system_readiness_time: '06:30',
-      post_testing_time: '17:00',
-      logout_time: '18:00',
-      updated_by: userId || null
-    }
-  });
+  let dailyLog;
+  try {
+    [dailyLog] = await SimulatorDailyLog.findOrCreate({
+      where: { log_date: dateStr, station_kind: stationKind },
+      defaults: {
+        log_date: dateStr,
+        station_kind: stationKind,
+        system_readiness_time: '06:30',
+        post_testing_time: '17:00',
+        logout_time: '18:00',
+        updated_by: userId || null
+      }
+    });
+  } catch (err) {
+    if (err.name !== 'SequelizeUniqueConstraintError') throw err;
+    dailyLog = await SimulatorDailyLog.findOne({ where: { log_date: dateStr, station_kind: stationKind } });
+  }
 
   const SHIFT_USER_INCLUDES = [
     { model: User, as: 'lead', attributes: ['id', 'first_name', 'last_name', 'username'], required: false },
@@ -90,24 +141,33 @@ async function ensureDailySheetData(dateStr, stationKind, userId = null) {
   });
 
   if (shifts.length === 0) {
-    const s1 = await SimulatorDailyShift.create({
-      daily_log_id: dailyLog.id,
-      shift_number: 1,
-      shift_name: 'SHIFT 1',
-      pre_flight_test_time: '06:40',
-      lead_user_id: userId || null
-    });
-    const hydratedS1 = await SimulatorDailyShift.findByPk(s1.id, { include: SHIFT_USER_INCLUDES });
-    shifts = [hydratedS1 || s1];
+    try {
+      const [s1] = await SimulatorDailyShift.findOrCreate({
+        where: { daily_log_id: dailyLog.id, shift_number: 1 },
+        defaults: {
+          daily_log_id: dailyLog.id,
+          shift_number: 1,
+          shift_name: 'SHIFT 1',
+          pre_flight_test_time: '06:40',
+          lead_user_id: userId || null
+        }
+      });
+      const hydratedS1 = await SimulatorDailyShift.findByPk(s1.id, { include: SHIFT_USER_INCLUDES });
+      shifts = [hydratedS1 || s1];
+    } catch (err) {
+      if (err.name !== 'SequelizeUniqueConstraintError') throw err;
+      shifts = await SimulatorDailyShift.findAll({
+        where: { daily_log_id: dailyLog.id },
+        include: SHIFT_USER_INCLUDES,
+        order: [['shift_number', 'ASC'], ['id', 'ASC']]
+      });
+    }
   }
 
   const stationIds = stations.map(s => Number(s.id));
   const stationMap = new Map(stations.map(s => [Number(s.id), s.get({ plain: true })]));
 
   const hydratedShifts = [];
-  let inUseCount = 0;
-  let readyCount = 0;
-  let naCount = 0;
   let totalSessionMinutes = 0;
 
   for (let idx = 0; idx < shifts.length; idx++) {
@@ -128,7 +188,8 @@ async function ensureDailySheetData(dateStr, stationKind, userId = null) {
           sim_testing_end: '00:00',
           notes: null,
           updated_by: userId || null
-        }))
+        })),
+        { ignoreDuplicates: true }
       );
       entries = await SimulatorShiftEntry.findAll({ where: { shift_id: shiftPlain.id } });
     }
@@ -140,11 +201,6 @@ async function ensureDailySheetData(dateStr, stationKind, userId = null) {
         const station = stationMap.get(Number(plain.simulator_id)) || null;
         const durMin = computeTestingDurationMinutes(plain.sim_testing_start, plain.sim_testing_end);
         totalSessionMinutes += durMin;
-        if (idx === 0) {
-          if (plain.usage_status === 'IN_USE') inUseCount += 1;
-          else if (plain.usage_status === 'NA') naCount += 1;
-          else readyCount += 1;
-        }
         return {
           ...plain,
           duration_minutes: durMin,
@@ -172,6 +228,8 @@ async function ensureDailySheetData(dateStr, stationKind, userId = null) {
       entries: enrichedEntries
     });
   }
+
+  const { inUseCount, readyCount, naCount } = summarizeEffectiveStationStatuses(hydratedShifts, stationIds);
 
   return {
     log: dailyLog.get({ plain: true }),
@@ -248,7 +306,7 @@ router.get('/daily-sheet/timeline', async (req, res, next) => {
 });
 
 // PUT /simulators/daily-sheet — update Operating Hours (System Readiness, Post-Testing, Logout)
-router.put('/daily-sheet', async (req, res, next) => {
+router.put('/daily-sheet', authorize('admin', 'manager', 'tech'), async (req, res, next) => {
   try {
     const dateStr = resolveSheetDate(req.body?.date || req.query?.date);
     const stationKind = resolveStationKind(req.body?.station_kind || req.query?.station_kind, 'TEST_PLACE');
@@ -284,7 +342,7 @@ router.put('/daily-sheet', async (req, res, next) => {
 });
 
 // POST /simulators/daily-sheet/shifts — add SHIFT 2 / SHIFT 3 for the selected day & station kind
-router.post('/daily-sheet/shifts', async (req, res, next) => {
+router.post('/daily-sheet/shifts', authorize('admin', 'manager', 'tech'), async (req, res, next) => {
   try {
     const dateStr = resolveSheetDate(req.body?.date);
     const stationKind = resolveStationKind(req.body?.station_kind, 'TEST_PLACE');
@@ -324,7 +382,7 @@ router.post('/daily-sheet/shifts', async (req, res, next) => {
 });
 
 // POST /simulators/daily-sheet/copy-previous — copy operating hours, shifts & carry over unresolved NA faults
-router.post('/daily-sheet/copy-previous', async (req, res, next) => {
+router.post('/daily-sheet/copy-previous', authorize('admin', 'manager', 'tech'), async (req, res, next) => {
   const transaction = await sequelize.transaction();
   try {
     const dateStr = resolveSheetDate(req.body?.date || req.query?.date);
@@ -475,7 +533,7 @@ router.post('/daily-sheet/copy-previous', async (req, res, next) => {
 });
 
 // PUT /simulators/daily-sheet/shifts/:shiftId — update pre-flight test time, label, or Test Leader
-router.put('/daily-sheet/shifts/:shiftId', async (req, res, next) => {
+router.put('/daily-sheet/shifts/:shiftId', authorize('admin', 'manager', 'tech'), async (req, res, next) => {
   try {
     const shiftId = parseInt(req.params.shiftId, 10);
     if (Number.isNaN(shiftId)) return res.status(400).json({ success: false, message: 'Invalid shiftId' });
@@ -514,7 +572,7 @@ router.put('/daily-sheet/shifts/:shiftId', async (req, res, next) => {
 });
 
 // POST /simulators/daily-sheet/shifts/:shiftId/sign-off — official Test Leader shift handover sign-off
-router.post('/daily-sheet/shifts/:shiftId/sign-off', async (req, res, next) => {
+router.post('/daily-sheet/shifts/:shiftId/sign-off', authorize('admin', 'manager'), async (req, res, next) => {
   try {
     const shiftId = parseInt(req.params.shiftId, 10);
     if (Number.isNaN(shiftId)) return res.status(400).json({ success: false, message: 'Invalid shiftId' });
@@ -538,7 +596,7 @@ router.post('/daily-sheet/shifts/:shiftId/sign-off', async (req, res, next) => {
 });
 
 // DELETE /simulators/daily-sheet/shifts/:shiftId — remove extra shift (keeps at least 1)
-router.delete('/daily-sheet/shifts/:shiftId', async (req, res, next) => {
+router.delete('/daily-sheet/shifts/:shiftId', authorize('admin', 'manager'), async (req, res, next) => {
   try {
     const shiftId = parseInt(req.params.shiftId, 10);
     if (Number.isNaN(shiftId)) return res.status(400).json({ success: false, message: 'Invalid shiftId' });
@@ -557,7 +615,7 @@ router.delete('/daily-sheet/shifts/:shiftId', async (req, res, next) => {
 });
 
 // POST /simulators/daily-sheet/shifts/:shiftId/bulk-time — One-Click Bulk Sim Testing Start/End
-router.post('/daily-sheet/shifts/:shiftId/bulk-time', async (req, res, next) => {
+router.post('/daily-sheet/shifts/:shiftId/bulk-time', authorize('admin', 'manager', 'tech'), async (req, res, next) => {
   const transaction = await sequelize.transaction();
   try {
     const shiftId = parseInt(req.params.shiftId, 10);
@@ -625,7 +683,7 @@ router.post('/daily-sheet/shifts/:shiftId/bulk-time', async (req, res, next) => 
 });
 
 // PATCH /simulators/daily-sheet/entries/:entryId — quick inline status, time, or handover note update
-router.patch('/daily-sheet/entries/:entryId', async (req, res, next) => {
+router.patch('/daily-sheet/entries/:entryId', authorize('admin', 'manager', 'tech'), async (req, res, next) => {
   try {
     const entryId = parseInt(req.params.entryId, 10);
     if (Number.isNaN(entryId)) return res.status(400).json({ success: false, message: 'Invalid entryId' });
@@ -682,7 +740,7 @@ router.patch('/daily-sheet/entries/:entryId', async (req, res, next) => {
             type: 'STATION_NA',
             title: `Station Marked NA: ${sim.bay_code} (${sim.name})`,
             body: updates.notes || entry.notes || `${sim.name} was marked Not Available (NA) on the daily shift sheet.`,
-            link: '/simulators',
+            link: `/simulators?simulatorId=${sim.id}`,
             excludeUserId: req.user?.id || null
           });
         } else if (prevStatus === 'NA' && sim.status === 'AOG') {
@@ -762,6 +820,11 @@ router.get('/summary', async (req, res, next) => {
     let qtgPassed = 0;
     let certExpiringSoon = 0;
 
+    const sortiesBySim = groupBySimulatorId(sorties);
+    const maintBySim = groupBySimulatorId(maint);
+    const qtgBySim = groupBySimulatorId(qtg);
+    const subsBySim = groupBySimulatorId(subs);
+
     for (const s of sims) {
       const plain = s.get({ plain: true });
       const simId = Number(plain.id);
@@ -774,10 +837,10 @@ router.get('/summary', async (req, res, next) => {
       }
 
       const t = computeSimulatorTelemetry(plain, {
-        sorties: sorties.filter(x => Number(x.simulator_id) === simId).map(x => x.get({ plain: true })),
-        maintenance: maint.filter(x => Number(x.simulator_id) === simId).map(x => x.get({ plain: true })),
-        qtgRecords: qtg.filter(x => Number(x.simulator_id) === simId).map(x => x.get({ plain: true })),
-        subsystems: subs.filter(x => Number(x.simulator_id) === simId).map(x => x.get({ plain: true })),
+        sorties: sortiesBySim.get(simId) || [],
+        maintenance: maintBySim.get(simId) || [],
+        qtgRecords: qtgBySim.get(simId) || [],
+        subsystems: subsBySim.get(simId) || [],
         now
       });
 
@@ -794,6 +857,7 @@ router.get('/summary', async (req, res, next) => {
 
     const summarizeKindLive = (kind) => {
       const kindSims = sims.filter(s => s.station_kind === kind);
+      const kindSimIds = kindSims.map(s => Number(s.id));
       const log = todayLogs.find(l => l.station_kind === kind);
       let inUse = 0;
       let ready = 0;
@@ -802,16 +866,15 @@ router.get('/summary', async (req, res, next) => {
 
       if (log && Array.isArray(log.shifts) && log.shifts.length > 0) {
         const sortedShifts = [...log.shifts].sort((a, b) => (a.shift_number || 0) - (b.shift_number || 0));
-        sortedShifts.forEach((sh, idx) => {
+        sortedShifts.forEach((sh) => {
           for (const e of (sh.entries || [])) {
             totalMin += computeTestingDurationMinutes(e.sim_testing_start, e.sim_testing_end);
-            if (idx === 0) {
-              if (e.usage_status === 'IN_USE') inUse += 1;
-              else if (e.usage_status === 'NA') na += 1;
-              else ready += 1;
-            }
           }
         });
+        const eff = summarizeEffectiveStationStatuses(sortedShifts, kindSimIds);
+        inUse = eff.inUseCount;
+        ready = eff.readyCount;
+        na = eff.naCount;
       } else {
         for (const st of kindSims) {
           if (st.status === 'AOG') na += 1;
@@ -951,16 +1014,21 @@ router.get('/', async (req, res, next) => {
     ]);
 
     const now = new Date();
+    const sortiesBySim = groupBySimulatorId(sorties);
+    const maintBySim = groupBySimulatorId(maint);
+    const qtgBySim = groupBySimulatorId(qtg);
+    const subsBySim = groupBySimulatorId(subs);
+
     const enriched = sims.map(s => {
       const plain = s.get({ plain: true });
       const simId = Number(plain.id);
       return {
         ...plain,
         telemetry: computeSimulatorTelemetry(plain, {
-          sorties: sorties.filter(x => Number(x.simulator_id) === simId).map(x => x.get({ plain: true })),
-          maintenance: maint.filter(x => Number(x.simulator_id) === simId).map(x => x.get({ plain: true })),
-          qtgRecords: qtg.filter(x => Number(x.simulator_id) === simId).map(x => x.get({ plain: true })),
-          subsystems: subs.filter(x => Number(x.simulator_id) === simId).map(x => x.get({ plain: true })),
+          sorties: sortiesBySim.get(simId) || [],
+          maintenance: maintBySim.get(simId) || [],
+          qtgRecords: qtgBySim.get(simId) || [],
+          subsystems: subsBySim.get(simId) || [],
           now
         })
       };
@@ -1141,7 +1209,7 @@ router.get('/:id', validateIdParam, async (req, res, next) => {
 });
 
 // POST /simulators — register new simulator (+ optional scaffold of 8 FSTD subsystems & annual QTG)
-router.post('/', async (req, res, next) => {
+router.post('/', authorize('admin', 'manager'), async (req, res, next) => {
   const transaction = await sequelize.transaction();
   try {
     const { data, error } = sanitizeSimulatorPayload(req.body, { isCreate: true });
@@ -1191,7 +1259,7 @@ router.post('/', async (req, res, next) => {
 });
 
 // PUT /simulators/:id — update simulator configuration & qualification
-router.put('/:id', validateIdParam, async (req, res, next) => {
+router.put('/:id', authorize('admin', 'manager', 'tech'), validateIdParam, async (req, res, next) => {
   try {
     const sim = await Simulator.findByPk(req.params.id);
     if (!sim) return res.status(404).json({ success: false, message: 'Simulator not found' });
@@ -1210,7 +1278,7 @@ router.put('/:id', validateIdParam, async (req, res, next) => {
 });
 
 // PATCH /simulators/:id/status — quick bay status + MEL limitation switch
-router.patch('/:id/status', validateIdParam, async (req, res, next) => {
+router.patch('/:id/status', authorize('admin', 'manager', 'tech'), validateIdParam, async (req, res, next) => {
   try {
     const sim = await Simulator.findByPk(req.params.id);
     if (!sim) return res.status(404).json({ success: false, message: 'Simulator not found' });
@@ -1220,18 +1288,31 @@ router.patch('/:id/status', validateIdParam, async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Invalid simulator status.' });
     }
 
+    const prevStatus = sim.status;
     const updates = { status };
     if (req.body?.limitations_mel !== undefined) {
       updates.limitations_mel = String(req.body.limitations_mel || '').trim() || null;
     }
 
     await sim.update(updates);
+
+    if (status !== prevStatus && (status === 'AOG' || status === 'DEGRADED')) {
+      await broadcastOperationalAlert({
+        req,
+        type: status === 'AOG' ? 'SIMULATOR_AOG' : 'SIMULATOR_DEGRADED',
+        title: `Simulator ${status}: ${sim.bay_code || sim.code} (${sim.name})`,
+        body: updates.limitations_mel || sim.limitations_mel || `Status changed from ${prevStatus} to ${status}.`,
+        link: `/simulators?simulatorId=${sim.id}`,
+        excludeUserId: req.user?.id || null
+      });
+    }
+
     res.json({ success: true, data: sim });
   } catch (err) { next(err); }
 });
 
 // DELETE /simulators/:id
-router.delete('/:id', validateIdParam, async (req, res, next) => {
+router.delete('/:id', authorize('admin', 'manager'), validateIdParam, async (req, res, next) => {
   try {
     const sim = await Simulator.findByPk(req.params.id);
     if (!sim) return res.status(404).json({ success: false, message: 'Simulator not found' });
@@ -1252,7 +1333,7 @@ router.get('/:id/subsystems', validateIdParam, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/:id/subsystems', validateIdParam, async (req, res, next) => {
+router.post('/:id/subsystems', authorize('admin', 'manager', 'tech'), validateIdParam, async (req, res, next) => {
   try {
     const sim = await Simulator.findByPk(req.params.id, { attributes: ['id'] });
     if (!sim) return res.status(404).json({ success: false, message: 'Simulator not found' });
@@ -1260,12 +1341,17 @@ router.post('/:id/subsystems', validateIdParam, async (req, res, next) => {
     const { data, error } = sanitizeSubsystemPayload(req.body, { isCreate: true });
     if (error) return res.status(400).json({ success: false, message: error });
 
-    const created = await SimulatorSubsystem.create({ ...data, simulator_id: sim.id });
+    const created = await SimulatorSubsystem.create({
+      ...data,
+      simulator_id: sim.id,
+      last_checked_at: new Date(),
+      updated_by: req.user?.id || null
+    });
     res.status(201).json({ success: true, data: created });
   } catch (err) { next(err); }
 });
 
-router.put('/:id/subsystems/:subId', validateIdParam, async (req, res, next) => {
+router.put('/:id/subsystems/:subId', authorize('admin', 'manager', 'tech'), validateIdParam, async (req, res, next) => {
   try {
     const subId = parseInt(req.params.subId, 10);
     if (Number.isNaN(subId)) return res.status(400).json({ success: false, message: 'Invalid subsystem ID' });
@@ -1276,12 +1362,30 @@ router.put('/:id/subsystems/:subId', validateIdParam, async (req, res, next) => 
     const { data, error } = sanitizeSubsystemPayload(req.body, { isCreate: false });
     if (error) return res.status(400).json({ success: false, message: error });
 
-    await sub.update(data);
+    const prevStatus = sub.status;
+    await sub.update({
+      ...data,
+      last_checked_at: new Date(),
+      updated_by: req.user?.id || null
+    });
+
+    if (data.status && data.status !== prevStatus && data.status === 'FAULT') {
+      const sim = await Simulator.findByPk(sub.simulator_id, { attributes: ['id', 'code', 'bay_code', 'name'] });
+      await broadcastOperationalAlert({
+        req,
+        type: 'SUBSYSTEM_FAULT',
+        title: `Subsystem Fault: ${sim?.bay_code || sim?.code || `Bay #${sub.simulator_id}`} — ${sub.name}`,
+        body: data.notes || sub.notes || `${sub.subsystem_code} reported FAULT.`,
+        link: `/simulators?simulatorId=${sub.simulator_id}`,
+        excludeUserId: req.user?.id || null
+      });
+    }
+
     res.json({ success: true, data: sub });
   } catch (err) { next(err); }
 });
 
-router.delete('/:id/subsystems/:subId', validateIdParam, async (req, res, next) => {
+router.delete('/:id/subsystems/:subId', authorize('admin', 'manager'), validateIdParam, async (req, res, next) => {
   try {
     const subId = parseInt(req.params.subId, 10);
     if (Number.isNaN(subId)) return res.status(400).json({ success: false, message: 'Invalid subsystem ID' });
@@ -1305,7 +1409,7 @@ router.get('/:id/qtg', validateIdParam, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/:id/qtg', validateIdParam, async (req, res, next) => {
+router.post('/:id/qtg', authorize('admin', 'manager', 'tech'), validateIdParam, async (req, res, next) => {
   try {
     const sim = await Simulator.findByPk(req.params.id, { attributes: ['id'] });
     if (!sim) return res.status(404).json({ success: false, message: 'Simulator not found' });
@@ -1325,7 +1429,7 @@ router.post('/:id/qtg', validateIdParam, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.put('/:id/qtg/:qtgId', validateIdParam, async (req, res, next) => {
+router.put('/:id/qtg/:qtgId', authorize('admin', 'manager', 'tech'), validateIdParam, async (req, res, next) => {
   try {
     const qtgId = parseInt(req.params.qtgId, 10);
     if (Number.isNaN(qtgId)) return res.status(400).json({ success: false, message: 'Invalid QTG ID' });
@@ -1336,11 +1440,25 @@ router.put('/:id/qtg/:qtgId', validateIdParam, async (req, res, next) => {
     const { data, error } = sanitizeQtgPayload(req.body, { isCreate: false });
     if (error) return res.status(400).json({ success: false, message: error });
 
+    const prevStatus = record.status;
     if (data.status && VALID_QTG_STATUSES.has(data.status) && data.status !== 'PENDING') {
       data.executed_by = req.user.id;
     }
 
     await record.update(data);
+
+    if (data.status && data.status !== prevStatus && data.status === 'FAILED') {
+      const sim = await Simulator.findByPk(record.simulator_id, { attributes: ['id', 'code', 'bay_code', 'name'] });
+      await broadcastOperationalAlert({
+        req,
+        type: 'QTG_FAILED',
+        title: `QTG Failed: ${sim?.bay_code || sim?.code || `Bay #${record.simulator_id}`} — ${record.test_code}`,
+        body: data.notes || record.notes || `${record.title} (${record.quarter} ${record.year}) marked FAILED.`,
+        link: `/simulators?simulatorId=${record.simulator_id}`,
+        excludeUserId: req.user?.id || null
+      });
+    }
+
     const full = await SimulatorQtgRecord.findByPk(record.id, {
       include: [{ model: User, as: 'executor', attributes: ['id', 'first_name', 'last_name', 'username'] }]
     });
@@ -1349,7 +1467,7 @@ router.put('/:id/qtg/:qtgId', validateIdParam, async (req, res, next) => {
 });
 
 // POST /simulators/:id/qtg/clone-year — clone previous/source year's QTG schedule into target year as PENDING
-router.post('/:id/qtg/clone-year', validateIdParam, async (req, res, next) => {
+router.post('/:id/qtg/clone-year', authorize('admin', 'manager', 'tech'), validateIdParam, async (req, res, next) => {
   try {
     const sim = await Simulator.findByPk(req.params.id, { attributes: ['id'] });
     if (!sim) return res.status(404).json({ success: false, message: 'Simulator not found' });
@@ -1390,11 +1508,15 @@ router.post('/:id/qtg/clone-year', validateIdParam, async (req, res, next) => {
     const existingKeys = new Set(existingTarget.map(r => `${r.quarter}::${r.test_code}`));
 
     const quarterDueDefault = { Q1: '03-31', Q2: '06-30', Q3: '09-30', Q4: '12-15' };
+    const isTargetLeapYear = (targetYear % 4 === 0 && targetYear % 100 !== 0) || (targetYear % 400 === 0);
     const toInsert = [];
     for (const row of sourceRows) {
       const key = `${row.quarter}::${row.test_code}`;
       if (existingKeys.has(key)) continue;
-      const dueSuffix = row.due_date ? String(row.due_date).slice(5, 10) : (quarterDueDefault[row.quarter] || '12-15');
+      let dueSuffix = row.due_date ? String(row.due_date).slice(5, 10) : (quarterDueDefault[row.quarter] || '12-15');
+      if (dueSuffix === '02-29' && !isTargetLeapYear) {
+        dueSuffix = '02-28';
+      }
       toInsert.push({
         simulator_id: sim.id,
         test_code: row.test_code,
@@ -1425,7 +1547,7 @@ router.post('/:id/qtg/clone-year', validateIdParam, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.delete('/:id/qtg/:qtgId', validateIdParam, async (req, res, next) => {
+router.delete('/:id/qtg/:qtgId', authorize('admin', 'manager'), validateIdParam, async (req, res, next) => {
   try {
     const qtgId = parseInt(req.params.qtgId, 10);
     if (Number.isNaN(qtgId)) return res.status(400).json({ success: false, message: 'Invalid QTG ID' });

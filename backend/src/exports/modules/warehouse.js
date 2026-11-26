@@ -5,7 +5,7 @@
 //   -> P3 Capital Allocation, LRU/RMA & Simulator Consumption Velocity
 //   -> P4+ Inventory Valuation Catalogue -> P5+ Audited Stock Movements Ledger (with Simulator Bay)
 // =============================================================================
-const { Op } = require('sequelize');
+const { Op, fn, col } = require('sequelize');
 const { InventoryItem, ItemCategory, StockMovement, Simulator, User } = require('../../models');
 const {
   fmtDate, fmtDateTime, fmtNumber, fmtMoney, fmtPercent, fullName, dash,
@@ -196,13 +196,23 @@ module.exports = {
 
   async build(req) {
     const range = parseRange(req.query);
-    const { category_id, low_stock, search, aog_critical, subsystem_code, lru_status } = req.query;
+    const {
+      category_id, location_id, low_stock, stock_status, part_classification,
+      supplier, search, aog_critical, subsystem_code, lru_status
+    } = req.query;
 
     const itemWhere = {};
     if (category_id) itemWhere.category_id = category_id;
+    if (location_id) itemWhere.location_id = location_id;
     if (aog_critical === 'true' || aog_critical === '1') itemWhere.aog_critical = true;
     if (subsystem_code && String(subsystem_code).trim()) itemWhere.subsystem_code = String(subsystem_code).trim().toUpperCase();
     if (lru_status && String(lru_status).trim()) itemWhere.lru_status = String(lru_status).trim().toUpperCase();
+    if (part_classification && String(part_classification).trim()) {
+      itemWhere.part_classification = String(part_classification).trim().toUpperCase();
+    }
+    if (supplier && String(supplier).trim()) {
+      itemWhere.supplier = { [Op.like]: `%${String(supplier).trim()}%` };
+    }
     if (search && String(search).trim()) {
       const q = `%${String(search).trim()}%`;
       itemWhere[Op.or] = [
@@ -222,7 +232,7 @@ module.exports = {
       if (range.to) movWhere.movement_date[Op.lte] = range.to;
     }
 
-    const [rawItems, movements] = await Promise.all([
+    const [rawItems, movements, movAggRows] = await Promise.all([
       InventoryItem.findAll({
         where: itemWhere,
         include: [
@@ -240,21 +250,45 @@ module.exports = {
         ],
         order: [['movement_date', 'DESC']],
         limit: 250
+      }),
+      StockMovement.findAll({
+        where: movWhere,
+        attributes: [
+          'type',
+          [fn('COUNT', col('id')), 'cnt'],
+          [fn('COALESCE', fn('SUM', col('quantity')), 0), 'qty_sum']
+        ],
+        group: ['type'],
+        raw: true
       })
     ]);
 
-    const items = (low_stock === 'true' || low_stock === '1')
-      ? rawItems.filter((it) => classifyItemHealth(it).label !== 'HEALTHY')
-      : rawItems;
+    const normStockStatus = stock_status ? String(stock_status).trim().toUpperCase() : '';
+    const items = rawItems.filter((it) => {
+      const health = classifyItemHealth(it);
+      if ((low_stock === 'true' || low_stock === '1') && health.label === 'HEALTHY') return false;
+      if (normStockStatus === 'OUT' || normStockStatus === 'OUT_OF_STOCK') return health.label === 'OUT OF STOCK';
+      if (normStockStatus === 'LOW' || normStockStatus === 'LOW_STOCK') return health.label === 'LOW STOCK';
+      if (normStockStatus === 'HEALTHY' || normStockStatus === 'OK') return health.label === 'HEALTHY';
+      if (normStockStatus === 'AT_RISK') return health.label !== 'HEALTHY';
+      return true;
+    });
 
     const stats = summarizeInventory(items);
 
     let totalIn = 0;
     let totalOut = 0;
+    let totalMovementsCount = 0;
+    for (const agg of movAggRows) {
+      const cnt = toNumber(agg.cnt, 0);
+      const qsum = toNumber(agg.qty_sum, 0);
+      totalMovementsCount += cnt;
+      if (agg.type === 'IN' || agg.type === 'RETURN') totalIn += qsum;
+      if (agg.type === 'OUT' || agg.type === 'TRANSFER') totalOut += qsum;
+    }
+
     const movementRows = movements.map((m) => {
       const qty = toNumber(m.quantity, 0);
-      if (m.type === 'IN' || m.type === 'RETURN') totalIn += qty;
-      if (m.type === 'OUT' || m.type === 'TRANSFER') totalOut += qty;
       const before = toNumber(m.quantity_before, 0);
       const after = toNumber(m.quantity_after, 0);
       return {
@@ -302,15 +336,15 @@ module.exports = {
       name: 'Rotable LRU & RMA Repair Tracker',
       note: 'Serialized Line-Replaceable Units installed on simulator bays or undergoing vendor RMA repair.',
       columns: [
-        { header: 'SKU', key: 'sku', width: 64, type: 'mono' },
-        { header: 'LRU Component', key: 'name', width: 126 },
-        { header: 'S/N', key: 'serial', width: 68, type: 'mono' },
-        { header: 'Status', key: 'lru_status', width: 78, type: 'badge', align: 'center' },
-        { header: 'Installed / Location', key: 'installed_on', width: 98 },
-        { header: 'RMA Ref', key: 'rma', width: 68, type: 'mono' },
-        { header: 'ETA', key: 'eta', width: 64, printHidden: true }
+        { header: 'SKU', key: 'sku', width: 58, type: 'mono' },
+        { header: 'LRU Component', key: 'name', width: 112 },
+        { header: 'S/N', key: 'serial', width: 62, type: 'mono' },
+        { header: 'Status', key: 'lru_status', width: 74, type: 'badge', align: 'center' },
+        { header: 'Installed / Location', key: 'installed_on', width: 88 },
+        { header: 'RMA Ref', key: 'rma', width: 62, type: 'mono' },
+        { header: 'ETA', key: 'eta', width: 60 }
       ],
-      rows: stats.lruRmaRows.slice(0, 20)
+      rows: stats.lruRmaRows
     };
 
     const catalogueTable = {
@@ -355,9 +389,13 @@ module.exports = {
 
     const filters = { 'Movement Period': rangeLabel(range) };
     if (category_id) filters['Category ID'] = category_id;
+    if (location_id) filters['Location ID'] = location_id;
     if (aog_critical === 'true' || aog_critical === '1') filters['AOG Filter'] = 'AOG Critical Only';
     if (subsystem_code) filters['Subsystem'] = subsystem_code;
     if (lru_status) filters['LRU Status'] = lru_status;
+    if (part_classification) filters['Part Class'] = part_classification;
+    if (supplier) filters['Supplier'] = supplier;
+    if (stock_status) filters['Stock Status'] = String(stock_status).toUpperCase();
     if (low_stock === 'true' || low_stock === '1') filters['Stock Filter'] = 'Low / Out of Stock Only';
     if (search) filters.Search = search;
 
@@ -365,7 +403,7 @@ module.exports = {
     const topSup = supTop[0];
 
     const page2Blocks = [
-      { type: 'alerts', title: 'Procurement, AOG Critical & RMA Exposure', items: buildProcurementAlerts(stats, movements.length, totalIn, totalOut) },
+      { type: 'alerts', title: 'Procurement, AOG Critical & RMA Exposure', items: buildProcurementAlerts(stats, totalMovementsCount, totalIn, totalOut) },
       {
         type: 'kpis',
         variant: 'strips',
@@ -418,7 +456,7 @@ module.exports = {
               values: catTop.map(([, v]) => Number(v.toFixed(2)))
             }
           },
-          ...(stats.lruRmaRows.length > 0 ? [{ type: 'table', showHeading: true, table: lruTable }] : []),
+          ...(stats.lruRmaRows.length > 0 ? [{ type: 'table', showHeading: true, table: { ...lruTable, rows: stats.lruRmaRows.slice(0, 20) } }] : []),
           {
             type: 'highlights',
             title: 'Supply Chain Highlights',
@@ -446,9 +484,11 @@ module.exports = {
               },
               {
                 eyebrow: 'AUDITED VELOCITY',
-                metric: `${fmtNumber(movements.length)} moves`,
+                metric: `${fmtNumber(totalMovementsCount)} moves`,
                 title: `+${fmtNumber(totalIn)} IN  /  -${fmtNumber(totalOut)} OUT`,
-                detail: `Latest ${movements.length} stock transactions audited with bay traceability.`,
+                detail: totalMovementsCount > movements.length
+                  ? `Totals across all ${fmtNumber(totalMovementsCount)} movements (latest ${movements.length} itemized below).`
+                  : `All ${fmtNumber(totalMovementsCount)} stock transactions audited with bay traceability.`,
                 tone: 'teal'
               }
             ]
@@ -462,7 +502,9 @@ module.exports = {
       },
       {
         title: 'Audited Stock Movements Ledger',
-        subtitle: `Chronological receipts, bay-linked issues, returns and deltas (${fmtNumber(movementRows.length)} records)`,
+        subtitle: totalMovementsCount > movementRows.length
+          ? `Latest ${fmtNumber(movementRows.length)} of ${fmtNumber(totalMovementsCount)} audited transactions`
+          : `Chronological receipts, bay-linked issues, returns and deltas (${fmtNumber(movementRows.length)} records)`,
         blocks: [{ type: 'table', showHeading: false, table: movementsTable }]
       }
     ];

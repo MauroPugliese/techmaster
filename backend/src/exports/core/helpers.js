@@ -20,29 +20,36 @@ const resolveFormat = (raw, fallback = 'xlsx') => {
   return EXPORT_FORMATS.has(f) ? f : fallback;
 };
 
-/** Format a value as DD/MM/YYYY date, or a dash when empty. */
+/** Format a value as DD/MM/YYYY date (UTC), or a dash when empty. */
 const fmtDate = (d) => {
   if (!d) return '—';
   const dt = new Date(d);
-  return Number.isNaN(dt.getTime()) ? '—' : dt.toLocaleDateString('en-GB');
+  return Number.isNaN(dt.getTime()) ? '—' : dt.toLocaleDateString('en-GB', { timeZone: 'UTC' });
 };
 
-/** Format a value as DD/MM/YYYY HH:mm date-time, or a dash when empty. */
+/** Format a value as DD/MM/YYYY HH:mm date-time (UTC), or a dash when empty. */
 const fmtDateTime = (d) => {
   if (!d) return '—';
   const dt = new Date(d);
   return Number.isNaN(dt.getTime())
     ? '—'
-    : dt.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    : dt.toLocaleString('en-GB', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'UTC'
+      });
 };
 
-/** Format a value as HH:mm time, or a dash when empty. */
+/** Format a value as HH:mm time (UTC), or a dash when empty. */
 const fmtTime = (d) => {
   if (!d) return '—';
   const dt = new Date(d);
   return Number.isNaN(dt.getTime())
     ? '—'
-    : dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    : dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
 };
 
 /** Strip HTML tags, control characters, and collapse whitespace. */

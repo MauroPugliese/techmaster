@@ -16,9 +16,9 @@ const { getDocxSectionProfile } = require('./docx-section-profiles');
 function formatLongDate(dt) {
   const d = dt ? new Date(dt) : new Date();
   if (Number.isNaN(d.getTime())) {
-    return new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    return new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
   }
-  return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 }
 
 function severityLabel(tone) {
@@ -101,7 +101,7 @@ function resolveSectionDescription(profile, slotKey, ctx, overrideText = '') {
  * Transform a ReportSpec into a lean, data-first, section-tailored structure
  * ready for `docx.renderer.js`.
  */
-function buildTemplateContent(spec, { hasRealChart = false } = {}) {
+function buildTemplateContent(spec, { hasRealChart = false, usedChartIndex = 0 } = {}) {
   const collected = collectSpecData(spec);
   const profile = getDocxSectionProfile(spec.moduleKey, spec);
 
@@ -169,7 +169,7 @@ function buildTemplateContent(spec, { hasRealChart = false } = {}) {
     }));
 
   const secondaryChartTables = (collected.charts || [])
-    .slice(1)
+    .filter((_, idx) => !(profile.showChart && hasRealChart && idx === usedChartIndex))
     .map(chartToBreakdownTable)
     .filter(Boolean);
 
@@ -236,9 +236,12 @@ function buildTemplateContent(spec, { hasRealChart = false } = {}) {
     if (slot === 'summary') {
       const blocks = [];
       if (kpiTable) blocks.push({ kind: 'table', table: kpiTable });
+      if (!blocks.length && collected.executiveBrief) {
+        blocks.push({ kind: 'note', text: cleanText(collected.executiveBrief, 600) });
+      }
       if (blocks.length) {
         // Prefer the module's concise brief (clamped to 1 short sentence) if present, else profile's tailored 1-liner
-        const briefOneLiner = collected.executiveBrief
+        const briefOneLiner = kpiTable && collected.executiveBrief
           ? cleanText(collected.executiveBrief.split(/(?<=[.!?])\s+/)[0], 210)
           : '';
         pushSection('summary', blocks, { customDesc: briefOneLiner });

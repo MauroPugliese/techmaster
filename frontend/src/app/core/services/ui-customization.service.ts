@@ -35,6 +35,10 @@ export class UiCustomizationService {
     );
   }
 
+  reset(): void {
+    this.cache.clear();
+  }
+
   isVisible(prefs: UiSectionPreferences | null, scope: 'table' | 'form', fieldKey: string, fallback = true): boolean {
     if (!prefs) return fallback;
     const list = scope === 'table' ? prefs.table : prefs.form;

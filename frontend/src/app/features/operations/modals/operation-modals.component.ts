@@ -359,6 +359,52 @@ export class OperationModalsComponent {
     this.cdr.markForCheck();
   }
 
+  quickCreateOperationType(rawName: string): void {
+    const name = rawName.trim();
+    if (!name) return;
+    this.api.post<any>('/operations/types', { name }).subscribe({
+      next: res => {
+        const created: OperationType = res?.data;
+        if (created) {
+          if (!this.opTypes.some(t => t.id === created.id)) {
+            this.opTypes = [...this.opTypes, created];
+          }
+          this.form.type_id = created.id;
+          this.toast.success(`Training profile "${created.name}" created.`);
+          this.mutated.emit();
+          this.cdr.markForCheck();
+        }
+      },
+      error: (e: any) => this.toast.error(e?.error?.message || 'Unable to create training profile.')
+    });
+  }
+
+  quickCreateSimulator(rawLabel: string): void {
+    const label = rawLabel.trim();
+    if (!label) return;
+    const cleanCode = label.toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 16) || `SIM-${Date.now().toString().slice(-4)}`;
+    this.api.post<any>('/simulators', {
+      code: cleanCode,
+      name: label,
+      bay_code: cleanCode.slice(0, 12),
+      station_kind: 'FFS_BAY',
+      status: 'READY'
+    }).subscribe({
+      next: res => {
+        const created: Simulator = res?.data;
+        if (created) {
+          this.simulators = [...this.simulators, created];
+          this.form.simulator_id = created.id;
+          this.checkBayConflict();
+          this.toast.success(`Simulator "${created.name}" created and selected.`);
+          this.mutated.emit();
+          this.cdr.markForCheck();
+        }
+      },
+      error: (e: any) => this.toast.error(e?.error?.message || 'Unable to create simulator bay.')
+    });
+  }
+
   saveOperation(): void {
     this.formError = '';
     if (this.showFormField('title') && !String(this.form.title || '').trim()) {

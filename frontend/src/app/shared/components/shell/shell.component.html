@@ -273,7 +273,7 @@
 
 <!-- Date Picker Modal -->
 <div class="modal-overlay" *ngIf="showDatePicker" (click)="closeDatePicker($event)">
-  <div class="modal" style="max-width:560px">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Select Date and Time Range" style="max-width:560px">
     <div class="modal-header">
       <h3>Select Date &amp; Time Range</h3>
       <button type="button" class="btn btn-ghost btn-icon-only" (click)="showDatePicker=false">

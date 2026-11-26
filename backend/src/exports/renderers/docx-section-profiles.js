@@ -431,11 +431,15 @@ const DOCX_SECTION_PROFILES = Object.freeze({
   'wiki-article': {
     coverTeam: 'Controlled Technical Procedure',
     showChart: false,
-    order: ['specs', 'document', 'tables'],
+    order: ['specs', 'summary', 'document', 'tables'],
     sections: {
       specs: {
         title: 'Document Control Metadata',
         desc: () => 'Controlled procedure identifier, category, owner, publication status, and revision info.'
+      },
+      summary: {
+        title: 'Procedure Summary',
+        desc: () => 'Concise technical summary and scope for this controlled procedure.'
       },
       document: {
         title: 'Standard Operating Procedure',

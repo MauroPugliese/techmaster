@@ -1,9 +1,12 @@
-import { Injectable } from '@angular/core';
+import { Injectable, Injector } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { BehaviorSubject, Observable, tap } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { User, AuthTokens, LoginPayload, RegisterPayload, ApiResponse } from '../models/interfaces';
+import { SectionAccessService } from './section-access.service';
+import { UiCustomizationService } from './ui-customization.service';
+import { SocketService } from './socket.service';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -11,7 +14,11 @@ export class AuthService {
   private currentUserSubject = new BehaviorSubject<User | null>(this.loadUser());
   currentUser$ = this.currentUserSubject.asObservable();
 
-  constructor(private http: HttpClient, private router: Router) {}
+  constructor(
+    private http: HttpClient,
+    private router: Router,
+    private injector: Injector
+  ) {}
 
   get currentUser(): User | null { return this.currentUserSubject.value; }
   get isAuthenticated(): boolean  { return !!this.getAccessToken(); }
@@ -24,7 +31,11 @@ export class AuthService {
 
   register(payload: RegisterPayload): Observable<any> {
     return this.http.post<any>(`${this.API}/register`, payload).pipe(
-      tap(res => { this.storeSession(res.data.user, res.data.access_token, res.data.refresh_token); })
+      tap(res => {
+        if (res?.data?.access_token && res?.data?.refresh_token && res?.data?.user) {
+          this.storeSession(res.data.user, res.data.access_token, res.data.refresh_token);
+        }
+      })
     );
   }
 
@@ -34,13 +45,20 @@ export class AuthService {
       tap(res => {
         localStorage.setItem('access_token', res.data.access_token);
         localStorage.setItem('refresh_token', res.data.refresh_token);
+        this.injector.get(SocketService).reconnectWithFreshToken();
       })
     );
   }
 
   logout(): void {
-    this.http.post(`${this.API}/logout`, {}).subscribe();
-    localStorage.clear();
+    const refreshToken = localStorage.getItem('refresh_token');
+    this.http.post(`${this.API}/logout`, { refresh_token: refreshToken }).subscribe({ error: () => {} });
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('user');
+    this.injector.get(SectionAccessService).reset();
+    this.injector.get(UiCustomizationService).reset();
+    this.injector.get(SocketService).disconnect();
     this.currentUserSubject.next(null);
     this.router.navigate(['/auth/login']);
   }
@@ -62,6 +80,8 @@ export class AuthService {
   }
 
   private storeSession(user: User, access: string, refresh: string): void {
+    this.injector.get(SectionAccessService).reset();
+    this.injector.get(UiCustomizationService).reset();
     localStorage.setItem('access_token', access);
     localStorage.setItem('refresh_token', refresh);
     localStorage.setItem('user', JSON.stringify(user));

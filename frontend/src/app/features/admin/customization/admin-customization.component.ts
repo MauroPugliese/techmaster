@@ -2,10 +2,12 @@
 // features/admin/customization/admin-customization.component.ts
 // =============================================================================
 import {
-  Component, OnInit, Input, ChangeDetectionStrategy, ChangeDetectorRef
+  Component, OnInit, OnDestroy, Input, HostListener, ChangeDetectionStrategy, ChangeDetectorRef
 } from '@angular/core';
 import { CommonModule, TitleCasePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../../core/services/services';
 import { ToastService } from '../../../core/services/toast.service';
 import { ConfirmService } from '../../../core/services/confirm.service';
@@ -19,7 +21,11 @@ import { DropdownComponent, DropdownOptionComponent } from '../../../shared/comp
   styleUrls: ['./admin-customization.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class AdminCustomizationComponent implements OnInit {
+export class AdminCustomizationComponent implements OnInit, OnDestroy {
+  private readonly destroy$ = new Subject<void>();
+  private dbLoadSeq = 0;
+  private uiLoadSeq = 0;
+
   @Input() roles: any[] = [];
 
   mode: 'db' | 'ui' = 'db';
@@ -30,6 +36,8 @@ export class AdminCustomizationComponent implements OnInit {
   tables: any[] = [];
   selectedTable = '';
   columns: any[] = [];
+  filteredDbColumns: any[] = [];
+  isDbDirty = false;
   private dbSnapshot = '';
   dbSearch = '';
 
@@ -45,6 +53,9 @@ export class AdminCustomizationComponent implements OnInit {
   selectedUiScope: 'table' | 'form' = 'table';
   selectedUiRole = 'ALL';
   uiFieldsEditor: any[] = [];
+  filteredUiFields: any[] = [];
+  visibleUiPreviewFields: any[] = [];
+  isUiDirty = false;
   private uiSnapshot = '';
   uiSearch = '';
   uiSourceFilter: 'all' | 'role' | 'global' | 'default' = 'all';
@@ -61,31 +72,38 @@ export class AdminCustomizationComponent implements OnInit {
     this.loadUiCatalog();
   }
 
-  get isDbDirty(): boolean {
-    return this.dbSnapshot !== '' && this.serializeDbCols(this.columns) !== this.dbSnapshot;
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
   }
 
-  get isUiDirty(): boolean {
-    return this.uiSnapshot !== '' && this.serializeUiFields(this.uiFieldsEditor) !== this.uiSnapshot;
+  @HostListener('document:keydown.escape')
+  onEscapeKey(): void {
+    if (this.showColumnModal && !this.actionLoading) {
+      this.showColumnModal = false;
+      this.cdr.markForCheck();
+    }
   }
 
   get isDirty(): boolean {
     return this.mode === 'db' ? this.isDbDirty : this.isUiDirty;
   }
 
-  get filteredDbColumns(): any[] {
+  recomputeDbState(): void {
     const q = this.dbSearch.trim().toLowerCase();
-    if (!q) return this.columns;
-    return this.columns.filter(c =>
-      String(c.column_name || '').toLowerCase().includes(q) ||
-      String(c.label || '').toLowerCase().includes(q) ||
-      String(c.column_type || '').toLowerCase().includes(q)
-    );
+    this.filteredDbColumns = !q
+      ? this.columns
+      : this.columns.filter(c =>
+          String(c.column_name || '').toLowerCase().includes(q) ||
+          String(c.label || '').toLowerCase().includes(q) ||
+          String(c.column_type || '').toLowerCase().includes(q)
+        );
+    this.isDbDirty = this.dbSnapshot !== '' && this.serializeDbCols(this.columns) !== this.dbSnapshot;
   }
 
-  get filteredUiFields(): any[] {
+  recomputeUiState(): void {
     const q = this.uiSearch.trim().toLowerCase();
-    return this.uiFieldsEditor.filter(f => {
+    this.filteredUiFields = this.uiFieldsEditor.filter(f => {
       if (this.uiSourceFilter !== 'all' && (f.source || 'default') !== this.uiSourceFilter) return false;
       if (!q) return true;
       return (
@@ -93,12 +111,16 @@ export class AdminCustomizationComponent implements OnInit {
         String(f.label || '').toLowerCase().includes(q)
       );
     });
-  }
-
-  get visibleUiPreviewFields(): any[] {
-    return this.uiFieldsEditor
+    this.visibleUiPreviewFields = this.uiFieldsEditor
       .filter(f => f.is_visible !== false)
       .sort((a, b) => Number(a.display_order) - Number(b.display_order));
+    this.isUiDirty = this.uiSnapshot !== '' && this.serializeUiFields(this.uiFieldsEditor) !== this.uiSnapshot;
+  }
+
+  setUiSourceFilter(filter: 'all' | 'role' | 'global' | 'default'): void {
+    this.uiSourceFilter = filter;
+    this.recomputeUiState();
+    this.cdr.markForCheck();
   }
 
   private serializeDbCols(cols: any[]): string {
@@ -141,7 +163,7 @@ export class AdminCustomizationComponent implements OnInit {
 
   loadTables(): void {
     this.loading = true;
-    this.api.get<any>('/admin/schema/tables').subscribe({
+    this.api.get<any>('/admin/schema/tables').pipe(takeUntil(this.destroy$)).subscribe({
       next: res => {
         this.tables = res.data || [];
         if (!this.selectedTable && this.tables.length) {
@@ -168,18 +190,22 @@ export class AdminCustomizationComponent implements OnInit {
 
   loadTableColumns(tableName: string): void {
     if (!tableName) return;
+    const seq = ++this.dbLoadSeq;
     this.loading = true;
-    this.api.get<any>('/admin/schema/tables/' + tableName + '/columns').subscribe({
+    this.api.get<any>('/admin/schema/tables/' + tableName + '/columns').pipe(takeUntil(this.destroy$)).subscribe({
       next: res => {
+        if (seq !== this.dbLoadSeq) return;
         const cols = (res.data || []).sort((a: any, b: any) =>
           Number(a.display_order || a.ordinal_position) - Number(b.display_order || b.ordinal_position)
         );
         this.columns = cols.map((c: any) => ({ ...c, is_visible: c.is_visible !== false, label: c.label || '' }));
         this.dbSnapshot = this.serializeDbCols(this.columns);
+        this.recomputeDbState();
         this.loading = false;
         this.cdr.markForCheck();
       },
       error: (err: any) => {
+        if (seq !== this.dbLoadSeq) return;
         this.loading = false;
         this.toast.error(err?.error?.message || 'Failed to load columns.');
         this.cdr.markForCheck();
@@ -189,6 +215,7 @@ export class AdminCustomizationComponent implements OnInit {
 
   setAllDbVisibility(visible: boolean): void {
     this.columns = this.columns.map(c => c.is_system ? c : { ...c, is_visible: visible });
+    this.recomputeDbState();
     this.cdr.markForCheck();
   }
 
@@ -199,6 +226,7 @@ export class AdminCustomizationComponent implements OnInit {
     const clone = [...this.columns];
     [clone[idx], clone[nextIdx]] = [clone[nextIdx], clone[idx]];
     this.columns = clone.map((c, i) => ({ ...c, display_order: i + 1 }));
+    this.recomputeDbState();
     this.cdr.markForCheck();
   }
 
@@ -336,7 +364,7 @@ export class AdminCustomizationComponent implements OnInit {
 
   // ── UI Section Customization ─────────────────────────────────────────────
   loadUiCatalog(): void {
-    this.api.get<any>('/admin/ui-sections/catalog').subscribe({
+    this.api.get<any>('/admin/ui-sections/catalog').pipe(takeUntil(this.destroy$)).subscribe({
       next: res => {
         this.uiSectionCatalog = res.data || {};
         this.uiSections = Object.keys(this.uiSectionCatalog);
@@ -360,11 +388,13 @@ export class AdminCustomizationComponent implements OnInit {
 
   loadUiPreferences(): void {
     if (!this.selectedUiSection) return;
+    const seq = ++this.uiLoadSeq;
     this.loading = true;
     this.api.get<any>('/admin/ui-sections/' + this.selectedUiSection + '/preferences', {
       role: this.selectedUiRole,
-    }).subscribe({
+    }).pipe(takeUntil(this.destroy$)).subscribe({
       next: res => {
+        if (seq !== this.uiLoadSeq) return;
         const data = res.data || {};
         const saved = ((this.selectedUiScope === 'table' ? data.table : data.form) || []) as any[];
         this.uiFieldsEditor = saved
@@ -378,10 +408,12 @@ export class AdminCustomizationComponent implements OnInit {
           .sort((a, b) => a.display_order - b.display_order);
 
         this.uiSnapshot = this.serializeUiFields(this.uiFieldsEditor);
+        this.recomputeUiState();
         this.loading = false;
         this.cdr.markForCheck();
       },
       error: (err: any) => {
+        if (seq !== this.uiLoadSeq) return;
         this.loading = false;
         this.toast.error(err?.error?.message || 'Failed to load section preferences.');
         this.cdr.markForCheck();
@@ -391,6 +423,7 @@ export class AdminCustomizationComponent implements OnInit {
 
   setAllUiVisibility(visible: boolean): void {
     this.uiFieldsEditor = this.uiFieldsEditor.map(f => ({ ...f, is_visible: visible }));
+    this.recomputeUiState();
     this.cdr.markForCheck();
   }
 
@@ -401,6 +434,7 @@ export class AdminCustomizationComponent implements OnInit {
     const clone = [...this.uiFieldsEditor];
     [clone[idx], clone[nextIdx]] = [clone[nextIdx], clone[idx]];
     this.uiFieldsEditor = clone.map((f, i) => ({ ...f, display_order: i + 1 }));
+    this.recomputeUiState();
     this.cdr.markForCheck();
   }
 

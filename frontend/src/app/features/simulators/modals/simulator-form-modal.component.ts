@@ -123,7 +123,7 @@ export class SimulatorFormModalComponent {
       sort_order: 1,
       platform_category: 'FTD_FNPT' as SimulatorPlatformCategory,
       aircraft_type: '',
-      manufacturer: 'CAE',
+      manufacturer: 'FSTD OEM',
       serial_number: '',
       authority: 'EASA',
       qualification_level: 'CS-FSTD Level D',
@@ -162,7 +162,7 @@ export class SimulatorFormModalComponent {
       base.name = `TEST PLACE ${nextNum}`;
       base.bay_code = `TPS-${pad2}`;
       base.platform_category = 'FTD_FNPT';
-      base.aircraft_type = 'CAE Test Place';
+      base.aircraft_type = 'Test Place';
       base.daily_available_hours = 16;
       base.scaffold_subsystems = false;
       base.scaffold_qtg = false;
@@ -174,7 +174,7 @@ export class SimulatorFormModalComponent {
       base.name = `IOS CONSOLE ${nextNum}`;
       base.bay_code = `IOS-${pad2}`;
       base.platform_category = 'FTD_FNPT';
-      base.aircraft_type = 'CAE IOS Console';
+      base.aircraft_type = 'IOS Console';
       base.daily_available_hours = 16;
       base.scaffold_subsystems = false;
       base.scaffold_qtg = false;
@@ -183,12 +183,12 @@ export class SimulatorFormModalComponent {
       base.station_kind = 'FFS_BAY';
       base.sort_order = nextNum;
       base.platform_category = 'COMMERCIAL_FIXED_WING';
-      base.manufacturer = 'CAE 7000XR';
+      base.manufacturer = 'FSTD Series';
       base.daily_available_hours = 20;
-      base.visual_system = 'CAE Tropos 6000XR · 200x40 Laser';
-      base.motion_system = 'CAE 6-DOF Electric eMotion';
-      base.control_loading = 'CAE Digital CLS-500';
-      base.ios_config = 'Dual-Screen IOS v8';
+      base.visual_system = 'Collimated Visual · Laser Projection';
+      base.motion_system = '6-DOF Electric Motion';
+      base.control_loading = 'Digital Control Loading System';
+      base.ios_config = 'Dual-Screen Instructor Operating Station';
       base.scaffold_subsystems = true;
       base.scaffold_qtg = true;
       this.sections = { identity: true, qualification: true, hardware: false, opsNotes: false };
@@ -239,7 +239,7 @@ export class SimulatorFormModalComponent {
         sort_order: Number(sim.sort_order ?? 100),
         platform_category: sim.platform_category || 'COMMERCIAL_FIXED_WING',
         aircraft_type: sim.aircraft_type || '',
-        manufacturer: sim.manufacturer || 'CAE',
+        manufacturer: sim.manufacturer || 'OEM',
         serial_number: sim.serial_number || '',
         authority: sim.authority || '',
         qualification_level: sim.qualification_level || '',
@@ -262,10 +262,10 @@ export class SimulatorFormModalComponent {
         notes: sim.notes || ''
       };
 
-      // Auto-enable only the optional subsections that actually have data
+      // Auto-enable every optional subsection that has populated data (prevents silent data loss on edit)
       this.sections = {
-        identity: kind === 'FFS_BAY' || Boolean(sim.serial_number),
-        qualification: Boolean(sim.certificate_code || sim.certificate_expiry || sim.last_eval_date || (kind === 'FFS_BAY' && (sim.authority || sim.qualification_level))),
+        identity: Boolean(sim.aircraft_type || sim.manufacturer || sim.serial_number || sim.daily_available_hours || sim.platform_category),
+        qualification: Boolean(sim.certificate_code || sim.certificate_expiry || sim.last_eval_date || sim.authority || sim.qualification_level),
         hardware: Boolean(sim.engine_avionics || sim.software_load || sim.airac_cycle || sim.visual_system || sim.motion_system || sim.control_loading || sim.ios_config),
         opsNotes: Boolean(sim.limitations_mel || sim.notes || Number(sim.power_on_hours) > 0 || Number(sim.motion_hours) > 0 || Number(sim.visual_lamp_hours) > 0)
       };
@@ -298,8 +298,8 @@ export class SimulatorFormModalComponent {
   }
 
   private defaultAircraftForKind(kind: SimulatorStationKind): string {
-    if (kind === 'TEST_PLACE') return 'CAE Test Place';
-    if (kind === 'IOS_CONSOLE') return 'CAE IOS Console';
+    if (kind === 'TEST_PLACE') return 'Test Place';
+    if (kind === 'IOS_CONSOLE') return 'IOS Console';
     return 'Full Flight Simulator';
   }
 
@@ -313,6 +313,7 @@ export class SimulatorFormModalComponent {
 
     const kind = this.form.station_kind;
     const fallbackAircraft = this.defaultAircraftForKind(kind);
+    const isEdit = Boolean(this.editingSim);
 
     this.saving = true;
     this.errorMsg = '';
@@ -323,45 +324,55 @@ export class SimulatorFormModalComponent {
       name: this.form.name.trim(),
       bay_code: this.form.bay_code.trim().toUpperCase(),
       station_kind: kind,
-      status: this.form.status,
-
-      // Section 1: Identity & Platform Details (falls back to clean defaults when disabled)
-      sort_order: this.sections.identity ? (Number(this.form.sort_order) || 100) : (Number(this.form.sort_order) || 100),
-      platform_category: this.sections.identity
-        ? this.form.platform_category
-        : (kind === 'FFS_BAY' ? 'COMMERCIAL_FIXED_WING' : 'FTD_FNPT'),
-      aircraft_type: this.sections.identity
-        ? (this.form.aircraft_type.trim() || fallbackAircraft)
-        : fallbackAircraft,
-      manufacturer: this.sections.identity ? (this.form.manufacturer.trim() || 'CAE') : 'CAE',
-      serial_number: this.sections.identity ? (this.form.serial_number.trim() || null) : null,
-      daily_available_hours: this.sections.identity
-        ? (Number(this.form.daily_available_hours) || 16)
-        : (kind === 'FFS_BAY' ? 20 : 16),
-
-      // Section 2: Qualification & Compliance
-      authority: this.sections.qualification ? (this.form.authority.trim() || null) : null,
-      qualification_level: this.sections.qualification ? (this.form.qualification_level.trim() || null) : null,
-      certificate_code: this.sections.qualification ? (this.form.certificate_code.trim() || null) : null,
-      certificate_expiry: this.sections.qualification ? this.toDateOnlyString(this.form.certificate_expiry) : null,
-      last_eval_date: this.sections.qualification ? this.toDateOnlyString(this.form.last_eval_date) : null,
-
-      // Section 3: Technical Hardware & Software Baseline
-      engine_avionics: this.sections.hardware ? (this.form.engine_avionics.trim() || null) : null,
-      software_load: this.sections.hardware ? (this.form.software_load.trim() || null) : null,
-      airac_cycle: this.sections.hardware ? (this.form.airac_cycle.trim() || null) : null,
-      visual_system: this.sections.hardware ? (this.form.visual_system.trim() || null) : null,
-      motion_system: this.sections.hardware ? (this.form.motion_system.trim() || null) : null,
-      control_loading: this.sections.hardware ? (this.form.control_loading.trim() || null) : null,
-      ios_config: this.sections.hardware ? (this.form.ios_config.trim() || null) : null,
-
-      // Section 4: Cumulative Counters, MEL & Notes
-      power_on_hours: this.sections.opsNotes ? (Number(this.form.power_on_hours) || 0) : 0,
-      motion_hours: this.sections.opsNotes ? (Number(this.form.motion_hours) || 0) : 0,
-      visual_lamp_hours: this.sections.opsNotes ? (Number(this.form.visual_lamp_hours) || 0) : 0,
-      limitations_mel: this.sections.opsNotes ? (this.form.limitations_mel.trim() || null) : null,
-      notes: this.sections.opsNotes ? (this.form.notes.trim() || null) : null
+      status: this.form.status
     };
+
+    // Section 1: Identity & Platform Details — on edit, omit when collapsed so existing DB values are preserved
+    if (this.sections.identity || !isEdit) {
+      payload.sort_order = Number(this.form.sort_order) || 100;
+      payload.platform_category = this.sections.identity
+        ? this.form.platform_category
+        : (kind === 'FFS_BAY' ? 'COMMERCIAL_FIXED_WING' : 'FTD_FNPT');
+      payload.aircraft_type = this.sections.identity
+        ? (this.form.aircraft_type.trim() || fallbackAircraft)
+        : fallbackAircraft;
+      payload.manufacturer = this.sections.identity
+        ? (this.form.manufacturer.trim() || null)
+        : null;
+      payload.serial_number = this.sections.identity ? (this.form.serial_number.trim() || null) : null;
+      payload.daily_available_hours = this.sections.identity
+        ? (Number(this.form.daily_available_hours) || 16)
+        : (kind === 'FFS_BAY' ? 20 : 16);
+    }
+
+    // Section 2: Qualification & Compliance
+    if (this.sections.qualification || !isEdit) {
+      payload.authority = this.sections.qualification ? (this.form.authority.trim() || null) : null;
+      payload.qualification_level = this.sections.qualification ? (this.form.qualification_level.trim() || null) : null;
+      payload.certificate_code = this.sections.qualification ? (this.form.certificate_code.trim() || null) : null;
+      payload.certificate_expiry = this.sections.qualification ? this.toDateOnlyString(this.form.certificate_expiry) : null;
+      payload.last_eval_date = this.sections.qualification ? this.toDateOnlyString(this.form.last_eval_date) : null;
+    }
+
+    // Section 3: Technical Hardware & Software Baseline
+    if (this.sections.hardware || !isEdit) {
+      payload.engine_avionics = this.sections.hardware ? (this.form.engine_avionics.trim() || null) : null;
+      payload.software_load = this.sections.hardware ? (this.form.software_load.trim() || null) : null;
+      payload.airac_cycle = this.sections.hardware ? (this.form.airac_cycle.trim() || null) : null;
+      payload.visual_system = this.sections.hardware ? (this.form.visual_system.trim() || null) : null;
+      payload.motion_system = this.sections.hardware ? (this.form.motion_system.trim() || null) : null;
+      payload.control_loading = this.sections.hardware ? (this.form.control_loading.trim() || null) : null;
+      payload.ios_config = this.sections.hardware ? (this.form.ios_config.trim() || null) : null;
+    }
+
+    // Section 4: Cumulative Counters, MEL & Notes
+    if (this.sections.opsNotes || !isEdit) {
+      payload.power_on_hours = this.sections.opsNotes ? (Number(this.form.power_on_hours) || 0) : 0;
+      payload.motion_hours = this.sections.opsNotes ? (Number(this.form.motion_hours) || 0) : 0;
+      payload.visual_lamp_hours = this.sections.opsNotes ? (Number(this.form.visual_lamp_hours) || 0) : 0;
+      payload.limitations_mel = this.sections.opsNotes ? (this.form.limitations_mel.trim() || null) : null;
+      payload.notes = this.sections.opsNotes ? (this.form.notes.trim() || null) : null;
+    }
 
     if (!this.editingSim) {
       payload.scaffold_subsystems = this.sections.opsNotes

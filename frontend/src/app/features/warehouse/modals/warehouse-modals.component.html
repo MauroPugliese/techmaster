@@ -19,7 +19,14 @@
       <div class="form-row">
         <div class="form-group" *ngIf="showFormField('category_id')">
           <label class="form-label">{{fieldLabel('form','category_id','Category')}} *</label>
-          <app-dropdown class="form-control" [(ngModel)]="itemForm.category_id" placeholder="— Select category —">
+          <app-dropdown class="form-control"
+                        [(ngModel)]="itemForm.category_id"
+                        [searchable]="true"
+                        [creatable]="true"
+                        createLabel="Create new category"
+                        createPlaceholder="e.g. Visual Optics"
+                        (createOption)="quickCreateCategory($event)"
+                        placeholder="— Select category —">
             <app-dropdown-option [ngValue]="null">— Select category —</app-dropdown-option>
             <app-dropdown-option *ngFor="let c of categories" [ngValue]="c.id">{{c.name}}</app-dropdown-option>
           </app-dropdown>
@@ -27,7 +34,14 @@
 
         <div class="form-group" *ngIf="showFormField('location_id')">
           <label class="form-label">{{fieldLabel('form','location_id','Location')}}</label>
-          <app-dropdown class="form-control" [(ngModel)]="itemForm.location_id" placeholder="— Unassigned —">
+          <app-dropdown class="form-control"
+                        [(ngModel)]="itemForm.location_id"
+                        [searchable]="true"
+                        [creatable]="true"
+                        createLabel="Create new location"
+                        createPlaceholder="e.g. Rack B2 — Avionics"
+                        (createOption)="quickCreateLocation($event, 'item')"
+                        placeholder="— Unassigned —">
             <app-dropdown-option [ngValue]="null">— Unassigned —</app-dropdown-option>
             <app-dropdown-option *ngFor="let loc of locations" [ngValue]="loc.id">{{loc.code}} — {{loc.name}}</app-dropdown-option>
           </app-dropdown>
@@ -102,7 +116,7 @@
 
         <div class="form-group" *ngIf="showFormField('supplier')">
           <label class="form-label">{{fieldLabel('form','supplier','Supplier / OEM')}}</label>
-          <input class="form-control" [(ngModel)]="itemForm.supplier" placeholder="e.g. CAE Montreal / Honeywell">
+          <input class="form-control" [(ngModel)]="itemForm.supplier" placeholder="e.g. OEM / Authorized Vendor">
         </div>
       </div>
 
@@ -150,7 +164,13 @@
 
         <div class="form-group">
           <label class="form-label">Target Subsystem</label>
-          <app-dropdown class="form-control" [(ngModel)]="itemForm.subsystem_code" placeholder="— General —">
+          <app-dropdown class="form-control"
+                        [(ngModel)]="itemForm.subsystem_code"
+                        [searchable]="true"
+                        [creatable]="true"
+                        storageKey="maint_subsystems"
+                        createLabel="Add custom subsystem"
+                        placeholder="— General —">
             <app-dropdown-option value="">— General —</app-dropdown-option>
             <app-dropdown-option *ngFor="let sub of subsystemOptions" [value]="sub.code">{{sub.label}}</app-dropdown-option>
           </app-dropdown>
@@ -165,7 +185,13 @@
 
         <div class="form-group">
           <label class="form-label">Installed on Simulator Bay</label>
-          <app-dropdown class="form-control" [(ngModel)]="itemForm.installed_simulator_id" placeholder="— In Warehouse —">
+          <app-dropdown class="form-control"
+                        [(ngModel)]="itemForm.installed_simulator_id"
+                        [searchable]="true"
+                        [creatable]="true"
+                        createLabel="Create new simulator bay"
+                        (createOption)="quickCreateSimulator($event, 'item')"
+                        placeholder="— In Warehouse —">
             <app-dropdown-option [ngValue]="null">— In Warehouse —</app-dropdown-option>
             <app-dropdown-option *ngFor="let s of simulators" [ngValue]="s.id">{{s.bay_code}} · {{s.name}}</app-dropdown-option>
           </app-dropdown>
@@ -175,7 +201,7 @@
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">RMA / Repair Reference</label>
-          <input class="form-control" [(ngModel)]="itemForm.rma_reference" placeholder="e.g. RMA-CAE-4410">
+          <input class="form-control" [(ngModel)]="itemForm.rma_reference" placeholder="e.g. RMA-2026-4410">
         </div>
 
         <div class="form-group">
@@ -281,7 +307,13 @@
       <div *ngIf="isInternalRelocation" class="form-row">
         <div class="form-group">
           <label class="form-label">Destination Warehouse Location *</label>
-          <app-dropdown class="form-control" [(ngModel)]="movementForm.to_location_id" placeholder="— Choose location —">
+          <app-dropdown class="form-control"
+                        [(ngModel)]="movementForm.to_location_id"
+                        [searchable]="true"
+                        [creatable]="true"
+                        createLabel="Create new location"
+                        (createOption)="quickCreateLocation($event, 'movement')"
+                        placeholder="— Choose location —">
             <app-dropdown-option [ngValue]="null">— Choose location —</app-dropdown-option>
             <app-dropdown-option *ngFor="let loc of availableTransferLocations" [ngValue]="loc.id">
               {{loc.code}} — {{loc.name}}
@@ -323,7 +355,13 @@
 
         <div class="form-group" *ngIf="movementForm.type === 'OUT' || movementForm.type === 'RETURN'">
           <label class="form-label">Simulator Bay / Station (Optional)</label>
-          <app-dropdown class="form-control" [(ngModel)]="movementForm.simulator_id" placeholder="— General / Unassigned —">
+          <app-dropdown class="form-control"
+                        [(ngModel)]="movementForm.simulator_id"
+                        [searchable]="true"
+                        [creatable]="true"
+                        createLabel="Create new simulator bay"
+                        (createOption)="quickCreateSimulator($event, 'movement')"
+                        placeholder="— General / Unassigned —">
             <app-dropdown-option [ngValue]="null">— General / Unassigned —</app-dropdown-option>
             <app-dropdown-option *ngFor="let s of simulators" [ngValue]="s.id">
               {{s.bay_code}} · {{s.name}}

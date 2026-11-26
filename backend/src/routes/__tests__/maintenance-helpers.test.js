@@ -49,7 +49,16 @@ test('sanitizeMaintenancePayload validates required fields, parts_used, and auto
   assert.equal(valid.data.cost, 420.26);
   assert.ok(valid.data.completed_date instanceof Date);
   assert.deepEqual(valid.data.parts_used, [
-    { item_id: 7, sku: 'BAT-12V', name: '12V Battery', quantity: 2, unit: 'pcs' }
+    {
+      item_id: 7,
+      sku: 'BAT-12V',
+      part_number: null,
+      broken_serial_number: null,
+      new_serial_number: null,
+      name: '12V Battery',
+      quantity: 2,
+      unit: 'pcs'
+    }
   ]);
 
   const missingAsset = sanitizeMaintenancePayload({
@@ -254,4 +263,47 @@ test('computeReliabilityMetrics computes MTTR, MTBF, top faulty subsystems, and 
   assert.equal(metrics.activeMelCount, 2);
   assert.equal(metrics.melExpiringSoonCount, 1);
   assert.equal(metrics.topSubsystems[0].code, 'MOTION'); // 2 records, 5h downtime vs VISUAL 2 records, 2h downtime
+});
+
+test('sanitizeMaintenancePayload normalizes part_number, broken_serial_number, and new_serial_number on parts_used and mirrors top-level fields', () => {
+  const res = sanitizeMaintenancePayload({
+    simulator_id: 2,
+    title: 'Replace Visual IG Card',
+    description: 'Swapped failed IG GPU module with serviceable spare.',
+    scheduled_date: '2026-11-26T10:00:00Z',
+    parts_used: [{
+      item_id: 15,
+      sku: 'IG-GPU-4090',
+      part_number: '  PN-IG-9920  ',
+      broken_serial_number: ' SN-OLD-104 ',
+      new_serial_number: ' SN-NEW-889 ',
+      name: 'Image Generator GPU Card',
+      quantity: 1,
+      unit: 'ea'
+    }]
+  }, { isCreate: true });
+
+  assert.equal(res.error, undefined);
+  assert.equal(res.data.part_number, 'PN-IG-9920');
+  assert.equal(res.data.broken_serial_number, 'SN-OLD-104');
+  assert.equal(res.data.new_serial_number, 'SN-NEW-889');
+  assert.equal(res.data.parts_used[0].part_number, 'PN-IG-9920');
+  assert.equal(res.data.parts_used[0].broken_serial_number, 'SN-OLD-104');
+  assert.equal(res.data.parts_used[0].new_serial_number, 'SN-NEW-889');
+
+  // Explicit top-level values take precedence over parts_used[0]
+  const explicit = sanitizeMaintenancePayload({
+    simulator_id: 2,
+    title: 'Manual Serial Entry',
+    description: 'Logged without warehouse stock pick.',
+    scheduled_date: '2026-11-26T10:00:00Z',
+    part_number: '  PN-CUSTOM-1 ',
+    broken_serial_number: ' BROKEN-01 ',
+    new_serial_number: ' NEW-02 '
+  }, { isCreate: true });
+
+  assert.equal(explicit.error, undefined);
+  assert.equal(explicit.data.part_number, 'PN-CUSTOM-1');
+  assert.equal(explicit.data.broken_serial_number, 'BROKEN-01');
+  assert.equal(explicit.data.new_serial_number, 'NEW-02');
 });

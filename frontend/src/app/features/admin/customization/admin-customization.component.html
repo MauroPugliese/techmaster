@@ -51,7 +51,7 @@
 
         <div class="search-bar" style="flex:1 1 200px;max-width:280px">
           <span class="search-icon">search</span>
-          <input placeholder="Filter columns…" [(ngModel)]="dbSearch">
+          <input placeholder="Filter columns…" [(ngModel)]="dbSearch" (ngModelChange)="recomputeDbState()">
         </div>
       </div>
 
@@ -105,12 +105,12 @@
           <td class="text-sm text-muted">{{c.column_default ?? 'NULL'}}</td>
           <td>
             <label class="admin-switch">
-              <input type="checkbox" [(ngModel)]="c.is_visible" [disabled]="c.is_system">
+              <input type="checkbox" [(ngModel)]="c.is_visible" (ngModelChange)="recomputeDbState()" [disabled]="c.is_system">
               <span class="slider"></span>
             </label>
           </td>
           <td>
-            <input class="form-control" [(ngModel)]="c.label" placeholder="Display label" style="min-width:150px">
+            <input class="form-control" [(ngModel)]="c.label" (ngModelChange)="recomputeDbState()" placeholder="Display label" style="min-width:150px">
           </td>
           <td>
             <div class="flex gap-1">
@@ -178,7 +178,7 @@
         </div>
         <div class="search-bar" style="flex:1 1 180px;max-width:250px">
           <span class="search-icon">search</span>
-          <input placeholder="Filter fields…" [(ngModel)]="uiSearch">
+          <input placeholder="Filter fields…" [(ngModel)]="uiSearch" (ngModelChange)="recomputeUiState()">
         </div>
       </div>
 
@@ -197,10 +197,10 @@
     <div class="admin-filter-row">
       <span class="text-xs font-bold text-muted" style="text-transform:uppercase">Source Filter:</span>
       <div class="admin-chip-group">
-        <button type="button" class="admin-chip" [class.active]="uiSourceFilter === 'all'" (click)="uiSourceFilter = 'all'">All</button>
-        <button type="button" class="admin-chip" [class.active]="uiSourceFilter === 'role'" (click)="uiSourceFilter = 'role'">Role Override</button>
-        <button type="button" class="admin-chip" [class.active]="uiSourceFilter === 'global'" (click)="uiSourceFilter = 'global'">Global Override</button>
-        <button type="button" class="admin-chip" [class.active]="uiSourceFilter === 'default'" (click)="uiSourceFilter = 'default'">Default</button>
+        <button type="button" class="admin-chip" [class.active]="uiSourceFilter === 'all'" (click)="setUiSourceFilter('all')">All</button>
+        <button type="button" class="admin-chip" [class.active]="uiSourceFilter === 'role'" (click)="setUiSourceFilter('role')">Role Override</button>
+        <button type="button" class="admin-chip" [class.active]="uiSourceFilter === 'global'" (click)="setUiSourceFilter('global')">Global Override</button>
+        <button type="button" class="admin-chip" [class.active]="uiSourceFilter === 'default'" (click)="setUiSourceFilter('default')">Default</button>
       </div>
     </div>
   </div>
@@ -221,12 +221,12 @@
           <td><span class="admin-code-pill">{{f.field_key}}</span></td>
           <td>
             <label class="admin-switch">
-              <input type="checkbox" [(ngModel)]="f.is_visible">
+              <input type="checkbox" [(ngModel)]="f.is_visible" (ngModelChange)="recomputeUiState()">
               <span class="slider"></span>
             </label>
           </td>
           <td>
-            <input class="form-control" [(ngModel)]="f.label" placeholder="Default section label" style="max-width:280px">
+            <input class="form-control" [(ngModel)]="f.label" (ngModelChange)="recomputeUiState()" placeholder="Default section label" style="max-width:280px">
           </td>
           <td>
             <span class="badge"
@@ -281,7 +281,7 @@
 
 <!-- Add / Edit DB Column Modal -->
 <div class="modal-overlay" *ngIf="showColumnModal" (click)="showColumnModal = false">
-  <div class="modal" style="max-width:520px" (click)="$event.stopPropagation()">
+  <div class="modal" role="dialog" aria-modal="true" style="max-width:520px" (click)="$event.stopPropagation()">
     <div class="modal-header">
       <h3>{{editingColumn ? 'Edit Column' : 'Add Column'}} — {{selectedTable}}</h3>
       <button type="button" class="btn btn-ghost btn-icon-only" (click)="showColumnModal = false">

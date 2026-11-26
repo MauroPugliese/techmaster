@@ -726,7 +726,9 @@ textarea.form-control { resize: vertical; min-height: 100px; }
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  overflow: visible;
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
   box-shadow: var(--shadow-sm);
 }
 
@@ -994,11 +996,17 @@ textarea.form-control { resize: vertical; min-height: 100px; }
   .app-header.sidebar-collapsed { left: 0; }
   .form-row { grid-template-columns: 1fr; }
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid-2 { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (max-width: 600px) {
   .page-content { padding: 14px; padding-top: calc(var(--header-height) + 14px); }
   .kpi-grid { grid-template-columns: 1fr 1fr; }
+  .grid-4,
+  .grid-3,
+  .grid-2 { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* ── Utility ────────────────────────────────────────────────────────────────── */

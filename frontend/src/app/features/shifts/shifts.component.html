@@ -572,7 +572,8 @@
   [uiPrefs]="uiPrefs"
   (close)="showFormModal = false"
   (saved)="onShiftSaved()"
-  (deleted)="deleteShiftRecord($event)">
+  (deleted)="deleteShiftRecord($event)"
+  (shiftTypesChanged)="loadShiftTypes()">
 </app-shift-form-modal>
 
 <!-- ── Copy Previous Week Modal ───────────────────────────────────────────── -->

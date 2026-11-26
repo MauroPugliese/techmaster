@@ -82,6 +82,10 @@ export class OperationsComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();
   private search$ = new Subject<string>();
   private actionHandled = false;
+  private opsReqSeq = 0;
+  private timelineReqSeq = 0;
+  private readonly emptyOps: Operation[] = [];
+  private boardByStatus: Record<string, Operation[]> = {};
   Math = Math;
 
   operations: Operation[] = [];
@@ -174,7 +178,6 @@ export class OperationsComponent implements OnInit, OnDestroy {
     });
 
     this.loadSimulators();
-    this.loadTimelineOps();
     this.loadTimelineShiftBlocks();
 
     this.search$
@@ -302,6 +305,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
   }
 
   loadTimelineOps(): void {
+    const seq = ++this.timelineReqSeq;
     this.api.get<any>('/operations', {
       date: this.timelineDate,
       simulator_id: this.simulatorFilter || '',
@@ -309,6 +313,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
       limit: 200
     }).pipe(takeUntil(this.destroy$)).subscribe({
       next: res => {
+        if (seq !== this.timelineReqSeq) return;
         this.timelineOps = res?.data?.items || [];
         this.cdr.markForCheck();
       }
@@ -363,6 +368,9 @@ export class OperationsComponent implements OnInit, OnDestroy {
         changed = true;
       }
     }
+    if (qp['action'] !== 'new') {
+      this.actionHandled = false;
+    }
     if (qp['action'] === 'new' && !this.actionHandled) {
       this.actionHandled = true;
       const preSim = qp['simulatorId'] ? Number(qp['simulatorId']) : (this.simulatorFilter || undefined);
@@ -387,7 +395,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
   loadSummary(): void {
     this.api.get<any>('/operations/summary', {
       simulator_id: this.simulatorFilter || ''
-    }).subscribe({
+    }).pipe(takeUntil(this.destroy$)).subscribe({
       next: res => {
         this.summary = res?.data || null;
         this.cdr.markForCheck();
@@ -396,6 +404,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
   }
 
   loadOperations(): void {
+    const seq = ++this.opsReqSeq;
     this.loading = true;
     this.openMenuOpId = null;
     this.syncExportParams();
@@ -413,18 +422,31 @@ export class OperationsComponent implements OnInit, OnDestroy {
       limit: this.pageSize
     }).pipe(takeUntil(this.destroy$)).subscribe({
       next: res => {
+        if (seq !== this.opsReqSeq) return;
         this.operations = res?.data?.items || [];
         this.total = res?.data?.total ?? this.operations.length;
+        this.recomputeBoardGroups();
         const visibleIds = new Set(this.operations.map(o => o.id));
         this.selectedIds = new Set([...this.selectedIds].filter(id => visibleIds.has(id)));
         this.loading = false;
         this.cdr.markForCheck();
       },
       error: () => {
+        if (seq !== this.opsReqSeq) return;
         this.loading = false;
         this.cdr.markForCheck();
       }
     });
+  }
+
+  private recomputeBoardGroups(): void {
+    const map: Record<string, Operation[]> = {};
+    for (const col of this.boardColumns) map[col.status] = [];
+    for (const op of this.operations) {
+      if (!map[op.status]) map[op.status] = [];
+      map[op.status].push(op);
+    }
+    this.boardByStatus = map;
   }
 
   onSearchModelChange(val: string): void {
@@ -448,6 +470,14 @@ export class OperationsComponent implements OnInit, OnDestroy {
 
   filterByKpi(status: string): void {
     this.statusFilter = this.statusFilter === status ? '' : status;
+    this.applyFilters();
+  }
+
+  filterBySnags(): void {
+    this.outcomeFilter = this.outcomeFilter === 'COMPLETED_WITH_SNAGS' ? '' : 'COMPLETED_WITH_SNAGS';
+    if (this.outcomeFilter && this.viewMode === 'timeline') {
+      this.viewMode = 'table';
+    }
     this.applyFilters();
   }
 
@@ -531,7 +561,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
 
   // ── Board & Pagination ─────────────────────────────────────────────────────
   operationsByStatus(status: OperationStatus): Operation[] {
-    return this.operations.filter(o => o.status === status);
+    return this.boardByStatus[status] || this.emptyOps;
   }
 
   get totalPages(): number {
@@ -598,7 +628,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
       ids: [...this.selectedIds],
       action,
       value
-    }).subscribe({
+    }).pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {
         this.bulkBusy = false;
         this.clearSelection();
@@ -640,6 +670,10 @@ export class OperationsComponent implements OnInit, OnDestroy {
   }
 
   onMutated(): void {
+    this.api.notifyNavBadgesChanged();
+    this.api.get<any>('/operations/types').pipe(takeUntil(this.destroy$)).subscribe({
+      next: res => { this.opTypes = res?.data || []; this.cdr.markForCheck(); }
+    });
     this.loadSummary();
     this.loadOperations();
     this.loadTimelineOps();

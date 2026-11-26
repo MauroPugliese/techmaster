@@ -53,7 +53,7 @@ module.exports = {
 
   async build(req) {
     const range = parseRange(req.query);
-    const { status, category_id, search } = req.query;
+    const { status, category_id, tag, search } = req.query;
 
     const where = {};
     if (range.from || range.to) {
@@ -68,14 +68,20 @@ module.exports = {
       where[Op.or] = [{ title: { [Op.like]: q } }, { excerpt: { [Op.like]: q } }];
     }
 
-    const articles = await WikiArticle.findAll({
+    const rawArticles = await WikiArticle.findAll({
       where,
+      attributes: { exclude: ['content'] },
       include: [
         { model: WikiCategory, as: 'category', attributes: ['id', 'name'] },
         { model: User, as: 'author', attributes: ['first_name', 'last_name'] }
       ],
       order: [['is_pinned', 'DESC'], ['view_count', 'DESC'], ['updated_at', 'DESC']]
     });
+
+    const normTag = tag && String(tag).trim() ? String(tag).trim().toLowerCase() : '';
+    const articles = normTag
+      ? rawArticles.filter((a) => normalizeTags(a.tags).some((t) => t.toLowerCase() === normTag))
+      : rawArticles;
 
     const byStatus = { PUBLISHED: 0, REVIEW: 0, DRAFT: 0, ARCHIVED: 0 };
     const byCategory = {};
@@ -100,7 +106,7 @@ module.exports = {
         author: fullName(a.author),
         pinned: a.is_pinned ? 'Yes' : 'No',
         tags: normalizeTags(a.tags).join(', ') || '—',
-        excerpt: cleanText(a.excerpt || a.content, 72)
+        excerpt: cleanText(a.excerpt || '', 72) || '—'
       };
     });
 
@@ -117,7 +123,7 @@ module.exports = {
       title: cleanText(a.title, 54),
       metric: `${fmtNumber(a.view_count || 0)} views`,
       meta: `${a.category?.name || 'General'} · By ${fullName(a.author)} · v${a.version || 1} · Updated ${fmtDate(a.updated_at)}`,
-      detail: cleanText(a.excerpt || a.content, 130)
+      detail: cleanText(a.excerpt || '', 130)
     }));
 
     const catalogueTable = {
@@ -143,6 +149,7 @@ module.exports = {
     if (range.from || range.to) filters['Revision Window'] = rangeLabel(range);
     if (status) filters.Status = status;
     if (category_id) filters['Category ID'] = category_id;
+    if (tag) filters.Tag = tag;
     if (search) filters.Search = search;
 
     const pages = [
@@ -272,15 +279,6 @@ module.exports = {
 
     pageBlocks.push({ type: 'markdown', blocks });
 
-    const metaTable = {
-      name: 'Document Control Record',
-      columns: [
-        { header: 'Field', key: 'field', width: 150 },
-        { header: 'Value', key: 'value', width: 320 }
-      ],
-      rows: controlPairs.map(([field, value]) => ({ field, value }))
-    };
-
     return {
       moduleKey: 'wiki-article',
       docCode,
@@ -295,15 +293,13 @@ module.exports = {
         { label: 'Consultations', value: fmtNumber(article.view_count || 0) }
       ],
       filters: { Category: catName, Author: authorName, Status: article.status || 'DRAFT' },
-      documentBlocks: blocks,
       pages: [
         {
           title: 'Standard Operating Procedure',
           subtitle: `${docCode} · Revision v${article.version || 1} · Prepared by ${authorName}`,
           blocks: pageBlocks
         }
-      ],
-      tables: [metaTable]
+      ]
     };
   }
 };

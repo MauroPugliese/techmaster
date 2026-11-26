@@ -104,8 +104,8 @@ function buildTemplateData(tasks, dateStr, user) {
   const year = String(baseDate.getUTCFullYear());
   const day = String(baseDate.getUTCDate()).padStart(2, '0');
 
-  const hasShutdown = tasks.some((t) => t.task === TASK_SHUTDOWN) || tasks.length >= 0;
-  const hasRestore = tasks.some((t) => t.task === TASK_RESTORE) || tasks.length >= 0;
+  const hasShutdown = tasks.some((t) => t.task === TASK_SHUTDOWN);
+  const hasRestore = tasks.some((t) => t.task === TASK_RESTORE);
 
   // Include ALL tasks so template filters for LOTO in Section 1 and excludes
   // Shutdown/Restore/LOTO in Section 2 accurately.
@@ -213,17 +213,22 @@ async function convertDocxToPdf(docxBuffer) {
   return libreConvertAsync(docxBuffer, '.pdf', undefined);
 }
 
+let cachedLibreOfficeDetection = null;
+
 function detectLibreOfficeBinary() {
+  if (cachedLibreOfficeDetection !== null) return cachedLibreOfficeDetection;
   const candidates = ['soffice', 'libreoffice'];
   for (const bin of candidates) {
     try {
       execFileSync(bin, ['--version'], { stdio: 'ignore' });
-      return { available: true, binary: bin };
+      cachedLibreOfficeDetection = { available: true, binary: bin };
+      return cachedLibreOfficeDetection;
     } catch {
       // Try next candidate
     }
   }
-  return { available: false, binary: null };
+  cachedLibreOfficeDetection = { available: false, binary: null };
+  return cachedLibreOfficeDetection;
 }
 
 /**
@@ -269,8 +274,8 @@ function renderDailyNativePdf(templateType, data, dateStr) {
     const isReport = templateType === 'report';
     const titleText = isReport ? 'PLANNED MAINTENANCE DAILY REPORT' : 'PLANNED MAINTENANCE DAILY CHECKLIST';
     const subtitleText = isReport
-      ? `Täglicher Wartungsbericht  ·  Report #${data.DAYDATE}-${data.YEAR}  ·  ${data.MONTHNAME} ${data.YEAR}`
-      : `Checklist Manutenzione Giornaliera  ·  Scheduled: ${data.DATE}`;
+      ? `Daily Maintenance Report  ·  Report #${data.DAYDATE}-${data.YEAR}  ·  ${data.MONTHNAME} ${data.YEAR}`
+      : `Daily Maintenance Checklist  ·  Scheduled: ${data.DATE}`;
 
     // Header banner
     const drawTopHeader = () => {
@@ -314,10 +319,11 @@ function renderDailyNativePdf(templateType, data, dateStr) {
 
     doc.save().roundedRect(margin, y, w, 58, 4).fillAndStroke(COLORS.white, COLORS.border).restore();
     const hasOpsTime = data.StartOpsTime && data.StartOpsTime !== '00:00';
+    const shutdownRequired = Boolean(data.SHUTDOWN_TASK);
     doc.font(F.bodyBold).fontSize(8.5).fillColor(COLORS.ink)
       .text('Mandatory Shutdown Required?', margin + 12, y + 10, { width: 158, lineBreak: false });
-    drawCheckbox(doc, margin + 175, y + 9, isReport && hasOpsTime, 'YES', F);
-    drawCheckbox(doc, margin + 225, y + 9, isReport && !hasOpsTime, 'NO', F);
+    drawCheckbox(doc, margin + 175, y + 9, isReport && shutdownRequired, 'YES', F);
+    drawCheckbox(doc, margin + 225, y + 9, isReport && !shutdownRequired, 'NO', F);
 
     doc.font(F.bodyBold).fontSize(8.5).fillColor(COLORS.ink)
       .text('LOTO Procedure Applied?', margin + 290, y + 10, { width: 120, lineBreak: false });
@@ -465,7 +471,11 @@ function renderDailyNativePdf(templateType, data, dateStr) {
 async function streamDailyTemplateExport({ req, res }) {
   const date = String(req.params.date || '');
   const templateType = String(req.params.template || '').toLowerCase();
-  const format = resolveFormat(req.query.format, 'docx');
+  const rawFormat = req.query.format !== undefined ? String(req.query.format).trim().toLowerCase() : 'docx';
+  if (!['docx', 'pdf'].includes(rawFormat)) {
+    return res.status(400).json({ success: false, message: 'Invalid format. Supported formats for daily templates: docx, pdf.' });
+  }
+  const format = resolveFormat(rawFormat, 'docx');
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return res.status(400).json({ success: false, message: 'Invalid date format. Use YYYY-MM-DD.' });

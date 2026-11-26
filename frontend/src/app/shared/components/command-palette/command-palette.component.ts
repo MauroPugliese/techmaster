@@ -52,7 +52,7 @@ const STATIC_ROUTES: PaletteItem[] = [
   { key: 'nav-an', title: 'Analytics & Reports', subtitle: 'Cross-platform insights & exports', icon: 'insights', route: '/analytics', sectionKey: 'analytics', groupLabel: 'Navigate' },
   { key: 'nav-oa', title: 'Sorties Analytics', subtitle: 'Simulator utilization, dispatch & snag Pareto', icon: 'analytics', route: '/analytics/operations', sectionKey: 'operations_analytics', groupLabel: 'Navigate' },
   { key: 'nav-tasks', title: 'Task Manager', subtitle: 'Kanban, table & recurring checklists', icon: 'task_alt', route: '/tasks', sectionKey: 'tasks', groupLabel: 'Navigate' },
-  { key: 'nav-wiki', title: 'Wiki & Docs', subtitle: 'Internal knowledge base and CAE SOPs', icon: 'menu_book', route: '/wiki', sectionKey: 'wiki', groupLabel: 'Navigate' },
+  { key: 'nav-wiki', title: 'Wiki & Docs', subtitle: 'Internal knowledge base and SOPs', icon: 'menu_book', route: '/wiki', sectionKey: 'wiki', groupLabel: 'Navigate' },
   { key: 'nav-admin', title: 'Admin Settings', subtitle: 'Users, permissions, audit & health', icon: 'admin_panel_settings', route: '/admin', sectionKey: 'admin', groupLabel: 'Navigate' },
   { key: 'nav-profile', title: 'My Profile & Security', subtitle: 'Personal info, password & active sessions', icon: 'manage_accounts', route: '/profile', groupLabel: 'Navigate' }
 ];

@@ -12,8 +12,8 @@ import {
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { Subject } from 'rxjs';
-import { takeUntil, switchMap } from 'rxjs/operators';
+import { Subject, of } from 'rxjs';
+import { catchError, takeUntil, switchMap } from 'rxjs/operators';
 import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
 
 import {
@@ -132,6 +132,24 @@ export class TasksComponent implements OnInit, OnDestroy {
 
   readonly intervals = TASK_INTERVAL_TABS;
   readonly columns: TaskColumn[] = KANBAN_COLUMNS;
+  readonly dropListIds: string[] = KANBAN_COLUMNS.map(c => 'col-' + c.status);
+  private readonly emptyTasks: Task[] = [];
+  private loadSeq = 0;
+
+  // Cached derived views (recomputed explicitly to avoid CD-cycle storms)
+  baseFilteredTasks: Task[] = [];
+  filteredTasks: Task[] = [];
+  swimlanes: SwimlaneGroup[] = [];
+  taskStats: Array<{
+    key: StatFilterKey; label: string; count: number; icon: string; color: string; sub: string;
+  }> = [];
+  columnTasksMap: Record<string, Task[]> = {};
+  columnEstHoursMap: Record<string, number> = {};
+  laneColumnTasksMap: Record<string, Record<string, Task[]>> = {};
+  laneEstHoursMap: Record<string, number> = {};
+  exportParams: Record<string, any> = {};
+  activeFilterCount = 0;
+
   readonly sortOptions: Array<{ k: SortKey; l: string }> = [
     { k: 'due',      l: 'Due' },
     { k: 'priority', l: 'Priority' },
@@ -151,26 +169,15 @@ export class TasksComponent implements OnInit, OnDestroy {
     private router: Router
   ) {
     this.restorePrefs();
+    this.recomputeDerivedState();
   }
 
   get currentUser(): User | null { return this.auth.currentUser; }
   get isMyTasksActive(): boolean {
     return !!this.currentUser?.id && this.assigneeFilter === this.currentUser.id;
   }
-  get dropListIds(): string[] { return this.columns.map(c => 'col-' + c.status); }
   get hasCustomWeights(): boolean {
     return this.colWeights.some(w => Math.abs(w - 1) > 0.03);
-  }
-  get activeFilterCount(): number {
-    let n = 0;
-    if (this.activeInterval) n++;
-    if (this.statusFilter) n++;
-    if (this.priorityFilter) n++;
-    if (this.assigneeFilter !== '') n++;
-    if (this.simulatorFilter !== '') n++;
-    if (this.statFilter !== 'all') n++;
-    if (this.searchTerm.trim()) n++;
-    return n;
   }
 
   private get filterState(): TaskFilterState {
@@ -185,35 +192,86 @@ export class TasksComponent implements OnInit, OnDestroy {
     };
   }
 
-  /** Tasks matching toolbar filters BEFORE KPI stat-card filter. */
-  get baseFilteredTasks(): Task[] {
-    return filterAndSortTasks(this.tasks, this.filterState, false);
-  }
+  recomputeDerivedState(): void {
+    const state = this.filterState;
+    this.baseFilteredTasks = filterAndSortTasks(this.tasks, state, false);
+    this.filteredTasks = filterAndSortTasks(this.tasks, state, true);
+    this.swimlanes = buildSwimlanes(this.filteredTasks, this.swimlaneBy);
 
-  /** Tasks displayed across active views after all filters & sorting. */
-  get filteredTasks(): Task[] {
-    return filterAndSortTasks(this.tasks, this.filterState, true);
-  }
+    const colMap: Record<string, Task[]> = {};
+    const hoursMap: Record<string, number> = {};
+    for (const col of this.columns) {
+      colMap[col.status] = [];
+    }
+    for (const task of this.filteredTasks) {
+      const colStatus = resolveDisplayColumn(task);
+      if (!colMap[colStatus]) colMap[colStatus] = [];
+      colMap[colStatus].push(task);
+    }
+    for (const col of this.columns) {
+      hoursMap[col.status] = sumEstimatedHours(colMap[col.status] || []);
+    }
+    this.columnTasksMap = colMap;
+    this.columnEstHoursMap = hoursMap;
 
-  get swimlanes(): SwimlaneGroup[] {
-    return buildSwimlanes(this.filteredTasks, this.swimlaneBy);
-  }
+    const laneColMap: Record<string, Record<string, Task[]>> = {};
+    const laneHours: Record<string, number> = {};
+    for (const lane of this.swimlanes) {
+      const bucket: Record<string, Task[]> = {};
+      for (const col of this.columns) bucket[col.status] = [];
+      for (const t of lane.tasks) {
+        const colStatus = resolveDisplayColumn(t);
+        if (!bucket[colStatus]) bucket[colStatus] = [];
+        bucket[colStatus].push(t);
+      }
+      laneColMap[lane.key] = bucket;
+      laneHours[lane.key] = sumEstimatedHours(lane.tasks);
+    }
+    this.laneColumnTasksMap = laneColMap;
+    this.laneEstHoursMap = laneHours;
 
-  get taskStats(): Array<{
-    key: StatFilterKey; label: string; count: number; icon: string; color: string; sub: string;
-  }> {
     const scope    = this.baseFilteredTasks;
     const total    = scope.length;
     const progress = scope.filter(t => t.status === 'IN_PROGRESS').length;
     const overdue  = scope.filter(t => isTaskOverdue(t)).length;
     const done     = scope.filter(t => t.status === 'DONE').length;
     const rate     = total ? Math.round((done / total) * 100) : 0;
-    return [
+    this.taskStats = [
       { key: 'all',         label: 'Total',       count: total,    icon: 'task_alt',     color: '#1565C0', sub: 'Visible scope' },
       { key: 'in_progress', label: 'In Progress', count: progress, icon: 'pending',      color: '#0288D1', sub: 'Active work' },
       { key: 'overdue',     label: 'Overdue',     count: overdue,  icon: 'warning',      color: '#EF4444', sub: 'Past due date' },
       { key: 'done',        label: 'Completed',   count: done,     icon: 'check_circle', color: '#10B981', sub: `${rate}% completion` }
     ];
+
+    let n = 0;
+    if (this.activeInterval) n++;
+    if (this.statusFilter) n++;
+    if (this.priorityFilter) n++;
+    if (this.assigneeFilter !== '') n++;
+    if (this.simulatorFilter !== '') n++;
+    if (this.statFilter !== 'all') n++;
+    if (this.searchTerm.trim()) n++;
+    this.activeFilterCount = n;
+
+    this.exportParams = {
+      status: this.statusFilter,
+      priority: this.priorityFilter,
+      interval_type: this.activeInterval,
+      assigned_to: this.assigneeFilter,
+      simulator_id: this.simulatorFilter,
+      search: this.searchTerm
+    };
+  }
+
+  onClientFilterChange(): void {
+    this.recomputeDerivedState();
+    this.cdr.markForCheck();
+  }
+
+  clearSearch(): void {
+    this.searchTerm = '';
+    this.recomputeDerivedState();
+    this.cdr.markForCheck();
   }
 
   ngOnInit(): void {
@@ -241,17 +299,27 @@ export class TasksComponent implements OnInit, OnDestroy {
     this.dateFilter.range$.pipe(
       takeUntil(this.destroy$),
       switchMap(() => {
+        const seq = ++this.loadSeq;
         this.loading = true;
         this.cdr.markForCheck();
-        return this.fetchTasksObservable();
+        return this.fetchTasksObservable().pipe(
+          catchError(() => {
+            if (seq === this.loadSeq) {
+              this.toast.error('Failed to load tasks.');
+            }
+            return of(null);
+          })
+        );
       })
     ).subscribe({
       next: res => {
-        this.tasks = res.data.items || [];
+        if (res?.data) {
+          this.tasks = res.data.items || [];
+          this.recomputeDerivedState();
+        }
         this.loading = false;
         this.cdr.markForCheck();
-      },
-      error: () => { this.loading = false; this.cdr.markForCheck(); }
+      }
     });
 
     this.loadAllParentCandidates();
@@ -285,15 +353,23 @@ export class TasksComponent implements OnInit, OnDestroy {
   }
 
   loadTasks(): void {
+    const seq = ++this.loadSeq;
     this.loading = true;
     this.cdr.markForCheck();
     this.fetchTasksObservable().pipe(takeUntil(this.destroy$)).subscribe({
       next: res => {
-        this.tasks = res.data.items || [];
+        if (seq !== this.loadSeq) return;
+        this.tasks = res?.data?.items || [];
+        this.recomputeDerivedState();
         this.loading = false;
         this.cdr.markForCheck();
       },
-      error: () => { this.loading = false; this.cdr.markForCheck(); }
+      error: () => {
+        if (seq !== this.loadSeq) return;
+        this.loading = false;
+        this.toast.error('Failed to load tasks.');
+        this.cdr.markForCheck();
+      }
     });
   }
 
@@ -331,6 +407,8 @@ export class TasksComponent implements OnInit, OnDestroy {
     this.swimlaneBy = by;
     this.collapsedLanes = new Set<string>();
     try { localStorage.setItem(LS_SWIMLANE, by); } catch { /* noop */ }
+    this.recomputeDerivedState();
+    this.cdr.markForCheck();
   }
 
   toggleLaneCollapse(key: string): void {
@@ -342,21 +420,27 @@ export class TasksComponent implements OnInit, OnDestroy {
 
   setInterval(v: IntervalType | ''): void {
     this.activeInterval = v;
+    this.recomputeDerivedState();
     this.loadTasks();
   }
 
   onStatusFilterChange(status: string): void {
     this.statusFilter = status;
+    this.recomputeDerivedState();
     this.loadTasks();
   }
 
   toggleMyTasks(): void {
     if (!this.currentUser?.id) return;
     this.assigneeFilter = this.isMyTasksActive ? '' : this.currentUser.id;
+    this.recomputeDerivedState();
+    this.cdr.markForCheck();
   }
 
   toggleStatFilter(key: StatFilterKey): void {
     this.statFilter = (key === 'all' || this.statFilter === key) ? 'all' : key;
+    this.recomputeDerivedState();
+    this.cdr.markForCheck();
   }
 
   clearFilters(): void {
@@ -368,7 +452,9 @@ export class TasksComponent implements OnInit, OnDestroy {
     this.simulatorFilter = '';
     this.statFilter      = 'all';
     this.searchTerm      = '';
+    this.recomputeDerivedState();
     if (serverChanged) this.loadTasks();
+    else this.cdr.markForCheck();
   }
 
   setDensity(d: Density): void {
@@ -380,24 +466,25 @@ export class TasksComponent implements OnInit, OnDestroy {
     if (this.sortKey === key) this.sortAsc = !this.sortAsc;
     else { this.sortKey = key; this.sortAsc = true; }
     try { localStorage.setItem(LS_SORT, JSON.stringify({ key: this.sortKey, asc: this.sortAsc })); } catch { /* noop */ }
+    this.recomputeDerivedState();
     this.cdr.markForCheck();
   }
 
-  // ── Column / swimlane selectors ────────────────────────────────────────────
+  // ── Column / swimlane selectors (O(1) cached lookups) ──────────────────────
   getColumnTasks(colStatus: TaskStatus): Task[] {
-    return this.filteredTasks.filter(t => resolveDisplayColumn(t) === colStatus);
+    return this.columnTasksMap[colStatus] || this.emptyTasks;
   }
 
   getLaneColumnTasks(lane: SwimlaneGroup, colStatus: TaskStatus): Task[] {
-    return lane.tasks.filter(t => resolveDisplayColumn(t) === colStatus);
+    return this.laneColumnTasksMap[lane.key]?.[colStatus] || this.emptyTasks;
   }
 
   colEstHours(colStatus: TaskStatus): number {
-    return sumEstimatedHours(this.getColumnTasks(colStatus));
+    return this.columnEstHoursMap[colStatus] || 0;
   }
 
   laneEstHours(lane: SwimlaneGroup): number {
-    return sumEstimatedHours(lane.tasks);
+    return this.laneEstHoursMap[lane.key] || 0;
   }
 
   // ── Drag & drop (immutable optimistic updates) ─────────────────────────────
@@ -442,6 +529,7 @@ export class TasksComponent implements OnInit, OnDestroy {
     this.tasks = this.tasks.map(t =>
       t.id === task.id ? { ...t, ...patch, assignee: matchedAssignee } : t
     );
+    this.recomputeDerivedState();
     this.cdr.markForCheck();
 
     this.api.put<any>(`/tasks/${task.id}`, patch).pipe(takeUntil(this.destroy$)).subscribe({
@@ -449,12 +537,15 @@ export class TasksComponent implements OnInit, OnDestroy {
         const updated: Task = res.data;
         if (updated) {
           this.tasks = this.tasks.map(t => t.id === updated.id ? updated : t);
+          this.recomputeDerivedState();
         }
+        this.api.notifyNavBadgesChanged();
         this.toast.success(successMsg);
         this.cdr.markForCheck();
       },
       error: (e: any) => {
         this.tasks = prevTasks;
+        this.recomputeDerivedState();
         this.toast.error(e?.error?.message || 'Failed to update task.');
         this.cdr.markForCheck();
       }
@@ -510,9 +601,11 @@ export class TasksComponent implements OnInit, OnDestroy {
         if (created) {
           this.tasks = [created, ...this.tasks];
           this.allTasks = [created, ...this.allTasks];
+          this.recomputeDerivedState();
         }
         this.quickAddTitle = '';
         this.savingQuickAdd = false;
+        this.api.notifyNavBadgesChanged();
         this.toast.success('Task added.');
         this.cdr.markForCheck();
         setTimeout(() => this.quickAddInputs?.first?.nativeElement.focus(), 0);
@@ -627,8 +720,10 @@ export class TasksComponent implements OnInit, OnDestroy {
           this.tasks    = [saved, ...this.tasks];
           this.allTasks = [saved, ...this.allTasks];
         }
+        this.recomputeDerivedState();
         this.saving = false;
         this.closeDrawer();
+        this.api.notifyNavBadgesChanged();
         this.toast.success(isEdit ? 'Task updated.' : 'Task created.');
         this.cdr.markForCheck();
       },
@@ -643,6 +738,8 @@ export class TasksComponent implements OnInit, OnDestroy {
   onTaskMutatedFromDrawer(updated: Task): void {
     this.tasks       = this.tasks.map(t => t.id === updated.id ? { ...t, ...updated } : t);
     this.editingTask = this.editingTask?.id === updated.id ? updated : this.editingTask;
+    this.recomputeDerivedState();
+    this.api.notifyNavBadgesChanged();
     this.cdr.markForCheck();
   }
 
@@ -655,7 +752,9 @@ export class TasksComponent implements OnInit, OnDestroy {
       next: () => {
         this.tasks    = this.tasks.filter(t => t.id !== task.id);
         this.allTasks = this.allTasks.filter(t => t.id !== task.id);
+        this.recomputeDerivedState();
         if (this.editingTask?.id === task.id) this.closeDrawer();
+        this.api.notifyNavBadgesChanged();
         this.toast.success('Task deleted.');
         this.cdr.markForCheck();
       },
@@ -682,7 +781,9 @@ export class TasksComponent implements OnInit, OnDestroy {
         if (res.data) {
           this.tasks    = [res.data, ...this.tasks];
           this.allTasks = [res.data, ...this.allTasks];
+          this.recomputeDerivedState();
         }
+        this.api.notifyNavBadgesChanged();
         this.toast.success('Task duplicated.');
         this.cdr.markForCheck();
       },
@@ -705,6 +806,7 @@ export class TasksComponent implements OnInit, OnDestroy {
     this.api.patch<any>('/tasks/bulk', cmd).pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {
         this.busyBulk = false;
+        this.api.notifyNavBadgesChanged();
         this.toast.success(`Updated ${cmd.ids.length} task(s).`);
         this.loadTasks();
       },
@@ -777,6 +879,10 @@ export class TasksComponent implements OnInit, OnDestroy {
   readonly userName        = getUserDisplayName;
 
   ngOnDestroy(): void {
+    document.body.classList.remove('tasks-resizing');
+    window.removeEventListener('mousemove', this.onResizeMove);
+    window.removeEventListener('mouseup',   this.onResizeEnd);
+    this.resizeState = null;
     this.destroy$.next();
     this.destroy$.complete();
   }

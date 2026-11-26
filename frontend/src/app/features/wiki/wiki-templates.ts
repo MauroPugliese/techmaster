@@ -27,15 +27,15 @@ export const WIKI_ICON_CHOICES: string[] = [
 
 export const WIKI_TEMPLATES: WikiTemplateOption[] = [
   {
-    id: 'cae-morning-readiness-sop',
+    id: 'fstd-morning-readiness-sop',
     name: 'Morning FSTD Bay Readiness & Pre-Flight SOP',
-    description: 'Daily pre-sortie engineering verification checklist for CAE Level D Flight Simulators.',
+    description: 'Daily pre-sortie engineering verification checklist for Level D Flight Simulators.',
     icon: 'flight_takeoff',
-    badge: 'CAE SOP',
-    tags: ['FSTD', 'Pre-Flight', 'Readiness', 'CAE'],
+    badge: 'FSTD SOP',
+    tags: ['FSTD', 'Pre-Flight', 'Readiness', 'SOP'],
     content: `# Morning FSTD Bay Readiness & Pre-Flight SOP
 
-**Document ID:** CAE-SOP-FSTD-01 · **Applies to:** All Full Flight Simulators (Level D) & FTDs
+**Document ID:** SOP-FSTD-01 · **Applies to:** All Full Flight Simulators (Level D) & FTDs
 
 ## 1. Bay Safety & Power-Up Sequence
 - [ ] Verify bay doors clear, visual dome emergency stops reset, and no active **LOTO** tags present.
@@ -53,7 +53,7 @@ export const WIKI_TEMPLATES: WikiTemplateOption[] = [
 `
   },
   {
-    id: 'cae-quarterly-qtg-runbook',
+    id: 'fstd-quarterly-qtg-runbook',
     name: 'EASA CS-FSTD(A) Quarterly QTG Runbook',
     description: 'Standard procedure for executing automated & manual QTG tests across Q1–Q4 regulatory blocks.',
     icon: 'fact_check',
@@ -77,7 +77,7 @@ export const WIKI_TEMPLATES: WikiTemplateOption[] = [
 `
   },
   {
-    id: 'cae-motion-visual-loto',
+    id: 'fstd-motion-visual-loto',
     name: '6-DOF Motion & Visual LOTO Safety Procedure',
     description: 'Lockout/Tagout (LOTO) safety isolation protocol before entering motion envelope or projector gantry.',
     icon: 'security',
