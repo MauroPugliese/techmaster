@@ -43,6 +43,12 @@
     </div>
 
     <div class="sim-ws-actions" *ngIf="dossier">
+      <app-export-menu
+        [endpoint]="'simulators/' + dossier.id"
+        [filename]="'station_dossier_' + dossier.bay_code.toLowerCase()"
+        [includeDateRange]="false"
+        label="Export Dossier">
+      </app-export-menu>
       <a class="btn btn-secondary btn-sm" routerLink="/operations" [queryParams]="{ action: 'new', simulatorId: dossier.id }">
         <span class="btn-icon">flight_takeoff</span> Schedule Sortie
       </a>
@@ -194,6 +200,26 @@
             </div>
             <span class="sim-cert-pill" [ngClass]="'tone-' + certBadge(d).tone">{{ certBadge(d).label }}</span>
           </div>
+
+          <!-- Active MEL / Deferred Defects List -->
+          <div class="mel-deferred-box" *ngIf="activeMelRecords.length > 0">
+            <div class="mel-box-head">
+              <span class="mat-i">gpp_maybe</span>
+              <strong>Active MEL / Deferred Defects ({{ activeMelRecords.length }})</strong>
+            </div>
+            <div class="mel-item" *ngFor="let mel of activeMelRecords">
+              <div class="mel-item-top">
+                <span class="mel-cat-badge">{{ mel.mel_category }}</span>
+                <span class="mel-title">{{ mel.title }}</span>
+                <span class="mel-exp sim-num" [class.is-urgent]="mel.days_remaining !== null && mel.days_remaining <= 5">
+                  {{ mel.days_remaining !== null ? (mel.days_remaining < 0 ? 'EXPIRED' : (mel.days_remaining + 'd left')) : 'No expiry' }}
+                </span>
+              </div>
+              <a *ngIf="mel.wikiArticle" class="mel-sop-link" [routerLink]="['/wiki']" [queryParams]="{ slug: mel.wikiArticle.slug }">
+                <span class="mat-i">menu_book</span> SOP: {{ mel.wikiArticle.title }}
+              </a>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -312,9 +338,19 @@
           <h3>QTG Compliance &amp; Quarterly Qualification</h3>
           <p class="card-sub">Quarterly Objective Test Guide verification required for EASA / FAA Level D retention.</p>
         </div>
-        <button type="button" class="btn btn-primary btn-sm" (click)="showQtgForm = !showQtgForm">
-          <span class="btn-icon">add</span> Add QTG Test
-        </button>
+        <div class="sim-row-btns">
+          <button
+            type="button"
+            class="btn btn-secondary btn-sm"
+            [disabled]="cloningQtg"
+            (click)="cloneQtgToNextYear()"
+            title="Clone existing QTG tests into next calendar year as PENDING">
+            <span class="btn-icon">content_copy</span> {{ cloningQtg ? 'Cloning…' : ('Clone to ' + cloneTargetYear) }}
+          </button>
+          <button type="button" class="btn btn-primary btn-sm" (click)="showQtgForm = !showQtgForm">
+            <span class="btn-icon">add</span> Add QTG Test
+          </button>
+        </div>
       </div>
 
       <div class="qtg-quarter-strip sim-num">
@@ -411,6 +447,15 @@
                   <button type="button" class="btn btn-secondary btn-sm" (click)="setQtgStatus(q, 'PASSED')">Pass</button>
                   <button type="button" class="btn btn-ghost btn-sm" (click)="setQtgStatus(q, 'TOLERANCE_WARN')">Warn</button>
                   <button type="button" class="btn btn-ghost btn-sm" style="color:#DC2626" (click)="setQtgStatus(q, 'FAILED')">Fail</button>
+                  <button
+                    *ngIf="q.status === 'FAILED'"
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    style="color:#B91C1C;border-color:#FCA5A5;background:#FEF2F2"
+                    (click)="openWoFromFailedQtg(q)"
+                    title="Open a Corrective Maintenance Work Order for this QTG failure">
+                    <span class="btn-icon">build_circle</span> Open WO
+                  </button>
                   <button type="button" class="btn btn-ghost btn-icon-only btn-sm" (click)="deleteQtgRecord(q)">
                     <span class="btn-icon" style="color:#DC2626">delete</span>
                   </button>
@@ -494,8 +539,16 @@
           <tbody>
             <tr *ngFor="let m of d.maintenanceRecords">
               <td>
-                <div class="font-bold text-sm">{{ m.title }}</div>
-                <div class="text-xs text-muted">{{ m.subsystem_code || m.type }}</div>
+                <div class="font-bold text-sm">
+                  {{ m.title }}
+                  <span *ngIf="m.mel_category && m.mel_category !== 'NONE'" class="mel-inline-pill">{{ m.mel_category }}</span>
+                </div>
+                <div class="text-xs text-muted">
+                  {{ m.subsystem_code || m.type }}
+                  <a *ngIf="m.wikiArticle" class="mel-sop-inline" [routerLink]="['/wiki']" [queryParams]="{ slug: m.wikiArticle.slug }">
+                    · SOP: {{ m.wikiArticle.title }}
+                  </a>
+                </div>
               </td>
               <td>
                 <span class="badge" [ngClass]="m.severity === 'AOG' ? 'badge-cancelled' : (m.severity === 'DEGRADED' ? 'badge-on-hold' : 'badge-in-progress')">

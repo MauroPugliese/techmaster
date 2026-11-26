@@ -68,7 +68,14 @@
           </span>
         </td>
         <td>
-          <div class="wh-item-name">{{item.name}}</div>
+          <div class="wh-item-name">
+            {{item.name}}
+            <span class="badge"
+                  *ngIf="item.on_order_qty && item.on_order_qty > 0"
+                  style="margin-left:6px;background:#E0F2FE;color:#0369A1;font-size:0.68rem">
+              +{{item.on_order_qty}} On Order<ng-container *ngIf="item.expected_delivery_date"> · ETA {{item.expected_delivery_date | date:'dd MMM'}}</ng-container>
+            </span>
+          </div>
           <div class="wh-subtext">
             {{item.sku}}
             <ng-container *ngIf="item.location"> · {{item.location.code}} ({{item.location.name}})</ng-container>
@@ -85,6 +92,16 @@
         <td class="wh-col-num wh-primary-val">{{money(item.reorder_metrics.estimated_cost)}}</td>
         <td class="wh-col-actions" (click)="$event.stopPropagation()">
           <div class="wh-row-actions">
+            <button *ngIf="item.on_order_qty && item.on_order_qty > 0"
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    style="border-color:#0288D1;color:#0369A1"
+                    [disabled]="receivingPoIds.has(item.id)"
+                    (click)="receivePo(item)"
+                    title="Receive inbound PO units into stock">
+              <span class="btn-icon">inventory</span>
+              {{receivingPoIds.has(item.id) ? 'Receiving…' : ('Receive +' + item.on_order_qty)}}
+            </button>
             <button type="button" class="btn btn-primary btn-sm" (click)="quickRestock(item)">
               <span class="btn-icon">add_shopping_cart</span> Restock
             </button>
@@ -147,7 +164,14 @@
               </span>
             </td>
             <td>
-              <div class="wh-item-name">{{item.name}}</div>
+              <div class="wh-item-name">
+                {{item.name}}
+                <span class="badge"
+                      *ngIf="item.on_order_qty && item.on_order_qty > 0"
+                      style="margin-left:6px;background:#E0F2FE;color:#0369A1;font-size:0.68rem">
+                  +{{item.on_order_qty}} On Order<ng-container *ngIf="item.expected_delivery_date"> · ETA {{item.expected_delivery_date | date:'dd MMM'}}</ng-container>
+                </span>
+              </div>
               <div class="wh-subtext">
                 {{item.sku}}
                 <ng-container *ngIf="item.location"> · {{item.location.code}} ({{item.location.name}})</ng-container>
@@ -163,6 +187,16 @@
             <td class="wh-col-num wh-primary-val">{{money(item.reorder_metrics.estimated_cost)}}</td>
             <td class="wh-col-actions" (click)="$event.stopPropagation()">
               <div class="wh-row-actions">
+                <button *ngIf="item.on_order_qty && item.on_order_qty > 0"
+                        type="button"
+                        class="btn btn-secondary btn-sm"
+                        style="border-color:#0288D1;color:#0369A1"
+                        [disabled]="receivingPoIds.has(item.id)"
+                        (click)="receivePo(item)"
+                        title="Receive inbound PO units into stock">
+                  <span class="btn-icon">inventory</span>
+                  {{receivingPoIds.has(item.id) ? 'Receiving…' : ('Receive +' + item.on_order_qty)}}
+                </button>
                 <button type="button" class="btn btn-primary btn-sm" (click)="quickRestock(item)">
                   <span class="btn-icon">add_shopping_cart</span> Restock
                 </button>

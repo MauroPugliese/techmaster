@@ -163,6 +163,15 @@
                 title="Mark Failed">
                 Fail
               </button>
+              <button
+                *ngIf="r.status === 'FAILED'"
+                type="button"
+                class="btn btn-secondary btn-sm"
+                style="color:#B91C1C;border-color:#FCA5A5;background:#FEF2F2"
+                (click)="createWorkOrderRequested.emit(r)"
+                title="Open Corrective Maintenance Work Order from Failed QTG">
+                Open WO
+              </button>
             </div>
           </td>
         </tr>

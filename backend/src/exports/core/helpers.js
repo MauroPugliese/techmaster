@@ -48,7 +48,14 @@ const fmtTime = (d) => {
 /** Strip HTML tags, control characters, and collapse whitespace. */
 const stripControlChars = (s = '') => String(s ?? '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
 
-const cleanText = (s = '') => stripControlChars(s).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+const cleanText = (s = '', maxLen = 0) => {
+  const cleaned = stripControlChars(s).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const limit = Number(maxLen);
+  if (Number.isFinite(limit) && limit > 3 && cleaned.length > limit) {
+    return `${cleaned.slice(0, limit - 1).trimEnd()}…`;
+  }
+  return cleaned;
+};
 
 /** Coerce a value to finite Number or fallback. */
 const toNumber = (v, fallback = 0) => {
@@ -119,14 +126,41 @@ const dash = (v) => (v === null || v === undefined || v === '' ? '—' : v);
 const fullName = (u, fallback = '—') =>
   (u && (u.first_name || u.last_name)) ? `${u.first_name || ''} ${u.last_name || ''}`.trim() : fallback;
 
-/** Build a safe download filename: slug + date stamp, no extension. */
-const buildFilename = (base) => {
+/** Build a safe download filename: slug + optional period tag + date stamp, no extension. */
+const buildFilename = (base, periodTag = '') => {
   const stamp = new Date().toISOString().slice(0, 10);
-  const slug = String(base || 'report')
+  const sanitize = (v) => String(v || '')
     .replace(/[^a-zA-Z0-9_-]+/g, '_')
     .replace(/_+/g, '_')
     .replace(/^_|_$/g, '');
-  return `SMaRT_${slug}_${stamp}`;
+  const slug = sanitize(base) || 'report';
+  const tag = sanitize(periodTag);
+  return tag ? `SMaRT_${slug}_${tag}` : `SMaRT_${slug}_${stamp}`;
+};
+
+/** Resolve per-column badge tone (`<col.key>_tone`), falling back to `_badgeTone` and `_flag`. */
+const resolveBadgeTone = (row, col) => {
+  if (!row) return 'neutral';
+  if (col?.key && row[`${col.key}_tone`]) return row[`${col.key}_tone`];
+  if (row._badgeTone) return row._badgeTone;
+  if (row._flag) return row._flag;
+  return 'neutral';
+};
+
+/** Normalize module filters from either `[{ label, value }]` or `{ Label: Value }` object. */
+const normalizeFilters = (raw) => {
+  if (!raw) return [];
+  if (Array.isArray(raw)) {
+    return raw
+      .filter((f) => f && f.label !== undefined && f.value !== undefined && f.value !== null && f.value !== '')
+      .map((f) => ({ label: String(f.label), value: String(f.value) }));
+  }
+  if (typeof raw === 'object') {
+    return Object.entries(raw)
+      .filter(([k, v]) => k && v !== undefined && v !== null && v !== '')
+      .map(([k, v]) => ({ label: String(k), value: String(v) }));
+  }
+  return [];
 };
 
 /** Force a value into a printable string for table cells. */
@@ -212,20 +246,125 @@ const computeColumnTotals = (table) => {
   return totalsRow;
 };
 
+const toIsoYmdUtc = (dt) => {
+  if (!dt || Number.isNaN(dt.getTime())) return null;
+  return dt.toISOString().slice(0, 10);
+};
+
+const parseCalendarDateBound = (v, endOfDay) => {
+  if (!v) return null;
+  const raw = String(v).trim();
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(raw)
+    ? new Date(`${raw}T${endOfDay ? '23:59:59.999Z' : '00:00:00.000Z'}`)
+    : new Date(raw);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
 /**
- * Parse an inclusive date range from request query (`from` / `to`).
- * Accepts ISO strings or YYYY-MM-DD; returns { from, to } as Date|null.
+ * Resolve requested report periodicity (`weekly` | `monthly` | `custom` | `daily` | `all`)
+ * and inclusive UTC date bounds `{ from, to, fromYmd, toYmd, type, label, rangeText, filenameTag }`.
+ */
+const resolveReportPeriod = (query = {}) => {
+  const rawType = String(query.report_period || query.period_type || '').trim().toLowerCase();
+  let from = parseCalendarDateBound(query.from, false);
+  let to = parseCalendarDateBound(query.to, true);
+
+  const anchorDate = parseCalendarDateBound(query.date, false) || new Date();
+  const anchorY = anchorDate.getUTCFullYear();
+  const anchorM = anchorDate.getUTCMonth();
+  const anchorD = anchorDate.getUTCDate();
+
+  let type = 'all';
+  if (rawType === 'weekly' || rawType === 'week') {
+    type = 'weekly';
+    if (!from && !to) {
+      const dow = anchorDate.getUTCDay(); // 0=Sun..6=Sat
+      const mondayOffset = dow === 0 ? -6 : 1 - dow;
+      from = new Date(Date.UTC(anchorY, anchorM, anchorD + mondayOffset, 0, 0, 0, 0));
+      to = new Date(Date.UTC(anchorY, anchorM, anchorD + mondayOffset + 6, 23, 59, 59, 999));
+    } else if (from && !to) {
+      to = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate() + 6, 23, 59, 59, 999));
+    } else if (!from && to) {
+      from = new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate() - 6, 0, 0, 0, 0));
+    }
+  } else if (rawType === 'monthly' || rawType === 'month') {
+    type = 'monthly';
+    if (!from && !to) {
+      from = new Date(Date.UTC(anchorY, anchorM, 1, 0, 0, 0, 0));
+      to = new Date(Date.UTC(anchorY, anchorM + 1, 0, 23, 59, 59, 999));
+    } else if (from && !to) {
+      to = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth() + 1, 0, 23, 59, 59, 999));
+    } else if (!from && to) {
+      from = new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), 1, 0, 0, 0, 0));
+    }
+  } else if (rawType === 'daily' || rawType === 'day') {
+    type = 'daily';
+    if (!from && !to) {
+      from = new Date(Date.UTC(anchorY, anchorM, anchorD, 0, 0, 0, 0));
+      to = new Date(Date.UTC(anchorY, anchorM, anchorD, 23, 59, 59, 999));
+    }
+  } else if (rawType === 'custom' || from || to) {
+    type = (from || to) ? 'custom' : 'all';
+  }
+
+  // Ensure from <= to if swapped
+  if (from && to && from.getTime() > to.getTime()) {
+    const tmpFrom = parseCalendarDateBound(toIsoYmdUtc(to), false);
+    const tmpTo = parseCalendarDateBound(toIsoYmdUtc(from), true);
+    from = tmpFrom;
+    to = tmpTo;
+  }
+
+  const fromYmd = toIsoYmdUtc(from);
+  const toYmd = toIsoYmdUtc(to);
+  const labelMap = {
+    weekly: 'Weekly Report',
+    monthly: 'Monthly Report',
+    custom: 'Custom Range Report',
+    daily: 'Daily Report',
+    all: 'Standard Report'
+  };
+  const rangeText = rangeLabel({ from, to });
+
+  let filenameTag = '';
+  if (type === 'weekly' && fromYmd && toYmd) {
+    filenameTag = `weekly_${fromYmd}_to_${toYmd}`;
+  } else if (type === 'monthly' && fromYmd) {
+    filenameTag = `monthly_${fromYmd.slice(0, 7)}`;
+  } else if (type === 'daily' && fromYmd) {
+    filenameTag = `daily_${fromYmd}`;
+  } else if (type === 'custom') {
+    filenameTag = `custom_${fromYmd || 'start'}_to_${toYmd || 'now'}`;
+  }
+
+  return {
+    type,
+    label: labelMap[type] || 'Standard Report',
+    from,
+    to,
+    fromYmd,
+    toYmd,
+    rangeText,
+    filenameTag,
+    isMultiDay: Boolean(fromYmd && toYmd && fromYmd !== toYmd)
+  };
+};
+
+/**
+ * Parse an inclusive date range from request query (`report_period` / `from` / `to`).
+ * Accepts ISO strings or YYYY-MM-DD; returns { from, to, periodType, periodLabel, fromYmd, toYmd }.
  */
 const parseRange = (query = {}) => {
-  const parse = (v, endOfDay) => {
-    if (!v) return null;
-    const raw = String(v);
-    const d = /^\d{4}-\d{2}-\d{2}$/.test(raw)
-      ? new Date(`${raw}T${endOfDay ? '23:59:59.999Z' : '00:00:00.000Z'}`)
-      : new Date(raw);
-    return Number.isNaN(d.getTime()) ? null : d;
+  const resolved = resolveReportPeriod(query);
+  return {
+    from: resolved.from,
+    to: resolved.to,
+    fromYmd: resolved.fromYmd,
+    toYmd: resolved.toYmd,
+    periodType: resolved.type,
+    periodLabel: resolved.label,
+    isMultiDay: resolved.isMultiDay
   };
-  return { from: parse(query.from, false), to: parse(query.to, true) };
 };
 
 /** Human label for an active date range used in the document filter block. */
@@ -259,6 +398,9 @@ module.exports = {
   formatCell,
   computeColumnTotals,
   buildFilename,
+  resolveBadgeTone,
+  normalizeFilters,
+  resolveReportPeriod,
   parseRange,
   rangeLabel
 };

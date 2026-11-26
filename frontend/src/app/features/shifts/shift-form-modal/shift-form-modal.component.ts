@@ -29,6 +29,7 @@ import {
   ShiftType,
 } from '../../../core/models/interfaces';
 import { DateTimePickerComponent } from '../../../shared/components/datetime-picker/datetime-picker.component';
+import { TimePickerComponent } from '../../../shared/components/time-picker/time-picker.component';
 import { formatLocalYmd } from '../../../shared/components/datetime-picker/datetime-picker.utils';
 import { DropdownComponent, DropdownOptionComponent } from '../../../shared/components/dropdown/dropdown.component';
 import {
@@ -57,6 +58,7 @@ export type DateSelectionMode = 'single' | 'weekdays' | 'range';
     FormsModule,
     DatePipe,
     DateTimePickerComponent,
+    TimePickerComponent,
     DropdownComponent,
     DropdownOptionComponent,
   ],

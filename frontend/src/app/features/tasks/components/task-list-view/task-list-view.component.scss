@@ -62,21 +62,20 @@
   gap: 8px;
 }
 
-.bulk-select {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 6px;
-  padding: 5px 10px;
-  font-family: var(--font-sans);
+.bulk-dropdown {
+  min-width: 144px;
   font-size: 0.78rem;
-  font-weight: 600;
-  cursor: pointer;
+}
 
-  option {
-    background: var(--blue-900);
-    color: #fff;
-  }
+.cell-dropdown {
+  min-width: 118px;
+  max-width: 158px;
+  font-size: 0.78rem;
+}
+
+.cell-dropdown.assignee-select {
+  min-width: 132px;
+  max-width: 180px;
 }
 
 .btn-bulk-danger {

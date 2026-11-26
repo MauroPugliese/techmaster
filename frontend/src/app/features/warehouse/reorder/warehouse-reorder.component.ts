@@ -35,6 +35,7 @@ export class WarehouseReorderComponent implements OnInit, OnChanges {
   @Input() refreshTick = 0;
   @Output() quickRestockRequested = new EventEmitter<{ item: InventoryItem; quantity: number }>();
   @Output() detailRequested = new EventEmitter<InventoryItem>();
+  @Output() mutated = new EventEmitter<void>();
 
   private initialized = false;
   loading = true;
@@ -52,6 +53,7 @@ export class WarehouseReorderComponent implements OnInit, OnChanges {
 
   creatingTaskIds = new Set<number>();
   createdTaskIds = new Set<number>();
+  receivingPoIds = new Set<number>();
 
   constructor(
     private api: ApiService,
@@ -154,6 +156,34 @@ export class WarehouseReorderComponent implements OnInit, OnChanges {
     this.quickRestockRequested.emit({
       item,
       quantity: Math.max(1, item.reorder_metrics.deficit || 1)
+    });
+  }
+
+  receivePo(item: WarehouseReorderItem): void {
+    const qty = Math.max(0, Math.floor(Number(item.on_order_qty || 0)));
+    if (qty <= 0 || this.receivingPoIds.has(item.id)) return;
+    this.receivingPoIds.add(item.id);
+    this.cdr.markForCheck();
+
+    this.api.post<any>(`/warehouse/${item.id}/movement`, {
+      type: 'IN',
+      quantity: qty,
+      reference: 'PO-RECEIPT',
+      reason: `Received inbound PO (+${qty} ${item.unit || 'pcs'}) via Reorder Planner`,
+      clear_on_order: true
+    }).subscribe({
+      next: () => {
+        this.receivingPoIds.delete(item.id);
+        this.toast.success(`Received +${qty} ${item.unit || 'pcs'} of ${item.sku} into stock.`);
+        this.loadQueue();
+        this.mutated.emit();
+        this.cdr.markForCheck();
+      },
+      error: (e: any) => {
+        this.receivingPoIds.delete(item.id);
+        this.toast.error(e?.error?.message || 'Failed to receive PO.');
+        this.cdr.markForCheck();
+      }
     });
   }
 

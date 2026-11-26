@@ -40,6 +40,106 @@
   gap: 10px;
 }
 
+.an-cadence-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+}
+
+.an-cadence-left {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.an-cadence-lbl {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--blue-800);
+}
+
+.an-cadence-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.an-cadence-window {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--blue-950);
+  min-width: 170px;
+  text-align: center;
+}
+
+.an-cadence-custom {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.an-cadence-date-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+
+  app-datetime-picker {
+    width: 148px;
+  }
+}
+
+.an-cadence-sub {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.an-card-scope {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.an-scope-lbl {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.an-scope-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.an-scope-dd {
+  flex: 1;
+  min-width: 0;
+}
+
+.an-scope-year {
+  width: 102px;
+  flex-shrink: 0;
+}
+
 .an-search-wrap {
   position: relative;
   flex: 1 1 230px;

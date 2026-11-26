@@ -13,9 +13,9 @@ const router = require('express').Router();
 const { authenticate } = require('../middleware/auth.middleware');
 const { render } = require('../exports/core/export.service');
 const { streamDailyTemplateExport } = require('../exports/core/planned-daily-template.service');
-const { fullName } = require('../exports/core/helpers');
+const { fullName, normalizeFilters, resolveReportPeriod } = require('../exports/core/helpers');
 const { COMPANY } = require('../exports/core/branding');
-const { MODULES, wiki } = require('../exports/modules');
+const { MODULES, wiki, simulators } = require('../exports/modules');
 
 /** Ensure the current user may export the given module. Sends 403 if not. */
 const ensureRole = (mod, req, res) => {
@@ -26,16 +26,28 @@ const ensureRole = (mod, req, res) => {
   return false;
 };
 
-/** Compose a full ReportSpec v3 from a module build result and stream it. */
+/** Compose a full ReportSpec v4 from a module build result and stream it. */
 const composeAndRender = async (mod, built, req, res) => {
   if (built === null) {
     return res.status(404).json({ success: false, message: 'Resource not found' });
   }
+  const periodInfo = resolveReportPeriod(req.query || {});
+  const baseFilters = normalizeFilters(built.filters);
+  const hasPeriodEntry = baseFilters.some((f) => /period|window|date|range|cadence/i.test(f.label));
+  const mergedFilters = periodInfo.type !== 'all'
+    ? [
+        { label: 'Report Type', value: periodInfo.label },
+        ...(!hasPeriodEntry ? [{ label: 'Reporting Window', value: periodInfo.rangeText }] : []),
+        ...baseFilters
+      ]
+    : baseFilters;
+
+  const baseTitle = built.title || mod.title;
   const spec = {
     moduleKey: built.moduleKey || mod.key,
     docCode: built.docCode || mod.docCode,
     theme: built.theme || mod.theme || mod.key,
-    title: built.title || mod.title,
+    title: baseTitle,
     subtitle: built.subtitle !== undefined ? built.subtitle : mod.subtitle,
     category: built.category || mod.category || 'OPERATIONS INTELLIGENCE',
     orientation: built.orientation || mod.orientation || 'portrait',
@@ -43,8 +55,9 @@ const composeAndRender = async (mod, built, req, res) => {
     meta: {
       generatedBy: fullName(req.user, req.user?.username || 'System'),
       generatedAt: new Date(),
+      period: periodInfo,
       confidentiality: built.confidentiality || COMPANY.confidentiality,
-      filters: built.filters || []
+      filters: mergedFilters
     },
     executiveBrief: built.executiveBrief || '',
     coverHighlights: built.coverHighlights || [],
@@ -66,6 +79,15 @@ router.get('/wiki/:id', authenticate, async (req, res, next) => {
     if (!ensureRole(wiki, req, res)) return undefined;
     const built = await wiki.buildArticle(req);
     return await composeAndRender(wiki, built, req, res);
+  } catch (err) { return next(err); }
+});
+
+// ── Single Simulator / Test Place / IOS Station Dossier & Annual MNT Records ─
+router.get('/simulators/:id', authenticate, async (req, res, next) => {
+  try {
+    if (!ensureRole(simulators, req, res)) return undefined;
+    const built = await simulators.buildSingleStation(req);
+    return await composeAndRender(simulators, built, req, res);
   } catch (err) { return next(err); }
 });
 

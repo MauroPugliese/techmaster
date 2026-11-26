@@ -6,7 +6,7 @@
       <div>
         <h3>Executive Report Hub</h3>
         <p class="an-num">
-          Official vector PDF, Excel (with formulas), Word, and PowerPoint decks · Active date filter: {{dateLabel}}
+          Official vector PDF, Excel (with formulas), Word, and PowerPoint decks · Active scope: <strong>{{cadenceWindowLabel}}</strong>
         </p>
       </div>
 
@@ -16,6 +16,62 @@
               (click)="exportJsonRequested.emit()">
         <span class="btn-icon">data_object</span> Raw Dataset JSON
       </button>
+    </div>
+
+    <!-- ── Universal Report Periodicity Bar (Weekly / Monthly / Custom) ─── -->
+    <div class="an-cadence-bar">
+      <div class="an-cadence-left">
+        <span class="an-cadence-lbl">Report Period</span>
+        <div class="an-seg-group" role="radiogroup" aria-label="Report period cadence">
+          <button type="button" class="an-seg-btn" [class.active]="cadence === 'global'" (click)="setCadence('global')">
+            Global Scope
+          </button>
+          <button type="button" class="an-seg-btn" [class.active]="cadence === 'weekly'" (click)="setCadence('weekly')">
+            Weekly Report
+          </button>
+          <button type="button" class="an-seg-btn" [class.active]="cadence === 'monthly'" (click)="setCadence('monthly')">
+            Monthly Report
+          </button>
+          <button type="button" class="an-seg-btn" [class.active]="cadence === 'custom'" (click)="setCadence('custom')">
+            Custom Range
+          </button>
+        </div>
+      </div>
+
+      <div class="an-cadence-nav" *ngIf="cadence === 'weekly' || cadence === 'monthly'">
+        <button type="button" class="btn btn-ghost btn-icon-only btn-sm" (click)="stepCadence(-1)"
+                [title]="cadence === 'weekly' ? 'Previous week' : 'Previous month'">
+          <span class="btn-icon">chevron_left</span>
+        </button>
+        <span class="an-cadence-window an-num">{{cadenceWindowLabel}}</span>
+        <button type="button" class="btn btn-ghost btn-icon-only btn-sm" (click)="stepCadence(1)"
+                [title]="cadence === 'weekly' ? 'Next week' : 'Next month'">
+          <span class="btn-icon">chevron_right</span>
+        </button>
+      </div>
+
+      <div class="an-cadence-custom" *ngIf="cadence === 'custom'">
+        <div class="an-cadence-date-field">
+          <span class="an-cadence-sub">From</span>
+          <app-datetime-picker
+            class="form-control"
+            mode="date"
+            [clearable]="false"
+            ariaLabel="Custom report start date"
+            [(ngModel)]="customFrom">
+          </app-datetime-picker>
+        </div>
+        <div class="an-cadence-date-field">
+          <span class="an-cadence-sub">To</span>
+          <app-datetime-picker
+            class="form-control"
+            mode="date"
+            [clearable]="false"
+            ariaLabel="Custom report end date"
+            [(ngModel)]="customTo">
+          </app-datetime-picker>
+        </div>
+      </div>
     </div>
 
     <div class="an-reports-filters">
@@ -63,6 +119,37 @@
       <div class="an-report-body">
         <h4>{{mod.title}}</h4>
         <p>{{mod.subtitle}}</p>
+
+        <!-- Contextual Scope Selector for Daily Station Operations -->
+        <div class="an-card-scope" *ngIf="mod.key === 'daily-station-ops'">
+          <label class="an-scope-lbl">Station Scope</label>
+          <app-dropdown class="form-control an-scope-dd" [(ngModel)]="dailyOpsStationKind" ariaLabel="Station scope">
+            <app-dropdown-option value="ALL">All Test Places &amp; IOS Consoles</app-dropdown-option>
+            <app-dropdown-option value="TEST_PLACE">Test Places Only</app-dropdown-option>
+            <app-dropdown-option value="IOS_CONSOLE">IOS Consoles Only</app-dropdown-option>
+          </app-dropdown>
+        </div>
+
+        <!-- Contextual Scope Selector for Flight Simulators Fleet / Single Dossier -->
+        <div class="an-card-scope" *ngIf="mod.key === 'simulators' && simulators.length > 0">
+          <label class="an-scope-lbl">Fleet / Station Dossier</label>
+          <div class="an-scope-row">
+            <app-dropdown class="form-control an-scope-dd" [(ngModel)]="selectedSimulatorScope" ariaLabel="Simulator scope">
+              <app-dropdown-option [ngValue]="'ALL'">All Fleet ({{simulators.length}} stations)</app-dropdown-option>
+              <app-dropdown-option *ngFor="let s of simulators" [ngValue]="s.id">
+                {{s.bay_code || s.code}} · {{s.name}}
+              </app-dropdown-option>
+            </app-dropdown>
+            <app-dropdown *ngIf="selectedSimulatorScope !== 'ALL' && cadence === 'global'"
+                          class="form-control an-scope-year"
+                          [(ngModel)]="selectedSimulatorYear"
+                          ariaLabel="Dossier year">
+              <app-dropdown-option *ngFor="let yr of yearOptions" [ngValue]="yr">
+                {{yr === 'ALL' ? 'All Years' : yr}}
+              </app-dropdown-option>
+            </app-dropdown>
+          </div>
+        </div>
       </div>
 
       <div class="an-report-actions">

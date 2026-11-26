@@ -8,11 +8,13 @@ const {
   StockMovement,
   ItemCategory,
   WarehouseLocation,
+  Simulator,
   User,
   sequelize,
   Notification,
   Task
 } = require('../models');
+const { broadcastOperationalAlert } = require('../services/proactive-alerts.service');
 const { parseDateFilter } = require('../middleware/error.middleware');
 const {
   validateInventoryItem,
@@ -31,7 +33,8 @@ const {
 
 const ITEM_INCLUDES = [
   { model: ItemCategory, as: 'category', attributes: ['id', 'name', 'color'] },
-  { model: WarehouseLocation, as: 'location', attributes: ['id', 'name', 'code', 'is_active'] }
+  { model: WarehouseLocation, as: 'location', attributes: ['id', 'name', 'code', 'is_active'] },
+  { model: Simulator, as: 'installedSimulator', attributes: ['id', 'bay_code', 'code', 'name'], required: false }
 ];
 
 // ── Static routes MUST stay before /:id ──────────────────────────────────────
@@ -89,14 +92,22 @@ router.get('/summary', async (req, res, next) => {
 
     const summary = summarizeInventoryRows(items.map(i => i.get({ plain: true })));
     const aogCriticalCount = items.filter(i => Boolean(i.aog_critical)).length;
+    const aogCriticalLowCount = items.filter(
+      i => Boolean(i.aog_critical) && (Number(i.quantity) || 0) <= Math.max(Number(i.reorder_point) || 0, Number(i.min_stock) || 0)
+    ).length;
     const rotatableCount = items.filter(i => i.part_classification === 'ROTATABLE_LRU').length;
+    const inRmaCount = items.filter(i => i.lru_status === 'IN_REPAIR_RMA' || i.lru_status === 'UNSERVICEABLE').length;
+    const onOrderUnits = items.reduce((acc, i) => acc + (Number(i.on_order_qty) || 0), 0);
     const unserviceableUnits = items.reduce((acc, i) => acc + (Number(i.unserviceable_qty) || 0), 0);
     res.json({
       success: true,
       data: {
         ...summary,
         aog_critical_count: aogCriticalCount,
+        aog_critical_low_count: aogCriticalLowCount,
         rotatable_count: rotatableCount,
+        in_rma_count: inRmaCount,
+        on_order_units: onOrderUnits,
         unserviceable_units: unserviceableUnits,
         movements_7d: movements7d
       }
@@ -170,6 +181,7 @@ router.get('/movements', parseDateFilter, async (req, res, next) => {
         where: listWhere,
         include: [
           { model: InventoryItem, as: 'item', attributes: ['id', 'sku', 'name', 'unit', 'is_active'], paranoid: false },
+          { model: Simulator, as: 'simulator', attributes: ['id', 'bay_code', 'code', 'name'], required: false },
           { model: User, as: 'user', attributes: ['id', 'first_name', 'last_name', 'username'] }
         ],
         order: [['movement_date', 'DESC'], ['id', 'DESC']],
@@ -306,6 +318,8 @@ router.get('/', async (req, res, next) => {
       stock_status,
       aog_critical,
       part_classification,
+      subsystem_code,
+      lru_status,
       page = 1,
       limit = 20,
       search,
@@ -323,6 +337,12 @@ router.get('/', async (req, res, next) => {
     if (aog_critical === 'true') where.aog_critical = true;
     if (part_classification && String(part_classification).trim()) {
       where.part_classification = String(part_classification).trim().toUpperCase();
+    }
+    if (subsystem_code && String(subsystem_code).trim()) {
+      where.subsystem_code = String(subsystem_code).trim().toUpperCase();
+    }
+    if (lru_status && String(lru_status).trim()) {
+      where.lru_status = String(lru_status).trim().toUpperCase();
     }
     const andConditions = [];
 
@@ -347,6 +367,8 @@ router.get('/', async (req, res, next) => {
           { name: { [Op.like]: q } },
           { sku: { [Op.like]: q } },
           { part_number: { [Op.like]: q } },
+          { serial_number: { [Op.like]: q } },
+          { rma_reference: { [Op.like]: q } },
           { supplier: { [Op.like]: q } }
         ]
       });
@@ -480,6 +502,8 @@ router.post('/:id/movement', authenticate, validateIdParam, validateStockMovemen
     const movement = await StockMovement.create({
       item_id: item.id,
       user_id: req.user.id,
+      simulator_id: req.body?.simulator_id && Number.isInteger(Number(req.body.simulator_id)) ? Number(req.body.simulator_id) : null,
+      maintenance_record_id: req.body?.maintenance_record_id && Number.isInteger(Number(req.body.maintenance_record_id)) ? Number(req.body.maintenance_record_id) : null,
       type,
       quantity: transition.stored_quantity,
       quantity_before: transition.qty_before,
@@ -492,6 +516,13 @@ router.post('/:id/movement', authenticate, validateIdParam, validateStockMovemen
     const itemUpdate = { quantity: transition.qty_after };
     if (transition.next_location_id !== undefined) {
       itemUpdate.location_id = transition.next_location_id;
+    }
+    if (req.body?.clear_on_order && type === 'IN') {
+      const remainingOnOrder = Math.max(0, (Number(item.on_order_qty) || 0) - transition.stored_quantity);
+      itemUpdate.on_order_qty = remainingOnOrder;
+      if (remainingOnOrder === 0) {
+        itemUpdate.expected_delivery_date = null;
+      }
     }
     await item.update(itemUpdate, { transaction });
 
@@ -546,6 +577,17 @@ router.post('/:id/movement', authenticate, validateIdParam, validateStockMovemen
       } catch (errCheck) {
         console.error('Failed to run automated low-stock warnings:', errCheck);
       }
+    }
+
+    if (item.aog_critical && (crossedMin || crossedReorder || transition.qty_after <= 0)) {
+      await broadcastOperationalAlert({
+        req,
+        type: 'AOG_SPARE_LOW',
+        title: `AOG Critical Spare Alert: ${item.sku}`,
+        body: `"${item.name}" is at ${transition.qty_after} ${item.unit || 'pcs'} (threshold ${Math.max(minStock, reorderPoint)}). Expedite procurement.`,
+        link: `/warehouse?search=${encodeURIComponent(item.sku)}`,
+        excludeUserId: req.user.id
+      });
     }
 
     res.status(201).json({
@@ -619,7 +661,10 @@ router.get('/:id/movements', validateIdParam, parseDateFilter, async (req, res, 
       where,
       order: [['movement_date', 'DESC'], ['id', 'DESC']],
       limit,
-      include: [{ model: User, as: 'user', attributes: ['id', 'first_name', 'last_name', 'username'] }]
+      include: [
+        { model: Simulator, as: 'simulator', attributes: ['id', 'bay_code', 'code', 'name'], required: false },
+        { model: User, as: 'user', attributes: ['id', 'first_name', 'last_name', 'username'] }
+      ]
     });
     res.json({ success: true, data: movements });
   } catch (err) { next(err); }

@@ -11,6 +11,7 @@ import { ApiService } from '../../../core/services/services';
 import { ToastService } from '../../../core/services/toast.service';
 import { ConfirmService } from '../../../core/services/confirm.service';
 import { DropdownComponent, DropdownOptionComponent } from '../../../shared/components/dropdown/dropdown.component';
+import { TimePickerComponent } from '../../../shared/components/time-picker/time-picker.component';
 import {
   AdminTab,
   COLOR_SWATCHES,
@@ -29,7 +30,7 @@ export type CatalogTab =
 @Component({
   selector: 'app-admin-catalogs',
   standalone: true,
-  imports: [CommonModule, FormsModule, DropdownComponent, DropdownOptionComponent],
+  imports: [CommonModule, FormsModule, DropdownComponent, DropdownOptionComponent, TimePickerComponent],
   templateUrl: './admin-catalogs.component.html',
   styleUrls: ['./admin-catalogs.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,

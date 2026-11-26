@@ -68,6 +68,8 @@ const COLORS = {
   successFg:  '#166534', successBg: '#DCFCE7', successAccent: '#10B981', successBorder: '#86EFAC',
   warningFg:  '#92400E', warningBg: '#FEF3C7', warningAccent: '#D97706', warningBorder: '#FCD34D',
   infoFg:     '#1E40AF', infoBg:    '#DBEAFE', infoAccent:    '#2969F2', infoBorder:    '#93C5FD',
+  tealFg:     '#0F766E', tealBg:    '#CCFBF1', tealAccent:    '#14B8A6', tealBorder:    '#5EEAD4',
+  purpleFg:   '#6D28D9', purpleBg:  '#EDE9FE', purpleAccent:  '#7C3AED', purpleBorder:  '#C4B5FD',
   mutedFg:    '#475569', mutedBg:   '#F1F5F9', mutedAccent:   '#64748B', mutedBorder:   '#CBD5E1'
 };
 
@@ -133,6 +135,10 @@ const toneStyle = (tone) => {
     case 'info':
     case 'primary':
       return { fg: COLORS.infoFg,    bg: COLORS.infoBg,    accent: COLORS.infoAccent,    border: COLORS.infoBorder };
+    case 'teal':
+      return { fg: COLORS.tealFg,    bg: COLORS.tealBg,    accent: COLORS.tealAccent,    border: COLORS.tealBorder };
+    case 'purple':
+      return { fg: COLORS.purpleFg,  bg: COLORS.purpleBg,  accent: COLORS.purpleAccent,  border: COLORS.purpleBorder };
     case 'muted':
     case 'neutral':
       return { fg: COLORS.mutedFg,   bg: COLORS.mutedBg,   accent: COLORS.mutedAccent,   border: COLORS.mutedBorder };

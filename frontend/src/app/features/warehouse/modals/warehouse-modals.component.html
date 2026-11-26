@@ -135,6 +135,64 @@
         </div>
       </div>
 
+      <!-- Rotable LRU / RMA & Inbound Procurement Tracking -->
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">LRU Status</label>
+          <app-dropdown class="form-control" [(ngModel)]="itemForm.lru_status" ariaLabel="LRU Status">
+            <app-dropdown-option value="SERVICEABLE">Serviceable (Ready)</app-dropdown-option>
+            <app-dropdown-option value="INSTALLED">Installed on Bay</app-dropdown-option>
+            <app-dropdown-option value="IN_REPAIR_RMA">In Repair (RMA)</app-dropdown-option>
+            <app-dropdown-option value="UNSERVICEABLE">Unserviceable (U/S)</app-dropdown-option>
+            <app-dropdown-option value="QUARANTINE">Quarantine</app-dropdown-option>
+          </app-dropdown>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Target Subsystem</label>
+          <app-dropdown class="form-control" [(ngModel)]="itemForm.subsystem_code" placeholder="— General —">
+            <app-dropdown-option value="">— General —</app-dropdown-option>
+            <app-dropdown-option *ngFor="let sub of subsystemOptions" [value]="sub.code">{{sub.label}}</app-dropdown-option>
+          </app-dropdown>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Serial Number (S/N)</label>
+          <input class="form-control" [(ngModel)]="itemForm.serial_number" placeholder="e.g. SN-2026-0891">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Installed on Simulator Bay</label>
+          <app-dropdown class="form-control" [(ngModel)]="itemForm.installed_simulator_id" placeholder="— In Warehouse —">
+            <app-dropdown-option [ngValue]="null">— In Warehouse —</app-dropdown-option>
+            <app-dropdown-option *ngFor="let s of simulators" [ngValue]="s.id">{{s.bay_code}} · {{s.name}}</app-dropdown-option>
+          </app-dropdown>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">RMA / Repair Reference</label>
+          <input class="form-control" [(ngModel)]="itemForm.rma_reference" placeholder="e.g. RMA-CAE-4410">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">On-Order Qty &amp; Expected Delivery (ETA)</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="number" class="form-control" style="width:92px" [(ngModel)]="itemForm.on_order_qty" min="0" placeholder="0" title="Units On Order">
+            <app-datetime-picker
+              class="form-control"
+              style="flex:1"
+              mode="date"
+              [(ngModel)]="itemForm.expected_delivery_date"
+              placeholder="ETA date">
+            </app-datetime-picker>
+          </div>
+        </div>
+      </div>
+
       <div class="form-group" style="margin-bottom:10px">
         <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:0.84rem;font-weight:600;color:#b91c1c">
           <input type="checkbox" [(ngModel)]="itemForm.aog_critical">
@@ -261,6 +319,16 @@
             <label class="form-label">Reference / PO</label>
             <input class="form-control" [(ngModel)]="movementForm.reference" placeholder="e.g. PO-1234">
           </div>
+        </div>
+
+        <div class="form-group" *ngIf="movementForm.type === 'OUT' || movementForm.type === 'RETURN'">
+          <label class="form-label">Simulator Bay / Station (Optional)</label>
+          <app-dropdown class="form-control" [(ngModel)]="movementForm.simulator_id" placeholder="— General / Unassigned —">
+            <app-dropdown-option [ngValue]="null">— General / Unassigned —</app-dropdown-option>
+            <app-dropdown-option *ngFor="let s of simulators" [ngValue]="s.id">
+              {{s.bay_code}} · {{s.name}}
+            </app-dropdown-option>
+          </app-dropdown>
         </div>
 
         <div class="form-group" *ngIf="movementForm.type === 'TRANSFER' && transferMode === 'external'">

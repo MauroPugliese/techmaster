@@ -284,11 +284,13 @@
     [simulators]="deckSimulators"
     [operations]="timelineOps"
     [shiftBlocks]="timelineShiftBlocks"
+    [maintenanceBlocks]="timelineMaintenanceBlocks"
     [shiftStatusBySimulator]="timelineShiftStatuses"
     [selectedDate]="timelineDate"
     (dateChange)="onTimelineDateChange($event)"
     (selectSortie)="openDetail($event)"
     (selectShiftBlock)="openShiftBlockInSimulators($event)"
+    (selectMaintenance)="openMaintenanceBlock($event)"
     (scheduleSlot)="onTimelineScheduleSlot($event)"
     (openSimulator)="openSimulatorWorkspace($event)">
   </app-sortie-bay-timeline>

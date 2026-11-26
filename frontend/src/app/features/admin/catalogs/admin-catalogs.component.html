@@ -314,11 +314,19 @@
         <div class="form-row" *ngIf="itemForm.category === 'WORK'">
           <div class="form-group">
             <label class="form-label">Start Time *</label>
-            <input type="time" class="form-control" [(ngModel)]="itemForm.start_time">
+            <app-time-picker
+              [(ngModel)]="itemForm.start_time"
+              [allowReset]="false"
+              ariaLabel="Shift Start Time">
+            </app-time-picker>
           </div>
           <div class="form-group">
             <label class="form-label">End Time *</label>
-            <input type="time" class="form-control" [(ngModel)]="itemForm.end_time">
+            <app-time-picker
+              [(ngModel)]="itemForm.end_time"
+              [allowReset]="false"
+              ariaLabel="Shift End Time">
+            </app-time-picker>
           </div>
         </div>
 

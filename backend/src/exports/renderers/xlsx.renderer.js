@@ -15,7 +15,7 @@ const {
   COMPANY, COLORS, OFFICE_FONTS, toneStyle, argb, getLogoBuffer
 } = require('../core/branding');
 const { resolveTheme } = require('../core/themes');
-const { str, toNumber, FORMAT_META } = require('../core/helpers');
+const { str, toNumber, resolveBadgeTone, FORMAT_META } = require('../core/helpers');
 
 const F_DISP = OFFICE_FONTS.xlsx.display;
 const F_BODY = OFFICE_FONTS.xlsx.body;
@@ -35,6 +35,7 @@ function extractAggregatedData(spec) {
   const scorecards = [...(spec.scorecards || [])];
   const highlights = [...(spec.highlights || [])];
   const insights = [...(spec.insights || [])];
+  const statMatrices = [];
   const charts = [...(spec.charts || [])];
   const tables = [...(spec.tables || [])];
   const documentBlocks = [...(spec.documentBlocks || [])];
@@ -74,6 +75,9 @@ function extractAggregatedData(spec) {
       if (block.type === 'alerts') {
         (block.items || []).forEach((it) => { if (!insights.some((ins) => ins.title === it.title)) insights.push(it); });
       }
+      if (block.type === 'statMatrix' && Array.isArray(block.pairs) && block.pairs.length) {
+        statMatrices.push({ title: block.title || 'Control & Specification Summary', pairs: block.pairs });
+      }
       if (block.type === 'chart' && block.chart && (!block.chart.title || !seenCharts.has(block.chart.title))) {
         charts.push(block.chart);
         if (block.chart.title) seenCharts.add(block.chart.title);
@@ -96,7 +100,7 @@ function extractAggregatedData(spec) {
     });
   });
 
-  return { executiveBrief: briefParts[0] || '', kpis, scorecards, highlights, insights, charts, tables, documentBlocks };
+  return { executiveBrief: briefParts[0] || '', kpis, scorecards, highlights, insights, statMatrices, charts, tables, documentBlocks };
 }
 
 function uniqueSheetName(wb, rawName, idx) {
@@ -406,6 +410,51 @@ function buildExecutiveSummarySheet(wb, logoId, spec, data, theme) {
     row += 1;
   }
 
+  if (data.statMatrices && data.statMatrices.length) {
+    data.statMatrices.forEach((mat) => {
+      ws.mergeCells(`A${row}:F${row}`);
+      const mh = ws.getCell(`A${row}`);
+      mh.value = String(mat.title || 'CONTROL & SPECIFICATION SUMMARY').toUpperCase();
+      mh.font = { name: F_DISP, size: 11, bold: true, color: { argb: argb(theme.primary) } };
+      ws.getRow(row).height = 22;
+      row += 1;
+
+      const pairs = mat.pairs || [];
+      for (let i = 0; i < pairs.length; i += 2) {
+        const left = pairs[i];
+        const right = pairs[i + 1];
+        const rObj = ws.getRow(row);
+        if (left) {
+          rObj.getCell(1).value = str(left[0]);
+          rObj.getCell(1).font = { name: F_DISP, size: 9.5, bold: true, color: { argb: argb(COLORS.subtle) } };
+          rObj.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(COLORS.zebra) } };
+          rObj.getCell(1).border = thinBorder();
+          ws.mergeCells(`B${row}:C${row}`);
+          rObj.getCell(2).value = str(left[1]);
+          rObj.getCell(2).font = { name: F_BODY, size: 9.5, color: { argb: argb(COLORS.ink) } };
+          rObj.getCell(2).alignment = { wrapText: true, vertical: 'middle' };
+          rObj.getCell(2).border = thinBorder();
+          rObj.getCell(3).border = thinBorder();
+        }
+        if (right) {
+          rObj.getCell(4).value = str(right[0]);
+          rObj.getCell(4).font = { name: F_DISP, size: 9.5, bold: true, color: { argb: argb(COLORS.subtle) } };
+          rObj.getCell(4).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(COLORS.zebra) } };
+          rObj.getCell(4).border = thinBorder();
+          ws.mergeCells(`E${row}:F${row}`);
+          rObj.getCell(5).value = str(right[1]);
+          rObj.getCell(5).font = { name: F_BODY, size: 9.5, color: { argb: argb(COLORS.ink) } };
+          rObj.getCell(5).alignment = { wrapText: true, vertical: 'middle' };
+          rObj.getCell(5).border = thinBorder();
+          rObj.getCell(6).border = thinBorder();
+        }
+        rObj.height = 20;
+        row += 1;
+      }
+      row += 1;
+    });
+  }
+
   if (data.charts.length) {
     ws.mergeCells(`A${row}:F${row}`);
     const cHead = ws.getCell(`A${row}`);
@@ -614,7 +663,15 @@ function renderTable(ws, table, startRow, theme) {
   });
   headerRow.height = 24;
 
-  const widths = columns.map((c) => Math.max(9, c.width || (String(c.header || '').length + 4)));
+  const maxRawWidth = columns.reduce((mx, c) => Math.max(mx, Number(c.width) || 0), 0);
+  const isPointScale = maxRawWidth > 55;
+  const widths = columns.map((c) => {
+    const rawW = Number(c.width) || 0;
+    const baseW = rawW > 0
+      ? (isPointScale ? Math.round(rawW / 5.4) : rawW)
+      : (String(c.header || '').length + 4);
+    return Math.min(42, Math.max(10, baseW));
+  });
   const dataStartRow = startRow + 1;
 
   rows.forEach((row, rIdx) => {
@@ -639,7 +696,7 @@ function renderTable(ws, table, startRow, theme) {
         cell.value = str(raw);
       }
 
-      const badgeTone = isBadge ? (toneStyle(row._badgeTone || row._flag) || toneStyle('neutral')) : null;
+      const badgeTone = isBadge ? (toneStyle(resolveBadgeTone(row, col)) || toneStyle('neutral')) : null;
       const fontColor = isBadge
         ? argb(badgeTone.fg)
         : (rowTone && isNumType ? argb(rowTone.fg) : argb(COLORS.body));
@@ -770,6 +827,7 @@ function buildWorkbook(spec) {
     data.scorecards.length ||
     data.highlights.length ||
     data.insights.length ||
+    (data.statMatrices && data.statMatrices.length) ||
     data.charts.length
   );
 

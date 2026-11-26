@@ -15,6 +15,7 @@ import {
   Simulator,
   SimulatorStationKind,
   SimulatorStatus,
+  TimelineMaintenanceBlock,
   TimelineShiftBlock
 } from '../../../core/models/interfaces';
 import { SHIFT_USAGE_STATUS_META, SIM_STATUS_META } from '../../simulators/simulator-helpers';
@@ -38,6 +39,13 @@ interface PositionedShiftBlock {
   titleLabel: string;
 }
 
+interface PositionedMaintenanceBlock {
+  block: TimelineMaintenanceBlock;
+  leftPct: number;
+  widthPct: number;
+  timeRangeLabel: string;
+}
+
 const KIND_ORDER: Record<SimulatorStationKind, number> = {
   FFS_BAY: 0,
   TEST_PLACE: 1,
@@ -56,12 +64,14 @@ export class SortieBayTimelineComponent implements OnChanges {
   @Input() simulators: Simulator[] = [];
   @Input() operations: Operation[] = [];
   @Input() shiftBlocks: TimelineShiftBlock[] = [];
+  @Input() maintenanceBlocks: TimelineMaintenanceBlock[] = [];
   @Input() shiftStatusBySimulator: Record<number, ShiftUsageStatus> = {};
   @Input() selectedDate = SortieBayTimelineComponent.todayIso();
 
   @Output() dateChange = new EventEmitter<string>();
   @Output() selectSortie = new EventEmitter<Operation>();
   @Output() selectShiftBlock = new EventEmitter<TimelineShiftBlock>();
+  @Output() selectMaintenance = new EventEmitter<TimelineMaintenanceBlock>();
   @Output() scheduleSlot = new EventEmitter<{ simulatorId: number; hour: number }>();
   @Output() openSimulator = new EventEmitter<number>();
 
@@ -70,11 +80,13 @@ export class SortieBayTimelineComponent implements OnChanges {
   sortedSimulators: Simulator[] = [];
   barsBySimulator = new Map<number, PositionedSortie[]>();
   shiftBarsBySimulator = new Map<number, PositionedShiftBlock[]>();
+  maintBarsBySimulator = new Map<number, PositionedMaintenanceBlock[]>();
   unassignedBars: PositionedSortie[] = [];
   nowLinePct: number | null = null;
   daySortieCount = 0;
   dayShiftInUseCount = 0;
   dayShiftReadyCount = 0;
+  dayMaintCount = 0;
   displayDateObj = new Date();
 
   static todayIso(): string {
@@ -141,6 +153,10 @@ export class SortieBayTimelineComponent implements OnChanges {
 
   shiftBarsForSim(simId: number): PositionedShiftBlock[] {
     return this.shiftBarsBySimulator.get(simId) || [];
+  }
+
+  maintBarsForSim(simId: number): PositionedMaintenanceBlock[] {
+    return this.maintBarsBySimulator.get(simId) || [];
   }
 
   private parseIsoDay(iso: string): Date {
@@ -275,12 +291,37 @@ export class SortieBayTimelineComponent implements OnChanges {
       shiftMap.set(simId, list);
     }
 
+    // 3. Scheduled & Planned Maintenance Windows (Amber-striped blocks)
+    const maintMap = new Map<number, PositionedMaintenanceBlock[]>();
+    let maintCount = 0;
+    for (const mb of this.maintenanceBlocks || []) {
+      const simId = Number(mb.simulator_id);
+      if (!simId || !visibleSimIds.has(simId)) continue;
+      const startMin = this.hhMmToMinutes(mb.start_time);
+      let endMin = this.hhMmToMinutes(mb.end_time);
+      if (endMin <= startMin) endMin = Math.min(24 * 60, startMin + 90);
+      const leftPct = (startMin / (24 * 60)) * 100;
+      const widthPct = Math.max(3.4, ((endMin - startMin) / (24 * 60)) * 100);
+      const posMaint: PositionedMaintenanceBlock = {
+        block: mb,
+        leftPct,
+        widthPct,
+        timeRangeLabel: `${mb.start_time}–${mb.end_time}`
+      };
+      const list = maintMap.get(simId) || [];
+      list.push(posMaint);
+      maintMap.set(simId, list);
+      maintCount += 1;
+    }
+
     this.barsBySimulator = map;
     this.shiftBarsBySimulator = shiftMap;
+    this.maintBarsBySimulator = maintMap;
     this.unassignedBars = unassigned;
     this.daySortieCount = count;
     this.dayShiftInUseCount = shiftInUse;
     this.dayShiftReadyCount = shiftReady;
+    this.dayMaintCount = maintCount;
   }
 
   private resolveTone(op: Operation): string {
@@ -302,6 +343,10 @@ export class SortieBayTimelineComponent implements OnChanges {
   }
 
   trackByShiftBlockId(_: number, b: PositionedShiftBlock): string {
+    return b.block.id;
+  }
+
+  trackByMaintBlockId(_: number, b: PositionedMaintenanceBlock): string {
     return b.block.id;
   }
 }

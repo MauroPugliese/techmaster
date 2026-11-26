@@ -6,7 +6,7 @@
 // specs, plus `collectSpecData(spec)` for tabular/slide renderers (XLSX/PPTX).
 // =============================================================================
 
-const { resolveFormat, buildFilename } = require('./helpers');
+const { resolveFormat, buildFilename, normalizeFilters } = require('./helpers');
 const { COMPANY } = require('./branding');
 const { resolveTheme } = require('./themes');
 const { streamXlsx } = require('../renderers/xlsx.renderer');
@@ -32,7 +32,7 @@ function normalizeSpec(rawSpec = {}) {
       generatedAt: meta.generatedAt || new Date(),
       period: meta.period || null,
       confidentiality: meta.confidentiality || COMPANY.confidentiality,
-      filters: Array.isArray(meta.filters) ? meta.filters : []
+      filters: normalizeFilters(meta.filters)
     },
     executiveBrief: typeof rawSpec.executiveBrief === 'string' ? rawSpec.executiveBrief : '',
     coverHighlights: Array.isArray(rawSpec.coverHighlights) ? rawSpec.coverHighlights.slice(0, 3) : [],
@@ -59,6 +59,7 @@ function collectSpecData(spec) {
   const scorecards = [...(spec.scorecards || [])];
   const highlights = [...(spec.highlights || [])];
   const insights = [...(spec.insights || [])];
+  const statMatrices = [];
   const charts = [...(spec.charts || [])];
   const tables = [...(spec.tables || [])];
   const documentBlocks = [...(spec.documentBlocks || [])];
@@ -123,6 +124,11 @@ function collectSpecData(spec) {
             if (!insights.some((ins) => ins.title === it.title)) insights.push(it);
           });
           break;
+        case 'statMatrix':
+          if (Array.isArray(block.pairs) && block.pairs.length) {
+            statMatrices.push({ title: block.title || 'Control & Specification Summary', pairs: block.pairs });
+          }
+          break;
         case 'chart':
           if (block.chart && (!block.chart.title || !seenCharts.has(block.chart.title))) {
             charts.push(block.chart);
@@ -158,6 +164,7 @@ function collectSpecData(spec) {
     scorecards,
     highlights,
     insights,
+    statMatrices,
     charts,
     tables,
     documentBlocks
@@ -175,7 +182,8 @@ function collectSpecData(spec) {
 async function render(spec, res, rawFmt, fallback = 'xlsx') {
   const format = resolveFormat(rawFmt, fallback);
   const normalized = normalizeSpec(spec);
-  const filename = buildFilename(normalized.filename || normalized.title || 'report');
+  const periodTag = normalized.meta?.period?.filenameTag || '';
+  const filename = buildFilename(normalized.filename || normalized.title || 'report', periodTag);
 
   if (format === 'pdf')  return streamPdf(normalized, res, filename);
   if (format === 'docx') return streamDocx(normalized, res, filename);

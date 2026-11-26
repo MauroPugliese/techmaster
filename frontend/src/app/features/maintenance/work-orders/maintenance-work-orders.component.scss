@@ -57,3 +57,31 @@
     color: #b91c1c;
   }
 }
+
+.mnt-pill-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--blue-900);
+  font-weight: 600;
+  white-space: nowrap;
+
+  &:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+  }
+
+  &.active {
+    background: #fff7ed;
+    border-color: #f97316;
+    color: #c2410c;
+  }
+
+  &.is-mel.active {
+    background: #fef3c7;
+    border-color: #d97706;
+    color: #92400e;
+  }
+}

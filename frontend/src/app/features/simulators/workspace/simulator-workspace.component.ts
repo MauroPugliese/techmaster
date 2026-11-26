@@ -23,6 +23,7 @@ import {
   SimulatorSubsystemStatus
 } from '../../../core/models/interfaces';
 import { DropdownComponent, DropdownOptionComponent } from '../../../shared/components/dropdown/dropdown.component';
+import { ExportMenuComponent } from '../../../shared/components/export-menu/export-menu.component';
 import {
   QTG_STATUS_META,
   SIM_CATEGORY_LABELS,
@@ -38,7 +39,7 @@ export type SimulatorWorkspaceTab = 'overview' | 'subsystems' | 'qtg' | 'mainten
 @Component({
   selector: 'app-simulator-workspace',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, RouterLink, DropdownComponent, DropdownOptionComponent],
+  imports: [CommonModule, FormsModule, DatePipe, RouterLink, DropdownComponent, DropdownOptionComponent, ExportMenuComponent],
   templateUrl: './simulator-workspace.component.html',
   styleUrls: ['./simulator-workspace.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -92,6 +93,8 @@ export class SimulatorWorkspaceComponent implements OnChanges {
     notes: ''
   };
   savingQtg = false;
+  cloningQtg = false;
+  cloneTargetYear = new Date().getUTCFullYear() + 1;
 
   // Quick Snag (DR) reporter inline panel
   showSnagForm = false;
@@ -377,6 +380,59 @@ export class SimulatorWorkspaceComponent implements OnChanges {
         this.fleetChanged.emit();
       }
     });
+  }
+
+  cloneQtgToNextYear(): void {
+    if (!this.dossier || this.cloningQtg) return;
+    this.cloningQtg = true;
+    this.cdr.markForCheck();
+
+    this.api.post<any>(`/simulators/${this.dossier.id}/qtg/clone-year`, {
+      target_year: this.cloneTargetYear
+    }).subscribe({
+      next: (res) => {
+        this.cloningQtg = false;
+        const created = res?.data?.created_count ?? 0;
+        const skipped = res?.data?.skipped_count ?? 0;
+        this.toast.success(
+          created > 0
+            ? `Cloned ${created} QTG test(s) into ${this.cloneTargetYear}${skipped ? ` (${skipped} already existed)` : ''}.`
+            : `All QTG tests for ${this.cloneTargetYear} already exist.`
+        );
+        this.loadDossier(this.dossier!.id);
+        this.fleetChanged.emit();
+      },
+      error: (err) => {
+        this.cloningQtg = false;
+        this.toast.error(err?.error?.message || 'Unable to clone QTG schedule.');
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  openWoFromFailedQtg(q: SimulatorQtgRecord): void {
+    const catToSub: Record<string, SimulatorSubsystemCode> = {
+      MOTION_CUEING: 'MOTION',
+      VISUAL_SYSTEM: 'VISUAL',
+      SOUND: 'SOUND',
+      IOS_NAV: 'IOS',
+      HANDLING: 'CONTROL_LOADING',
+      PERFORMANCE: 'HOST_COMPUTE'
+    };
+    this.snagForm = {
+      title: `QTG Failure: ${q.test_code} — ${q.title}`,
+      subsystem_code: catToSub[q.category] || 'HOST_COMPUTE',
+      severity: 'DEGRADED',
+      lost_training_hours: 0,
+      description: `Failed ${q.quarter} ${q.year} QTG (${q.test_code}). Measured delta: ${q.measured_delta || 'Out of tolerance'}. ${q.notes || ''}`.trim()
+    };
+    this.activeTab = 'maintenance';
+    this.showSnagForm = true;
+    this.cdr.markForCheck();
+  }
+
+  get activeMelRecords(): any[] {
+    return ((this.dossier as any)?.melRecords || []) as any[];
   }
 
   // ── Quick Snag (DR) Logger ─────────────────────────────────────────────────

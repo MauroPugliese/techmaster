@@ -10,6 +10,9 @@ const {
   OperationLog,
   Simulator,
   SimulatorSubsystem,
+  SimulatorDailyLog,
+  SimulatorDailyShift,
+  SimulatorShiftEntry,
   MaintenanceRecord,
   User,
   sequelize
@@ -26,6 +29,61 @@ const {
   summarizeSortieFleetMetrics
 } = require('../services/operation-helpers.service');
 const { detectSortieBayConflict } = require('../services/simulator-helpers.service');
+const { broadcastOperationalAlert } = require('../services/proactive-alerts.service');
+
+/**
+ * Auto-syncs Simulator live status (READY <-> IN_SORTIE) and accumulates hub
+ * power_on_hours / motion_hours when a sortie starts or completes.
+ */
+async function syncSimulatorOnSortieTransition({ op, previousStatus = null, transaction }) {
+  if (!op?.simulator_id) return;
+  const sim = await Simulator.findByPk(op.simulator_id, { transaction });
+  if (!sim) return;
+
+  if (op.status === 'IN_PROGRESS' && previousStatus !== 'IN_PROGRESS') {
+    if (sim.status === 'READY' || sim.status === 'PRE_FLIGHT') {
+      await sim.update({ status: 'IN_SORTIE' }, { transaction });
+    }
+  } else if (op.status === 'COMPLETED' && previousStatus !== 'COMPLETED') {
+    let flownHours = Number(op.actual_flight_hours);
+    if (!Number.isFinite(flownHours) || flownHours <= 0) {
+      flownHours = Number(op.scheduled_hours);
+    }
+    if ((!Number.isFinite(flownHours) || flownHours <= 0) && op.start_date && (op.actual_end_date || op.end_date)) {
+      const diffMs = new Date(op.actual_end_date || op.end_date).getTime() - new Date(op.start_date).getTime();
+      if (Number.isFinite(diffMs) && diffMs > 0) {
+        flownHours = Math.min(24, Math.round((diffMs / 3600000) * 100) / 100);
+      }
+    }
+    flownHours = Number.isFinite(flownHours) && flownHours > 0 ? flownHours : 0;
+
+    const updates = {};
+    if (flownHours > 0) {
+      updates.power_on_hours = Number(((Number(sim.power_on_hours) || 0) + flownHours).toFixed(1));
+      if (op.motion_required !== false) {
+        updates.motion_hours = Number(((Number(sim.motion_hours) || 0) + flownHours).toFixed(1));
+      }
+    }
+
+    if (sim.status === 'IN_SORTIE') {
+      const otherLive = await Operation.count({
+        where: { simulator_id: sim.id, status: 'IN_PROGRESS', id: { [Op.ne]: op.id } },
+        transaction
+      });
+      const openAog = await MaintenanceRecord.count({
+        where: { simulator_id: sim.id, severity: 'AOG', status: { [Op.in]: ['SCHEDULED', 'IN_PROGRESS', 'DEFERRED'] } },
+        transaction
+      });
+      if (otherLive === 0 && openAog === 0) {
+        updates.status = 'READY';
+      }
+    }
+
+    if (Object.keys(updates).length > 0) {
+      await sim.update(updates, { transaction });
+    }
+  }
+}
 
 const LIST_INCLUDES = [
   { model: OperationType, as: 'type' },
@@ -109,22 +167,63 @@ router.get('/summary', parseDateFilter, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// GET /operations/check-conflict — preflight slot overlap + bay readiness verification
+// GET /operations/check-conflict — preflight slot overlap + maintenance windows + daily NA check
 router.get('/check-conflict', async (req, res, next) => {
   try {
     const simId = Number(req.query.simulator_id);
     if (!Number.isInteger(simId) || simId < 1) {
-      return res.json({ success: true, data: { hasOverlap: false, overlappingSorties: [], warnings: [] } });
+      return res.json({ success: true, data: { hasOverlap: false, overlappingSorties: [], overlappingMaintenance: [], warnings: [] } });
     }
 
-    const [simulator, subsystems, existingSorties] = await Promise.all([
+    const startDateObj = req.query.start_date ? new Date(req.query.start_date) : new Date();
+    const dateStr = !Number.isNaN(startDateObj.getTime()) ? startDateObj.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+    const dayStart = new Date(`${dateStr}T00:00:00.000Z`);
+    const dayEnd = new Date(`${dateStr}T23:59:59.999Z`);
+
+    const [simulator, subsystems, existingSorties, dayMaint, dailyShiftEntries] = await Promise.all([
       Simulator.findByPk(simId),
       SimulatorSubsystem.findAll({ where: { simulator_id: simId }, attributes: ['subsystem_code', 'status'] }),
       Operation.findAll({
         where: { simulator_id: simId, status: { [Op.ne]: 'CANCELLED' } },
         attributes: ['id', 'sortie_code', 'title', 'status', 'start_date', 'end_date']
-      })
+      }),
+      MaintenanceRecord.findAll({
+        where: {
+          simulator_id: simId,
+          status: { [Op.in]: ['SCHEDULED', 'IN_PROGRESS', 'DEFERRED'] },
+          scheduled_date: { [Op.between]: [dayStart, dayEnd] }
+        },
+        attributes: ['id', 'title', 'scheduled_date', 'downtime_hours', 'status']
+      }),
+      SimulatorShiftEntry.findAll({
+        where: { simulator_id: simId },
+        include: [{
+          model: SimulatorDailyShift,
+          as: 'shift',
+          required: true,
+          include: [{
+            model: SimulatorDailyLog,
+            as: 'dailyLog',
+            required: true,
+            where: { log_date: dateStr }
+          }]
+        }]
+      }).catch(() => [])
     ]);
+
+    const maintWindows = dayMaint.map(m => {
+      const s = new Date(m.scheduled_date);
+      const hrs = Number(m.downtime_hours) > 0 ? Number(m.downtime_hours) : 2;
+      return {
+        id: m.id,
+        title: m.title,
+        source: 'MAINTENANCE_WO',
+        start_date: s.toISOString(),
+        end_date: new Date(s.getTime() + hrs * 3600000).toISOString()
+      };
+    });
+
+    const dailyShiftStatus = dailyShiftEntries.some(e => e.usage_status === 'NA') ? 'NA' : null;
 
     const result = detectSortieBayConflict(
       {
@@ -135,7 +234,9 @@ router.get('/check-conflict', async (req, res, next) => {
       },
       existingSorties.map(s => s.get({ plain: true })),
       simulator ? simulator.get({ plain: true }) : null,
-      subsystems.map(s => s.get({ plain: true }))
+      subsystems.map(s => s.get({ plain: true })),
+      maintWindows,
+      dailyShiftStatus
     );
 
     res.json({ success: true, data: result });
@@ -308,26 +409,57 @@ router.post('/', async (req, res, next) => {
       if (diffHrs > 0 && diffHrs <= 24) data.scheduled_hours = diffHrs;
     }
 
-    const op = await Operation.create(
-      { ...data, created_by: req.user.id },
-      { transaction }
-    );
+    const repeatDays = Math.min(7, Math.max(1, parseInt(req.body?.repeat_days, 10) || 1));
+    const baseStartMs = data.start_date ? new Date(data.start_date).getTime() : Date.now();
+    const baseEndMs = data.end_date ? new Date(data.end_date).getTime() : null;
+    const baseCode = data.sortie_code;
+    const createdOps = [];
 
-    if (membersRes.provided && membersRes.data.length > 0) {
-      await syncOperationMembers(op.id, membersRes.data, transaction);
+    for (let dayIdx = 0; dayIdx < repeatDays; dayIdx++) {
+      const shiftMs = dayIdx * 86400000;
+      const itemStart = new Date(baseStartMs + shiftMs);
+      const itemEnd = baseEndMs !== null ? new Date(baseEndMs + shiftMs) : null;
+      const itemCode = repeatDays > 1 ? `${baseCode}-D${dayIdx + 1}` : baseCode;
+      const itemTitle = repeatDays > 1 ? `${data.title} (Day ${dayIdx + 1}/${repeatDays})`.slice(0, 200) : data.title;
+
+      const op = await Operation.create(
+        {
+          ...data,
+          title: itemTitle,
+          sortie_code: itemCode,
+          start_date: itemStart,
+          end_date: itemEnd,
+          created_by: req.user.id
+        },
+        { transaction }
+      );
+
+      if (membersRes.provided && membersRes.data.length > 0) {
+        await syncOperationMembers(op.id, membersRes.data, transaction);
+      }
+
+      await OperationLog.create({
+        operation_id: op.id,
+        user_id: req.user.id,
+        action: repeatDays > 1 ? `Series sortie created (Day ${dayIdx + 1}/${repeatDays})` : 'Operation created',
+        details: `Initial status: ${op.status}`
+      }, { transaction });
+
+      if (dayIdx === 0) {
+        await syncSimulatorOnSortieTransition({ op, previousStatus: null, transaction });
+      }
+      createdOps.push(op);
     }
-
-    await OperationLog.create({
-      operation_id: op.id,
-      user_id: req.user.id,
-      action: 'Operation created',
-      details: `Initial status: ${op.status}`
-    }, { transaction });
 
     await transaction.commit();
 
-    const full = await Operation.findByPk(op.id, { include: LIST_INCLUDES });
-    res.status(201).json({ success: true, data: full || op });
+    const primaryOp = createdOps[0];
+    const full = await Operation.findByPk(primaryOp.id, { include: LIST_INCLUDES });
+    res.status(201).json({
+      success: true,
+      data: full || primaryOp,
+      meta: { createdCount: createdOps.length }
+    });
   } catch (err) {
     await transaction.rollback();
     next(err);
@@ -374,6 +506,7 @@ router.put('/:id', validateIdParam, async (req, res, next) => {
     }
 
     const previousStatus = op.status;
+    const previousOutcome = op.outcome;
     await op.update(data, { transaction });
 
     if (membersRes.provided) {
@@ -388,7 +521,20 @@ router.put('/:id', validateIdParam, async (req, res, next) => {
       }, { transaction });
     }
 
+    await syncSimulatorOnSortieTransition({ op, previousStatus, transaction });
+
     await transaction.commit();
+
+    if (op.outcome === 'INTERRUPTED_TECH' && previousOutcome !== 'INTERRUPTED_TECH') {
+      await broadcastOperationalAlert({
+        req,
+        type: 'SORTIE_INTERRUPTED',
+        title: `Sortie Tech Interruption: ${op.sortie_code || `#${op.id}`}`,
+        body: `${op.title} interrupted due to technical snag${op.lost_training_minutes ? ` (${op.lost_training_minutes} min lost)` : ''}.`,
+        link: '/operations',
+        excludeUserId: req.user.id
+      });
+    }
 
     const full = await Operation.findByPk(op.id, { include: LIST_INCLUDES });
     res.json({ success: true, data: full || op });
@@ -562,6 +708,104 @@ router.post('/:id/logs', validateIdParam, async (req, res, next) => {
     });
     res.status(201).json({ success: true, data: full || log });
   } catch (err) { next(err); }
+});
+
+// POST /operations/:id/debrief — 1-click post-sortie close, hub meter accrual & optional Corrective DR WO
+router.post('/:id/debrief', validateIdParam, async (req, res, next) => {
+  const transaction = await sequelize.transaction();
+  try {
+    const op = await Operation.findByPk(req.params.id, { transaction });
+    if (!op) {
+      await transaction.rollback();
+      return res.status(404).json({ success: false, message: 'Sortie not found' });
+    }
+
+    const validOutcomes = new Set(['CLEAN', 'COMPLETED_WITH_SNAGS', 'INTERRUPTED_TECH', 'NO_SHOW', 'CANCELLED']);
+    const outcome = validOutcomes.has(String(req.body?.outcome || '').toUpperCase())
+      ? String(req.body.outcome).toUpperCase()
+      : 'CLEAN';
+
+    const actualHoursRaw = req.body?.actual_flight_hours;
+    const actualHours = actualHoursRaw !== undefined && actualHoursRaw !== null && actualHoursRaw !== ''
+      ? Math.max(0, Math.min(24, Number(Number(actualHoursRaw).toFixed(2))))
+      : (Number(op.scheduled_hours) || 0);
+    const lostMinutes = Math.max(0, Math.min(1440, Math.round(Number(req.body?.lost_training_minutes) || 0)));
+    const snagSummary = req.body?.snag_summary ? String(req.body.snag_summary).trim().slice(0, 2000) : (op.snag_summary || null);
+    const previousStatus = op.status;
+
+    await op.update({
+      status: outcome === 'CANCELLED' ? 'CANCELLED' : 'COMPLETED',
+      actual_end_date: op.actual_end_date || new Date(),
+      outcome,
+      actual_flight_hours: actualHours,
+      lost_training_minutes: lostMinutes,
+      snag_summary: snagSummary
+    }, { transaction });
+
+    await syncSimulatorOnSortieTransition({ op, previousStatus, transaction });
+
+    let createdWo = null;
+    if (req.body?.open_snag_wo === true && op.simulator_id && (snagSummary || req.body?.snag_title)) {
+      const severity = ['MINOR', 'DEGRADED', 'AOG'].includes(String(req.body?.severity || '').toUpperCase())
+        ? String(req.body.severity).toUpperCase()
+        : (outcome === 'INTERRUPTED_TECH' ? 'AOG' : 'DEGRADED');
+      const subsystemCode = req.body?.subsystem_code ? String(req.body.subsystem_code).trim().toUpperCase().slice(0, 60) : 'HOST_COMPUTE';
+      const woTitle = String(req.body?.snag_title || snagSummary || `Post-Sortie Snag (${op.sortie_code || `#${op.id}`})`).trim().slice(0, 200);
+
+      createdWo = await MaintenanceRecord.create({
+        simulator_id: op.simulator_id,
+        sortie_id: op.id,
+        subsystem_code: subsystemCode,
+        severity,
+        lost_training_hours: Number((lostMinutes / 60).toFixed(2)),
+        is_snag: true,
+        performed_by: req.user.id,
+        type: 'CORRECTIVE',
+        title: woTitle,
+        description: snagSummary || woTitle,
+        status: 'SCHEDULED',
+        priority: severity === 'AOG' ? 'CRITICAL' : (severity === 'DEGRADED' ? 'HIGH' : 'MEDIUM'),
+        scheduled_date: new Date()
+      }, { transaction });
+
+      if (severity === 'AOG' || severity === 'DEGRADED') {
+        const sim = await Simulator.findByPk(op.simulator_id, { transaction });
+        if (sim) {
+          await sim.update({ status: severity === 'AOG' ? 'AOG' : 'DEGRADED' }, { transaction });
+        }
+        const sub = await SimulatorSubsystem.findOne({ where: { simulator_id: op.simulator_id, subsystem_code: subsystemCode }, transaction });
+        if (sub) {
+          await sub.update({ status: severity === 'AOG' ? 'FAULT' : 'DEGRADED', last_checked_at: new Date(), updated_by: req.user.id }, { transaction });
+        }
+      }
+    }
+
+    await OperationLog.create({
+      operation_id: op.id,
+      user_id: req.user.id,
+      action: `Post-Sortie Debrief [${outcome}]`,
+      details: `Flown: ${actualHours}h · Lost: ${lostMinutes}m${createdWo ? ` · Opened WO #${createdWo.id}` : ''}`
+    }, { transaction });
+
+    await transaction.commit();
+
+    if (outcome === 'INTERRUPTED_TECH' || createdWo?.severity === 'AOG') {
+      await broadcastOperationalAlert({
+        req,
+        type: 'SORTIE_INTERRUPTED',
+        title: `Sortie Debrief Alert: ${op.sortie_code || `#${op.id}`}`,
+        body: `${op.title} closed as ${outcome} (${lostMinutes}m lost)${createdWo ? ` — WO #${createdWo.id} opened.` : '.'}`,
+        link: createdWo ? '/maintenance' : '/operations',
+        excludeUserId: req.user.id
+      });
+    }
+
+    const full = await Operation.findByPk(op.id, { include: LIST_INCLUDES });
+    res.json({ success: true, data: { operation: full || op, maintenanceRecord: createdWo } });
+  } catch (err) {
+    await transaction.rollback();
+    next(err);
+  }
 });
 
 // POST /operations/:id/snag — 1-click Post-Sortie Discrepancy Report (DR) linked to Simulator

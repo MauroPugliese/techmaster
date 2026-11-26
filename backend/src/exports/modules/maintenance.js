@@ -1,12 +1,13 @@
 // =============================================================================
-// exports/modules/maintenance.js — Reliability & Asset Cost Audit (CAE-MNT-05)
+// exports/modules/maintenance.js — Reliability, Snags & Asset Cost Audit (CAE-MNT-05)
 // Blueprint:
-//   P1 Cover -> P2 Critical Failures & Cost Hotspots (Alerts FIRST + Hero KPIs + Top Asset Cost Lollipop)
-//   -> P3 Asset Reliability Matrix & Discipline Spend (Asset Summary Table + Type Spend HBar + Spotlights)
-//   -> P4+ Maintenance Work Orders Ledger
+//   P1 Cover -> P2 Critical Failures, MEL Alerts, MTTR/MTBF & Top Faulty Assets/Simulators
+//   -> P3 Reliability Breakdown (Preventive vs Corrective, Top Faulty Subsystems & Asset/Bay Matrix)
+//   -> P4+ Enriched Maintenance Work Orders Ledger (Simulator Bay, Subsystem, Parts & Costs)
 // =============================================================================
 const { Op } = require('sequelize');
-const { MaintenanceRecord, Asset, User } = require('../../models');
+const { MaintenanceRecord, Asset, Simulator, WikiArticle, User } = require('../../models');
+const { computeReliabilityMetrics } = require('../../services/maintenance-helpers.service');
 const {
   fmtDateTime, fmtNumber, fmtMoney, fmtPercent, fmtHours,
   fullName, parseRange, rangeLabel, cleanText, toNumber, pct, topEntries
@@ -29,18 +30,29 @@ const STATUS_COLORS = {
   FAILED:      COLORS.coral
 };
 
+function resolveEquipmentName(r) {
+  if (r.simulator) return `${r.simulator.bay_code} · ${r.simulator.name}`;
+  if (r.asset) return r.asset.name;
+  return 'Facility / Unassigned';
+}
+
+function formatPartsSummary(parts) {
+  if (!Array.isArray(parts) || parts.length === 0) return '—';
+  return parts.map(p => `${p.sku || p.name} ×${p.quantity}`).join(', ');
+}
+
 module.exports = {
   key: 'maintenance',
   docCode: 'CAE-MNT-05',
   theme: 'maintenance',
-  title: 'Maintenance Records Report',
-  subtitle: 'Corrective & preventive interventions, downtime impact and cost analysis',
+  title: 'Maintenance & Reliability Engineering Report',
+  subtitle: 'Simulator snags, preventive vs corrective split, MEL exposure, subsystem faults & spare parts cost',
   category: 'MAINTENANCE INTELLIGENCE',
   orientation: 'portrait',
 
   async build(req) {
     const range = parseRange(req.query);
-    const { status, priority, type, search } = req.query;
+    const { status, priority, type, search, simulator_id, is_snag, severity, subsystem_code, mel_category } = req.query;
 
     const where = {};
     if (range.from || range.to) {
@@ -51,52 +63,75 @@ module.exports = {
     if (status) where.status = status;
     if (priority) where.priority = priority;
     if (type) where.type = type;
+    if (simulator_id && Number(simulator_id) > 0) where.simulator_id = Number(simulator_id);
+    if (is_snag === 'true') where.is_snag = true;
+    if (severity && String(severity).trim()) where.severity = String(severity).trim().toUpperCase();
+    if (subsystem_code && String(subsystem_code).trim()) where.subsystem_code = String(subsystem_code).trim().toUpperCase();
+    if (mel_category && String(mel_category).trim()) {
+      const m = String(mel_category).trim().toUpperCase();
+      where.mel_category = m === 'ACTIVE' ? { [Op.ne]: 'NONE' } : m;
+    }
     if (search && String(search).trim()) {
       const q = `%${String(search).trim()}%`;
       where[Op.or] = [
         { title: { [Op.like]: q } },
-        { description: { [Op.like]: q } }
+        { description: { [Op.like]: q } },
+        { findings: { [Op.like]: q } }
       ];
     }
 
     const records = await MaintenanceRecord.findAll({
       where,
       include: [
-        { model: Asset, as: 'asset', attributes: ['name', 'serial_number'] },
+        { model: Asset, as: 'asset', attributes: ['id', 'name', 'serial_number'], required: false },
+        { model: Simulator, as: 'simulator', attributes: ['id', 'code', 'bay_code', 'name', 'station_kind'], required: false },
+        { model: WikiArticle, as: 'wikiArticle', attributes: ['id', 'title'], required: false },
         { model: User, as: 'technician', attributes: ['first_name', 'last_name'] }
       ],
       order: [['scheduled_date', 'DESC']]
     });
 
     let totalCost = 0;
+    let totalPartsCost = 0;
     let totalDowntime = 0;
+    let totalLostTraining = 0;
     let failedCount = 0;
     let criticalOpen = 0;
+    let aogOpen = 0;
     const byStatus = {};
     const costByType = {};
     const assetStats = {};
 
     records.forEach((r) => {
       const cost = toNumber(r.cost, 0);
+      const pCost = toNumber(r.parts_cost, 0);
       const down = toNumber(r.downtime_hours, 0);
+      const lost = toNumber(r.lost_training_hours, 0);
       totalCost += cost;
+      totalPartsCost += pCost;
       totalDowntime += down;
+      totalLostTraining += lost;
 
       byStatus[r.status] = (byStatus[r.status] || 0) + 1;
       costByType[r.type] = (costByType[r.type] || 0) + cost;
 
-      const assetName = r.asset?.name || 'Unassigned Asset';
-      if (!assetStats[assetName]) {
-        assetStats[assetName] = { asset: assetName, orders: 0, failed: 0, downtime: 0, cost: 0 };
+      const equipName = resolveEquipmentName(r);
+      if (!assetStats[equipName]) {
+        assetStats[equipName] = { asset: equipName, orders: 0, corrective: 0, failed: 0, downtime: 0, cost: 0 };
       }
-      assetStats[assetName].orders += 1;
-      if (r.status === 'FAILED') assetStats[assetName].failed += 1;
-      assetStats[assetName].downtime += down;
-      assetStats[assetName].cost += cost;
+      assetStats[equipName].orders += 1;
+      if (r.type === 'CORRECTIVE' || r.is_snag) assetStats[equipName].corrective += 1;
+      if (r.status === 'FAILED' || r.severity === 'AOG') assetStats[equipName].failed += 1;
+      assetStats[equipName].downtime += down;
+      assetStats[equipName].cost += cost;
 
       if (r.status === 'FAILED') failedCount += 1;
       if (r.priority === 'CRITICAL' && r.status !== 'COMPLETED') criticalOpen += 1;
+      if (r.severity === 'AOG' && ['SCHEDULED', 'IN_PROGRESS', 'DEFERRED'].includes(r.status)) aogOpen += 1;
     });
+
+    const plainRecords = records.map(r => r.get({ plain: true }));
+    const reliability = computeReliabilityMetrics(plainRecords, 0);
 
     const total = records.length;
     const completed = byStatus.COMPLETED || 0;
@@ -108,121 +143,141 @@ module.exports = {
         cost: Number(a.cost.toFixed(2)),
         _flag: a.failed > 0 ? 'danger' : (a.cost > 5000 ? 'warning' : undefined)
       }))
-      .sort((a, b) => b.cost - a.cost || b.downtime - a.downtime);
+      .sort((a, b) => b.downtime - a.downtime || b.cost - a.cost);
 
     const topAsset = assetSummaryRows[0];
-    const topCostAssets = assetSummaryRows.slice(0, 7);
+    const topCostAssets = [...assetSummaryRows].sort((a, b) => b.cost - a.cost || b.orders - a.orders).slice(0, 7);
     const typeTop = topEntries(costByType, 6);
     const statusKeys = Object.keys(byStatus);
 
     const insights = [];
-    if (failedCount > 0 || criticalOpen > 0) {
+    if (aogOpen > 0 || failedCount > 0 || criticalOpen > 0) {
       insights.push({
         severity: 'danger',
-        title: `${failedCount} Failed · ${criticalOpen} Critical Pending Interventions`,
-        detail: 'Immediate engineering review required to restore equipment reliability and clear SLA exposure.'
+        title: `${aogOpen} Open AOG · ${failedCount} Failed · ${criticalOpen} Critical Work Orders`,
+        detail: `Total lost training impact: ${totalLostTraining.toFixed(1)} h. Prioritize AOG containment and RTS clearance.`
       });
     }
-    if (topAsset && topAsset.cost > 0) {
+    if (reliability.activeMelCount > 0) {
+      insights.push({
+        severity: reliability.melExpiringSoonCount > 0 ? 'danger' : 'warning',
+        title: `${reliability.activeMelCount} Active MEL / Deferred Defect(s) (${reliability.melExpiringSoonCount} Expiring <= 7d)`,
+        detail: 'Verify spare parts availability and schedule corrective closure before MEL authority expiry.'
+      });
+    }
+    if (topAsset && (topAsset.downtime > 0 || topAsset.cost > 0)) {
       insights.push({
         severity: 'warning',
-        title: `Highest Cost Driver: ${topAsset.asset}`,
-        detail: `Accumulated ${fmtMoney(topAsset.cost)} (${fmtPercent(pct(topAsset.cost, totalCost), 1)} of period spend across ${topAsset.orders} interventions).`
+        title: `Highest Exposure Unit: ${topAsset.asset}`,
+        detail: `${fmtHours(topAsset.downtime)} downtime · ${fmtMoney(topAsset.cost)} spend across ${topAsset.orders} work order(s) (${topAsset.corrective} corrective).`
       });
     }
     if (!insights.length) {
       insights.push({
         severity: total > 0 ? 'success' : 'info',
-        title: total > 0 ? 'Maintenance Operations Healthy' : 'No Maintenance Records Found',
+        title: total > 0 ? 'Maintenance & Simulator Reliability Nominal' : 'No Maintenance Records Found',
         detail: total > 0
-          ? `${completed} of ${total} interventions closed (${fmtPercent(completionRate, 1)}) with ${fmtHours(totalDowntime)} downtime.`
+          ? `${completed} of ${total} interventions closed (${fmtPercent(completionRate, 1)}) · MTTR ${reliability.mttrHours} h.`
           : 'No records matched active filters.'
       });
     }
 
     const assetTable = {
-      name: 'Asset Reliability & Cost Summary',
+      name: 'Simulator & Asset Reliability Matrix',
       priority: 'high',
-      note: 'Spend, failure incidents and cumulative downtime grouped per asset.',
+      note: 'Work orders, corrective snag frequency, cumulative downtime and total cost grouped by Simulator Bay / Asset.',
       columns: [
-        { header: 'Asset', key: 'asset', width: 30 },
-        { header: 'Orders', key: 'orders', width: 11, type: 'number', align: 'right', total: 'sum' },
-        { header: 'Failed', key: 'failed', width: 11, type: 'number', align: 'right', total: 'sum' },
-        { header: 'Downtime (h)', key: 'downtime', width: 15, type: 'number', decimals: 2, align: 'right', total: 'sum', dataBar: true },
-        { header: 'Total Cost ($)', key: 'cost', width: 17, type: 'currency', align: 'right', total: 'sum', dataBar: true }
+        { header: 'Simulator Bay / Asset', key: 'asset', width: 150 },
+        { header: 'Orders', key: 'orders', width: 48, type: 'number', align: 'right', total: 'sum' },
+        { header: 'Corr.', key: 'corrective', width: 48, type: 'number', align: 'right', total: 'sum' },
+        { header: 'AOG/Fail', key: 'failed', width: 52, type: 'number', align: 'right', total: 'sum' },
+        { header: 'Down (h)', key: 'downtime', width: 62, type: 'number', decimals: 2, align: 'right', total: 'sum', dataBar: true },
+        { header: 'Total Cost ($)', key: 'cost', width: 78, type: 'currency', align: 'right', total: 'sum', dataBar: true }
       ],
       rows: assetSummaryRows
     };
 
     const ledgerTable = {
-      name: 'Maintenance Records Ledger',
-      note: 'Individual maintenance records (priority, scheduled/completed dates & technician in Excel).',
+      name: 'Maintenance & Snags Work Orders Ledger',
+      note: 'Detailed register including Simulator Bay/Asset, Subsystem, Severity, MEL, Spare Parts, Downtime & Costs.',
       columns: [
-        { header: '#', key: 'id', width: 7, type: 'mono', align: 'right', printHidden: true },
-        { header: 'Title', key: 'title', width: 28 },
-        { header: 'Asset', key: 'asset', width: 20 },
-        { header: 'Type', key: 'type', width: 14 },
-        { header: 'Status', key: 'status', width: 13, type: 'badge' },
-        { header: 'Priority', key: 'priority', width: 11, printHidden: true },
-        { header: 'Scheduled', key: 'scheduled', width: 15, printHidden: true },
-        { header: 'Completed', key: 'completed', width: 15, printHidden: true },
-        { header: 'Down (h)', key: 'downtime', width: 11, type: 'number', decimals: 2, align: 'right', total: 'sum', dataBar: true },
-        { header: 'Cost ($)', key: 'cost', width: 13, type: 'currency', align: 'right', total: 'sum', dataBar: true },
-        { header: 'Technician', key: 'technician', width: 16, printHidden: true }
+        { header: '#', key: 'id', width: 32, type: 'mono', align: 'right', printHidden: true },
+        { header: 'Bay / Asset', key: 'asset', width: 96 },
+        { header: 'Subsys.', key: 'subsystem', width: 54, type: 'mono' },
+        { header: 'Title', key: 'title', width: 122 },
+        { header: 'Type', key: 'type', width: 64 },
+        { header: 'Sev.', key: 'severity', width: 52, type: 'badge', align: 'center', printHidden: true },
+        { header: 'MEL', key: 'mel', width: 48, printHidden: true },
+        { header: 'Status', key: 'status', width: 64, type: 'badge', align: 'center' },
+        { header: 'Scheduled', key: 'scheduled', width: 74, printHidden: true },
+        { header: 'Parts Used', key: 'parts', width: 105, printHidden: true },
+        { header: 'Down (h)', key: 'downtime', width: 46, type: 'number', decimals: 1, align: 'right', total: 'sum' },
+        { header: 'Parts ($)', key: 'parts_cost', width: 60, type: 'currency', align: 'right', total: 'sum', printHidden: true },
+        { header: 'Cost ($)', key: 'cost', width: 60, type: 'currency', align: 'right', total: 'sum', dataBar: true },
+        { header: 'Engineer', key: 'technician', width: 78, printHidden: true },
+        { header: 'SOP', key: 'sop', width: 95, printHidden: true }
       ],
       rows: records.map((r) => ({
         id: r.id,
-        title: cleanText(r.title),
-        asset: r.asset?.name || '—',
-        type: r.type,
+        asset: cleanText(resolveEquipmentName(r), 34),
+        subsystem: r.subsystem_code || 'GEN',
+        title: cleanText(r.title, 48),
+        type: r.is_snag ? 'SNAG' : r.type,
+        severity: r.severity || 'MINOR',
+        severity_tone: r.severity === 'AOG' ? 'danger' : (r.severity === 'DEGRADED' ? 'warning' : 'neutral'),
+        mel: r.mel_category && r.mel_category !== 'NONE' ? r.mel_category : '—',
         status: r.status,
-        priority: r.priority,
+        status_tone: STATUS_TONE[r.status] || 'neutral',
         scheduled: fmtDateTime(r.scheduled_date),
-        completed: fmtDateTime(r.completed_date),
-        downtime: r.downtime_hours !== null && r.downtime_hours !== undefined ? toNumber(r.downtime_hours, 0) : null,
-        cost: r.cost !== null && r.cost !== undefined ? toNumber(r.cost, 0) : null,
+        parts: formatPartsSummary(r.parts_used),
+        downtime: r.downtime_hours != null ? toNumber(r.downtime_hours, 0) : 0,
+        parts_cost: r.parts_cost != null ? toNumber(r.parts_cost, 0) : 0,
+        cost: r.cost != null ? toNumber(r.cost, 0) : 0,
         technician: fullName(r.technician),
-        _badgeTone: STATUS_TONE[r.status] || 'neutral',
-        _flag: r.priority === 'CRITICAL' && r.status !== 'COMPLETED' ? 'danger' : STATUS_TONE[r.status]
+        sop: r.wikiArticle?.title ? cleanText(r.wikiArticle.title, 38) : '—',
+        _flag: r.severity === 'AOG' || (r.priority === 'CRITICAL' && r.status !== 'COMPLETED') ? 'danger' : STATUS_TONE[r.status]
       }))
     };
 
     const pages = [
       {
-        eyebrow: 'SECTION 01 · RELIABILITY ALERTS & COST',
-        title: 'Critical Failures & Cost Hotspots',
-        subtitle: 'Priority asset risks, cumulative expenditure and top-spend equipment ranking',
+        eyebrow: 'SECTION 01 · RELIABILITY ALERTS, MTTR & COST',
+        title: 'Critical Failures, MEL Exposure & Cost Hotspots',
+        subtitle: 'Preventive vs corrective reliability metrics, spare parts expenditure and top exposure bays',
         blocks: [
           { type: 'alerts', items: insights },
           {
             type: 'kpis',
             variant: 'hero-split',
             items: [
-              { label: 'Total Spend', value: fmtMoney(totalCost), rawValue: Number(totalCost.toFixed(2)), numFmt: '$#,##0.00', sublabel: total > 0 ? `Avg ${fmtMoney(totalCost / total)} / intervention` : '$0.00', tone: 'primary' },
-              { label: 'Interventions', value: fmtNumber(total), rawValue: total, numFmt: '#,##0', sublabel: `${completed} completed`, tone: 'info' },
-              { label: 'Total Downtime', value: fmtHours(totalDowntime), rawValue: Number(totalDowntime.toFixed(2)), numFmt: '#,##0.0" h"', sublabel: `${(totalDowntime / Math.max(total, 1)).toFixed(1)}h average`, tone: totalDowntime > 24 ? 'warning' : 'info' },
-              { label: 'Critical Pending', value: fmtNumber(criticalOpen), rawValue: criticalOpen, numFmt: '#,##0', sublabel: `${failedCount} failed orders`, tone: criticalOpen > 0 ? 'danger' : 'success' },
-              { label: 'Closure Rate', value: fmtPercent(completionRate, 1), rawValue: completionRate, numFmt: '0.0"%"', sublabel: 'Closed interventions', tone: completionRate >= 80 ? 'success' : 'warning' }
+              { label: 'Preventive / Corrective', value: `${reliability.preventiveCount} / ${reliability.correctiveCount}`, rawValue: total, sublabel: `${fmtPercent(completionRate, 1)} closed (${completed}/${total})`, tone: 'info' },
+              { label: 'Mean Time To Repair', value: `${reliability.mttrHours} h`, rawValue: reliability.mttrHours, numFmt: '#,##0.0" h"', sublabel: `${fmtHours(totalDowntime)} total downtime`, tone: reliability.mttrHours > 4 ? 'warning' : 'success' },
+              { label: 'Total Spend (Parts)', value: fmtMoney(totalCost), rawValue: Number(totalCost.toFixed(2)), numFmt: '$#,##0.00', sublabel: `${fmtMoney(totalPartsCost)} warehouse spares`, tone: 'primary' },
+              { label: 'Open AOG / MEL', value: `${aogOpen} / ${reliability.activeMelCount}`, rawValue: aogOpen + reliability.activeMelCount, sublabel: `${reliability.melExpiringSoonCount} MEL expiring <=7d`, tone: aogOpen > 0 ? 'danger' : (reliability.activeMelCount > 0 ? 'warning' : 'success') },
+              { label: 'Lost Training Hrs', value: fmtHours(totalLostTraining), rawValue: Number(totalLostTraining.toFixed(1)), sublabel: 'Snag-induced training loss', tone: totalLostTraining > 0 ? 'warning' : 'success' }
             ]
           },
           {
             type: 'chart',
-            height: 215,
+            height: 205,
             chart: {
               type: 'lollipop',
-              title: 'Top Assets by Maintenance Cost ($)',
-              subtitle: 'Equipment generating highest corrective/preventive expenditure',
-              valueFormat: 'currency',
-              labels: topCostAssets.map((a) => a.asset),
-              values: topCostAssets.map((a) => a.cost)
+              title: 'Top Faulty Subsystems by Incident Count',
+              subtitle: 'Subsystems driving corrective work orders and technical snags',
+              labels: reliability.topSubsystems.length
+                ? reliability.topSubsystems.map(s => s.code)
+                : topCostAssets.map(a => a.asset),
+              values: reliability.topSubsystems.length
+                ? reliability.topSubsystems.map(s => s.count)
+                : topCostAssets.map(a => a.cost)
             }
           }
         ]
       },
       {
-        eyebrow: 'SECTION 02 · ASSET COST MATRIX',
-        title: 'Asset Reliability & Discipline Breakdown',
-        subtitle: 'Cost/downtime comparison across equipment types and lifecycle status',
+        eyebrow: 'SECTION 02 · SIMULATOR & ASSET MATRIX',
+        title: 'Bay & Asset Reliability Matrix and Spend Mix',
+        subtitle: 'Cost/downtime comparison across bays, intervention types and lifecycle statuses',
         blocks: [
           {
             type: 'chartPair',
@@ -236,7 +291,7 @@ module.exports = {
             },
             right: {
               type: 'donut',
-              title: 'Interventions by Status',
+              title: 'Work Orders by Status',
               labels: statusKeys,
               values: statusKeys.map((k) => byStatus[k]),
               colors: statusKeys.map((k) => STATUS_COLORS[k] || COLORS.accent)
@@ -246,9 +301,9 @@ module.exports = {
         ]
       },
       {
-        eyebrow: 'SECTION 03 · WORK ORDERS LEDGER',
-        title: 'Maintenance Records Ledger',
-        subtitle: `Work order audit log for ${rangeLabel(range)}`,
+        eyebrow: 'SECTION 03 · WORK ORDERS & SNAGS LEDGER',
+        title: 'Maintenance & Snags Ledger',
+        subtitle: `Full work-order audit trail for ${rangeLabel(range)}`,
         blocks: [
           { type: 'table', showHeading: false, table: ledgerTable }
         ]
@@ -261,15 +316,18 @@ module.exports = {
       theme: 'maintenance',
       orientation: 'portrait',
       coverHighlights: [
-        { label: 'Total Spend', value: fmtMoney(totalCost) },
-        { label: 'Equipment Downtime', value: fmtHours(totalDowntime) },
-        { label: 'Interventions', value: `${completed}/${total}` }
+        { label: 'Prev / Corr Split', value: `${reliability.preventiveCount} / ${reliability.correctiveCount}` },
+        { label: 'MTTR / Downtime', value: `${reliability.mttrHours}h / ${fmtHours(totalDowntime)}` },
+        { label: 'Total Spend', value: fmtMoney(totalCost) }
       ],
       filters: [
         { label: 'Period', value: rangeLabel(range) },
         { label: 'Status', value: status || 'All' },
-        { label: 'Priority', value: priority || 'All' },
         { label: 'Type', value: type || 'All' },
+        ...(simulator_id ? [{ label: 'Simulator ID', value: String(simulator_id) }] : []),
+        ...(subsystem_code ? [{ label: 'Subsystem', value: subsystem_code }] : []),
+        ...(severity ? [{ label: 'Severity', value: severity }] : []),
+        ...(is_snag === 'true' ? [{ label: 'Scope', value: 'Simulator Snags Only' }] : []),
         { label: 'Total Records', value: fmtNumber(total) }
       ],
       pages

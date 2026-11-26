@@ -5,6 +5,9 @@ const {
   Simulator,
   SimulatorSubsystem,
   SimulatorQtgRecord,
+  SimulatorDailyLog,
+  SimulatorDailyShift,
+  SimulatorShiftEntry,
   Operation,
   OperationType,
   OperationMember,
@@ -22,7 +25,7 @@ const {
 } = require('../models');
 const { Op, fn, col, literal } = require('sequelize');
 const { expandOccurrencesInRange, formatDateOnly } = require('../services/planned-recurrence.service');
-const { computeSimulatorTelemetry } = require('../services/simulator-helpers.service');
+const { computeSimulatorTelemetry, computeTestingDurationMinutes } = require('../services/simulator-helpers.service');
 const {
   DAY_MS,
   parseTrendDays,
@@ -171,7 +174,8 @@ router.get('/overview', parseDateFilter, async (req, res, next) => {
       simSorties,
       simMaint,
       simQtg,
-      simSubsystems
+      simSubsystems,
+      todayStationLogs
     ] = await Promise.all([
       Operation.count({ where: opsDateWhere }),
       Operation.count({ where: { status: 'IN_PROGRESS' } }),
@@ -224,7 +228,7 @@ router.get('/overview', parseDateFilter, async (req, res, next) => {
 
       InventoryItem.findAll({
         where: { is_active: true },
-        attributes: ['id', 'sku', 'name', 'unit', 'quantity', 'min_stock', 'reorder_point', 'unit_cost', 'supplier'],
+        attributes: ['id', 'sku', 'name', 'unit', 'quantity', 'min_stock', 'reorder_point', 'unit_cost', 'supplier', 'aog_critical', 'on_order_qty', 'lru_status'],
         include: [
           { model: WarehouseLocation, as: 'location', attributes: ['id', 'code', 'name'] },
           { model: ItemCategory, as: 'category', attributes: ['id', 'name', 'color'] }
@@ -272,12 +276,16 @@ router.get('/overview', parseDateFilter, async (req, res, next) => {
           status: { [Op.in]: ['SCHEDULED', 'IN_PROGRESS', 'FAILED'] },
           [Op.or]: [
             { priority: { [Op.in]: ['HIGH', 'CRITICAL'] } },
+            { severity: 'AOG' },
             { status: 'SCHEDULED', scheduled_date: { [Op.lt]: now } }
           ]
         },
         limit: 6,
         order: [['scheduled_date', 'ASC']],
-        include: [{ model: Asset, as: 'asset', attributes: ['id', 'name', 'serial_number'] }]
+        include: [
+          { model: Asset, as: 'asset', attributes: ['id', 'name', 'serial_number'] },
+          { model: Simulator, as: 'simulator', attributes: ['id', 'bay_code', 'name', 'code', 'station_kind'] }
+        ]
       }),
       Task.findAll({
         where: {
@@ -326,6 +334,7 @@ router.get('/overview', parseDateFilter, async (req, res, next) => {
         order: [['scheduled_date', 'ASC']],
         include: [
           { model: Asset, as: 'asset', attributes: ['id', 'name', 'serial_number'] },
+          { model: Simulator, as: 'simulator', attributes: ['id', 'bay_code', 'name', 'code', 'station_kind'] },
           { model: User, as: 'technician', attributes: ['id', 'first_name', 'last_name'] }
         ]
       }),
@@ -349,6 +358,7 @@ router.get('/overview', parseDateFilter, async (req, res, next) => {
         order: [['created_at', 'DESC']],
         include: [
           { model: Asset, as: 'asset', attributes: ['id', 'name', 'status'] },
+          { model: Simulator, as: 'simulator', attributes: ['id', 'bay_code', 'name', 'code', 'station_kind'] },
           { model: User, as: 'technician', attributes: ['id', 'first_name', 'last_name'] }
         ]
       }),
@@ -372,10 +382,18 @@ router.get('/overview', parseDateFilter, async (req, res, next) => {
       }),
       MaintenanceRecord.findAll({
         where: { simulator_id: { [Op.ne]: null } },
-        attributes: ['id', 'simulator_id', 'status', 'severity', 'is_snag']
+        attributes: ['id', 'simulator_id', 'status', 'severity', 'is_snag', 'mel_category', 'mel_expiry_date']
       }),
       SimulatorQtgRecord.findAll({ attributes: ['id', 'simulator_id', 'status'] }),
-      SimulatorSubsystem.findAll({ attributes: ['id', 'simulator_id', 'subsystem_code', 'status'] })
+      SimulatorSubsystem.findAll({ attributes: ['id', 'simulator_id', 'subsystem_code', 'status'] }),
+      SimulatorDailyLog.findAll({
+        where: { log_date: todayStr },
+        include: [{
+          model: SimulatorDailyShift,
+          as: 'shifts',
+          include: [{ model: SimulatorShiftEntry, as: 'entries' }]
+        }]
+      })
     ]);
 
     const fleet = {
@@ -460,30 +478,96 @@ router.get('/overview', parseDateFilter, async (req, res, next) => {
       };
     });
 
+    const ffsSimulators = simulators.filter(s => (s.station_kind || 'FFS_BAY') === 'FFS_BAY');
+    const ffsMetricBase = ffsSimulators.length > 0 ? ffsSimulators : simulators;
+    const ffsBaseCount = ffsMetricBase.length;
+
     const totalSimulators = simulators.length;
-    const readyBays = simulators.filter(s => s.status === 'READY' || s.status === 'PRE_FLIGHT').length;
-    const inSortieBays = simulators.filter(s => s.status === 'IN_SORTIE').length;
-    const degradedBays = simulators.filter(s => s.status === 'DEGRADED' || s.status === 'MAINTENANCE').length;
-    const aogBays = simulators.filter(s => s.status === 'AOG').length;
+    const readyBays = ffsMetricBase.filter(s => s.status === 'READY' || s.status === 'PRE_FLIGHT').length;
+    const inSortieBays = ffsMetricBase.filter(s => s.status === 'IN_SORTIE').length;
+    const degradedBays = ffsMetricBase.filter(s => s.status === 'DEGRADED' || s.status === 'MAINTENANCE').length;
+    const aogBays = ffsMetricBase.filter(s => s.status === 'AOG').length;
     const simTodayHours = Math.round(simulators.reduce((acc, s) => acc + (s.telemetry?.todayFlightHours || 0), 0) * 10) / 10;
-    const simDispatchRel = totalSimulators > 0
-      ? Math.round((simulators.reduce((acc, s) => acc + (s.telemetry?.dispatchReliabilityPct ?? 100), 0) / totalSimulators) * 10) / 10
+    const simDispatchRel = ffsBaseCount > 0
+      ? Math.round((ffsMetricBase.reduce((acc, s) => acc + (s.telemetry?.dispatchReliabilityPct ?? 100), 0) / ffsBaseCount) * 10) / 10
       : 100;
     const openSnagsCount = simulators.reduce((acc, s) => acc + (s.telemetry?.openSnagsCount || 0), 0);
-    const qtgCompliancePct = totalSimulators > 0
-      ? Math.round(simulators.reduce((acc, s) => acc + (s.telemetry?.qtgSummary?.completionPct ?? 100), 0) / totalSimulators)
+    const qtgCompliancePct = ffsBaseCount > 0
+      ? Math.round(ffsMetricBase.reduce((acc, s) => acc + (s.telemetry?.qtgSummary?.completionPct ?? 100), 0) / ffsBaseCount)
       : 100;
+
+    const buildStationLiveSummary = (kind) => {
+      const subset = simulators.filter(s => s.station_kind === kind);
+      const log = todayStationLogs.find(l => l.station_kind === kind);
+      let inUse = 0;
+      let ready = 0;
+      let na = 0;
+      let totalMin = 0;
+      if (log && Array.isArray(log.shifts) && log.shifts.length > 0) {
+        const sortedShifts = [...log.shifts].sort((a, b) => (a.shift_number || 0) - (b.shift_number || 0));
+        sortedShifts.forEach((sh, idx) => {
+          for (const e of (sh.entries || [])) {
+            totalMin += computeTestingDurationMinutes(e.sim_testing_start, e.sim_testing_end);
+            if (idx === 0) {
+              if (e.usage_status === 'IN_USE') inUse += 1;
+              else if (e.usage_status === 'NA') na += 1;
+              else ready += 1;
+            }
+          }
+        });
+      } else {
+        for (const st of subset) {
+          if (st.status === 'AOG') na += 1;
+          else if (st.status === 'IN_SORTIE') inUse += 1;
+          else ready += 1;
+        }
+      }
+      return {
+        total: subset.length,
+        inUse,
+        ready,
+        na,
+        todayShiftHours: Number((totalMin / 60).toFixed(1))
+      };
+    };
+
+    const testPlacesLive = buildStationLiveSummary('TEST_PLACE');
+    const iosConsolesLive = buildStationLiveSummary('IOS_CONSOLE');
+
+    const soonMs = now.getTime() + 7 * DAY_MS;
+    let melActiveCount = 0;
+    let melExpiringCount = 0;
+    for (const m of simMaint) {
+      if (['SCHEDULED', 'IN_PROGRESS', 'DEFERRED'].includes(m.status) && m.mel_category && m.mel_category !== 'NONE') {
+        melActiveCount += 1;
+        if (m.mel_expiry_date) {
+          const expMs = new Date(`${String(m.mel_expiry_date).slice(0, 10)}T23:59:59Z`).getTime();
+          if (!Number.isNaN(expMs) && expMs <= soonMs) melExpiringCount += 1;
+        }
+      }
+    }
+
+    const aogSparesLowCount = activeInventoryItems.filter(
+      (i) => Boolean(i.aog_critical) && (Number(i.quantity) || 0) <= (Number(i.reorder_point) || 0)
+    ).length;
 
     const simulatorSummary = {
       totalSimulators,
+      ffsTotal: ffsBaseCount,
       readyBays,
       inSortieBays,
       degradedBays,
       aogBays,
       todayFlightHours: simTodayHours,
+      todayStationHours: Number((testPlacesLive.todayShiftHours + iosConsolesLive.todayShiftHours).toFixed(1)),
       dispatchReliabilityPct: simDispatchRel,
       openSnagsCount,
-      qtgCompliancePct
+      qtgCompliancePct,
+      melActiveCount,
+      melExpiringCount,
+      aogSparesLowCount,
+      testPlaces: testPlacesLive,
+      iosConsoles: iosConsolesLive
     };
 
     res.json({
@@ -656,6 +740,7 @@ router.get('/recent-activity', async (req, res, next) => {
         order: [['created_at', 'DESC']],
         include: [
           { model: Asset, as: 'asset', attributes: ['id', 'name', 'status'] },
+          { model: Simulator, as: 'simulator', attributes: ['id', 'bay_code', 'name', 'code', 'station_kind'] },
           { model: User, as: 'technician', attributes: ['id', 'first_name', 'last_name'] }
         ]
       }),
@@ -673,18 +758,7 @@ router.get('/recent-activity', async (req, res, next) => {
           { model: InventoryItem, as: 'item', attributes: ['id', 'name', 'sku', 'unit'] },
           { model: User, as: 'user', attributes: ['id', 'first_name', 'last_name'] }
         ]
-      }),
-      Simulator.findAll({ order: [['bay_code', 'ASC'], ['code', 'ASC']] }),
-      Operation.findAll({
-        where: { simulator_id: { [Op.ne]: null }, status: { [Op.ne]: 'CANCELLED' } },
-        attributes: ['id', 'simulator_id', 'sortie_code', 'title', 'customer_operator', 'status', 'start_date', 'end_date', 'scheduled_hours', 'lost_training_minutes']
-      }),
-      MaintenanceRecord.findAll({
-        where: { simulator_id: { [Op.ne]: null } },
-        attributes: ['id', 'simulator_id', 'status', 'severity', 'is_snag']
-      }),
-      SimulatorQtgRecord.findAll({ attributes: ['id', 'simulator_id', 'status'] }),
-      SimulatorSubsystem.findAll({ attributes: ['id', 'simulator_id', 'subsystem_code', 'status'] })
+      })
     ]);
 
     res.json({

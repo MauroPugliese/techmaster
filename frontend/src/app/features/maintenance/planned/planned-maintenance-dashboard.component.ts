@@ -30,7 +30,7 @@ import { PlannedMaintenanceService } from './planned-maintenance.service';
 import { ConfirmService, ToastService, UiCustomizationService, UiSectionPreferences } from '../../../core/services/services';
 import { ExportService } from '../../../core/services/export.service';
 import { DateTimePickerComponent } from '../../../shared/components/datetime-picker/datetime-picker.component';
-import { formatLocalYmd } from '../../../shared/components/datetime-picker/datetime-picker.utils';
+import { formatLocalYmd, parseIncomingDate } from '../../../shared/components/datetime-picker/datetime-picker.utils';
 import { ExportMenuComponent } from '../../../shared/components/export-menu/export-menu.component';
 import { DropdownComponent, DropdownOptionComponent } from '../../../shared/components/dropdown/dropdown.component';
 import { formatRecurrenceText } from '../maintenance-helpers';
@@ -49,7 +49,6 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnChanges, 
   @Input() embedded = false;
   @Input() refreshTick = 0;
 
-  @Output() createWorkOrderRequested = new EventEmitter<{ task: PlannedMaintenanceTask; occurrenceDate?: string }>();
   @Output() summaryChange = new EventEmitter<PlannedMaintenanceSummary | null>();
   @Output() exportParamsChange = new EventEmitter<Record<string, any>>();
 
@@ -174,7 +173,6 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnChanges, 
       return;
     }
 
-    if (!this.embedded) return;
     if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
     const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
     const isEditable = tag === 'input' || tag === 'textarea' || tag === 'select' || (e.target as HTMLElement)?.isContentEditable;
@@ -183,6 +181,15 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnChanges, 
       e.preventDefault();
       this.searchInput.nativeElement.focus();
     }
+  }
+
+  get exportParams(): Record<string, string> {
+    const p: Record<string, string> = {};
+    if (this.searchTerm.trim()) p['search'] = this.searchTerm.trim();
+    if (this.systemFilter) p['system'] = this.systemFilter;
+    if (this.repeatTypeFilter) p['repeat_task_type'] = this.repeatTypeFilter;
+    if (this.statusFilter) p['status'] = this.statusFilter;
+    return p;
   }
 
   // ── Data Loading ───────────────────────────────────────────────────────────
@@ -332,11 +339,11 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnChanges, 
         subsystem: task.subsystem,
         task: task.task,
         reference: task.reference || '',
-        operationDateStart: task.operationDateStart ? new Date(task.operationDateStart) : null,
-        operationDateEnd: task.operationDateEnd ? new Date(task.operationDateEnd) : null,
+        operationDateStart: parseIncomingDate(task.operationDateStart),
+        operationDateEnd: parseIncomingDate(task.operationDateEnd),
         repeatTaskType: task.repeatTaskType || 'WEEK',
         repeatTaskNumber: task.repeatTaskNumber || 1,
-        recurrenceEndDate: task.recurrenceEndDate ? new Date(task.recurrenceEndDate) : null,
+        recurrenceEndDate: parseIncomingDate(task.recurrenceEndDate),
         reportTemplate: task.reportTemplate || '',
         status: task.status || 'TODO',
         optional: task.optional || false
@@ -417,15 +424,6 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnChanges, 
     this.detailIsDayEvent = false;
     if (isDayEvent) this.deleteOccurrence(task);
     else this.deleteTask(task);
-  }
-
-  createWorkOrderFromDetail(): void {
-    if (!this.detailTask) return;
-    const task = this.detailTask;
-    const occDate = this.detailIsDayEvent ? (task.occurrenceDate || this.selectedDate) : undefined;
-    this.detailTask = null;
-    this.detailIsDayEvent = false;
-    this.createWorkOrderRequested.emit({ task, occurrenceDate: occDate });
   }
 
   closeModal(event: MouseEvent): void {
@@ -745,12 +743,14 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnChanges, 
   }
 
   private emptyForm(): any {
+    const startDefault = new Date();
+    startDefault.setHours(8, 0, 0, 0);
     return {
       system: '',
       subsystem: '',
       task: '',
       reference: '',
-      operationDateStart: null,
+      operationDateStart: startDefault,
       operationDateEnd: null,
       repeatTaskType: 'WEEK',
       repeatTaskNumber: 1,

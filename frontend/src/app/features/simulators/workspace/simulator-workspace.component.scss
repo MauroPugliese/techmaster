@@ -431,3 +431,81 @@ app-dropdown.sim-ws-dropdown {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* ── Active MEL / Deferred Defects & Wiki SOP links ──────────────────────── */
+.mel-deferred-box {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: #FFFBEB;
+  border: 1px solid #FDE68A;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mel-box-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: #92400E;
+  .mat-i { font-size: 16px; color: #D97706; }
+}
+
+.mel-item {
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px solid #FDE68A;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mel-item-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.mel-cat-badge,
+.mel-inline-pill {
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: #FEF3C7;
+  color: #92400E;
+  border: 1px solid #FCD34D;
+  font-size: 0.68rem;
+  font-weight: 800;
+  margin-left: 4px;
+}
+
+.mel-title {
+  flex: 1 1 auto;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--blue-950);
+}
+
+.mel-exp {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #92400E;
+  &.is-urgent { color: #B91C1C; }
+}
+
+.mel-sop-link,
+.mel-sop-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--primary);
+  text-decoration: none;
+  .mat-i { font-size: 14px; }
+  &:hover { text-decoration: underline; }
+}

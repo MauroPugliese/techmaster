@@ -23,6 +23,12 @@ const noBorder = () => {
   return { top: none, bottom: none, left: none, right: none };
 };
 
+function makeSpacer(after = 90) {
+  const p = new Paragraph({ spacing: { before: 0, after, line: 40 }, children: [new TextRun({ text: '', size: 4 })] });
+  p._isEmptySpacer = true;
+  return p;
+}
+
 function formatGenDate(meta) {
   return new Date(meta?.generatedAt || Date.now()).toLocaleString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
@@ -48,10 +54,10 @@ function buildCoverHighlightsTable(highlights, theme) {
           left: side,
           right: side
         },
-        margins: { top: 110, bottom: 110, left: 140, right: 140 },
+        margins: { top: 90, bottom: 90, left: 130, right: 130 },
         children: [
           new Paragraph({
-            spacing: { after: 35 },
+            spacing: { after: 30 },
             children: [new TextRun({
               text: String(h.label || '').toUpperCase(),
               bold: true,
@@ -66,7 +72,7 @@ function buildCoverHighlightsTable(highlights, theme) {
               text: str(h.value),
               bold: true,
               font: F_DISP,
-              size: 26,
+              size: 24,
               color: noHash(theme.primary)
             })]
           })
@@ -90,7 +96,7 @@ function buildCoverOutlineTable(pages, theme) {
     const cell = (entry) => new TableCell({
       width: { size: 50, type: WidthType.PERCENTAGE },
       borders: { top: none, bottom: line, left: none, right: none },
-      margins: { top: 60, bottom: 60, left: 80, right: 80 },
+      margins: { top: 55, bottom: 55, left: 80, right: 80 },
       children: [new Paragraph({
         spacing: { after: 0 },
         children: entry ? [
@@ -104,11 +110,10 @@ function buildCoverOutlineTable(pages, theme) {
 
   return [
     new Paragraph({
-      spacing: { before: 40, after: 50 },
+      spacing: { before: 120, after: 50 },
       children: [new TextRun({ text: 'REPORT CONTENTS & STRUCTURE', bold: true, font: F_DISP, size: 15, color: noHash(theme.cobalt || theme.primary) })]
     }),
-    new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows }),
-    new Paragraph({ spacing: { after: 140 }, text: '' })
+    new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows })
   ];
 }
 
@@ -118,7 +123,7 @@ function buildCoverControlTable(spec, theme) {
     ['Document ID', theme.docCode || spec.docCode || 'CAE-RPT'],
     ['Generated', formatGenDate(meta)],
     ...(meta.generatedBy ? [['Prepared By', meta.generatedBy]] : []),
-    ...(meta.filters || []).slice(0, 5).map((f) => [f.label, str(f.value)]),
+    ...(meta.filters || []).slice(0, 4).map((f) => [f.label, str(f.value)]),
     ['Classification', meta.confidentiality || COMPANY.confidentiality]
   ];
 
@@ -137,12 +142,12 @@ function buildCoverControlTable(spec, theme) {
         left: { style: BorderStyle.NONE, size: 0, color: 'auto' },
         right: { style: BorderStyle.NONE, size: 0, color: 'auto' }
       },
-      margins: { top: 75, bottom: 75, left: 130, right: 130 },
+      margins: { top: 60, bottom: 60, left: 120, right: 120 },
       children: [new Paragraph({
         spacing: { after: 0 },
         children: pair ? [
-          new TextRun({ text: `${pair[0]}: `, bold: true, font: F_DISP, size: 16.5, color: noHash(COLORS.subtle) }),
-          new TextRun({ text: str(pair[1]), font: F_BODY, size: 16.5, color: noHash(COLORS.ink) })
+          new TextRun({ text: `${pair[0]}: `, bold: true, font: F_DISP, size: 16, color: noHash(COLORS.subtle) }),
+          new TextRun({ text: str(pair[1]), font: F_BODY, size: 16, color: noHash(COLORS.ink) })
         ] : []
       })]
     });
@@ -153,9 +158,18 @@ function buildCoverControlTable(spec, theme) {
   return new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows });
 }
 
-/** Build official CAE Navy/Blue `diagonal-hero` A4 Portrait Cover Page. */
+/** Build official CAE Navy/Blue `diagonal-hero` A4 Cover Page calibrated strictly to 1 page. */
 function buildCoverPage(spec, theme) {
   const lightLogo = getLogoBuffer('light');
+  const periodInfo = spec.meta?.period;
+  const periodTag = periodInfo && periodInfo.type && periodInfo.type !== 'all'
+    ? `   |   ${String(periodInfo.label || '').toUpperCase()}`
+    : '';
+  const tinySpacer = (after = 90) => new Paragraph({
+    spacing: { before: 0, after, line: 40 },
+    children: [new TextRun({ text: '', size: 4 })]
+  });
+
   const out = [
     new Table({
       width: { size: 100, type: WidthType.PERCENTAGE },
@@ -166,59 +180,59 @@ function buildCoverPage(spec, theme) {
           shading: { fill: noHash(theme.primary) },
           borders: {
             ...noBorder(),
-            bottom: { style: BorderStyle.SINGLE, size: 36, color: noHash(theme.accent) }
+            bottom: { style: BorderStyle.SINGLE, size: 32, color: noHash(theme.accent) }
           },
-          margins: { top: 340, bottom: 380, left: 260, right: 260 },
+          margins: { top: 240, bottom: 260, left: 240, right: 240 },
           children: [
             new Paragraph({
-              spacing: { after: 200 },
+              spacing: { after: 140 },
               children: [
-                ...(lightLogo ? [new ImageRun({ data: lightLogo, transformation: { width: 120, height: 45 } })] : []),
+                ...(lightLogo ? [new ImageRun({ data: lightLogo, transformation: { width: 112, height: 42 } })] : []),
                 new TextRun({
-                  text: `    ${theme.docCode}`,
+                  text: `    ${theme.docCode}${periodTag}`,
                   bold: true,
                   font: F_MONO,
-                  size: 18,
+                  size: 17,
                   color: noHash(theme.secondary || COLORS.cyan)
                 })
               ]
             }),
             new Paragraph({
-              spacing: { after: 90 },
+              spacing: { after: 70 },
               children: [new TextRun({
                 text: String(spec.category || '').toUpperCase(),
                 bold: true,
                 font: F_DISP,
-                size: 18,
+                size: 17,
                 color: noHash(theme.secondary || COLORS.cyan)
               })]
             }),
             new Paragraph({
-              spacing: { after: 140, line: 276 },
+              spacing: { after: 110, line: 260 },
               children: [new TextRun({
                 text: spec.title,
                 bold: true,
                 font: F_DISP,
-                size: 50,
+                size: spec.title && spec.title.length > 52 ? 40 : 44,
                 color: noHash(COLORS.white)
               })]
             }),
             ...(spec.subtitle ? [new Paragraph({
-              spacing: { after: 100 },
+              spacing: { after: 70 },
               children: [new TextRun({
                 text: spec.subtitle,
                 font: F_DISP,
-                size: 22,
+                size: 20,
                 color: 'CBD5E1'
               })]
             })] : []),
             new Paragraph({
-              spacing: { before: 100, after: 0 },
+              spacing: { before: 60, after: 0 },
               children: [new TextRun({
                 text: theme.coverTagline || COMPANY.tagline,
                 italics: true,
                 font: F_BODY,
-                size: 17,
+                size: 16,
                 color: '94A3B8'
               })]
             })
@@ -226,19 +240,22 @@ function buildCoverPage(spec, theme) {
         })]
       })]
     }),
-    new Paragraph({ spacing: { after: 200 }, text: '' })
+    tinySpacer(120)
   ];
 
   const hiTable = buildCoverHighlightsTable(spec.coverHighlights, theme);
   if (hiTable) {
     out.push(hiTable);
-    out.push(new Paragraph({ spacing: { after: 140 }, text: '' }));
   }
 
   out.push(...buildCoverOutlineTable(spec.pages, theme));
+  out.push(new Paragraph({
+    spacing: { before: 120, after: 50 },
+    children: [new TextRun({ text: 'DOCUMENT CONTROL & ACTIVE SCOPE', bold: true, font: F_DISP, size: 15, color: noHash(theme.primary) })]
+  }));
   out.push(buildCoverControlTable(spec, theme));
   out.push(new Paragraph({
-    spacing: { before: 180, after: 0 },
+    spacing: { before: 110, after: 0 },
     alignment: AlignmentType.CENTER,
     children: [new TextRun({ text: `${COMPANY.name}  ·  ${COMPANY.tagline}`, font: F_BODY, size: 15, color: noHash(COLORS.subtle) })]
   }));
@@ -282,7 +299,7 @@ function buildPageBanner(pageNum, eyebrow, title, subtitle, theme, pageBreakBefo
         text: subtitle,
         italics: true,
         font: F_BODY,
-        size: 16.5,
+        size: 17,
         color: noHash(COLORS.subtle)
       })]
     }));
@@ -310,17 +327,17 @@ function buildExecutiveBrief(title, text, theme) {
           children: [
             new Paragraph({
               spacing: { after: 35 },
-              children: [new TextRun({ text: String(title || 'EXECUTIVE BRIEF').toUpperCase(), bold: true, font: F_DISP, size: 14.5, color: noHash(theme.primary) })]
+              children: [new TextRun({ text: String(title || 'EXECUTIVE BRIEF').toUpperCase(), bold: true, font: F_DISP, size: 15, color: noHash(theme.primary) })]
             }),
             new Paragraph({
               spacing: { after: 0, line: 260 },
-              children: [new TextRun({ text, font: F_BODY, size: 17.5, color: noHash(COLORS.body) })]
+              children: [new TextRun({ text, font: F_BODY, size: 18, color: noHash(COLORS.body) })]
             })
           ]
         })]
       })]
     }),
-    new Paragraph({ spacing: { after: 120 }, text: '' })
+    makeSpacer(120)
   ];
 }
 
@@ -385,7 +402,7 @@ function buildThemedKpis(kpis, variant, theme) {
           children: [new TextRun({
             text: str(k.sublabel),
             font: F_BODY,
-            size: 14.5,
+            size: 15,
             color: isHeroFirst ? 'CBD5E1' : noHash(COLORS.subtle)
           })]
         }));
@@ -408,7 +425,7 @@ function buildThemedKpis(kpis, variant, theme) {
       width: { size: 100, type: WidthType.PERCENTAGE },
       rows: [new TableRow({ cantSplit: true, children: cells })]
     }));
-    out.push(new Paragraph({ spacing: { after: 90 }, text: '' }));
+    out.push(makeSpacer(90));
   }
 
   return out;
@@ -448,7 +465,7 @@ function buildGaugeBand(items, theme) {
         new Paragraph({
           alignment: AlignmentType.CENTER,
           spacing: { after: 20 },
-          children: [new TextRun({ text: str(item.label), bold: true, font: F_DISP, size: 15.5, color: noHash(COLORS.ink) })]
+          children: [new TextRun({ text: str(item.label), bold: true, font: F_DISP, size: 16, color: noHash(COLORS.ink) })]
         }),
         ...(item.sublabel ? [new Paragraph({
           alignment: AlignmentType.CENTER,
@@ -461,7 +478,7 @@ function buildGaugeBand(items, theme) {
 
   return [
     new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [new TableRow({ cantSplit: true, children: cells })] }),
-    new Paragraph({ spacing: { after: 110 }, text: '' })
+    makeSpacer(110)
   ];
 }
 
@@ -481,7 +498,7 @@ function buildScorecards(group, theme) {
   if (group.subtitle) {
     out.push(new Paragraph({
       spacing: { after: 55 },
-      children: [new TextRun({ text: group.subtitle, italics: true, font: F_BODY, size: 15.5, color: noHash(COLORS.subtle) })]
+      children: [new TextRun({ text: group.subtitle, italics: true, font: F_BODY, size: 16, color: noHash(COLORS.subtle) })]
     }));
   }
 
@@ -501,7 +518,7 @@ function buildScorecards(group, theme) {
           borders: { top: border, bottom: border, left: none, right: none },
           margins: { top: 60, bottom: 60, left: 90, right: 70 },
           children: [
-            new Paragraph({ spacing: { after: item.detail ? 15 : 0 }, children: [new TextRun({ text: str(item.label), bold: true, font: F_BODY, size: 16.5, color: noHash(COLORS.ink) })] }),
+            new Paragraph({ spacing: { after: item.detail ? 15 : 0 }, children: [new TextRun({ text: str(item.label), bold: true, font: F_BODY, size: 17, color: noHash(COLORS.ink) })] }),
             ...(item.detail ? [new Paragraph({ spacing: { after: 0 }, children: [new TextRun({ text: str(item.detail), font: F_BODY, size: 14, color: noHash(COLORS.subtle) })] })] : [])
           ]
         }),
@@ -514,8 +531,8 @@ function buildScorecards(group, theme) {
           children: [new Paragraph({
             spacing: { after: 0 },
             children: [
-              new TextRun({ text: '█'.repeat(filled), font: F_MONO, size: 12.5, color: barCol }),
-              ...(18 - filled > 0 ? [new TextRun({ text: '░'.repeat(18 - filled), font: F_MONO, size: 12.5, color: noHash(COLORS.border) })] : [])
+              new TextRun({ text: '█'.repeat(filled), font: F_MONO, size: 13, color: barCol }),
+              ...(18 - filled > 0 ? [new TextRun({ text: '░'.repeat(18 - filled), font: F_MONO, size: 13, color: noHash(COLORS.border) })] : [])
             ]
           })]
         }),
@@ -528,7 +545,7 @@ function buildScorecards(group, theme) {
           children: [new Paragraph({
             spacing: { after: 0 },
             alignment: AlignmentType.RIGHT,
-            children: [new TextRun({ text: str(item.valueLabel || `${pctVal.toFixed(1)}%`), bold: true, font: F_DISP, size: 16.5, color: tone ? noHash(tone.fg) : noHash(theme.primary) })]
+            children: [new TextRun({ text: str(item.valueLabel || `${pctVal.toFixed(1)}%`), bold: true, font: F_DISP, size: 17, color: tone ? noHash(tone.fg) : noHash(theme.primary) })]
           })]
         })
       ]
@@ -536,7 +553,7 @@ function buildScorecards(group, theme) {
   });
 
   out.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows }));
-  out.push(new Paragraph({ spacing: { after: 100 }, text: '' }));
+  out.push(makeSpacer(100));
   return out;
 }
 
@@ -567,23 +584,23 @@ function buildHighlights(title, items, theme) {
             spacing: { after: 25 },
             children: [
               new TextRun({ text: `${String(h.eyebrow || 'HIGHLIGHT').toUpperCase()}  `, bold: true, font: F_DISP, size: 14, color: noHash(tone.fg) }),
-              ...(h.metric ? [new TextRun({ text: `· ${str(h.metric)}`, bold: true, font: F_DISP, size: 15.5, color: noHash(theme.primary) })] : [])
+              ...(h.metric ? [new TextRun({ text: `· ${str(h.metric)}`, bold: true, font: F_DISP, size: 16, color: noHash(theme.primary) })] : [])
             ]
           }),
           new Paragraph({
             spacing: { after: 25 },
-            children: [new TextRun({ text: str(h.title), bold: true, font: F_DISP, size: 17.5, color: noHash(COLORS.ink) })]
+            children: [new TextRun({ text: str(h.title), bold: true, font: F_DISP, size: 18, color: noHash(COLORS.ink) })]
           }),
           ...(h.detail ? [new Paragraph({
             spacing: { after: 0 },
-            children: [new TextRun({ text: str(h.detail), font: F_BODY, size: 15.5, color: noHash(COLORS.body) })]
+            children: [new TextRun({ text: str(h.detail), font: F_BODY, size: 16, color: noHash(COLORS.body) })]
           })] : [])
         ]
       });
     });
 
     out.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [new TableRow({ cantSplit: true, children: cells })] }));
-    out.push(new Paragraph({ spacing: { after: 80 }, text: '' }));
+    out.push(makeSpacer(80));
   }
 
   return out;
@@ -613,14 +630,14 @@ function buildStatMatrix(title, pairs, theme) {
         spacing: { after: 0 },
         children: pair ? [
           new TextRun({ text: `${str(pair[0])}: `, bold: true, font: F_DISP, size: 16, color: noHash(COLORS.subtle) }),
-          new TextRun({ text: str(pair[1]), font: F_BODY, size: 16.5, color: noHash(COLORS.ink) })
+          new TextRun({ text: str(pair[1]), font: F_BODY, size: 17, color: noHash(COLORS.ink) })
         ] : []
       })]
     });
     rows.push(new TableRow({ cantSplit: true, children: [cell(left), cell(right)] }));
   }
   out.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows }));
-  out.push(new Paragraph({ spacing: { after: 100 }, text: '' }));
+  out.push(makeSpacer(100));
   return out;
 }
 
@@ -668,7 +685,7 @@ function buildCardList(title, items, theme) {
         })]
       })]
     }));
-    out.push(new Paragraph({ spacing: { after: 65 }, text: '' }));
+    out.push(makeSpacer(65));
   });
 
   return out;
@@ -697,7 +714,7 @@ function buildAlerts(title, items, theme) {
     if (ins.detail) {
       paras.push(new Paragraph({
         spacing: { after: 0 },
-        children: [new TextRun({ text: str(ins.detail), font: F_BODY, size: 16.5, color: noHash(COLORS.body) })]
+        children: [new TextRun({ text: str(ins.detail), font: F_BODY, size: 17, color: noHash(COLORS.body) })]
       }));
     }
 
@@ -714,7 +731,7 @@ function buildAlerts(title, items, theme) {
         })]
       })]
     }));
-    out.push(new Paragraph({ spacing: { after: 70 }, text: '' }));
+    out.push(makeSpacer(70));
   });
 
   return out;

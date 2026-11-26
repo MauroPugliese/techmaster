@@ -226,3 +226,34 @@ test('buildInventorySortOrder handles allowlisted columns and falls back safely'
   const fallbackSort = buildInventorySortOrder('malicious_col; DROP TABLE', 'asc', { ItemCategory, WarehouseLocation });
   assert.deepEqual(fallbackSort, [[{ model: ItemCategory, as: 'category' }, 'name', 'ASC'], ['name', 'ASC']]);
 });
+
+
+test('sanitizeInventoryPayload validates LRU/RMA, subsystem, serial number, on_order_qty, and ETA date', () => {
+  const res = sanitizeInventoryPayload({
+    category_id: 1,
+    sku: 'LRU-IG-900',
+    name: 'Tropos Image Generator Node',
+    subsystem_code: 'visual',
+    serial_number: 'SN-2026-4412',
+    lru_status: 'in_repair_rma',
+    installed_simulator_id: '3',
+    rma_reference: 'RMA-CAE-2026-88',
+    on_order_qty: '2',
+    expected_delivery_date: '2026-12-15'
+  }, { isCreate: true });
+
+  assert.equal(res.error, undefined);
+  assert.equal(res.data.subsystem_code, 'VISUAL');
+  assert.equal(res.data.serial_number, 'SN-2026-4412');
+  assert.equal(res.data.lru_status, 'IN_REPAIR_RMA');
+  assert.equal(res.data.installed_simulator_id, 3);
+  assert.equal(res.data.rma_reference, 'RMA-CAE-2026-88');
+  assert.equal(res.data.on_order_qty, 2);
+  assert.equal(res.data.expected_delivery_date, '2026-12-15');
+
+  const badLru = sanitizeInventoryPayload({ lru_status: 'BROKEN_STATE' }, { isCreate: false });
+  assert.match(badLru.error, /Invalid lru_status/i);
+
+  const badEta = sanitizeInventoryPayload({ expected_delivery_date: '15/12/2026' }, { isCreate: false });
+  assert.match(badEta.error, /YYYY-MM-DD/i);
+});

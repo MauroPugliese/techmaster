@@ -66,6 +66,26 @@
       <app-dropdown-option [ngValue]="'TOOL_CALIBRATED'">Calibrated Tooling</app-dropdown-option>
     </app-dropdown>
 
+    <app-dropdown class="form-control wh-filter-select"
+                  [(ngModel)]="lruStatusFilter"
+                  (change)="applyFilters()"
+                  placeholder="All LRU Status">
+      <app-dropdown-option [ngValue]="''">All LRU Status</app-dropdown-option>
+      <app-dropdown-option [ngValue]="'SERVICEABLE'">Serviceable</app-dropdown-option>
+      <app-dropdown-option [ngValue]="'INSTALLED'">Installed on Bay</app-dropdown-option>
+      <app-dropdown-option [ngValue]="'IN_REPAIR_RMA'">In Repair (RMA)</app-dropdown-option>
+      <app-dropdown-option [ngValue]="'UNSERVICEABLE'">Unserviceable</app-dropdown-option>
+      <app-dropdown-option [ngValue]="'QUARANTINE'">Quarantine</app-dropdown-option>
+    </app-dropdown>
+
+    <app-dropdown class="form-control wh-filter-select"
+                  [(ngModel)]="subsystemFilter"
+                  (change)="applyFilters()"
+                  placeholder="All Subsystems">
+      <app-dropdown-option [ngValue]="''">All Subsystems</app-dropdown-option>
+      <app-dropdown-option *ngFor="let sub of subsystemOptions" [ngValue]="sub.code">{{sub.label}}</app-dropdown-option>
+    </app-dropdown>
+
     <button type="button"
             class="btn btn-sm wh-aog-toggle"
             [class.active]="aogOnly"
@@ -203,10 +223,17 @@
             <span class="wh-aog-badge" *ngIf="item.aog_critical">AOG</span>
             <span class="wh-cls-pill" *ngIf="item.part_classification === 'ROTATABLE_LRU'">LRU</span>
             <span class="wh-cls-pill is-tool" *ngIf="item.part_classification === 'TOOL_CALIBRATED'">CAL TOOL</span>
+            <span class="wh-cls-pill" *ngIf="item.lru_status === 'IN_REPAIR_RMA'" style="background:#FEF3C7;color:#92400E;border-color:#FCD34D">IN RMA</span>
+            <span class="wh-cls-pill" *ngIf="item.on_order_qty && item.on_order_qty > 0" style="background:#E0F2FE;color:#0369A1;border-color:#7DD3FC">
+              +{{item.on_order_qty}} ON ORDER
+            </span>
             <span class="wh-item-name">{{item.name}}</span>
           </div>
-          <div class="wh-subtext" *ngIf="itemSubline(item) || item.compatible_models?.length || (item.unserviceable_qty && item.unserviceable_qty > 0)">
+          <div class="wh-subtext" *ngIf="itemSubline(item) || item.compatible_models?.length || (item.unserviceable_qty && item.unserviceable_qty > 0) || item.installedSimulator || item.expected_delivery_date || item.rma_reference">
             <span *ngIf="itemSubline(item)">{{itemSubline(item)}}</span>
+            <span *ngIf="item.installedSimulator" class="wh-num" style="color:var(--primary);font-weight:700"> · On {{item.installedSimulator.bay_code}}</span>
+            <span *ngIf="item.rma_reference" class="wh-num"> · {{item.rma_reference}}</span>
+            <span *ngIf="item.expected_delivery_date" class="wh-num"> · ETA {{item.expected_delivery_date | date:'dd MMM'}}</span>
             <span *ngIf="item.lead_time_days" class="wh-num"> · {{item.lead_time_days}}d lead</span>
             <span *ngIf="item.unserviceable_qty && item.unserviceable_qty > 0" class="wh-us-tag wh-num"> · U/S: {{item.unserviceable_qty}}</span>
             <span *ngFor="let m of item.compatible_models?.slice(0, 3)" class="wh-compat-chip">{{m}}</span>

@@ -58,10 +58,10 @@
 </div>
 
 <!-- ── No Assets Prompt ────────────────────────────────────────────────── -->
-<div class="mnt-warn-banner" *ngIf="!loading && assets.length === 0">
+<div class="mnt-warn-banner" *ngIf="!loading && assets.length === 0 && simulators.length === 0">
   <div class="mnt-head-actions">
     <span class="mat-i" style="color:#D97706">warning</span>
-    <span>No active assets found. Add an asset in the Assets Registry before logging work orders.</span>
+    <span>No active simulators or assets found. Add an asset in the Assets Registry before logging work orders.</span>
   </div>
   <button type="button" class="btn btn-secondary btn-sm" (click)="openAssetsTabRequested.emit()">
     <span class="btn-icon">devices</span> Manage Assets
@@ -121,10 +121,40 @@
       <app-dropdown-option *ngFor="let s of simulators" [ngValue]="s.id">{{s.bay_code}} · {{s.code}}</app-dropdown-option>
     </app-dropdown>
 
+    <app-dropdown class="form-control mnt-filter-select" [(ngModel)]="severityFilter" (change)="applyFilters()" placeholder="All Severities">
+      <app-dropdown-option value="">All Severities</app-dropdown-option>
+      <app-dropdown-option value="AOG">AOG (Down)</app-dropdown-option>
+      <app-dropdown-option value="DEGRADED">Degraded</app-dropdown-option>
+      <app-dropdown-option value="MINOR">Minor</app-dropdown-option>
+    </app-dropdown>
+
+    <app-dropdown class="form-control mnt-filter-select" [(ngModel)]="subsystemFilter" (change)="applyFilters()" placeholder="All Subsystems">
+      <app-dropdown-option value="">All Subsystems</app-dropdown-option>
+      <app-dropdown-option *ngFor="let sub of subsystemOptions" [value]="sub.code">{{sub.label}}</app-dropdown-option>
+    </app-dropdown>
+
     <app-dropdown class="form-control mnt-filter-select" [(ngModel)]="assetFilter" (change)="applyFilters()" placeholder="All Assets">
       <app-dropdown-option [ngValue]="''">All Assets</app-dropdown-option>
       <app-dropdown-option *ngFor="let a of assets" [ngValue]="a.id">{{a.name}}</app-dropdown-option>
     </app-dropdown>
+
+    <button type="button"
+            class="btn btn-sm mnt-pill-toggle"
+            [class.active]="snagsOnly"
+            (click)="toggleSnagsOnly()"
+            title="Show only Discrepancy Reports (Snags)">
+      <span class="mat-i" style="font-size:15px">report_problem</span>
+      Snags (DR)
+    </button>
+
+    <button type="button"
+            class="btn btn-sm mnt-pill-toggle is-mel"
+            [class.active]="melActiveOnly"
+            (click)="toggleMelOnly()"
+            title="Show only Active MEL / Deferred Defects">
+      <span class="mat-i" style="font-size:15px">pending_actions</span>
+      MEL Active
+    </button>
 
     <button *ngIf="hasActiveFilters" type="button" class="btn btn-ghost btn-sm" (click)="resetFilters()">
       <span class="btn-icon">filter_alt_off</span> Reset
@@ -239,6 +269,7 @@
             <span class="mnt-bay-pill" *ngIf="r.simulator?.bay_code">{{r.simulator?.bay_code}}</span>
             <span class="mnt-snag-pill" *ngIf="r.is_snag">DR</span>
             <span class="mnt-sev-pill" *ngIf="r.severity && r.severity !== 'MINOR'" [ngClass]="'sev-' + r.severity.toLowerCase()">{{r.severity}}</span>
+            <span class="mnt-sev-pill" *ngIf="r.mel_category && r.mel_category !== 'NONE'" style="background:#FEF3C7;color:#92400E;border:1px solid #FCD34D">{{r.mel_category}}</span>
             <span class="mnt-title-main">{{r.title}}</span>
           </div>
           <div class="mnt-subtext" *ngIf="recordSubline(r)">{{recordSubline(r)}}</div>

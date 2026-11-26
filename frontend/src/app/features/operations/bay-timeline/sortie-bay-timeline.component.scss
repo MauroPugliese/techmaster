@@ -414,3 +414,78 @@ app-datetime-picker.tl-date-picker {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+
+/* ── Scheduled & Planned Maintenance Bars on 24h Bay Timeline ───────────── */
+.leg-dot.maint {
+  background: repeating-linear-gradient(
+    -45deg,
+    #F59E0B,
+    #F59E0B 3px,
+    #FDE68A 3px,
+    #FDE68A 6px
+  );
+  border: 1px solid #D97706;
+}
+
+.tl-maint-bar {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  z-index: 3;
+  border-radius: 7px;
+  padding: 4px 8px;
+  border: 1px dashed #D97706;
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(254, 243, 199, 0.94),
+    rgba(254, 243, 199, 0.94) 7px,
+    rgba(253, 230, 138, 0.94) 7px,
+    rgba(253, 230, 138, 0.94) 14px
+  );
+  color: #92400E;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  font-family: var(--font-sans);
+  transition: transform 0.14s ease, box-shadow 0.14s ease;
+
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(217, 119, 6, 0.22);
+    z-index: 6;
+  }
+
+  &.is-aog {
+    border-color: #DC2626;
+    background: repeating-linear-gradient(
+      -45deg,
+      rgba(254, 226, 226, 0.95),
+      rgba(254, 226, 226, 0.95) 7px,
+      rgba(254, 202, 202, 0.95) 7px,
+      rgba(254, 202, 202, 0.95) 14px
+    );
+    color: #991B1B;
+  }
+
+  .bar-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    font-size: 0.67rem;
+    font-weight: 800;
+  }
+
+  .bar-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}

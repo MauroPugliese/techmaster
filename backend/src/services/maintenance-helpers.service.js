@@ -8,6 +8,7 @@ const VALID_ASSET_STATUSES = new Set(['ACTIVE', 'INACTIVE', 'UNDER_MAINTENANCE',
 const VALID_BULK_ACTIONS = new Set(['status', 'priority', 'delete']);
 const OPEN_STATUSES = new Set(['SCHEDULED', 'IN_PROGRESS', 'DEFERRED']);
 const VALID_SNAG_SEVERITIES = new Set(['MINOR', 'DEGRADED', 'AOG']);
+const VALID_MEL_CATEGORIES = new Set(['NONE', 'CAT_A', 'CAT_B', 'CAT_C', 'CAT_D']);
 
 /**
  * Returns true if an open maintenance record's scheduled date has passed.
@@ -188,6 +189,34 @@ function sanitizeMaintenancePayload(body = {}, { isCreate = false } = {}) {
   const costParsed = toOptionalNullableFloat(body.cost);
   if (costParsed.error) return { error: `Cost ${costParsed.error.toLowerCase()}` };
   if (costParsed.provided) payload.cost = costParsed.value;
+
+  const partsCostParsed = toOptionalNullableFloat(body.parts_cost);
+  if (partsCostParsed.error) return { error: `Parts cost ${partsCostParsed.error.toLowerCase()}` };
+  if (partsCostParsed.provided) payload.parts_cost = partsCostParsed.value;
+
+  const laborCostParsed = toOptionalNullableFloat(body.labor_cost);
+  if (laborCostParsed.error) return { error: `Labor cost ${laborCostParsed.error.toLowerCase()}` };
+  if (laborCostParsed.provided) payload.labor_cost = laborCostParsed.value;
+
+  if (body.mel_category !== undefined) {
+    const mel = String(body.mel_category || 'NONE').trim().toUpperCase();
+    if (!VALID_MEL_CATEGORIES.has(mel)) return { error: 'Invalid MEL category.' };
+    payload.mel_category = mel;
+  }
+
+  const melExpParsed = toOptionalDateOnly(body.mel_expiry_date);
+  if (melExpParsed.error) return { error: 'Invalid mel_expiry_date.' };
+  if (melExpParsed.provided) payload.mel_expiry_date = melExpParsed.value;
+
+  if (body.wiki_article_id !== undefined) {
+    if (body.wiki_article_id === null || body.wiki_article_id === '') {
+      payload.wiki_article_id = null;
+    } else {
+      const wid = Number(body.wiki_article_id);
+      if (!Number.isInteger(wid) || wid < 1) return { error: 'Invalid wiki_article_id.' };
+      payload.wiki_article_id = wid;
+    }
+  }
 
   if (body.findings !== undefined) {
     const findings = String(body.findings ?? '').trim();
@@ -457,7 +486,140 @@ function summarizePlannedMonth({ masters = [], expandedOccurrences = [], todaySt
   };
 }
 
+/**
+ * Pure delta calculator between previously deducted warehouse stock snapshot
+ * and next `parts_used` array. Prevents double-deduction on work-order edits
+ * and automatically returns surplus quantities when parts are reduced/removed.
+ */
+function computePartsStockDelta(previousSnapshot = [], nextParts = []) {
+  const prevMap = new Map();
+  if (Array.isArray(previousSnapshot)) {
+    for (const entry of previousSnapshot) {
+      const id = Number(entry?.item_id);
+      const qty = Number(entry?.quantity);
+      if (Number.isInteger(id) && id > 0 && Number.isInteger(qty) && qty > 0) {
+        prevMap.set(id, (prevMap.get(id) || 0) + qty);
+      }
+    }
+  }
+
+  const nextMap = new Map();
+  if (Array.isArray(nextParts)) {
+    for (const entry of nextParts) {
+      const id = Number(entry?.item_id);
+      const qty = Number(entry?.quantity);
+      if (Number.isInteger(id) && id > 0 && Number.isInteger(qty) && qty > 0) {
+        nextMap.set(id, (nextMap.get(id) || 0) + qty);
+      }
+    }
+  }
+
+  const allIds = [...new Set([...prevMap.keys(), ...nextMap.keys()])].sort((a, b) => a - b);
+  const toDeduct = [];
+  const toReturn = [];
+  const nextSnapshot = [];
+
+  for (const itemId of allIds) {
+    const prevQty = prevMap.get(itemId) || 0;
+    const nextQty = nextMap.get(itemId) || 0;
+    if (nextQty > prevQty) {
+      toDeduct.push({ item_id: itemId, quantity: nextQty - prevQty });
+    } else if (prevQty > nextQty) {
+      toReturn.push({ item_id: itemId, quantity: prevQty - nextQty });
+    }
+    if (nextQty > 0) {
+      nextSnapshot.push({ item_id: itemId, quantity: nextQty });
+    }
+  }
+
+  return { toDeduct, toReturn, nextSnapshot };
+}
+
+/**
+ * Computes CAE Reliability Engineering metrics (MTBF, MTTR, Preventive vs Corrective,
+ * Top Faulty Subsystems, Active/Expiring MEL) from maintenance records and total operating hours.
+ */
+function computeReliabilityMetrics(records = [], totalOperatingHours = 0, now = new Date()) {
+  let correctiveCount = 0;
+  let preventiveCount = 0;
+  let aogCount = 0;
+  let repairDurationSum = 0;
+  let repairDurationSamples = 0;
+  let activeMelCount = 0;
+  let melExpiringSoonCount = 0;
+
+  const subMap = new Map();
+  const soonThresholdMs = now.getTime() + 7 * 86400000;
+
+  for (const r of records) {
+    const isCorrective = r.type === 'CORRECTIVE' || Boolean(r.is_snag);
+    const isPreventive = r.type === 'PREVENTIVE' || r.type === 'INSPECTION';
+    if (isCorrective) correctiveCount += 1;
+    else if (isPreventive) preventiveCount += 1;
+
+    if (r.severity === 'AOG') aogCount += 1;
+
+    const dt = Number(r.downtime_hours) || 0;
+    const lth = Number(r.lost_training_hours) || 0;
+    if (isCorrective && dt > 0) {
+      repairDurationSum += dt;
+      repairDurationSamples += 1;
+    }
+
+    const isOpen = OPEN_STATUSES.has(r.status);
+    if (isOpen && r.mel_category && r.mel_category !== 'NONE') {
+      activeMelCount += 1;
+      if (r.mel_expiry_date) {
+        const expMs = new Date(`${String(r.mel_expiry_date).slice(0, 10)}T23:59:59Z`).getTime();
+        if (!Number.isNaN(expMs) && expMs <= soonThresholdMs) {
+          melExpiringSoonCount += 1;
+        }
+      }
+    }
+
+    if (isCorrective || r.subsystem_code) {
+      const code = String(r.subsystem_code || 'GENERAL').toUpperCase();
+      const bucket = subMap.get(code) || {
+        code,
+        count: 0,
+        downtime_hours: 0,
+        lost_training_hours: 0,
+        aog_count: 0
+      };
+      bucket.count += 1;
+      bucket.downtime_hours = Number((bucket.downtime_hours + dt).toFixed(2));
+      bucket.lost_training_hours = Number((bucket.lost_training_hours + lth).toFixed(2));
+      if (r.severity === 'AOG') bucket.aog_count += 1;
+      subMap.set(code, bucket);
+    }
+  }
+
+  const mttrHours = repairDurationSamples > 0
+    ? Number((repairDurationSum / repairDurationSamples).toFixed(2))
+    : 0;
+  const opHrs = Number(totalOperatingHours) || 0;
+  const mtbfHours = opHrs > 0 && correctiveCount > 0
+    ? Number((opHrs / correctiveCount).toFixed(1))
+    : null;
+
+  const topSubsystems = [...subMap.values()]
+    .sort((a, b) => b.count - a.count || b.downtime_hours - a.downtime_hours)
+    .slice(0, 8);
+
+  return {
+    correctiveCount,
+    preventiveCount,
+    aogCount,
+    mttrHours,
+    mtbfHours,
+    activeMelCount,
+    melExpiringSoonCount,
+    topSubsystems
+  };
+}
+
 module.exports = {
+  VALID_MEL_CATEGORIES,
   isRecordOverdue,
   sanitizePartsUsed,
   sanitizeMaintenancePayload,
@@ -465,5 +627,7 @@ module.exports = {
   sanitizeBulkMaintenanceAction,
   buildMaintenanceSortOrder,
   summarizeMaintenanceRows,
-  summarizePlannedMonth
+  summarizePlannedMonth,
+  computePartsStockDelta,
+  computeReliabilityMetrics
 };

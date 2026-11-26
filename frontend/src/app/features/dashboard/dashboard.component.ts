@@ -167,6 +167,17 @@ export class DashboardComponent implements OnInit, OnDestroy {
     return this.overview?.simulators || [];
   }
 
+  wallKindFilter: 'FFS_BAY' | 'TEST_PLACE' | 'IOS_CONSOLE' = 'FFS_BAY';
+
+  get wallSimulators(): Simulator[] {
+    const filtered = this.simulators.filter(s => (s.station_kind || 'FFS_BAY') === this.wallKindFilter);
+    return filtered.length > 0 ? filtered : this.simulators;
+  }
+
+  countSimKind(kind: 'FFS_BAY' | 'TEST_PLACE' | 'IOS_CONSOLE'): number {
+    return this.simulators.filter(s => (s.station_kind || 'FFS_BAY') === kind).length;
+  }
+
   get simSummary(): SimulatorDashboardSummary | undefined {
     return this.overview?.simulatorSummary;
   }
@@ -181,6 +192,29 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   get fleetStatus(): 'OPTIMAL' | 'ATTENTION' | 'CRITICAL' {
     return this.fleet?.status ?? 'OPTIMAL';
+  }
+
+  get ffsTotalCount(): number {
+    return this.simSummary?.ffsTotal ?? this.countSimKind('FFS_BAY');
+  }
+
+  get ffsReadyCount(): number {
+    return (this.simSummary?.readyBays ?? 0) + (this.simSummary?.inSortieBays ?? 0);
+  }
+
+  get simulatorReadinessPct(): number {
+    const total = this.ffsTotalCount;
+    if (total > 0) {
+      return Math.round((this.ffsReadyCount / total) * 100);
+    }
+    return this.fleetReadinessPct;
+  }
+
+  get simulatorReadinessStatus(): 'OPTIMAL' | 'ATTENTION' | 'CRITICAL' {
+    const pct = this.simulatorReadinessPct;
+    if (pct >= 85) return 'OPTIMAL';
+    if (pct >= 65) return 'ATTENTION';
+    return 'CRITICAL';
   }
 
   get urgentTotal(): number {

@@ -17,7 +17,7 @@ const {
 } = require('../core/branding');
 const { resolveTheme } = require('../core/themes');
 const {
-  str, formatCell, computeColumnTotals, fmtNumber, fmtMoney, fmtPercent, toNumber, FORMAT_META
+  str, formatCell, computeColumnTotals, resolveBadgeTone, fmtNumber, fmtMoney, fmtPercent, toNumber, FORMAT_META
 } = require('../core/helpers');
 const {
   buildCoverPage,
@@ -75,7 +75,7 @@ function buildChartBlock(chart, theme) {
   if (chart.subtitle) {
     out.push(new Paragraph({
       spacing: { after: 55 },
-      children: [new TextRun({ text: chart.subtitle, italics: true, font: F_BODY, size: 15.5, color: noHash(COLORS.subtle) })]
+      children: [new TextRun({ text: chart.subtitle, italics: true, font: F_BODY, size: 16, color: noHash(COLORS.subtle) })]
     }));
   }
 
@@ -90,7 +90,7 @@ function buildChartBlock(chart, theme) {
   if (!labels.length || total <= 0) {
     out.push(new Paragraph({
       spacing: { after: 90 },
-      children: [new TextRun({ text: 'No quantitative data available for the selected period.', italics: true, font: F_BODY, size: 16.5, color: noHash(COLORS.subtle) })]
+      children: [new TextRun({ text: 'No quantitative data available for the selected period.', italics: true, font: F_BODY, size: 17, color: noHash(COLORS.subtle) })]
     }));
     return out;
   }
@@ -187,7 +187,7 @@ function buildDocumentBlocks(blocks, theme) {
       case 'paragraph':
         out.push(new Paragraph({
           spacing: { after: 100, line: 276 },
-          children: b.runs?.length ? runsToTextRuns(b.runs) : [new TextRun({ text: b.text, font: F_BODY, size: 18.5, color: noHash(COLORS.body) })]
+          children: b.runs?.length ? runsToTextRuns(b.runs) : [new TextRun({ text: b.text, font: F_BODY, size: 19, color: noHash(COLORS.body) })]
         }));
         break;
       case 'bullets':
@@ -195,7 +195,7 @@ function buildDocumentBlocks(blocks, theme) {
           out.push(new Paragraph({
             bullet: { level: 0 },
             spacing: { after: 55 },
-            children: item.runs?.length ? runsToTextRuns(item.runs) : [new TextRun({ text: item.text, font: F_BODY, size: 18.5, color: noHash(COLORS.body) })]
+            children: item.runs?.length ? runsToTextRuns(item.runs) : [new TextRun({ text: item.text, font: F_BODY, size: 19, color: noHash(COLORS.body) })]
           }));
         });
         break;
@@ -205,8 +205,8 @@ function buildDocumentBlocks(blocks, theme) {
             spacing: { after: 55 },
             indent: { left: 360 },
             children: [
-              new TextRun({ text: `${idx + 1}. `, bold: true, font: F_DISP, size: 18.5, color: noHash(theme.accent) }),
-              ...(item.runs?.length ? runsToTextRuns(item.runs) : [new TextRun({ text: item.text, font: F_BODY, size: 18.5, color: noHash(COLORS.body) })])
+              new TextRun({ text: `${idx + 1}. `, bold: true, font: F_DISP, size: 19, color: noHash(theme.accent) }),
+              ...(item.runs?.length ? runsToTextRuns(item.runs) : [new TextRun({ text: item.text, font: F_BODY, size: 19, color: noHash(COLORS.body) })])
             ]
           }));
         });
@@ -223,7 +223,7 @@ function buildDocumentBlocks(blocks, theme) {
               margins: { top: 85, bottom: 85, left: 150, right: 120 },
               children: [new Paragraph({
                 spacing: { after: 0 },
-                children: [new TextRun({ text: b.text, italics: true, font: F_BODY, size: 17.5, color: noHash(COLORS.ink) })]
+                children: [new TextRun({ text: b.text, italics: true, font: F_BODY, size: 18, color: noHash(COLORS.ink) })]
               })]
             })]
           })]
@@ -295,7 +295,7 @@ function makeCell(text, { header = false, align = 'left', fill, color, widthPct,
       children: [new TextRun({
         text: str(text),
         bold: header || bold,
-        size: header ? 16.5 : (mono ? 14.5 : 15.5),
+        size: header ? 16 : (mono ? 14 : 16),
         font: header ? F_DISP : (mono ? F_MONO : F_BODY),
         color: color || (header ? noHash(COLORS.white) : noHash(COLORS.body))
       })]
@@ -333,7 +333,7 @@ function buildDataTable(table, theme) {
       children: columns.map((col, i) => {
         const isNum = col.type === 'number' || col.type === 'currency' || col.type === 'percent';
         const isBadge = col.type === 'badge';
-        const badgeTone = isBadge ? (toneStyle(row._badgeTone || row._flag) || toneStyle('neutral')) : null;
+        const badgeTone = isBadge ? (toneStyle(resolveBadgeTone(row, col)) || toneStyle('neutral')) : null;
         return makeCell(formatCell(row, col), {
           align: col.align || (isBadge ? 'center' : (isNum ? 'right' : 'left')),
           fill: isBadge ? noHash(badgeTone.bg) : (rowTone && (row._flag === 'danger' || row._flag === 'warning') ? noHash(rowTone.bg) : zebra),
@@ -352,7 +352,7 @@ function buildDataTable(table, theme) {
       margins: { top: 90, bottom: 90, left: 110, right: 110 },
       children: [new Paragraph({
         spacing: { after: 0 },
-        children: [new TextRun({ text: 'No records match the selected filters.', italics: true, font: F_BODY, size: 16.5, color: noHash(COLORS.subtle) })]
+        children: [new TextRun({ text: 'No records match the selected filters.', italics: true, font: F_BODY, size: 17, color: noHash(COLORS.subtle) })]
       })]
     })]
   })];
@@ -419,11 +419,11 @@ function renderDocxBlock(block, page, theme) {
       if (showHdr && block.table?.note) {
         out.push(new Paragraph({
           spacing: { after: 50 },
-          children: [new TextRun({ text: block.table.note, italics: true, font: F_BODY, size: 15.5, color: noHash(COLORS.subtle) })]
+          children: [new TextRun({ text: block.table.note, italics: true, font: F_BODY, size: 16, color: noHash(COLORS.subtle) })]
         }));
       }
       out.push(buildDataTable(block.table, theme));
-      out.push(new Paragraph({ spacing: { after: 100 }, text: '' }));
+      out.push(makeSpacer(90));
       return out;
     }
     case 'markdown':
@@ -433,21 +433,45 @@ function renderDocxBlock(block, page, theme) {
   }
 }
 
-/** Build a styled A4 Multi-Page docx Document from a normalised ReportSpec v4. */
+/** Strip trailing empty spacer paragraphs from a section so `pageBreakBefore` never creates blank pages. */
+function trimTrailingEmptySpacer(items) {
+  while (items.length > 0) {
+    const last = items[items.length - 1];
+    if (last && last.rootKey === 'w:p' && last._isEmptySpacer) {
+      items.pop();
+    } else {
+      break;
+    }
+  }
+  return items;
+}
+
+function makeSpacer(after = 80) {
+  const p = new Paragraph({ spacing: { before: 0, after, line: 40 }, children: [new TextRun({ text: '', size: 4 })] });
+  p._isEmptySpacer = true;
+  return p;
+}
+
+/** Build a styled A4 Multi-Page docx Document from a normalised ReportSpec v5. */
 function buildDocument(spec) {
   const theme = spec.theme?.primary ? spec.theme : resolveTheme(spec);
   const children = [...buildCoverPage(spec, theme)];
 
   if (spec.pages && spec.pages.length) {
-    spec.pages.forEach((page, idx) => {
+    const renderablePages = spec.pages.filter((p) => p && (p.title || (Array.isArray(p.blocks) && p.blocks.length > 0)));
+    renderablePages.forEach((page, idx) => {
+      trimTrailingEmptySpacer(children);
       if (page.title) {
         children.push(...buildPageBanner(idx + 1, page.eyebrow, page.title, page.subtitle, theme, true));
       } else {
         children.push(new Paragraph({ pageBreakBefore: true, spacing: { after: 0 }, text: '' }));
       }
+      const pageNodes = [];
       (page.blocks || []).forEach((block) => {
-        children.push(...renderDocxBlock(block, page, theme));
+        pageNodes.push(...renderDocxBlock(block, page, theme));
       });
+      trimTrailingEmptySpacer(pageNodes);
+      children.push(...pageNodes);
     });
   } else {
     let sectionNum = 1;

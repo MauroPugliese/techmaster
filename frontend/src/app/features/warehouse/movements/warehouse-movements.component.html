@@ -71,7 +71,21 @@
           <div class="wh-subtext" *ngIf="m.item?.unit">{{m.item?.unit}}</div>
         </td>
         <td style="max-width:260px">
-          <div class="font-bold text-sm" *ngIf="m.reference">Ref: {{m.reference}}</div>
+          <div class="font-bold text-sm" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <a *ngIf="m.simulator"
+               [routerLink]="['/simulators']"
+               [queryParams]="{ id: m.simulator.id }"
+               style="padding:1px 6px;border-radius:5px;background:var(--blue-50);color:var(--primary);border:1px solid var(--blue-200);font-size:0.72rem;text-decoration:none;font-variant-numeric:tabular-nums">
+              {{m.simulator.bay_code}}
+            </a>
+            <a *ngIf="m.maintenance_record_id"
+               [routerLink]="['/maintenance']"
+               [queryParams]="{ simulatorId: m.simulator_id || '' }"
+               style="padding:1px 6px;border-radius:5px;background:#FEF3C7;color:#92400E;border:1px solid #FCD34D;font-size:0.72rem;text-decoration:none;font-variant-numeric:tabular-nums">
+              WO #{{m.maintenance_record_id}}
+            </a>
+            <span *ngIf="m.reference">Ref: {{m.reference}}</span>
+          </div>
           <div class="wh-subtext truncate" [title]="m.reason || m.destination || '—'">
             {{m.reason || m.destination || '—'}}
           </div>

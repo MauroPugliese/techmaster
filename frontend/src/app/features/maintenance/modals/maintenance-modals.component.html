@@ -158,8 +158,47 @@
         </div>
 
         <div class="form-group" *ngIf="showFormField('cost')">
-          <label class="form-label">{{fieldLabel('form','cost','Cost ($)')}}</label>
-          <input type="number" class="form-control" [(ngModel)]="recordForm.cost" min="0" step="0.01" placeholder="0.00">
+          <label class="form-label">
+            {{fieldLabel('form','cost','Total Cost ($)')}}
+            <span class="text-muted mnt-num" *ngIf="estimatedPartsCost > 0" style="font-weight:600;margin-left:6px">
+              (Parts: {{money(estimatedPartsCost)}})
+            </span>
+          </label>
+          <input type="number" class="form-control mnt-num" [(ngModel)]="recordForm.cost" min="0" step="0.01" placeholder="Auto = Parts + Labor">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Labor Cost ($)</label>
+          <input type="number" class="form-control mnt-num" [(ngModel)]="recordForm.labor_cost" min="0" step="0.01" placeholder="0.00">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">MEL / Deferred Defect Category</label>
+          <app-dropdown class="form-control" [(ngModel)]="recordForm.mel_category" ariaLabel="MEL Category">
+            <app-dropdown-option value="NONE">None (Standard WO)</app-dropdown-option>
+            <app-dropdown-option value="CAT_A">MEL Cat A (Specified Interval)</app-dropdown-option>
+            <app-dropdown-option value="CAT_B">MEL Cat B (3 Calendar Days)</app-dropdown-option>
+            <app-dropdown-option value="CAT_C">MEL Cat C (10 Calendar Days)</app-dropdown-option>
+            <app-dropdown-option value="CAT_D">MEL Cat D (120 Calendar Days)</app-dropdown-option>
+          </app-dropdown>
+        </div>
+
+        <div class="form-group" *ngIf="recordForm.mel_category && recordForm.mel_category !== 'NONE'">
+          <label class="form-label">MEL Rectification Expiry Date</label>
+          <app-datetime-picker
+            class="form-control"
+            mode="date"
+            [(ngModel)]="recordForm.mel_expiry_date"
+            placeholder="Select MEL expiry date">
+          </app-datetime-picker>
+        </div>
+
+        <div class="form-group" [style.grid-column]="(!recordForm.mel_category || recordForm.mel_category === 'NONE') ? 'span 1' : '1 / -1'">
+          <label class="form-label">Linked Wiki SOP / Runbook</label>
+          <app-dropdown class="form-control" [(ngModel)]="recordForm.wiki_article_id" placeholder="— Optional Engineering SOP —">
+            <app-dropdown-option [ngValue]="null">— None —</app-dropdown-option>
+            <app-dropdown-option *ngFor="let art of wikiArticles" [ngValue]="art.id">{{art.title}}</app-dropdown-option>
+          </app-dropdown>
         </div>
 
         <!-- Spare Parts Used (Warehouse Integration) -->
@@ -203,7 +242,7 @@
 
             <label class="mnt-check-label" style="margin-top:4px;align-self:flex-start">
               <input type="checkbox" class="mnt-checkbox" [(ngModel)]="deductStock">
-              <span>Deduct part quantities from Warehouse stock automatically</span>
+              <span>Sync part quantities with Warehouse stock automatically (delta-safe, auto-returns reductions)</span>
             </label>
           </div>
         </div>
@@ -260,6 +299,9 @@
         <span class="detail-type-chip" *ngIf="detailRecord.severity" [style.color]="detailRecord.severity === 'AOG' ? '#b91c1c' : '#b45309'">
           Severity: {{detailRecord.severity}}
         </span>
+        <span class="detail-type-chip mnt-num" *ngIf="detailRecord.mel_category && detailRecord.mel_category !== 'NONE'" style="background:#fef3c7;color:#92400e;border-color:#fcd34d">
+          MEL {{detailRecord.mel_category}}{{detailRecord.mel_expiry_date ? (' · Exp ' + (detailRecord.mel_expiry_date | date:'dd MMM')) : ''}}
+        </span>
       </div>
 
       <div class="detail-grid">
@@ -302,8 +344,22 @@
         </div>
 
         <div class="detail-field">
-          <span class="detail-label">Cost</span>
+          <span class="detail-label">Cost Breakdown</span>
           <span class="detail-value mnt-num">{{money(detailRecord.cost)}}</span>
+          <span class="detail-sub mnt-num" *ngIf="detailRecord.parts_cost || detailRecord.labor_cost">
+            Parts: {{money(detailRecord.parts_cost)}} · Labor: {{money(detailRecord.labor_cost)}}
+          </span>
+        </div>
+
+        <div class="detail-field full-span" *ngIf="detailRecord.wikiArticle">
+          <span class="detail-label">Linked Wiki SOP / Runbook</span>
+          <a class="detail-value" style="color:var(--primary);text-decoration:none;font-weight:700;display:inline-flex;align-items:center;gap:4px"
+             [routerLink]="['/wiki']"
+             [queryParams]="{ slug: detailRecord.wikiArticle.slug }"
+             (click)="detailRecord = null">
+            <span class="mat-i" style="font-size:16px">menu_book</span>
+            {{detailRecord.wikiArticle.title}}
+          </a>
         </div>
 
         <div class="detail-field full-span" *ngIf="detailRecord.next_scheduled">

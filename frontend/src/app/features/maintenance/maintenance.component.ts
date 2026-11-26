@@ -18,18 +18,15 @@ import {
   MaintenanceRecord,
   MaintenanceStatus,
   MaintenanceSummary,
-  PlannedMaintenanceSummary,
-  PlannedMaintenanceTask,
   Simulator
 } from '../../core/models/interfaces';
 import { ExportMenuComponent } from '../../shared/components/export-menu/export-menu.component';
 import { MaintenanceWorkOrdersComponent } from './work-orders/maintenance-work-orders.component';
-import { PlannedMaintenanceDashboardComponent } from './planned/planned-maintenance-dashboard.component';
 import { MaintenanceAssetsComponent } from './assets/maintenance-assets.component';
 import { MaintenanceQtgComponent } from './qtg/maintenance-qtg.component';
 import { MaintenanceModalsComponent } from './modals/maintenance-modals.component';
 
-export type MaintenanceTab = 'work-orders' | 'planned' | 'assets' | 'qtg';
+export type MaintenanceTab = 'work-orders' | 'assets' | 'qtg';
 
 @Component({
   selector: 'app-maintenance',
@@ -38,7 +35,6 @@ export type MaintenanceTab = 'work-orders' | 'planned' | 'assets' | 'qtg';
     CommonModule,
     ExportMenuComponent,
     MaintenanceWorkOrdersComponent,
-    PlannedMaintenanceDashboardComponent,
     MaintenanceAssetsComponent,
     MaintenanceQtgComponent,
     MaintenanceModalsComponent
@@ -49,7 +45,6 @@ export type MaintenanceTab = 'work-orders' | 'planned' | 'assets' | 'qtg';
 })
 export class MaintenanceComponent implements OnInit, OnDestroy {
   @ViewChild(MaintenanceModalsComponent) modals?: MaintenanceModalsComponent;
-  @ViewChild(PlannedMaintenanceDashboardComponent) plannedChild?: PlannedMaintenanceDashboardComponent;
 
   private destroy$ = new Subject<void>();
 
@@ -63,9 +58,7 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
   uiPrefs: UiSectionPreferences | null = null;
 
   maintSummary: MaintenanceSummary | null = null;
-  plannedSummary: PlannedMaintenanceSummary | null = null;
   workOrdersExportParams: Record<string, any> = {};
-  plannedExportParams: Record<string, any> = {};
   externalStatusFilter = '';
   externalSearch = '';
   externalSimulatorId: number | null = null;
@@ -85,7 +78,11 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
 
     this.route.queryParams.pipe(takeUntil(this.destroy$)).subscribe(qp => {
       const tab = qp['tab'];
-      if (tab === 'work-orders' || tab === 'planned' || tab === 'assets' || tab === 'qtg') {
+      if (tab === 'planned') {
+        this.router.navigate(['/maintenance/planned'], { replaceUrl: true });
+        return;
+      }
+      if (tab === 'work-orders' || tab === 'assets' || tab === 'qtg') {
         this.activeTab = tab;
       }
       if (qp['simulatorId'] !== undefined) {
@@ -145,9 +142,6 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
     this.api.get<any>('/maintenance/summary').subscribe({
       next: r => { this.maintSummary = r?.data || null; this.cdr.markForCheck(); }
     });
-    this.api.get<any>('/maintenance/planned/summary').subscribe({
-      next: r => { this.plannedSummary = r?.data || null; this.cdr.markForCheck(); }
-    });
   }
 
   selectTab(tab: MaintenanceTab): void {
@@ -158,15 +152,12 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
 
   // ── Header Primary CTA ─────────────────────────────────────────────────────
   get primaryActionLabel(): string {
-    if (this.activeTab === 'planned') return 'New Planned Task';
     if (this.activeTab === 'assets') return 'Add Asset';
     return 'Log Work Order / DR';
   }
 
   triggerPrimaryAction(): void {
-    if (this.activeTab === 'planned') {
-      this.plannedChild?.openModal();
-    } else if (this.activeTab === 'assets') {
+    if (this.activeTab === 'assets') {
       this.modals?.openAssetModal();
     } else {
       this.modals?.openRecordModal(undefined, this.externalSimulatorId ? { simulator_id: this.externalSimulatorId } : undefined);
@@ -211,26 +202,26 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
     });
   }
 
-  createWorkOrderFromPlanned(evt: { task: PlannedMaintenanceTask; occurrenceDate?: string }): void {
-    const task = evt.task;
-    const occDate = evt.occurrenceDate || task.occurrenceDate || null;
-    const scheduledIso = occDate ? `${occDate}T09:00:00.000Z` : (task.operationDateStart || new Date().toISOString());
-
-    const descriptionLines = [
-      `Generated from Planned Maintenance #${task.masterId || task.id} (${task.system} / ${task.subsystem}).`,
-      task.reference ? `Reference: ${task.reference}` : null,
-      occDate ? `Occurrence Date: ${occDate}` : null,
-      '',
-      task.task
-    ].filter(v => v !== null);
-
+  createWorkOrderFromQtg(qtg: any): void {
+    const catToSub: Record<string, any> = {
+      MOTION_CUEING: 'MOTION',
+      VISUAL_SYSTEM: 'VISUAL',
+      SOUND: 'SOUND',
+      IOS_NAV: 'IOS',
+      HANDLING: 'CONTROL_LOADING',
+      PERFORMANCE: 'HOST_COMPUTE'
+    };
     this.modals?.openRecordModal(undefined, {
-      title: `${task.system}: ${String(task.task || '').slice(0, 150)}`.slice(0, 200),
-      description: descriptionLines.join('\n'),
-      type: 'PREVENTIVE',
-      priority: 'MEDIUM',
+      simulator_id: qtg.simulator_id,
+      subsystem_code: catToSub[qtg.category] || 'HOST_COMPUTE',
+      is_snag: true,
+      severity: 'DEGRADED',
+      type: 'CORRECTIVE',
+      priority: 'HIGH',
       status: 'SCHEDULED',
-      scheduled_date: scheduledIso
+      title: `QTG Failure: ${qtg.test_code} — ${qtg.title}`,
+      description: `Failed ${qtg.quarter} ${qtg.year} QTG (${qtg.test_code}). Measured delta: ${qtg.measured_delta || 'Out of tolerance'}. ${qtg.notes || ''}`.trim(),
+      scheduled_date: new Date().toISOString()
     });
   }
 

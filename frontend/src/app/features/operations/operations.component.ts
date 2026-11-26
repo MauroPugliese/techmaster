@@ -32,6 +32,7 @@ import {
   SimulatorStationKind,
   SimulatorStatus,
   SortieOutcome,
+  TimelineMaintenanceBlock,
   TimelineShiftBlock,
   User
 } from '../../core/models/interfaces';
@@ -86,6 +87,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
   operations: Operation[] = [];
   timelineOps: Operation[] = [];
   timelineShiftBlocks: TimelineShiftBlock[] = [];
+  timelineMaintenanceBlocks: TimelineMaintenanceBlock[] = [];
   timelineShiftStatuses: Record<number, ShiftUsageStatus> = {};
   simulators: Simulator[] = [];
   opTypes: OperationType[] = [];
@@ -211,6 +213,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
         next: res => {
           const data = res?.data;
           this.timelineShiftBlocks = data?.blocks || [];
+          this.timelineMaintenanceBlocks = data?.maintenanceBlocks || [];
           this.timelineShiftStatuses = data?.statusBySimulator || {};
           if (data?.operatingHours?.TEST_PLACE) {
             this.todayPlantLog = data.operatingHours.TEST_PLACE;
@@ -225,6 +228,14 @@ export class OperationsComponent implements OnInit, OnDestroy {
     this.router.navigate(['/simulators'], {
       queryParams: { view, date: this.timelineDate }
     });
+  }
+
+  openMaintenanceBlock(block: TimelineMaintenanceBlock): void {
+    if (block.source === 'PLANNED_MAINT') {
+      this.router.navigate(['/maintenance/planned']);
+    } else {
+      this.router.navigate(['/maintenance'], { queryParams: { simulatorId: block.simulator_id } });
+    }
   }
 
   deckChipDotColor(sim: Simulator): string {

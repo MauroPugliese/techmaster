@@ -79,6 +79,25 @@
           <span>Brief</span>
           <span class="note-dot" *ngIf="hasDailyNote"></span>
         </button>
+
+        <button
+          type="button"
+          class="note-toggle-btn"
+          [disabled]="copyingPrev"
+          (click)="copyPreviousDay()"
+          title="Copy previous operating day schedule and carry over unresolved NA stations">
+          <span class="mat-i">content_copy</span>
+          <span>{{ copyingPrev ? 'Copying…' : 'Copy Prev Day' }}</span>
+        </button>
+
+        <app-export-menu
+          class="daily-export-menu"
+          endpoint="daily-station-ops"
+          [filename]="'daily_station_ops_' + stationKind.toLowerCase() + '_' + selectedDate"
+          [params]="exportParams"
+          [includeDateRange]="false"
+          label="Export">
+        </app-export-menu>
       </div>
 
       <!-- Compact Inline Status Filter Strip (replaces 5 tall KPI cards) -->
@@ -187,6 +206,34 @@
           (valueChange)="savePreFlightTime()">
         </app-time-picker>
       </div>
+
+      <div class="inline-lead-chip" *ngIf="staffList.length > 0" title="Shift Test Leader">
+        <span class="chip-lbl">Leader</span>
+        <app-dropdown
+          class="lead-dd"
+          [ngModel]="activeShift.lead_user_id ?? null"
+          (ngModelChange)="saveShiftLead($event)"
+          placeholder="Unassigned">
+          <app-dropdown-option [ngValue]="null">Unassigned</app-dropdown-option>
+          <app-dropdown-option *ngFor="let u of staffList" [ngValue]="u.id">
+            {{ u.first_name }} {{ u.last_name }}
+          </app-dropdown-option>
+        </app-dropdown>
+      </div>
+
+      <button
+        type="button"
+        class="signoff-pill-btn"
+        [class.is-signed]="!!activeShift.signed_off_at"
+        [disabled]="signingOff"
+        (click)="signOffShift()"
+        [title]="activeShift.signed_off_at ? ('Signed off by ' + (activeShift.signer?.first_name || '') + ' ' + (activeShift.signer?.last_name || '')) : 'Sign off shift handover'">
+        <span class="mat-i">{{ activeShift.signed_off_at ? 'verified' : 'draw' }}</span>
+        <span *ngIf="!activeShift.signed_off_at">{{ signingOff ? 'Signing…' : 'Sign Off' }}</span>
+        <span *ngIf="activeShift.signed_off_at">
+          Signed · {{ activeShift.signer ? (activeShift.signer.first_name + ' ' + activeShift.signer.last_name.slice(0, 1) + '.') : 'Verified' }}
+        </span>
+      </button>
 
       <button
         type="button"
@@ -358,6 +405,16 @@
               <div class="note-cell-actions">
                 <button
                   type="button"
+                  class="na-log-wo-btn"
+                  *ngIf="entry.usage_status === 'NA'"
+                  (click)="openFaultWoModal(entry, $event)"
+                  title="Log a Corrective Work Order in Maintenance directly from this NA station">
+                  <span class="mat-i">build_circle</span>
+                  <span>Log WO</span>
+                </button>
+
+                <button
+                  type="button"
                   class="note-save-mini"
                   *ngIf="isNoteDirty(entry)"
                   [disabled]="savingEntryIds.has(entry.id)"
@@ -433,6 +490,65 @@
       <button type="button" class="btn btn-primary" (click)="saveNoteFromModal()">
         <span class="btn-icon">save</span>
         Save Note
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- 1-Click Fault -> Corrective Maintenance WO Modal for NA Stations -->
+<div class="modal-overlay" *ngIf="faultWoEntry" (click)="closeFaultWoModal()">
+  <div class="modal fault-wo-modal" role="dialog" aria-modal="true" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <div>
+        <h3>Log Corrective Work Order · {{ faultWoEntry.station?.name || faultWoEntry.station?.code }}</h3>
+        <p class="note-modal-sub">{{ formattedDateShort }} · {{ activeShift?.shift_name }} · Linked directly to Maintenance</p>
+      </div>
+      <button type="button" class="btn btn-ghost btn-icon-only" (click)="closeFaultWoModal()" title="Close">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Fault Summary / WO Title *</label>
+        <input class="form-control" [(ngModel)]="faultWoForm.title" placeholder="e.g. Power supply failure / Not starting" />
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Severity</label>
+          <app-dropdown class="form-control" [(ngModel)]="faultWoForm.severity" ariaLabel="Fault Severity">
+            <app-dropdown-option value="AOG">AOG (Station Grounded / NA)</app-dropdown-option>
+            <app-dropdown-option value="DEGRADED">Degraded (Partial Operation)</app-dropdown-option>
+            <app-dropdown-option value="MINOR">Minor (Observation)</app-dropdown-option>
+          </app-dropdown>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Affected Subsystem</label>
+          <app-dropdown class="form-control" [(ngModel)]="faultWoForm.subsystem_code" ariaLabel="Affected Subsystem">
+            <app-dropdown-option value="HOST_COMPUTE">Host Compute / Workstation</app-dropdown-option>
+            <app-dropdown-option value="IOS">IOS Console / Display</app-dropdown-option>
+            <app-dropdown-option value="VISUAL">Visual / Monitors</app-dropdown-option>
+            <app-dropdown-option value="AVIONICS_COCKPIT">Cockpit / Controls</app-dropdown-option>
+            <app-dropdown-option value="HVAC_POWER">Power / PSU / PDU</app-dropdown-option>
+            <app-dropdown-option value="SOUND">Audio / Comms / Headsets</app-dropdown-option>
+          </app-dropdown>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Technical Symptoms &amp; Handover Context</label>
+        <textarea class="form-control" rows="3" [(ngModel)]="faultWoForm.description"></textarea>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button type="button" class="btn btn-ghost" (click)="closeFaultWoModal()">Cancel</button>
+      <button
+        type="button"
+        class="btn btn-primary"
+        [disabled]="savingFaultWo || !faultWoForm.title.trim()"
+        (click)="submitFaultWo()">
+        <span class="btn-icon">build_circle</span>
+        {{ savingFaultWo ? 'Creating WO…' : 'Create Maintenance WO' }}
       </button>
     </div>
   </div>

@@ -31,6 +31,8 @@ import {
 } from '../modals/bulk-sim-time-modal.component';
 import { DateTimePickerComponent } from '../../../shared/components/datetime-picker/datetime-picker.component';
 import { TimePickerComponent } from '../../../shared/components/time-picker/time-picker.component';
+import { DropdownComponent, DropdownOptionComponent } from '../../../shared/components/dropdown/dropdown.component';
+import { ExportMenuComponent } from '../../../shared/components/export-menu/export-menu.component';
 
 function toLocalYyyyMmDd(d: Date): string {
   const y = d.getFullYear();
@@ -58,7 +60,16 @@ function shiftLocalDate(yyyyMmDd: string, deltaDays: number): string {
 @Component({
   selector: 'app-station-daily-ops',
   standalone: true,
-  imports: [CommonModule, FormsModule, BulkSimTimeModalComponent, DateTimePickerComponent, TimePickerComponent],
+  imports: [
+    CommonModule,
+    FormsModule,
+    BulkSimTimeModalComponent,
+    DateTimePickerComponent,
+    TimePickerComponent,
+    DropdownComponent,
+    DropdownOptionComponent,
+    ExportMenuComponent
+  ],
   templateUrl: './station-daily-ops.component.html',
   styleUrls: ['./station-daily-ops.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -90,6 +101,18 @@ export class StationDailyOpsComponent implements OnInit, OnChanges {
   savingLog = false;
   savingShift = false;
   addingShift = false;
+  copyingPrev = false;
+  signingOff = false;
+
+  // Quick Fault -> Maintenance WO Modal for NA rows
+  faultWoEntry: SimulatorShiftEntry | null = null;
+  faultWoForm = {
+    title: '',
+    severity: 'AOG' as 'MINOR' | 'DEGRADED' | 'AOG',
+    subsystem_code: 'HOST_COMPUTE',
+    description: ''
+  };
+  savingFaultWo = false;
 
   logDraft = {
     system_readiness_time: '06:30',
@@ -128,6 +151,10 @@ export class StationDailyOpsComponent implements OnInit, OnChanges {
     }
     if (this.noteModalEntry) {
       this.noteModalEntry = null;
+      changed = true;
+    }
+    if (this.faultWoEntry) {
+      this.faultWoEntry = null;
       changed = true;
     }
     if (changed) this.cdr.markForCheck();
@@ -191,6 +218,171 @@ export class StationDailyOpsComponent implements OnInit, OnChanges {
       if (found) return found;
     }
     return this.sheet.shifts[0];
+  }
+
+  get staffList(): { id: number; first_name: string; last_name: string; username: string }[] {
+    return ((this.sheet as any)?.staff || []) as any[];
+  }
+
+  get exportParams(): Record<string, string> {
+    return {
+      date: this.selectedDate,
+      station_kind: this.stationKind
+    };
+  }
+
+  copyPreviousDay(): void {
+    if (this.copyingPrev) return;
+    this.copyingPrev = true;
+    this.cdr.markForCheck();
+
+    this.api
+      .post<{ data: SimulatorDailySheetResponse; meta?: { copiedFromDate: string; carriedOverNaCount: number } }>(
+        '/simulators/daily-sheet/copy-previous',
+        { date: this.selectedDate, station_kind: this.stationKind }
+      )
+      .subscribe({
+        next: (res) => {
+          this.copyingPrev = false;
+          if (res?.data) {
+            this.sheet = res.data;
+            if (res.data.log) {
+              this.logDraft = {
+                system_readiness_time: res.data.log.system_readiness_time || '06:30',
+                post_testing_time: res.data.log.post_testing_time || '17:00',
+                logout_time: res.data.log.logout_time || '18:00',
+                general_notes: res.data.log.general_notes || ''
+              };
+            }
+            if (res.data.shifts?.length) {
+              this.activeShiftId = res.data.shifts[0].id;
+              this.preFlightDraft = res.data.shifts[0].pre_flight_test_time || '06:40';
+              this.syncNoteDrafts(res.data.shifts);
+            }
+          }
+          const fromDate = res?.meta?.copiedFromDate || 'previous sheet';
+          const naCount = res?.meta?.carriedOverNaCount ?? 0;
+          this.toast.success(
+            naCount > 0
+              ? `Copied from ${fromDate} (${naCount} unresolved NA station${naCount > 1 ? 's' : ''} carried over).`
+              : `Copied operating schedule from ${fromDate}.`
+          );
+          this.sheetUpdated.emit();
+          this.cdr.markForCheck();
+        },
+        error: (err) => {
+          this.copyingPrev = false;
+          this.toast.error(err?.error?.message || 'No previous day sheet found to copy.');
+          this.cdr.markForCheck();
+        }
+      });
+  }
+
+  saveShiftLead(leadUserId: number | null): void {
+    const shift = this.activeShift;
+    if (!shift) return;
+    const normalized = leadUserId ? Number(leadUserId) : null;
+    if (normalized === (shift.lead_user_id ?? null)) return;
+
+    this.api
+      .put<{ data: SimulatorDailyShift }>(`/simulators/daily-sheet/shifts/${shift.id}`, {
+        lead_user_id: normalized
+      })
+      .subscribe({
+        next: (res) => {
+          if (res?.data) {
+            shift.lead_user_id = res.data.lead_user_id;
+            shift.lead = res.data.lead;
+          }
+          this.toast.success('Test Leader assigned.');
+          this.cdr.markForCheck();
+        },
+        error: (err) => {
+          this.toast.error(err?.error?.message || 'Failed to update Test Leader.');
+        }
+      });
+  }
+
+  signOffShift(): void {
+    const shift = this.activeShift;
+    if (!shift || this.signingOff) return;
+    this.signingOff = true;
+    this.cdr.markForCheck();
+
+    this.api
+      .post<{ data: SimulatorDailyShift }>(`/simulators/daily-sheet/shifts/${shift.id}/sign-off`, {})
+      .subscribe({
+        next: (res) => {
+          this.signingOff = false;
+          if (res?.data) {
+            shift.signed_off_at = res.data.signed_off_at;
+            shift.signed_off_by = res.data.signed_off_by;
+            shift.signer = res.data.signer;
+          }
+          this.toast.success(`${shift.shift_name} handover signed off.`);
+          this.cdr.markForCheck();
+        },
+        error: (err) => {
+          this.signingOff = false;
+          this.toast.error(err?.error?.message || 'Failed to sign off shift.');
+          this.cdr.markForCheck();
+        }
+      });
+  }
+
+  openFaultWoModal(entry: SimulatorShiftEntry, ev?: Event): void {
+    ev?.stopPropagation();
+    const note = (this.noteDrafts[entry.id] ?? entry.notes ?? '').trim();
+    const stName = entry.station?.name || entry.station?.code || `Station #${entry.simulator_id}`;
+    this.faultWoEntry = entry;
+    this.faultWoForm = {
+      title: note ? note.slice(0, 120) : `${stName} — Not Available (NA) Fault`,
+      severity: 'AOG',
+      subsystem_code: this.stationKind === 'IOS_CONSOLE' ? 'IOS' : 'HOST_COMPUTE',
+      description: note || `Logged from Daily Station Operations (${this.selectedDate} · ${this.activeShift?.shift_name || 'SHIFT 1'}). Station marked NA.`
+    };
+    this.cdr.markForCheck();
+  }
+
+  closeFaultWoModal(): void {
+    this.faultWoEntry = null;
+    this.cdr.markForCheck();
+  }
+
+  submitFaultWo(): void {
+    const entry = this.faultWoEntry;
+    if (!entry || this.savingFaultWo || !this.faultWoForm.title.trim()) return;
+    this.savingFaultWo = true;
+    this.cdr.markForCheck();
+
+    this.api
+      .post<any>('/maintenance', {
+        simulator_id: entry.simulator_id,
+        title: this.faultWoForm.title.trim(),
+        description: this.faultWoForm.description.trim() || this.faultWoForm.title.trim(),
+        type: 'CORRECTIVE',
+        is_snag: true,
+        severity: this.faultWoForm.severity,
+        subsystem_code: this.faultWoForm.subsystem_code,
+        priority: this.faultWoForm.severity === 'AOG' ? 'CRITICAL' : 'HIGH',
+        status: 'IN_PROGRESS',
+        scheduled_date: new Date().toISOString()
+      })
+      .subscribe({
+        next: (res) => {
+          this.savingFaultWo = false;
+          const woId = res?.data?.id;
+          this.faultWoEntry = null;
+          this.toast.success(`Corrective Work Order${woId ? ` #${woId}` : ''} logged in Maintenance.`);
+          this.loadSheet();
+          this.sheetUpdated.emit();
+        },
+        error: (err) => {
+          this.savingFaultWo = false;
+          this.toast.error(err?.error?.message || 'Failed to create maintenance work order.');
+          this.cdr.markForCheck();
+        }
+      });
   }
 
   get visibleEntries(): SimulatorShiftEntry[] {

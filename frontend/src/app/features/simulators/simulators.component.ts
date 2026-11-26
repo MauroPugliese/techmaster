@@ -205,6 +205,15 @@ export class SimulatorsComponent implements OnInit, OnDestroy {
     );
   }
 
+  get fleetExportParams(): Record<string, string> {
+    const p: Record<string, string> = {};
+    if (this.stationKindFilter !== 'ALL') p['station_kind'] = this.stationKindFilter;
+    if (this.categoryFilter !== 'ALL') p['platform_category'] = this.categoryFilter;
+    if (this.statusFilter !== 'ALL') p['status'] = this.statusFilter;
+    if (this.searchQuery.trim()) p['search'] = this.searchQuery.trim();
+    return p;
+  }
+
   loadData(): void {
     this.loading = true;
     this.cdr.markForCheck();

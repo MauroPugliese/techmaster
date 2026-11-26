@@ -28,6 +28,7 @@ import {
 } from '../../../core/models/interfaces';
 import { DropdownComponent, DropdownOptionComponent } from '../../../shared/components/dropdown/dropdown.component';
 import { MovementPreset } from '../modals/warehouse-modals.component';
+import { SUBSYSTEM_META } from '../../simulators/simulator-helpers';
 import {
   formatMoney,
   getItemTotalValue,
@@ -86,7 +87,14 @@ export class WarehouseInventoryComponent implements OnInit, OnChanges, OnDestroy
   supplierFilter = '';
   stockStatusFilter: 'all' | WarehouseStockStatus = 'all';
   partClassificationFilter: '' | 'CONSUMABLE' | 'ROTATABLE_LRU' | 'TOOL_CALIBRATED' = '';
+  lruStatusFilter = '';
+  subsystemFilter = '';
   aogOnly = false;
+
+  readonly subsystemOptions = Object.entries(SUBSYSTEM_META).map(([code, meta]) => ({
+    code,
+    label: meta.label
+  }));
 
   sortBy = '';
   sortDir: 'ASC' | 'DESC' = 'ASC';
@@ -194,6 +202,8 @@ export class WarehouseInventoryComponent implements OnInit, OnChanges, OnDestroy
       stock_status: this.stockStatusFilter !== 'all' ? this.stockStatusFilter : '',
       low_stock: (this.stockStatusFilter === 'low' || this.stockStatusFilter === 'out') ? 'true' : '',
       part_classification: this.partClassificationFilter || '',
+      lru_status: this.lruStatusFilter || '',
+      subsystem_code: this.subsystemFilter || '',
       aog_critical: this.aogOnly ? 'true' : '',
       sort_by: this.sortBy || '',
       sort_dir: this.sortDir,
@@ -207,6 +217,8 @@ export class WarehouseInventoryComponent implements OnInit, OnChanges, OnDestroy
       stock_status: this.stockStatusFilter !== 'all' ? this.stockStatusFilter : '',
       low_stock: (this.stockStatusFilter === 'low' || this.stockStatusFilter === 'out') ? 'true' : '',
       part_classification: this.partClassificationFilter || '',
+      lru_status: this.lruStatusFilter || '',
+      subsystem_code: this.subsystemFilter || '',
       aog_critical: this.aogOnly ? 'true' : '',
       search: this.search.trim()
     });
@@ -257,6 +269,8 @@ export class WarehouseInventoryComponent implements OnInit, OnChanges, OnDestroy
       this.supplierFilter !== '' ||
       this.stockStatusFilter !== 'all' ||
       this.partClassificationFilter !== '' ||
+      this.lruStatusFilter !== '' ||
+      this.subsystemFilter !== '' ||
       this.aogOnly ||
       this.sortBy !== ''
     );
@@ -274,6 +288,8 @@ export class WarehouseInventoryComponent implements OnInit, OnChanges, OnDestroy
     this.supplierFilter = '';
     this.stockStatusFilter = 'all';
     this.partClassificationFilter = '';
+    this.lruStatusFilter = '';
+    this.subsystemFilter = '';
     this.aogOnly = false;
     this.sortBy = '';
     this.sortDir = 'ASC';

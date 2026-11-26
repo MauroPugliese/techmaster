@@ -80,7 +80,7 @@ module.exports = {
 
   async build(req) {
     const range = parseRange(req.query);
-    const { status, priority, interval_type, assigned_to, search } = req.query;
+    const { status, priority, interval_type, assigned_to, simulator_id, search } = req.query;
 
     const where = {};
     if (range.from || range.to) {
@@ -92,6 +92,7 @@ module.exports = {
     if (priority) where.priority = priority;
     if (interval_type) where.interval_type = interval_type;
     if (assigned_to) where.assigned_to = assigned_to;
+    if (simulator_id && Number(simulator_id) > 0) where.simulator_id = Number(simulator_id);
     if (search && String(search).trim()) {
       const q = `%${String(search).trim()}%`;
       where[Op.or] = [{ title: { [Op.like]: q } }, { description: { [Op.like]: q } }];

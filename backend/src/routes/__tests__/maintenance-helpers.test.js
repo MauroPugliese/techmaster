@@ -9,7 +9,9 @@ const {
   sanitizeBulkMaintenanceAction,
   buildMaintenanceSortOrder,
   summarizeMaintenanceRows,
-  summarizePlannedMonth
+  summarizePlannedMonth,
+  computePartsStockDelta,
+  computeReliabilityMetrics
 } = require('../../services/maintenance-helpers.service');
 
 test('isRecordOverdue detects open past-due records and ignores closed or future ones', () => {
@@ -165,4 +167,91 @@ test('summarizePlannedMonth computes active series, today count, and month compl
     month_done_occurrences: 2,
     month_completion_pct: 50
   });
+});
+
+test('computePartsStockDelta prevents double-deduction and computes exact OUT/RETURN deltas', () => {
+  // Initial deduction
+  const d1 = computePartsStockDelta([], [
+    { item_id: 10, quantity: 2 },
+    { item_id: 20, quantity: 5 },
+    { item_id: null, name: 'External bolt', quantity: 4 }
+  ]);
+  assert.deepEqual(d1.toDeduct, [{ item_id: 10, quantity: 2 }, { item_id: 20, quantity: 5 }]);
+  assert.deepEqual(d1.toReturn, []);
+  assert.deepEqual(d1.nextSnapshot, [{ item_id: 10, quantity: 2 }, { item_id: 20, quantity: 5 }]);
+
+  // Re-saving unchanged parts must produce ZERO deductions and ZERO returns
+  const d2 = computePartsStockDelta(d1.nextSnapshot, [
+    { item_id: 10, quantity: 2 },
+    { item_id: 20, quantity: 5 }
+  ]);
+  assert.deepEqual(d2.toDeduct, []);
+  assert.deepEqual(d2.toReturn, []);
+
+  // Increasing item 10 from 2->4, reducing item 20 from 5->3, adding item 30 qty 1
+  const d3 = computePartsStockDelta(d1.nextSnapshot, [
+    { item_id: 10, quantity: 4 },
+    { item_id: 20, quantity: 3 },
+    { item_id: 30, quantity: 1 }
+  ]);
+  assert.deepEqual(d3.toDeduct, [{ item_id: 10, quantity: 2 }, { item_id: 30, quantity: 1 }]);
+  assert.deepEqual(d3.toReturn, [{ item_id: 20, quantity: 2 }]);
+  assert.deepEqual(d3.nextSnapshot, [
+    { item_id: 10, quantity: 4 },
+    { item_id: 20, quantity: 3 },
+    { item_id: 30, quantity: 1 }
+  ]);
+
+  // Removing all parts returns entire snapshot
+  const d4 = computePartsStockDelta(d3.nextSnapshot, []);
+  assert.deepEqual(d4.toDeduct, []);
+  assert.deepEqual(d4.toReturn, [
+    { item_id: 10, quantity: 4 },
+    { item_id: 20, quantity: 3 },
+    { item_id: 30, quantity: 1 }
+  ]);
+  assert.deepEqual(d4.nextSnapshot, []);
+});
+
+test('sanitizeMaintenancePayload accepts MEL fields, parts/labor costs, and wiki_article_id', () => {
+  const res = sanitizeMaintenancePayload({
+    simulator_id: 4,
+    title: 'Visual IG-2 Projector Dimming',
+    description: 'Deferred under MEL Cat C pending spare lamp delivery.',
+    scheduled_date: '2026-11-25T10:00:00Z',
+    parts_cost: '1250.5',
+    labor_cost: '300',
+    mel_category: 'cat_c',
+    mel_expiry_date: '2026-12-05',
+    wiki_article_id: '12'
+  }, { isCreate: true });
+
+  assert.equal(res.error, undefined);
+  assert.equal(res.data.parts_cost, 1250.5);
+  assert.equal(res.data.labor_cost, 300);
+  assert.equal(res.data.mel_category, 'CAT_C');
+  assert.equal(res.data.mel_expiry_date, '2026-12-05');
+  assert.equal(res.data.wiki_article_id, 12);
+
+  const badMel = sanitizeMaintenancePayload({ mel_category: 'CAT_Z' }, { isCreate: false });
+  assert.match(badMel.error, /Invalid MEL category/i);
+});
+
+test('computeReliabilityMetrics computes MTTR, MTBF, top faulty subsystems, and MEL expiry counts', () => {
+  const now = new Date('2026-11-25T12:00:00Z');
+  const metrics = computeReliabilityMetrics([
+    { type: 'CORRECTIVE', is_snag: true, status: 'COMPLETED', severity: 'AOG', subsystem_code: 'MOTION', downtime_hours: 4, lost_training_hours: 3 },
+    { type: 'CORRECTIVE', is_snag: true, status: 'DEFERRED', severity: 'DEGRADED', subsystem_code: 'VISUAL', downtime_hours: 2, lost_training_hours: 1, mel_category: 'CAT_B', mel_expiry_date: '2026-11-28' },
+    { type: 'PREVENTIVE', is_snag: false, status: 'COMPLETED', severity: 'MINOR', subsystem_code: 'MOTION', downtime_hours: 1 },
+    { type: 'CORRECTIVE', is_snag: true, status: 'IN_PROGRESS', severity: 'MINOR', subsystem_code: 'VISUAL', downtime_hours: 0, mel_category: 'CAT_C', mel_expiry_date: '2026-12-20' }
+  ], 300, now);
+
+  assert.equal(metrics.correctiveCount, 3);
+  assert.equal(metrics.preventiveCount, 1);
+  assert.equal(metrics.aogCount, 1);
+  assert.equal(metrics.mttrHours, 3); // (4 + 2) / 2
+  assert.equal(metrics.mtbfHours, 100); // 300 / 3
+  assert.equal(metrics.activeMelCount, 2);
+  assert.equal(metrics.melExpiringSoonCount, 1);
+  assert.equal(metrics.topSubsystems[0].code, 'MOTION'); // 2 records, 5h downtime vs VISUAL 2 records, 2h downtime
 });

@@ -378,12 +378,20 @@ function computeSimulatorTelemetry(sim, { sorties = [], maintenance = [], qtgRec
   };
 }
 
-function detectSortieBayConflict(proposed = {}, existingSorties = [], simulator = null, subsystems = []) {
+function detectSortieBayConflict(
+  proposed = {},
+  existingSorties = [],
+  simulator = null,
+  subsystems = [],
+  maintenanceWindows = [],
+  dailyShiftStatus = null
+) {
   const startMs = Date.parse(proposed.start_date);
   const endMs = proposed.end_date ? Date.parse(proposed.end_date) : (Number.isFinite(startMs) ? startMs + 7200000 : NaN);
   const excludeId = proposed.exclude_id ? Number(proposed.exclude_id) : null;
   const warnings = [];
   const overlappingSorties = [];
+  const overlappingMaintenance = [];
 
   if (simulator) {
     if (simulator.status === 'AOG') {
@@ -392,6 +400,10 @@ function detectSortieBayConflict(proposed = {}, existingSorties = [], simulator 
       warnings.push(`${simulator.bay_code} (${simulator.code}) is scheduled under Maintenance.`);
     } else if (simulator.status === 'DEGRADED' && simulator.limitations_mel) {
       warnings.push(`MEL Limitation active: ${simulator.limitations_mel}`);
+    }
+
+    if (String(dailyShiftStatus || '').toUpperCase() === 'NA') {
+      warnings.push(`${simulator.bay_code} is marked NA (Not Available) on the Daily Station Operations sheet for this date.`);
     }
 
     if (proposed.motion_required !== false) {
@@ -426,15 +438,34 @@ function detectSortieBayConflict(proposed = {}, existingSorties = [], simulator 
         });
       }
     }
+
+    for (const mw of maintenanceWindows || []) {
+      const mStart = Date.parse(mw.start_date);
+      const mEnd = mw.end_date ? Date.parse(mw.end_date) : (Number.isFinite(mStart) ? mStart + 7200000 : NaN);
+      if (!Number.isFinite(mStart) || !Number.isFinite(mEnd)) continue;
+      if (startMs < mEnd && endMs > mStart) {
+        overlappingMaintenance.push({
+          id: mw.id,
+          title: mw.title,
+          source: mw.source || 'MAINTENANCE_WO',
+          start_date: mw.start_date,
+          end_date: mw.end_date
+        });
+      }
+    }
   }
 
+  if (overlappingMaintenance.length > 0) {
+    warnings.unshift(`Maintenance window conflict (${overlappingMaintenance.length}): ${overlappingMaintenance[0].title}`);
+  }
   if (overlappingSorties.length > 0) {
     warnings.unshift(`Time-slot conflict with ${overlappingSorties.length} existing sortie(s) in this bay.`);
   }
 
   return {
-    hasOverlap: overlappingSorties.length > 0,
+    hasOverlap: overlappingSorties.length > 0 || overlappingMaintenance.length > 0,
     overlappingSorties,
+    overlappingMaintenance,
     warnings
   };
 }
@@ -593,6 +624,66 @@ function buildTimelineShiftBlocks(sheets = []) {
   return { blocks, statusBySimulator };
 }
 
+/**
+ * Projects scheduled Maintenance Work Orders and Planned Maintenance occurrences
+ * onto 24-hour simulator timeline bars for Sorties & Dispatch.
+ */
+function buildTimelineMaintenanceBlocks(dateStr, maintRecords = [], plannedOccurrences = [], simulators = []) {
+  const blocks = [];
+  const toHhMm = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+
+  for (const m of maintRecords || []) {
+    if (!m || !m.simulator_id || !m.scheduled_date) continue;
+    const start = new Date(m.scheduled_date);
+    if (Number.isNaN(start.getTime())) continue;
+    const hours = Number(m.downtime_hours) > 0 ? Math.min(12, Number(m.downtime_hours)) : 2;
+    const end = new Date(start.getTime() + hours * 3600000);
+    blocks.push({
+      id: `maint-wo-${m.id}`,
+      simulator_id: Number(m.simulator_id),
+      source: 'MAINTENANCE_WO',
+      title: m.title || 'Maintenance Work Order',
+      start_time: toHhMm(start),
+      end_time: toHhMm(end),
+      status: m.status || 'SCHEDULED',
+      severity: m.severity || 'MINOR',
+      record_id: Number(m.id)
+    });
+  }
+
+  const simMatchList = (simulators || []).map(s => ({
+    id: Number(s.id),
+    tokens: [s.bay_code, s.code, s.name]
+      .filter(Boolean)
+      .map(t => String(t).toUpperCase().trim())
+      .filter(t => t.length >= 3)
+  }));
+
+  for (const occ of plannedOccurrences || []) {
+    if (!occ || occ.status === 'DONE') continue;
+    const haystack = `${occ.system || ''} ${occ.subsystem || ''} ${occ.task || ''}`.toUpperCase();
+    const matched = simMatchList.find(s => s.tokens.some(tok => haystack.includes(tok)));
+    if (!matched) continue;
+    const start = occ.operationDateStart ? new Date(occ.operationDateStart) : null;
+    const end = occ.operationDateEnd ? new Date(occ.operationDateEnd) : null;
+    const startHhMm = start && !Number.isNaN(start.getTime()) ? toHhMm(start) : '08:00';
+    const endHhMm = end && !Number.isNaN(end.getTime()) ? toHhMm(end) : '10:00';
+    blocks.push({
+      id: `planned-pm-${occ.masterId || occ.id}-${dateStr}`,
+      simulator_id: matched.id,
+      source: 'PLANNED_MAINT',
+      title: occ.task || occ.subsystem || 'Planned Maintenance',
+      start_time: startHhMm,
+      end_time: endHhMm,
+      status: occ.status || 'TODO',
+      severity: 'MINOR',
+      record_id: Number(occ.masterId || occ.id) || null
+    });
+  }
+
+  return blocks;
+}
+
 module.exports = {
   VALID_SIM_CATEGORIES,
   VALID_SIM_STATUSES,
@@ -614,5 +705,6 @@ module.exports = {
   normalizeHhMm,
   computeTestingDurationMinutes,
   deriveEntryUsageStatus,
-  buildTimelineShiftBlocks
+  buildTimelineShiftBlocks,
+  buildTimelineMaintenanceBlocks
 };

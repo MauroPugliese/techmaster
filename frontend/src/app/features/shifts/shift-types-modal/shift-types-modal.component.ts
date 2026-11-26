@@ -18,6 +18,7 @@ import { ToastService } from '../../../core/services/toast.service';
 import { ConfirmService } from '../../../core/services/confirm.service';
 import { ShiftType, ShiftTypeCategory } from '../../../core/models/interfaces';
 import { DropdownComponent, DropdownOptionComponent } from '../../../shared/components/dropdown/dropdown.component';
+import { TimePickerComponent } from '../../../shared/components/time-picker/time-picker.component';
 import { calculateShiftHours, formatHours, formatTimeShort } from '../shift-helpers';
 
 const PRESET_COLORS = [
@@ -36,7 +37,7 @@ const PRESET_COLORS = [
 @Component({
   selector: 'app-shift-types-modal',
   standalone: true,
-  imports: [CommonModule, FormsModule, DropdownComponent, DropdownOptionComponent],
+  imports: [CommonModule, FormsModule, DropdownComponent, DropdownOptionComponent, TimePickerComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styles: [`
     .st-modal {
@@ -72,11 +73,6 @@ const PRESET_COLORS = [
       grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
       align-items: center;
       gap: 8px;
-
-      input[type="time"] {
-        font-family: var(--font-sans);
-        font-variant-numeric: tabular-nums;
-      }
     }
     .st-leave-note {
       display: flex;
@@ -209,9 +205,19 @@ const PRESET_COLORS = [
               <div class="form-group" *ngIf="form.category === 'WORK'">
                 <label class="form-label">Standard Hours</label>
                 <div class="st-time-row">
-                  <input type="time" class="form-control" [(ngModel)]="form.start_time" aria-label="Start time">
+                  <app-time-picker
+                    [(ngModel)]="form.start_time"
+                    [compact]="true"
+                    [allowReset]="false"
+                    ariaLabel="Start time">
+                  </app-time-picker>
                   <span class="text-muted text-sm">→</span>
-                  <input type="time" class="form-control" [(ngModel)]="form.end_time" aria-label="End time">
+                  <app-time-picker
+                    [(ngModel)]="form.end_time"
+                    [compact]="true"
+                    [allowReset]="false"
+                    ariaLabel="End time">
+                  </app-time-picker>
                 </div>
               </div>
               <div class="form-group" *ngIf="form.category === 'LEAVE'">

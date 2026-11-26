@@ -13,11 +13,12 @@ import { ApiService, ToastService } from '../../../core/services/services';
 import { SimulatorMntRecord, SimulatorMntRecordsResponse } from '../../../core/models/interfaces';
 import { DropdownComponent, DropdownOptionComponent } from '../../../shared/components/dropdown/dropdown.component';
 import { DateTimePickerComponent } from '../../../shared/components/datetime-picker/datetime-picker.component';
+import { ExportMenuComponent } from '../../../shared/components/export-menu/export-menu.component';
 
 @Component({
   selector: 'app-station-mnt-records-modal',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, RouterLink, DropdownComponent, DropdownOptionComponent, DateTimePickerComponent],
+  imports: [CommonModule, FormsModule, DatePipe, RouterLink, DropdownComponent, DropdownOptionComponent, DateTimePickerComponent, ExportMenuComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="modal-overlay" *ngIf="visible" (click)="onBackdropClick($event)">
@@ -28,12 +29,20 @@ import { DateTimePickerComponent } from '../../../shared/components/datetime-pic
             <p class="mr-sub">Rapid Preventive (Gray) &amp; Corrective / Fault (Red) Maintenance History</p>
           </div>
           <div class="mr-head-right">
+            <app-export-menu
+              *ngIf="simulatorId"
+              [endpoint]="'simulators/' + simulatorId"
+              [filename]="exportFilename"
+              [params]="exportParams"
+              [includeDateRange]="false"
+              label="Export">
+            </app-export-menu>
             <a *ngIf="simulatorId"
                class="btn btn-secondary btn-sm"
                [routerLink]="['/maintenance']"
                [queryParams]="{ simulatorId: simulatorId }"
                (click)="close()">
-              <span class="btn-icon">open_in_new</span> Full Maintenance Module
+              <span class="btn-icon">open_in_new</span> Full Maintenance
             </a>
             <button type="button" class="btn btn-ghost btn-icon-only" (click)="close()" title="Close">
               <span class="btn-icon">close</span>
@@ -165,7 +174,21 @@ import { DateTimePickerComponent } from '../../../shared/components/datetime-pic
     </div>
   `,
   styles: [`
-    .mnt-records-modal { max-width: 860px; width: 95vw; font-family: var(--font-sans); }
+    .mnt-records-modal {
+      max-width: 860px;
+      width: 95vw;
+      font-family: var(--font-sans);
+      overflow: visible;
+    }
+    .mnt-records-modal .modal-header {
+      overflow: visible;
+      position: relative;
+      z-index: 4;
+    }
+    .mnt-records-modal .modal-body {
+      max-height: calc(88vh - 88px);
+      overflow-y: auto;
+    }
     .mr-num { font-variant-numeric: tabular-nums; }
     .mr-sub { margin: 2px 0 0; font-size: 0.8rem; color: var(--text-muted); }
     .mr-head-right { display: flex; align-items: center; gap: 8px; }
@@ -326,6 +349,18 @@ export class StationMntRecordsModalComponent {
     if ((e.target as HTMLElement).classList.contains('modal-overlay')) {
       this.close();
     }
+  }
+
+  get exportFilename(): string {
+    const slug = (this.stationTitle || 'station')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+    return `mnt_records_${slug || 'station'}`;
+  }
+
+  get exportParams(): Record<string, string | number> {
+    return { year: this.selectedYear };
   }
 
   changeYear(yr: number | 'ALL'): void {

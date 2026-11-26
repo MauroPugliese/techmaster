@@ -62,8 +62,7 @@
     <div class="dash-list dash-radar-scroll" *ngIf="plannedItems.length > 0">
       <a *ngFor="let occ of plannedItems"
          class="dash-row-item dash-radar-link"
-         [routerLink]="['/maintenance']"
-         [queryParams]="{ tab: 'planned' }">
+         [routerLink]="['/maintenance/planned']">
         <div class="dash-row-main">
           <div class="dash-row-title">{{occ.task}}</div>
           <div class="dash-row-sub">

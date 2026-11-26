@@ -15,6 +15,7 @@
           *ngIf="activeView === 'fleet'"
           endpoint="simulators"
           filename="cae-simulator-fleet-report"
+          [params]="fleetExportParams"
           [includeDateRange]="false">
         </app-export-menu>
         <button type="button" class="btn btn-primary" (click)="openCreateModal()">

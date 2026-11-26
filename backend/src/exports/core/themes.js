@@ -103,6 +103,11 @@ const MODULE_THEMES = {
     docCode: 'CAE-SIM-13',
     reportType: 'Flight Simulator Fleet & QTG Dossier',
     coverTagline: 'Multi-Bay Availability, Qualification Compliance & Subsystem Health'
+  },
+  'daily-station-ops': {
+    docCode: 'CAE-OPS-14',
+    reportType: 'Daily Station Operations & Handover Log',
+    coverTagline: 'Operating Hours, Multi-Shift Utilization & Test Leader Handover Notes'
   }
 };
 

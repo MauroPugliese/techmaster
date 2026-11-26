@@ -144,7 +144,11 @@ function taskOccursOnDate(task, targetDate) {
     }
 
     if (type === 'MONTH') {
-      if (start.getUTCDate() !== target.getUTCDate()) return false;
+      const lastDayOfTargetMonth = new Date(
+        Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)
+      ).getUTCDate();
+      const expectedDay = Math.min(start.getUTCDate(), lastDayOfTargetMonth);
+      if (target.getUTCDate() !== expectedDay) return false;
       const diffMonths = (target.getUTCFullYear() - start.getUTCFullYear()) * 12 +
         (target.getUTCMonth() - start.getUTCMonth());
       return diffMonths >= 0 && diffMonths % interval === 0;

@@ -11,7 +11,7 @@ const { WikiArticle, WikiCategory, User } = require('../../models');
 const { parseMarkdownBlocks } = require('../core/markdown.parser');
 const {
   fmtDate, fmtDateTime, fmtNumber, fmtPercent, fullName, dash,
-  cleanText, pct, toNumber, topEntries
+  cleanText, pct, toNumber, topEntries, parseRange, rangeLabel
 } = require('../core/helpers');
 const { COLORS } = require('../core/branding');
 
@@ -52,9 +52,15 @@ module.exports = {
   orientation: 'portrait',
 
   async build(req) {
+    const range = parseRange(req.query);
     const { status, category_id, search } = req.query;
 
     const where = {};
+    if (range.from || range.to) {
+      where.updated_at = {};
+      if (range.from) where.updated_at[Op.gte] = range.from;
+      if (range.to) where.updated_at[Op.lte] = range.to;
+    }
     if (status) where.status = status;
     if (category_id) where.category_id = category_id;
     if (search && String(search).trim()) {
@@ -134,6 +140,7 @@ module.exports = {
     };
 
     const filters = {};
+    if (range.from || range.to) filters['Revision Window'] = rangeLabel(range);
     if (status) filters.Status = status;
     if (category_id) filters['Category ID'] = category_id;
     if (search) filters.Search = search;

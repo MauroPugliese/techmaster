@@ -187,16 +187,31 @@ export interface DashboardRecentActivity {
   movements: StockMovement[];
 }
 
+export interface StationLiveSummary {
+  total: number;
+  inUse: number;
+  ready: number;
+  na: number;
+  todayShiftHours: number;
+}
+
 export interface SimulatorDashboardSummary {
   totalSimulators: number;
+  ffsTotal?: number;
   readyBays: number;
   inSortieBays: number;
   degradedBays: number;
   aogBays: number;
   todayFlightHours: number;
+  todayStationHours?: number;
   dispatchReliabilityPct: number;
   openSnagsCount: number;
   qtgCompliancePct: number;
+  melActiveCount?: number;
+  melExpiringCount?: number;
+  aogSparesLowCount?: number;
+  testPlaces?: StationLiveSummary;
+  iosConsoles?: StationLiveSummary;
 }
 
 export interface DashboardOverview {
@@ -358,6 +373,10 @@ export interface SimulatorDailyShift {
   shift_name: string;
   pre_flight_test_time: string;
   lead_user_id?: number | null;
+  signed_off_at?: string | null;
+  signed_off_by?: number | null;
+  lead?: Partial<User> | null;
+  signer?: Partial<User> | null;
   entries: SimulatorShiftEntry[];
 }
 
@@ -386,6 +405,22 @@ export interface TimelineShiftBlock {
   duration_minutes: number;
   notes?: string | null;
 }
+
+export interface TimelineMaintenanceBlock {
+  id: string;
+  simulator_id: number;
+  source: 'PLANNED_MAINT' | 'MAINTENANCE_WO';
+  record_id?: number | null;
+  title: string;
+  subsystem?: string | null;
+  start_time: string;
+  end_time: string;
+  status: string;
+  severity?: string;
+}
+
+export type MelCategory = 'NONE' | 'CAT_A' | 'CAT_B' | 'CAT_C' | 'CAT_D';
+export type LruStatus = 'SERVICEABLE' | 'INSTALLED' | 'UNSERVICEABLE' | 'IN_REPAIR_RMA' | 'QUARANTINE';
 
 export interface SimulatorMntRecord extends MaintenanceRecord {
   record_year?: number;
@@ -540,6 +575,12 @@ export interface MaintenanceRecord {
   completed_date?: string;
   downtime_hours?: number | null;
   cost?: number | null;
+  parts_cost?: number | null;
+  labor_cost?: number | null;
+  mel_category?: MelCategory;
+  mel_expiry_date?: string | null;
+  wiki_article_id?: number | null;
+  wikiArticle?: { id: number; title: string; slug: string } | null;
   findings?: string | null;
   parts_used?: MaintenancePartUsage[];
   next_scheduled?: string | null;
@@ -630,7 +671,15 @@ export interface InventoryItem {
   description?: string;
   unit: string;
   part_classification?: 'CONSUMABLE' | 'ROTATABLE_LRU' | 'TOOL_CALIBRATED';
+  subsystem_code?: string | null;
   aog_critical?: boolean;
+  serial_number?: string | null;
+  lru_status?: LruStatus;
+  installed_simulator_id?: number | null;
+  installedSimulator?: Partial<Simulator> | null;
+  rma_reference?: string | null;
+  on_order_qty?: number;
+  expected_delivery_date?: string | null;
   lead_time_days?: number;
   compatible_models?: string[] | null;
   unserviceable_qty?: number;
@@ -700,6 +749,8 @@ export interface WarehouseMovementTypeCounts {
 export interface StockMovement {
   id: number;
   item_id: number;
+  simulator_id?: number | null;
+  maintenance_record_id?: number | null;
   type: MovementType;
   quantity: number;
   quantity_before: number;
@@ -710,6 +761,7 @@ export interface StockMovement {
   movement_date: string;
   user?: Partial<User>;
   item?: Partial<InventoryItem>;
+  simulator?: Partial<Simulator> | null;
 }
 
 // ── Shifts ────────────────────────────────────────────────────────────────────

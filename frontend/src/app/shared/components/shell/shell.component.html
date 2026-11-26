@@ -56,7 +56,7 @@
         </span>
       </a>
 
-      <a class="nav-item" routerLink="/maintenance" routerLinkActive="active" *ngIf="showNavSection('maintenance')">
+      <a class="nav-item" routerLink="/maintenance" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}" *ngIf="showNavSection('maintenance')">
         <span class="nav-icon">build_circle</span>
         <span class="nav-label">Maintenance</span>
         <span
@@ -66,6 +66,11 @@
           [attr.aria-label]="pendingMaintCount + (pendingMaintCount === 1 ? ' open or scheduled work order' : ' open or scheduled work orders')">
           {{ pendingMaintCount }}
         </span>
+      </a>
+
+      <a class="nav-item" routerLink="/maintenance/planned" routerLinkActive="active" *ngIf="showNavSection('maintenance')">
+        <span class="nav-icon">event_repeat</span>
+        <span class="nav-label">Planned Maintenance</span>
       </a>
 
       <a class="nav-item" routerLink="/warehouse" routerLinkActive="active" *ngIf="showNavSection('warehouse')">

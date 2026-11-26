@@ -12,7 +12,7 @@ const {
 } = require('../core/branding');
 const { resolveTheme } = require('../core/themes');
 const {
-  str, formatCell, computeColumnTotals, toNumber, FORMAT_META
+  str, formatCell, computeColumnTotals, toNumber, resolveBadgeTone, FORMAT_META
 } = require('../core/helpers');
 
 const F_HERO = OFFICE_FONTS.pptx.hero;
@@ -35,10 +35,12 @@ function extractAggregatedData(spec) {
   const insights = [...(spec.insights || [])];
   const charts = [...(spec.charts || [])];
   const tables = [...(spec.tables || [])];
+  const statMatrices = [...(spec.statMatrices || [])];
   const documentBlocks = [...(spec.documentBlocks || [])];
 
   const seenTables = new Set(tables.map((t) => t.name).filter(Boolean));
   const seenCharts = new Set(charts.map((c) => c.title).filter(Boolean));
+  const seenMatrices = new Set(statMatrices.map((m) => m.title).filter(Boolean));
 
   (spec.pages || []).forEach((page) => {
     (page.blocks || []).forEach((block) => {
@@ -81,13 +83,20 @@ function extractAggregatedData(spec) {
         tables.push(block.table);
         if (block.table.name) seenTables.add(block.table.name);
       }
+      if (block.type === 'statMatrix' && Array.isArray(block.pairs) && block.pairs.length) {
+        const key = block.title || '';
+        if (!key || !seenMatrices.has(key)) {
+          statMatrices.push({ title: block.title || 'Operational Summary', pairs: block.pairs });
+          if (key) seenMatrices.add(key);
+        }
+      }
       if (block.type === 'markdown' && Array.isArray(block.blocks)) {
         block.blocks.forEach((mb) => documentBlocks.push(mb));
       }
     });
   });
 
-  return { executiveBrief: briefParts[0] || '', kpis, scorecards, highlights, insights, charts, tables, documentBlocks };
+  return { executiveBrief: briefParts[0] || '', kpis, scorecards, highlights, insights, charts, tables, statMatrices, documentBlocks };
 }
 
 function hasChartData(chart) {
@@ -116,22 +125,42 @@ function buildCoverSlide(pptx, spec, theme) {
     slide.addImage({ data: logoLight, x: 0.8, y: 0.56, w: 2.1, h: 0.78 });
   }
 
+  const periodInfo = spec.meta?.period;
+  const periodLabel = periodInfo && periodInfo.type && periodInfo.type !== 'all'
+    ? String(periodInfo.label || '').toUpperCase()
+    : '';
+
+  if (periodLabel) {
+    slide.addShape('roundRect', {
+      x: 5.5, y: 0.62, w: 2.7, h: 0.36,
+      fill: { color: noHash(theme.accent) },
+      line: { width: 0 },
+      rectRadius: 0.05
+    });
+    slide.addText(periodLabel, {
+      x: 5.5, y: 0.64, w: 2.7, h: 0.32,
+      fontFace: F_DISP, fontSize: 9.5, bold: true, color: noHash(COLORS.white), align: 'center', valign: 'middle'
+    });
+  }
+
   slide.addText(theme.docCode || spec.docCode || 'CAE-RPT', {
-    x: 8.4, y: 0.65, w: 1.9, h: 0.36,
+    x: 8.3, y: 0.65, w: 2.0, h: 0.36,
     fontFace: F_MONO, fontSize: 11, bold: true, color: noHash(theme.secondary || COLORS.cyan), align: 'right'
   });
 
   slide.addText(String(spec.category || 'OPERATIONS INTELLIGENCE').toUpperCase(), {
-    x: 0.8, y: 1.75, w: 9.4, h: 0.35,
+    x: 0.8, y: 1.72, w: 9.4, h: 0.34,
     fontFace: F_DISP, fontSize: 11, bold: true, color: noHash(theme.secondary || COLORS.cyan)
   });
 
-  slide.addText(spec.title || 'Operational Report', {
-    x: 0.8, y: 2.12, w: 9.5, h: 1.15,
-    fontFace: F_HERO, fontSize: 31, bold: false, color: noHash(COLORS.white), valign: 'top'
+  const titleText = spec.title || 'Operational Report';
+  const titleSize = titleText.length > 52 ? 26 : (titleText.length > 36 ? 29 : 31);
+  slide.addText(titleText, {
+    x: 0.8, y: 2.08, w: 9.5, h: 1.22,
+    fontFace: F_HERO, fontSize: titleSize, bold: false, color: noHash(COLORS.white), valign: 'top'
   });
 
-  let curY = 3.32;
+  let curY = 3.38;
   if (spec.subtitle) {
     slide.addText(spec.subtitle, {
       x: 0.8, y: curY, w: 9.4, h: 0.52,
@@ -522,7 +551,7 @@ function renderChartBox(pptx, slide, chart, x, y, w, h, theme) {
       dataLabelFontSize: 8.5,
       dataLabelColor: noHash(COLORS.white)
     });
-  } else if (chart.type === 'hbar' || chart.type === 'lollipop') {
+  } else if (chart.type === 'hbar' || chart.type === 'horizontalBar' || chart.type === 'lollipop') {
     slide.addChart(pptx.ChartType.bar, chartData, {
       ...baseOpts,
       barDir: 'bar',
@@ -738,7 +767,7 @@ function prepareTableData(table, theme) {
 
       const isNum = col.type === 'number' || col.type === 'currency' || col.type === 'percent';
       const isBadge = col.type === 'badge';
-      const badgeTone = isBadge ? (toneStyle(row._badgeTone || row._flag) || toneStyle('neutral')) : null;
+      const badgeTone = isBadge ? (toneStyle(resolveBadgeTone(row, col)) || toneStyle('neutral')) : null;
       const cellFill = isBadge
         ? noHash(badgeTone.bg)
         : (rowTone && (row._flag === 'danger' || row._flag === 'warning')
@@ -793,6 +822,78 @@ function prepareTableData(table, theme) {
   }
 
   return { headerCells, colWidths, rowItems };
+}
+
+function buildStatMatrixSlides(pptx, spec, statMatrices, theme, contentSlides) {
+  if (!statMatrices || !statMatrices.length) return;
+  let slide = null;
+  let y = TOP_CONTENT_Y;
+
+  const openSlide = (suffix) => {
+    slide = addSlideChrome(pptx.addSlide(), spec, theme, suffix);
+    contentSlides.push(slide);
+    y = TOP_CONTENT_Y;
+  };
+
+  statMatrices.forEach((matrix) => {
+    const pairs = (matrix.pairs || []).filter((p) => Array.isArray(p) && p.length >= 2);
+    if (!pairs.length) return;
+    const rowsNeeded = Math.ceil(pairs.length / 2);
+    const estH = 0.42 + rowsNeeded * 0.42 + 0.24;
+
+    if (!slide || y + estH > MAX_CONTENT_Y) {
+      openSlide(matrix.title || 'Operational Specifications');
+    }
+
+    slide.addText(String(matrix.title || 'OPERATIONAL SUMMARY').toUpperCase(), {
+      x: CONTENT_X, y, w: CONTENT_W, h: 0.3,
+      fontFace: F_DISP, fontSize: 10.5, bold: true, color: noHash(theme.primary)
+    });
+    y += 0.34;
+
+    const tblRows = [];
+    for (let i = 0; i < pairs.length; i += 2) {
+      const left = pairs[i];
+      const right = pairs[i + 1];
+      const makePairCells = (pair) => [
+        {
+          text: pair ? str(pair[0]) : '',
+          options: {
+            fill: { color: noHash(theme.tint || COLORS.zebra) },
+            color: noHash(COLORS.subtle),
+            fontFace: F_DISP,
+            fontSize: 8.8,
+            bold: true,
+            valign: 'middle',
+            border: { pt: 0.5, color: noHash(COLORS.border) },
+            margin: [4, 6, 4, 6]
+          }
+        },
+        {
+          text: pair ? str(pair[1]) : '',
+          options: {
+            fill: { color: noHash(COLORS.white) },
+            color: noHash(COLORS.ink),
+            fontFace: F_BODY,
+            fontSize: 9.2,
+            valign: 'middle',
+            border: { pt: 0.5, color: noHash(COLORS.border) },
+            margin: [4, 6, 4, 6]
+          }
+        }
+      ];
+      tblRows.push([...makePairCells(left), ...makePairCells(right)]);
+    }
+
+    slide.addTable(tblRows, {
+      x: CONTENT_X,
+      y,
+      w: CONTENT_W,
+      colW: [CONTENT_W * 0.22, CONTENT_W * 0.28, CONTENT_W * 0.22, CONTENT_W * 0.28],
+      autoPage: false
+    });
+    y += rowsNeeded * 0.42 + 0.26;
+  });
 }
 
 function buildTableSlides(pptx, spec, tablesList, theme, contentSlides) {
@@ -861,6 +962,7 @@ async function buildPptxBuffer(spec) {
   buildCoverSlide(pptx, spec, theme);
   buildExecutiveOverviewSlide(pptx, spec, data, theme, contentSlides);
   buildScorecardsAndHighlightsSlide(pptx, spec, data, theme, contentSlides);
+  buildStatMatrixSlides(pptx, spec, data.statMatrices, theme, contentSlides);
   buildChartSlides(pptx, spec, data.charts, theme, contentSlides);
   buildDocumentSlides(pptx, spec, data.documentBlocks, theme, contentSlides);
   buildTableSlides(pptx, spec, data.tables, theme, contentSlides);

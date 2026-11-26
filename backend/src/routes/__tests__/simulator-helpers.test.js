@@ -12,7 +12,8 @@ const {
   normalizeHhMm,
   computeTestingDurationMinutes,
   deriveEntryUsageStatus,
-  buildTimelineShiftBlocks
+  buildTimelineShiftBlocks,
+  buildTimelineMaintenanceBlocks
 } = require('../../services/simulator-helpers.service');
 
 test('sanitizeSimulatorPayload validates required fields and normalizes codes without mutating input', () => {
@@ -207,4 +208,34 @@ test('buildTimelineShiftBlocks projects IN_USE, READY and NA shift entries onto 
   const na = blocks.find(b => b.simulator_id === 12);
   assert.equal(na.block_kind, 'SHIFT_NA');
   assert.equal(na.notes, 'PSU fault');
+});
+
+
+test('detectSortieBayConflict flags overlapping maintenance windows and daily NA status', () => {
+  const res = detectSortieBayConflict(
+    { start_date: '2026-11-25T10:00:00Z', end_date: '2026-11-25T14:00:00Z', motion_required: false },
+    [],
+    { id: 1, bay_code: 'BAY-01', code: 'FFS-A320', status: 'READY' },
+    [],
+    [{ id: 77, title: 'Hydraulic Actuator PM', source: 'MAINTENANCE_WO', start_date: '2026-11-25T11:00:00Z', end_date: '2026-11-25T13:00:00Z' }],
+    'NA'
+  );
+  assert.equal(res.hasOverlap, true);
+  assert.equal(res.overlappingMaintenance.length, 1);
+  assert.ok(res.warnings.some(w => /Maintenance window conflict/i.test(w)));
+  assert.ok(res.warnings.some(w => /marked NA/i.test(w)));
+});
+
+test('buildTimelineMaintenanceBlocks projects scheduled WOs and matched Planned Maintenance onto 24h timeline', () => {
+  const blocks = buildTimelineMaintenanceBlocks(
+    '2026-11-25',
+    [{ id: 15, simulator_id: 2, title: 'Visual Alignment', scheduled_date: '2026-11-25T09:00:00', downtime_hours: 2.5, status: 'SCHEDULED', severity: 'DEGRADED' }],
+    [{ masterId: 9, system: 'BAY-02 A320', subsystem: 'MOTION', task: 'Monthly Lube', status: 'TODO', operationDateStart: '2026-11-25T14:00:00', operationDateEnd: '2026-11-25T15:30:00' }],
+    [{ id: 2, bay_code: 'BAY-02', code: 'FFS-A320', name: 'A320 Bay 2' }]
+  );
+  assert.equal(blocks.length, 2);
+  assert.equal(blocks[0].source, 'MAINTENANCE_WO');
+  assert.equal(blocks[0].simulator_id, 2);
+  assert.equal(blocks[1].source, 'PLANNED_MAINT');
+  assert.equal(blocks[1].simulator_id, 2);
 });

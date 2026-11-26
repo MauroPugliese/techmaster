@@ -1,15 +1,15 @@
 <div class="pm-dashboard fade-in">
 
-  <!-- ── Standalone Toolbar (hidden when hosted inside 3-tab shell) ──────── -->
+  <!-- ── Standalone Header (Planned Maintenance is a dedicated module) ──── -->
   <div class="mnt-page-head" *ngIf="!embedded">
     <div>
       <h2>Planned Maintenance</h2>
-      <p>Recurring preventive schedules, calendar occurrences, and daily checklists.</p>
+      <p>Recurring Daily, Weekly &amp; Monthly preventive schedules, calendar occurrences, and printable daily checklists.</p>
     </div>
     <div class="mnt-head-actions">
       <app-export-menu endpoint="planned-maintenance"
                        filename="Planned_Maintenance"
-                       [params]="{ search: searchTerm, system: systemFilter, repeat_task_type: repeatTypeFilter, status: statusFilter }">
+                       [params]="exportParams">
       </app-export-menu>
       <button type="button" class="btn btn-primary" (click)="openModal()">
         <span class="btn-icon">add</span> New Planned Task
@@ -193,10 +193,6 @@
                     <span class="mat-i text-muted">visibility</span>
                     <span>View Details</span>
                   </button>
-                  <button type="button" class="mnt-menu-item" (click)="closeRowMenu(); createWorkOrderRequested.emit({ task: t })">
-                    <span class="mat-i text-primary">build</span>
-                    <span>Create Work Order</span>
-                  </button>
                   <div class="mnt-menu-divider"></div>
                   <button type="button" class="mnt-menu-item danger" (click)="closeRowMenu(); deleteTask(t)">
                     <span class="mat-i">delete</span>
@@ -350,12 +346,6 @@
           <span class="badge" [ngClass]="getStatusBadgeClass(t.status)">{{t.status}}</span>
 
           <div class="mnt-row-actions" (click)="$event.stopPropagation()">
-            <button type="button"
-                    class="btn btn-ghost btn-icon-only btn-sm"
-                    (click)="createWorkOrderRequested.emit({ task: t, occurrenceDate: selectedDate })"
-                    title="Create Work Order">
-              <span class="btn-icon text-primary">build</span>
-            </button>
             <button type="button"
                     class="btn btn-ghost btn-icon-only btn-sm"
                     (click)="openOccurrenceModal(t)"
@@ -575,9 +565,6 @@
       </button>
       <div class="detail-footer-actions">
         <button type="button" class="btn btn-secondary" (click)="detailTask = null; detailIsDayEvent = false">Close</button>
-        <button type="button" class="btn btn-secondary" (click)="createWorkOrderFromDetail()">
-          <span class="btn-icon text-primary">build</span> Work Order
-        </button>
         <button type="button" class="btn btn-secondary" (click)="toggleStatusFromDetail()">
           <span class="btn-icon" [style.color]="detailTask.status === 'DONE' ? 'var(--text-muted)' : '#16A34A'">
             {{detailTask.status === 'DONE' ? 'undo' : 'check_circle'}}

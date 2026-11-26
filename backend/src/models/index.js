@@ -114,7 +114,9 @@ const SimulatorDailyShift = sequelize.define('SimulatorDailyShift', {
   shift_number:         { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
   shift_name:           { type: DataTypes.STRING(40), allowNull: false, defaultValue: 'SHIFT 1' },
   pre_flight_test_time: { type: DataTypes.STRING(8), defaultValue: '06:40' },
-  lead_user_id:         { type: DataTypes.INTEGER.UNSIGNED }
+  lead_user_id:         { type: DataTypes.INTEGER.UNSIGNED },
+  signed_off_at:        { type: DataTypes.DATE },
+  signed_off_by:        { type: DataTypes.INTEGER.UNSIGNED }
 }, { tableName: 'simulator_daily_shifts' });
 
 const SimulatorShiftEntry = sequelize.define('SimulatorShiftEntry', {
@@ -221,12 +223,18 @@ const MaintenanceRecord = sequelize.define('MaintenanceRecord', {
   priority:            { type: DataTypes.ENUM('LOW','MEDIUM','HIGH','CRITICAL'), defaultValue: 'MEDIUM' },
   scheduled_date:      { type: DataTypes.DATE, allowNull: false },
   completed_date:      { type: DataTypes.DATE },
-  downtime_hours:      { type: DataTypes.DECIMAL(6,2) },
-  cost:                { type: DataTypes.DECIMAL(10,2) },
-  parts_used:          { type: DataTypes.JSON },
-  findings:            { type: DataTypes.TEXT },
-  next_scheduled:      { type: DataTypes.DATE },
-  deleted_at:          { type: DataTypes.DATE }
+  downtime_hours:          { type: DataTypes.DECIMAL(6,2) },
+  cost:                    { type: DataTypes.DECIMAL(10,2) },
+  parts_cost:              { type: DataTypes.DECIMAL(10,2) },
+  labor_cost:              { type: DataTypes.DECIMAL(10,2) },
+  parts_used:              { type: DataTypes.JSON },
+  stock_deducted_snapshot: { type: DataTypes.JSON },
+  mel_category:            { type: DataTypes.ENUM('NONE','CAT_A','CAT_B','CAT_C','CAT_D'), defaultValue: 'NONE' },
+  mel_expiry_date:         { type: DataTypes.DATEONLY },
+  wiki_article_id:         { type: DataTypes.INTEGER.UNSIGNED, allowNull: true },
+  findings:                { type: DataTypes.TEXT },
+  next_scheduled:          { type: DataTypes.DATE },
+  deleted_at:              { type: DataTypes.DATE }
 }, { tableName: 'maintenance_records', paranoid: true, deletedAt: 'deleted_at' });
 
 // ── Planned Maintenance Tasks ────────────────────────────────────────────────
@@ -301,9 +309,16 @@ const InventoryItem = sequelize.define('InventoryItem', {
   name:                { type: DataTypes.STRING(200), allowNull: false },
   description:         { type: DataTypes.TEXT },
   unit:                { type: DataTypes.STRING(30), defaultValue: 'pcs' },
-  part_classification: { type: DataTypes.ENUM('CONSUMABLE','ROTATABLE_LRU','TOOL_CALIBRATED'), defaultValue: 'CONSUMABLE' },
-  aog_critical:        { type: DataTypes.BOOLEAN, defaultValue: false },
-  lead_time_days:      { type: DataTypes.INTEGER, defaultValue: 7 },
+  part_classification:    { type: DataTypes.ENUM('CONSUMABLE','ROTATABLE_LRU','TOOL_CALIBRATED'), defaultValue: 'CONSUMABLE' },
+  subsystem_code:         { type: DataTypes.STRING(60) },
+  aog_critical:           { type: DataTypes.BOOLEAN, defaultValue: false },
+  serial_number:          { type: DataTypes.STRING(100) },
+  lru_status:             { type: DataTypes.ENUM('SERVICEABLE','INSTALLED','UNSERVICEABLE','IN_REPAIR_RMA','QUARANTINE'), defaultValue: 'SERVICEABLE' },
+  installed_simulator_id: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true },
+  rma_reference:          { type: DataTypes.STRING(100) },
+  on_order_qty:           { type: DataTypes.INTEGER, defaultValue: 0 },
+  expected_delivery_date: { type: DataTypes.DATEONLY },
+  lead_time_days:         { type: DataTypes.INTEGER, defaultValue: 7 },
   compatible_models:   { type: DataTypes.JSON },
   unserviceable_qty:   { type: DataTypes.INTEGER, defaultValue: 0 },
   quantity:            { type: DataTypes.INTEGER, defaultValue: 0 },
@@ -317,10 +332,12 @@ const InventoryItem = sequelize.define('InventoryItem', {
 }, { tableName: 'inventory_items', paranoid: true, deletedAt: 'deleted_at' });
 
 const StockMovement = sequelize.define('StockMovement', {
-  id:              { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
-  item_id:         { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
-  user_id:         { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
-  type:            { type: DataTypes.ENUM('IN','OUT','TRANSFER','ADJUSTMENT','RETURN'), allowNull: false },
+  id:                    { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
+  item_id:               { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+  user_id:               { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+  simulator_id:          { type: DataTypes.INTEGER.UNSIGNED, allowNull: true },
+  maintenance_record_id: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true },
+  type:                  { type: DataTypes.ENUM('IN','OUT','TRANSFER','ADJUSTMENT','RETURN'), allowNull: false },
   quantity:        { type: DataTypes.INTEGER, allowNull: false },
   quantity_before: { type: DataTypes.INTEGER, allowNull: false },
   quantity_after:  { type: DataTypes.INTEGER, allowNull: false },
@@ -488,9 +505,11 @@ Simulator.hasMany(SimulatorQtgRecord, { foreignKey: 'simulator_id', as: 'qtgReco
 SimulatorQtgRecord.belongsTo(Simulator, { foreignKey: 'simulator_id', as: 'simulator' });
 SimulatorQtgRecord.belongsTo(User, { foreignKey: 'executed_by', as: 'executor' });
 
+SimulatorDailyLog.belongsTo(User, { foreignKey: 'updated_by', as: 'updater' });
 SimulatorDailyLog.hasMany(SimulatorDailyShift, { foreignKey: 'daily_log_id', as: 'shifts', onDelete: 'CASCADE' });
 SimulatorDailyShift.belongsTo(SimulatorDailyLog, { foreignKey: 'daily_log_id', as: 'dailyLog' });
 SimulatorDailyShift.belongsTo(User, { foreignKey: 'lead_user_id', as: 'lead' });
+SimulatorDailyShift.belongsTo(User, { foreignKey: 'signed_off_by', as: 'signer' });
 SimulatorDailyShift.hasMany(SimulatorShiftEntry, { foreignKey: 'shift_id', as: 'entries', onDelete: 'CASCADE' });
 SimulatorShiftEntry.belongsTo(SimulatorDailyShift, { foreignKey: 'shift_id', as: 'shift' });
 SimulatorShiftEntry.belongsTo(Simulator, { foreignKey: 'simulator_id', as: 'simulator' });
@@ -504,6 +523,7 @@ MaintenanceRecord.belongsTo(Simulator, { foreignKey: 'simulator_id', as: 'simula
 Simulator.hasMany(MaintenanceRecord, { foreignKey: 'simulator_id', as: 'maintenanceRecords' });
 MaintenanceRecord.belongsTo(Operation, { foreignKey: 'sortie_id', as: 'sortie' });
 MaintenanceRecord.belongsTo(User, { foreignKey: 'performed_by', as: 'technician' });
+MaintenanceRecord.belongsTo(WikiArticle, { foreignKey: 'wiki_article_id', as: 'wikiArticle' });
 
 PlannedMaintenanceTask.belongsTo(Simulator, { foreignKey: 'simulator_id', as: 'simulator' });
 PlannedMaintenanceTask.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
@@ -511,9 +531,12 @@ PlannedMaintenanceTask.hasMany(PlannedMaintenanceTaskInstance, { foreignKey: 'pl
 PlannedMaintenanceTaskInstance.belongsTo(PlannedMaintenanceTask, { foreignKey: 'planned_task_id', as: 'master' });
 PlannedMaintenanceTaskInstance.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
 
+InventoryItem.belongsTo(Simulator, { foreignKey: 'installed_simulator_id', as: 'installedSimulator' });
 InventoryItem.hasMany(StockMovement, { foreignKey: 'item_id', as: 'movements' });
 StockMovement.belongsTo(InventoryItem, { foreignKey: 'item_id', as: 'item' });
 StockMovement.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+StockMovement.belongsTo(Simulator, { foreignKey: 'simulator_id', as: 'simulator' });
+StockMovement.belongsTo(MaintenanceRecord, { foreignKey: 'maintenance_record_id', as: 'maintenanceRecord' });
 
 Shift.belongsTo(ShiftType, { foreignKey: 'shift_type_id', as: 'shiftType' });
 Shift.belongsTo(User, { foreignKey: 'user_id', as: 'employee' });

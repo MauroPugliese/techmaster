@@ -36,6 +36,7 @@ export class MaintenanceQtgComponent implements OnInit, OnChanges {
   @Input() refreshTick = 0;
 
   @Output() mutated = new EventEmitter<void>();
+  @Output() createWorkOrderRequested = new EventEmitter<SimulatorQtgRecord>();
 
   loading = true;
   allRecords: SimulatorQtgRecord[] = [];

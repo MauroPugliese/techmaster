@@ -45,6 +45,7 @@
                          priority: priorityFilter,
                          interval_type: activeInterval,
                          assigned_to: assigneeFilter,
+                         simulator_id: simulatorFilter,
                          search: searchTerm
                        }"></app-export-menu>
 
@@ -83,6 +84,16 @@
       <app-dropdown-option value="unassigned">Unassigned</app-dropdown-option>
       <app-dropdown-option *ngFor="let u of assignees" [value]="u.id" [label]="userName(u)">
         {{userName(u)}}
+      </app-dropdown-option>
+    </app-dropdown>
+
+    <app-dropdown *ngIf="simulators.length > 0"
+                  class="form-control control-md"
+                  [(ngModel)]="simulatorFilter"
+                  placeholder="All Simulator Bays">
+      <app-dropdown-option [ngValue]="''">All Simulator Bays</app-dropdown-option>
+      <app-dropdown-option *ngFor="let s of simulators" [ngValue]="s.id">
+        {{s.bay_code || s.code}} · {{s.name}}
       </app-dropdown-option>
     </app-dropdown>
 

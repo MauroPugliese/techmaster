@@ -65,16 +65,21 @@
     </a>
 
     <a class="kpi-card dash-kpi-card"
-       routerLink="/maintenance"
-       [queryParams]="{ tab: 'assets' }"
-       style="--kpi-color: #10B981"
-       title="Open Assets Registry">
-      <div class="kpi-icon-wrap">precision_manufacturing</div>
+       [routerLink]="ffsTotalCount > 0 ? '/simulators' : '/maintenance'"
+       [queryParams]="ffsTotalCount > 0 ? { view: 'fleet' } : { tab: 'assets' }"
+       [style.--kpi-color]="simulatorReadinessStatus === 'CRITICAL' ? '#DC2626' : (simulatorReadinessStatus === 'ATTENTION' ? '#D97706' : '#10B981')"
+       [title]="ffsTotalCount > 0 ? 'Open Flight Simulators Fleet' : 'Open Assets Registry'">
+      <div class="kpi-icon-wrap">{{ffsTotalCount > 0 ? 'flight_takeoff' : 'precision_manufacturing'}}</div>
       <div class="dash-kpi-body">
-        <div class="dash-kpi-value">{{overview ? (fleetReadinessPct + '%') : '—'}}</div>
-        <div class="dash-kpi-title">Fleet Readiness</div>
-        <div class="dash-kpi-sub" [class.ok]="fleetStatus === 'OPTIMAL'" [class.warn]="fleetStatus === 'CRITICAL'">
-          {{kpis?.activeAssets ?? 0}} / {{kpis?.totalAssets ?? 0}} assets active
+        <div class="dash-kpi-value">{{overview ? (simulatorReadinessPct + '%') : '—'}}</div>
+        <div class="dash-kpi-title">{{ffsTotalCount > 0 ? 'FFS Fleet Readiness' : 'Facility Readiness'}}</div>
+        <div class="dash-kpi-sub" [class.ok]="simulatorReadinessStatus === 'OPTIMAL'" [class.warn]="simulatorReadinessStatus === 'CRITICAL'">
+          <ng-container *ngIf="ffsTotalCount > 0; else facilityReadinessSub">
+            {{ffsReadyCount}} / {{ffsTotalCount}} FFS ready · {{simSummary?.dispatchReliabilityPct ?? 100}}% DR
+          </ng-container>
+          <ng-template #facilityReadinessSub>
+            {{kpis?.activeAssets ?? 0}} / {{kpis?.totalAssets ?? 0}} assets active
+          </ng-template>
         </div>
       </div>
     </a>
@@ -163,25 +168,41 @@
   <div class="card dash-card dash-sim-wall" *ngIf="simulators.length > 0">
     <div class="dash-sim-head">
       <div>
-        <h3>Live FSTD Simulator Bays Wall</h3>
-        <p>Real-time bay availability, active sorties, dispatch reliability &amp; open technical snags</p>
+        <h3>Live FSTD Fleet &amp; Daily Station Readiness</h3>
+        <p>FFS dispatch reliability separated cleanly from Test Places &amp; IOS Consoles daily operations</p>
       </div>
 
       <div class="dash-sim-kpis">
-        <span class="dash-sim-kpi-pill">
-          Total Bays: <strong>{{simSummary?.totalSimulators ?? simulators.length}}</strong>
-        </span>
         <span class="dash-sim-kpi-pill is-good">
-          Ready / Sortie: <strong>{{(simSummary?.readyBays ?? 0) + (simSummary?.inSortieBays ?? 0)}}</strong>
+          FFS Ready: <strong>{{(simSummary?.readyBays ?? 0) + (simSummary?.inSortieBays ?? 0)}}/{{simSummary?.ffsTotal ?? countSimKind('FFS_BAY')}}</strong>
         </span>
         <span class="dash-sim-kpi-pill is-good">
           Dispatch: <strong>{{simSummary?.dispatchReliabilityPct ?? 100}}%</strong>
         </span>
         <span class="dash-sim-kpi-pill">
-          Today Flown: <strong>{{simSummary?.todayFlightHours ?? 0}}h</strong>
-        </span>
-        <span class="dash-sim-kpi-pill">
           QTG: <strong>{{simSummary?.qtgCompliancePct ?? 100}}%</strong>
+        </span>
+        <a *ngIf="simSummary?.testPlaces"
+           class="dash-sim-kpi-pill"
+           [class.is-bad]="(simSummary?.testPlaces?.na ?? 0) > 0"
+           routerLink="/simulators"
+           [queryParams]="{ view: 'test-places' }"
+           style="text-decoration:none">
+          TP: <strong>{{simSummary?.testPlaces?.inUse}} In Use · {{simSummary?.testPlaces?.ready}} Ready<ng-container *ngIf="(simSummary?.testPlaces?.na ?? 0) > 0"> · {{simSummary?.testPlaces?.na}} NA</ng-container></strong> ({{simSummary?.testPlaces?.todayShiftHours}}h)
+        </a>
+        <a *ngIf="simSummary?.iosConsoles"
+           class="dash-sim-kpi-pill"
+           [class.is-bad]="(simSummary?.iosConsoles?.na ?? 0) > 0"
+           routerLink="/simulators"
+           [queryParams]="{ view: 'ios-consoles' }"
+           style="text-decoration:none">
+          IOS: <strong>{{simSummary?.iosConsoles?.inUse}} In Use · {{simSummary?.iosConsoles?.ready}} Ready<ng-container *ngIf="(simSummary?.iosConsoles?.na ?? 0) > 0"> · {{simSummary?.iosConsoles?.na}} NA</ng-container></strong> ({{simSummary?.iosConsoles?.todayShiftHours}}h)
+        </a>
+        <span class="dash-sim-kpi-pill" *ngIf="(simSummary?.melActiveCount ?? 0) > 0" [class.is-bad]="(simSummary?.melExpiringCount ?? 0) > 0">
+          MEL: <strong>{{simSummary?.melActiveCount}}</strong>
+        </span>
+        <span class="dash-sim-kpi-pill is-bad" *ngIf="(simSummary?.aogSparesLowCount ?? 0) > 0">
+          AOG Spares Low: <strong>{{simSummary?.aogSparesLowCount}}</strong>
         </span>
         <span class="dash-sim-kpi-pill" [class.is-bad]="(simSummary?.openSnagsCount ?? 0) > 0">
           Open DRs: <strong>{{simSummary?.openSnagsCount ?? 0}}</strong>
@@ -191,10 +212,23 @@
       </div>
     </div>
 
+    <!-- Clean Station Class Tabs so 22 stations never clutter the Command Center -->
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px;flex-wrap:wrap" *ngIf="countSimKind('TEST_PLACE') > 0 || countSimKind('IOS_CONSOLE') > 0">
+      <button type="button" class="btn btn-sm" [ngClass]="wallKindFilter === 'FFS_BAY' ? 'btn-primary' : 'btn-ghost'" (click)="wallKindFilter = 'FFS_BAY'">
+        FFS Bays ({{countSimKind('FFS_BAY')}})
+      </button>
+      <button type="button" class="btn btn-sm" [ngClass]="wallKindFilter === 'TEST_PLACE' ? 'btn-primary' : 'btn-ghost'" (click)="wallKindFilter = 'TEST_PLACE'">
+        Test Places ({{countSimKind('TEST_PLACE')}})
+      </button>
+      <button type="button" class="btn btn-sm" [ngClass]="wallKindFilter === 'IOS_CONSOLE' ? 'btn-primary' : 'btn-ghost'" (click)="wallKindFilter = 'IOS_CONSOLE'">
+        IOS Consoles ({{countSimKind('IOS_CONSOLE')}})
+      </button>
+    </div>
+
     <div class="dash-sim-grid">
       <a
         class="dash-sim-card"
-        *ngFor="let sim of simulators"
+        *ngFor="let sim of wallSimulators"
         [class.sim-aog]="sim.status === 'AOG'"
         [class.sim-degraded]="sim.status === 'DEGRADED' || sim.status === 'MAINTENANCE'"
         routerLink="/simulators"

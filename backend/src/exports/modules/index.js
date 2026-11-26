@@ -15,6 +15,7 @@ const analytics = require('./analytics');
 const audit = require('./audit');
 const dashboard = require('./dashboard');
 const simulators = require('./simulators');
+const dailyStationOps = require('./daily-station-ops');
 
 const MODULES = {
   operations,
@@ -29,7 +30,8 @@ const MODULES = {
   analytics,
   audit,
   dashboard,
-  simulators
+  simulators,
+  'daily-station-ops': dailyStationOps
 };
 
-module.exports = { MODULES, wiki };
+module.exports = { MODULES, wiki, simulators };

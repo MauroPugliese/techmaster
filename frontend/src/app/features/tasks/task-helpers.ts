@@ -19,6 +19,7 @@ export type StatFilterKey  = 'all' | 'in_progress' | 'overdue' | 'done';
 export interface TaskFilterState {
   priority: Priority | '';
   assigneeId: number | 'unassigned' | '';
+  simulatorId?: number | '';
   statFilter: StatFilterKey;
   searchTerm: string;
   sortKey: SortKey;
@@ -226,6 +227,10 @@ export function filterAndSortTasks(
     } else if (typeof filters.assigneeId === 'number') {
       const uid = t.assigned_to ?? t.assignee?.id ?? null;
       if (uid !== filters.assigneeId) return false;
+    }
+    if (typeof filters.simulatorId === 'number') {
+      const sid = t.simulator_id ?? t.simulator?.id ?? null;
+      if (sid !== filters.simulatorId) return false;
     }
     if (includeStatFilter && !matchesStatFilter(t, filters.statFilter)) return false;
     if (q) {

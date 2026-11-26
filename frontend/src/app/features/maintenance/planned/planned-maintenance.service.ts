@@ -134,7 +134,7 @@ export class PlannedMaintenanceService {
   }
 
   getExportUrl(format: 'xlsx' | 'pdf' | 'docx', from: string, to: string): string {
-    return `${this.api.baseUrl}/export/planned-maintenance-report?format=${format}&from=${from}&to=${to}`;
+    return `${this.api.baseUrl}/export/planned-maintenance?format=${format}&from=${from}&to=${to}`;
   }
 
   getDailyTemplateExportUrl(

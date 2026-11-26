@@ -125,6 +125,14 @@
                                (ngModelChange)="checkBayConflict()"
                                placeholder="Select slot start">
           </app-datetime-picker>
+          <div class="ops-quick-presets">
+            <button *ngFor="let slot of caeSlotPresets"
+                    type="button"
+                    class="ops-preset-btn ops-num"
+                    (click)="applyCaeSlotPreset(slot.startHour, slot.endHour)">
+              {{slot.label}}
+            </button>
+          </div>
         </div>
 
         <div class="form-group" *ngIf="showFormField('end_date')">
@@ -172,6 +180,17 @@
             <input type="number" step="0.5" min="0" class="form-control ops-num" [(ngModel)]="form.actual_flight_hours" placeholder="Actual h" title="Actual Flown Hours" />
             <input type="number" min="0" class="form-control ops-num" [(ngModel)]="form.lost_training_minutes" placeholder="Lost min" title="Lost Training Minutes" />
           </div>
+        </div>
+
+        <div class="form-group" *ngIf="!editingOp">
+          <label class="form-label">Repeat Series (Consecutive Days)</label>
+          <app-dropdown class="form-control" [(ngModel)]="form.repeat_days" ariaLabel="Repeat Series">
+            <app-dropdown-option [ngValue]="1">Single Day (1 sortie)</app-dropdown-option>
+            <app-dropdown-option [ngValue]="2">2 Consecutive Days</app-dropdown-option>
+            <app-dropdown-option [ngValue]="3">3 Consecutive Days</app-dropdown-option>
+            <app-dropdown-option [ngValue]="4">4 Consecutive Days</app-dropdown-option>
+            <app-dropdown-option [ngValue]="5">5 Consecutive Days (Full Week)</app-dropdown-option>
+          </app-dropdown>
         </div>
 
         <div class="form-group" *ngIf="showFormField('location')">
@@ -334,6 +353,67 @@
       <div class="detail-section" *ngIf="detailOp.snag_summary">
         <span class="detail-section-title">Technical Snag Summary</span>
         <div class="detail-text-box" style="background:#fff7ed;border-color:#fdba74;color:#9a3412">{{detailOp.snag_summary}}</div>
+      </div>
+
+      <!-- 1-Click Quick Debrief & Close Panel -->
+      <div class="ops-snag-panel" *ngIf="showDebriefForm" style="background:#f0fdf4;border-color:#86efac;margin-top:12px">
+        <div class="ops-snag-panel-head" style="color:#166534">
+          <strong>
+            <span class="mat-i">task_alt</span>
+            Post-Sortie Debrief &amp; Close
+          </strong>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Training Outcome</label>
+            <app-dropdown class="form-control" [(ngModel)]="debriefForm.outcome" ariaLabel="Training Outcome">
+              <app-dropdown-option value="CLEAN">Clean (100% Training Delivered)</app-dropdown-option>
+              <app-dropdown-option value="COMPLETED_WITH_SNAGS">Completed with Minor Snags</app-dropdown-option>
+              <app-dropdown-option value="INTERRUPTED_TECH">Interrupted — Technical Fault</app-dropdown-option>
+              <app-dropdown-option value="NO_SHOW">Client No-Show</app-dropdown-option>
+              <app-dropdown-option value="CANCELLED">Cancelled</app-dropdown-option>
+            </app-dropdown>
+          </div>
+          <div class="form-group">
+            <label>Actual Flown (h) / Lost (min)</label>
+            <div class="flex items-center gap-2">
+              <input type="number" step="0.25" min="0" class="form-control ops-num" [(ngModel)]="debriefForm.actual_flight_hours" placeholder="Actual h" />
+              <input type="number" min="0" class="form-control ops-num" [(ngModel)]="debriefForm.lost_training_minutes" placeholder="Lost min" />
+            </div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Debrief / Snag Notes</label>
+          <textarea class="form-control" rows="2" [(ngModel)]="debriefForm.snag_summary" placeholder="Crew handover, simulator anomalies, or training completion notes..."></textarea>
+        </div>
+        <div *ngIf="detailOp.simulator_id || detailOp.simulator?.id" style="margin-bottom:8px">
+          <label class="flex items-center gap-2" style="cursor:pointer;font-size:0.82rem;font-weight:700;color:#1e293b">
+            <input type="checkbox" [(ngModel)]="debriefForm.open_snag_wo" />
+            <span>Automatically open a Corrective DR Work Order in Maintenance</span>
+          </label>
+        </div>
+        <div class="form-row" *ngIf="debriefForm.open_snag_wo && (detailOp.simulator_id || detailOp.simulator?.id)">
+          <div class="form-group">
+            <label>Affected Subsystem</label>
+            <app-dropdown class="form-control" [(ngModel)]="debriefForm.subsystem_code">
+              <app-dropdown-option *ngFor="let sub of subsystemOptions" [value]="sub.code">{{sub.label}}</app-dropdown-option>
+            </app-dropdown>
+          </div>
+          <div class="form-group">
+            <label>WO Severity</label>
+            <app-dropdown class="form-control" [(ngModel)]="debriefForm.severity">
+              <app-dropdown-option value="MINOR">Minor</app-dropdown-option>
+              <app-dropdown-option value="DEGRADED">Degraded (MEL)</app-dropdown-option>
+              <app-dropdown-option value="AOG">AOG (Bay Down)</app-dropdown-option>
+            </app-dropdown>
+          </div>
+        </div>
+        <div class="flex justify-end gap-2">
+          <button type="button" class="btn btn-ghost btn-sm" (click)="toggleDebriefForm()">Cancel</button>
+          <button type="button" class="btn btn-primary btn-sm" [disabled]="submittingDebrief" (click)="submitDebrief()">
+            {{ submittingDebrief ? 'Closing Sortie…' : 'Confirm Debrief &amp; Close Sortie' }}
+          </button>
+        </div>
       </div>
 
       <div class="detail-section" *ngIf="detailOp.description">
@@ -505,8 +585,8 @@
         <button type="button"
                 class="btn btn-secondary"
                 *ngIf="detailOp.status !== 'COMPLETED' && detailOp.status !== 'CANCELLED'"
-                (click)="updateStatus(detailOp, 'COMPLETED')">
-          <span class="btn-icon" style="color:#16A34A">check_circle</span> Complete
+                (click)="toggleDebriefForm()">
+          <span class="btn-icon" style="color:#16A34A">task_alt</span> Debrief &amp; Close
         </button>
         <button type="button" class="btn btn-primary" (click)="editFromDetail()">
           <span class="btn-icon">edit</span> Edit

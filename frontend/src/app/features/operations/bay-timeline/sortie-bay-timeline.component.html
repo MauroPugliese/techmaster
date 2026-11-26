@@ -10,6 +10,7 @@
           {{ displayDateObj | date:'EEEE, MMM d, y' }} · {{ daySortieCount }} {{ daySortieCount === 1 ? 'sortie' : 'sorties' }}
           <ng-container *ngIf="dayShiftInUseCount > 0"> · {{ dayShiftInUseCount }} active shift {{ dayShiftInUseCount === 1 ? 'session' : 'sessions' }}</ng-container>
           <ng-container *ngIf="dayShiftReadyCount > 0"> · {{ dayShiftReadyCount }} ready</ng-container>
+          <ng-container *ngIf="dayMaintCount > 0"> · {{ dayMaintCount }} maint. {{ dayMaintCount === 1 ? 'window' : 'windows' }}</ng-container>
           across {{ sortedSimulators.length }} stations
         </p>
       </div>
@@ -22,6 +23,7 @@
         <span class="leg-item"><span class="leg-dot ready"></span>Ready</span>
         <span class="leg-item"><span class="leg-dot clean"></span>Clean</span>
         <span class="leg-item"><span class="leg-dot snag"></span>Snag / DR</span>
+        <span class="leg-item"><span class="leg-dot maint"></span>Maint.</span>
         <span class="leg-item"><span class="leg-dot abort"></span>NA / Abort</span>
       </div>
 
@@ -117,6 +119,23 @@
               <span class="bar-time tl-num">{{ sb.timeRangeLabel }}</span>
             </div>
             <div class="bar-title">{{ sb.titleLabel }}</div>
+          </button>
+
+          <!-- Scheduled & Planned Maintenance Windows -->
+          <button
+            type="button"
+            class="tl-maint-bar"
+            *ngFor="let mb of maintBarsForSim(sim.id); trackBy: trackByMaintBlockId"
+            [class.is-aog]="mb.block.severity === 'AOG'"
+            [style.left.%]="mb.leftPct"
+            [style.width.%]="mb.widthPct"
+            (click)="selectMaintenance.emit(mb.block)"
+            [title]="'MAINTENANCE (' + mb.timeRangeLabel + '): ' + mb.block.title + ' · Click to view in Maintenance'">
+            <div class="bar-top">
+              <span class="bar-code tl-num">MAINT</span>
+              <span class="bar-time tl-num">{{ mb.timeRangeLabel }}</span>
+            </div>
+            <div class="bar-title">{{ mb.block.title }}</div>
           </button>
 
           <!-- Sortie Bars -->

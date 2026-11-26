@@ -8,8 +8,13 @@ const {
   Asset,
   AssetCategory,
   Simulator,
+  SimulatorSubsystem,
+  SimulatorDailyLog,
+  SimulatorDailyShift,
+  SimulatorShiftEntry,
   InventoryItem,
   StockMovement,
+  WikiArticle,
   User,
   sequelize
 } = require('../models');
@@ -20,14 +25,231 @@ const {
   sanitizeAssetPayload,
   sanitizeBulkMaintenanceAction,
   buildMaintenanceSortOrder,
-  summarizeMaintenanceRows
+  summarizeMaintenanceRows,
+  computePartsStockDelta,
+  computeReliabilityMetrics
 } = require('../services/maintenance-helpers.service');
+const { broadcastOperationalAlert } = require('../services/proactive-alerts.service');
 
 const RECORD_INCLUDES = [
   { model: Asset, as: 'asset', include: [{ model: AssetCategory, as: 'category' }], required: false },
-  { model: Simulator, as: 'simulator', attributes: ['id', 'code', 'name', 'bay_code', 'aircraft_type', 'status'], required: false },
+  { model: Simulator, as: 'simulator', attributes: ['id', 'code', 'name', 'bay_code', 'station_kind', 'aircraft_type', 'status'], required: false },
+  { model: WikiArticle, as: 'wikiArticle', attributes: ['id', 'title', 'slug', 'status'], required: false },
   { model: User, as: 'technician', attributes: ['id', 'first_name', 'last_name', 'username'] }
 ];
+
+const OPEN_MAINT_STATUSES = ['SCHEDULED', 'IN_PROGRESS', 'DEFERRED'];
+
+/**
+ * Computes parts_cost from InventoryItem unit costs and applies net stock delta
+ * (OUT for increases, RETURN for reductions/removals) safely inside a transaction.
+ */
+async function syncMaintenancePartsAndStock({
+  rec,
+  nextParts = [],
+  shouldSyncStock = false,
+  explicitCostProvided = false,
+  userId,
+  transaction
+}) {
+  const partsList = Array.isArray(nextParts) ? nextParts : [];
+  const itemIds = [...new Set(partsList.map(p => Number(p.item_id)).filter(n => Number.isInteger(n) && n > 0))];
+
+  let computedPartsCost = 0;
+  if (itemIds.length > 0) {
+    const items = await InventoryItem.findAll({
+      where: { id: { [Op.in]: itemIds } },
+      attributes: ['id', 'unit_cost'],
+      transaction
+    });
+    const costMap = new Map(items.map(i => [Number(i.id), Number(i.unit_cost) || 0]));
+    for (const part of partsList) {
+      if (part.item_id) {
+        computedPartsCost += (costMap.get(Number(part.item_id)) || 0) * (Number(part.quantity) || 0);
+      }
+    }
+    computedPartsCost = Number(computedPartsCost.toFixed(2));
+  }
+
+  const prevSnapshot = Array.isArray(rec.stock_deducted_snapshot) ? rec.stock_deducted_snapshot : [];
+  const mustRunStockDelta = shouldSyncStock || prevSnapshot.length > 0;
+  const lowAogAlerts = [];
+  let nextSnapshot = prevSnapshot;
+
+  if (mustRunStockDelta) {
+    const targetParts = shouldSyncStock || prevSnapshot.length > 0 ? partsList : [];
+    const delta = computePartsStockDelta(prevSnapshot, targetParts);
+
+    for (const d of delta.toDeduct) {
+      const item = await InventoryItem.findByPk(d.item_id, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!item) {
+        const err = new Error(`Warehouse item #${d.item_id} not found.`);
+        err.statusCode = 404;
+        throw err;
+      }
+      const qtyBefore = Number(item.quantity) || 0;
+      const qtyAfter = qtyBefore - d.quantity;
+      if (qtyAfter < 0) {
+        const err = new Error(`Insufficient warehouse stock for "${item.name}" (${item.sku}): available ${qtyBefore}, requested ${d.quantity}.`);
+        err.statusCode = 400;
+        throw err;
+      }
+      await StockMovement.create({
+        item_id: item.id,
+        user_id: userId,
+        simulator_id: rec.simulator_id || null,
+        maintenance_record_id: rec.id,
+        type: 'OUT',
+        quantity: d.quantity,
+        quantity_before: qtyBefore,
+        quantity_after: qtyAfter,
+        reference: `MAINT-#${rec.id}`,
+        reason: `Used in maintenance: ${rec.title}`
+      }, { transaction });
+      await item.update({ quantity: qtyAfter }, { transaction });
+
+      if (item.aog_critical && qtyAfter <= (Number(item.reorder_point) || 0)) {
+        lowAogAlerts.push({
+          id: item.id,
+          sku: item.sku,
+          name: item.name,
+          quantity: qtyAfter,
+          reorder_point: Number(item.reorder_point) || 0
+        });
+      }
+    }
+
+    for (const r of delta.toReturn) {
+      const item = await InventoryItem.findByPk(r.item_id, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!item) continue;
+      const qtyBefore = Number(item.quantity) || 0;
+      const qtyAfter = qtyBefore + r.quantity;
+      await StockMovement.create({
+        item_id: item.id,
+        user_id: userId,
+        simulator_id: rec.simulator_id || null,
+        maintenance_record_id: rec.id,
+        type: 'RETURN',
+        quantity: r.quantity,
+        quantity_before: qtyBefore,
+        quantity_after: qtyAfter,
+        reference: `MAINT-#${rec.id}`,
+        reason: `Returned from maintenance adjustment: ${rec.title}`
+      }, { transaction });
+      await item.update({ quantity: qtyAfter }, { transaction });
+    }
+
+    nextSnapshot = delta.nextSnapshot;
+  }
+
+  const updateCostFields = { stock_deducted_snapshot: nextSnapshot };
+  if (partsList.length > 0 || rec.parts_cost != null) {
+    updateCostFields.parts_cost = computedPartsCost;
+  }
+  const laborCost = Number(rec.labor_cost) || 0;
+  if (!explicitCostProvided && (computedPartsCost > 0 || laborCost > 0)) {
+    updateCostFields.cost = Number((computedPartsCost + laborCost).toFixed(2));
+  }
+  await rec.update(updateCostFields, { transaction });
+
+  return { lowAogAlerts, computedPartsCost };
+}
+
+/**
+ * Synchronizes Simulator & Subsystem operational health (AOG / DEGRADED / RTS READY)
+ * and today's Daily Shift Entry when maintenance work orders open, escalate, or complete.
+ */
+async function syncSimulatorAndSubsystemHealth({ rec, previousStatus = null, previousSeverity = null, userId, transaction }) {
+  if (!rec?.simulator_id) return { triggeredAogAlert: false, simulator: null };
+
+  const sim = await Simulator.findByPk(rec.simulator_id, { transaction });
+  if (!sim) return { triggeredAogAlert: false, simulator: null };
+
+  const openRecords = await MaintenanceRecord.findAll({
+    where: {
+      simulator_id: sim.id,
+      status: { [Op.in]: OPEN_MAINT_STATUSES }
+    },
+    attributes: ['id', 'status', 'type', 'severity', 'is_snag', 'subsystem_code'],
+    transaction
+  });
+
+  // 1. Subsystem health sync
+  if (rec.subsystem_code) {
+    const sub = await SimulatorSubsystem.findOne({
+      where: { simulator_id: sim.id, subsystem_code: rec.subsystem_code },
+      transaction
+    });
+    if (sub) {
+      const subOpen = openRecords.filter(r => r.subsystem_code === rec.subsystem_code);
+      const hasSubAog = subOpen.some(r => r.severity === 'AOG');
+      const hasSubDegraded = subOpen.some(r => r.severity === 'DEGRADED' || r.is_snag || r.type === 'CORRECTIVE');
+      if (hasSubAog) {
+        await sub.update({ status: 'FAULT', last_checked_at: new Date(), updated_by: userId }, { transaction });
+      } else if (hasSubDegraded) {
+        await sub.update({ status: 'DEGRADED', last_checked_at: new Date(), updated_by: userId }, { transaction });
+      } else if (rec.status === 'COMPLETED' && sub.status !== 'NOMINAL') {
+        await sub.update({ status: 'NOMINAL', last_checked_at: new Date(), updated_by: userId }, { transaction });
+      }
+    }
+  }
+
+  // 2. Simulator bay status sync (AOG / DEGRADED / RTS READY)
+  const relevantOpen = openRecords.filter(r => r.severity === 'AOG' || r.severity === 'DEGRADED' || r.is_snag || r.type === 'CORRECTIVE');
+  const hasAog = relevantOpen.some(r => r.severity === 'AOG');
+  const hasDegraded = relevantOpen.some(r => r.severity === 'DEGRADED');
+
+  if (hasAog && sim.status !== 'AOG') {
+    await sim.update({ status: 'AOG' }, { transaction });
+  } else if (!hasAog && hasDegraded && !['IN_SORTIE', 'DEGRADED', 'MAINTENANCE'].includes(sim.status)) {
+    await sim.update({ status: 'DEGRADED' }, { transaction });
+  } else if (!hasAog && !hasDegraded && rec.status === 'COMPLETED' && ['AOG', 'DEGRADED', 'MAINTENANCE'].includes(sim.status)) {
+    // Auto Return-To-Service (RTS)
+    await sim.update({ status: 'READY' }, { transaction });
+  }
+
+  // 3. If newly opened or escalated to AOG, mark today's Daily Shift Entry as NA (if present)
+  const isNowOpenAog = OPEN_MAINT_STATUSES.includes(rec.status) && rec.severity === 'AOG';
+  const wasAlreadyOpenAog = previousStatus && OPEN_MAINT_STATUSES.includes(previousStatus) && previousSeverity === 'AOG';
+  const triggeredAogAlert = isNowOpenAog && !wasAlreadyOpenAog;
+
+  if (triggeredAogAlert) {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const dailyLog = await SimulatorDailyLog.findOne({
+      where: { log_date: todayStr, station_kind: sim.station_kind },
+      transaction
+    });
+    if (dailyLog) {
+      const shifts = await SimulatorDailyShift.findAll({
+        where: { daily_log_id: dailyLog.id },
+        attributes: ['id'],
+        transaction
+      });
+      const shiftIds = shifts.map(s => s.id);
+      if (shiftIds.length > 0) {
+        const entries = await SimulatorShiftEntry.findAll({
+          where: { shift_id: { [Op.in]: shiftIds }, simulator_id: sim.id },
+          transaction
+        });
+        for (const entry of entries) {
+          const notePrefix = `[WO #${rec.id} AOG] ${rec.title}`;
+          const nextNotes = entry.notes
+            ? (entry.notes.includes(`WO #${rec.id}`) ? entry.notes : `${entry.notes} | ${notePrefix}`)
+            : notePrefix;
+          await entry.update({
+            usage_status: 'NA',
+            sim_testing_start: '00:00',
+            sim_testing_end: '00:00',
+            notes: nextNotes,
+            updated_by: userId
+          }, { transaction });
+        }
+      }
+    }
+  }
+
+  return { triggeredAogAlert, simulator: sim.get({ plain: true }) };
+}
 
 const ASSET_INCLUDES = [
   { model: AssetCategory, as: 'category' },
@@ -144,7 +366,40 @@ router.delete('/assets/:id', validateIdParam, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// GET /maintenance/summary — global DB KPI counts, overdue, total cost & downtime
+// GET /maintenance/mel — active deferred defects (MEL / Deferred Snags) with expiry countdown
+router.get('/mel', async (req, res, next) => {
+  try {
+    const where = {
+      status: { [Op.in]: OPEN_MAINT_STATUSES },
+      mel_category: { [Op.ne]: 'NONE' }
+    };
+    if (req.query.simulator_id && Number(req.query.simulator_id) > 0) {
+      where.simulator_id = Number(req.query.simulator_id);
+    }
+    const rows = await MaintenanceRecord.findAll({
+      where,
+      include: RECORD_INCLUDES,
+      order: [['mel_expiry_date', 'ASC'], ['scheduled_date', 'ASC']]
+    });
+    const nowMs = Date.now();
+    const data = rows.map(r => {
+      const plain = r.get({ plain: true });
+      let daysRemaining = null;
+      let isExpired = false;
+      if (plain.mel_expiry_date) {
+        const expMs = new Date(`${String(plain.mel_expiry_date).slice(0, 10)}T23:59:59Z`).getTime();
+        if (!Number.isNaN(expMs)) {
+          daysRemaining = Math.ceil((expMs - nowMs) / 86400000);
+          isExpired = daysRemaining < 0;
+        }
+      }
+      return { ...plain, days_remaining: daysRemaining, is_expired: isExpired };
+    });
+    res.json({ success: true, data });
+  } catch (err) { next(err); }
+});
+
+// GET /maintenance/summary — global DB KPI counts, overdue, total cost, downtime & reliability
 router.get('/summary', parseDateFilter, async (req, res, next) => {
   try {
     const { from, to } = req.dateRange;
@@ -157,13 +412,19 @@ router.get('/summary', parseDateFilter, async (req, res, next) => {
 
     const rows = await MaintenanceRecord.findAll({
       where,
-      attributes: ['id', 'status', 'scheduled_date', 'cost', 'downtime_hours', 'is_snag', 'severity', 'lost_training_hours']
+      attributes: [
+        'id', 'type', 'status', 'scheduled_date', 'cost', 'parts_cost', 'labor_cost',
+        'downtime_hours', 'is_snag', 'severity', 'lost_training_hours',
+        'subsystem_code', 'mel_category', 'mel_expiry_date'
+      ]
     });
 
     const plain = rows.map(r => r.get({ plain: true }));
-    const openSnags = plain.filter(r => r.is_snag && ['SCHEDULED', 'IN_PROGRESS', 'DEFERRED'].includes(r.status));
+    const openSnags = plain.filter(r => r.is_snag && OPEN_MAINT_STATUSES.includes(r.status));
     const aogSnags = openSnags.filter(r => r.severity === 'AOG');
     const lostTrainingHours = plain.reduce((acc, r) => acc + (Number(r.lost_training_hours) || 0), 0);
+    const partsCostTotal = plain.reduce((acc, r) => acc + (Number(r.parts_cost) || 0), 0);
+    const reliability = computeReliabilityMetrics(plain, 0);
 
     res.json({
       success: true,
@@ -171,7 +432,13 @@ router.get('/summary', parseDateFilter, async (req, res, next) => {
         ...summarizeMaintenanceRows(plain),
         open_snags_count: openSnags.length,
         aog_snags_count: aogSnags.length,
-        lost_training_hours: Number(lostTrainingHours.toFixed(2))
+        lost_training_hours: Number(lostTrainingHours.toFixed(2)),
+        parts_cost_total: Number(partsCostTotal.toFixed(2)),
+        active_mel_count: reliability.activeMelCount,
+        mel_expiring_count: reliability.melExpiringSoonCount,
+        mttr_hours: reliability.mttrHours,
+        corrective_count: reliability.correctiveCount,
+        preventive_count: reliability.preventiveCount
       }
     });
   } catch (err) { next(err); }
@@ -223,6 +490,7 @@ router.get('/', parseDateFilter, async (req, res, next) => {
       subsystem_code,
       severity,
       is_snag,
+      mel_category,
       search,
       sort_by,
       sort_dir,
@@ -269,6 +537,14 @@ router.get('/', parseDateFilter, async (req, res, next) => {
     if (is_snag === 'true') {
       where.is_snag = true;
     }
+    if (mel_category && String(mel_category).trim()) {
+      const melVal = String(mel_category).trim().toUpperCase();
+      if (melVal === 'ACTIVE') {
+        where.mel_category = { [Op.ne]: 'NONE' };
+      } else {
+        where.mel_category = melVal;
+      }
+    }
 
     if (search?.trim()) {
       const searchTerm = `%${search.trim()}%`;
@@ -307,58 +583,70 @@ router.get('/', parseDateFilter, async (req, res, next) => {
 });
 
 router.post('/', async (req, res, next) => {
-  const shouldDeduct = req.body?.deduct_stock === true && Array.isArray(req.body?.parts_used) && req.body.parts_used.length > 0;
-  const transaction = shouldDeduct ? await sequelize.transaction() : null;
+  const shouldDeduct = req.body?.deduct_stock === true;
+  const transaction = await sequelize.transaction();
 
   try {
     const { data, error } = sanitizeMaintenancePayload(req.body, { isCreate: true });
     if (error) {
-      if (transaction) await transaction.rollback();
+      await transaction.rollback();
       return res.status(400).json({ success: false, message: error });
     }
 
     const rec = await MaintenanceRecord.create(
-      { ...data, performed_by: req.user.id },
-      transaction ? { transaction } : undefined
+      { ...data, performed_by: req.user.id, stock_deducted_snapshot: [] },
+      { transaction }
     );
 
-    if (shouldDeduct && data.parts_used?.length) {
-      for (const part of data.parts_used) {
-        if (!part.item_id) continue;
-        const item = await InventoryItem.findByPk(part.item_id, { transaction, lock: transaction.LOCK.UPDATE });
-        if (!item) {
-          await transaction.rollback();
-          return res.status(404).json({ success: false, message: `Warehouse item #${part.item_id} not found.` });
-        }
-        const qtyBefore = Number(item.quantity) || 0;
-        const qtyAfter = qtyBefore - part.quantity;
-        if (qtyAfter < 0) {
-          await transaction.rollback();
-          return res.status(400).json({
-            success: false,
-            message: `Insufficient warehouse stock for "${item.name}" (${item.sku}): available ${qtyBefore}, requested ${part.quantity}.`
-          });
-        }
-        await StockMovement.create({
-          item_id: item.id,
-          user_id: req.user.id,
-          type: 'OUT',
-          quantity: part.quantity,
-          quantity_before: qtyBefore,
-          quantity_after: qtyAfter,
-          reference: `MAINT-#${rec.id}`,
-          reason: `Used in maintenance: ${rec.title}`
-        }, { transaction });
-        await item.update({ quantity: qtyAfter }, { transaction });
-      }
-    }
+    const explicitCostProvided = req.body?.cost !== undefined && req.body?.cost !== '' && req.body?.cost !== null && Number(req.body.cost) > 0;
+    const { lowAogAlerts } = await syncMaintenancePartsAndStock({
+      rec,
+      nextParts: data.parts_used || [],
+      shouldSyncStock: shouldDeduct && Array.isArray(data.parts_used) && data.parts_used.length > 0,
+      explicitCostProvided,
+      userId: req.user.id,
+      transaction
+    });
 
-    if (transaction) await transaction.commit();
+    const healthSync = await syncSimulatorAndSubsystemHealth({
+      rec,
+      previousStatus: null,
+      previousSeverity: null,
+      userId: req.user.id,
+      transaction
+    });
+
+    await transaction.commit();
+
+    // Non-blocking proactive operational alerts
+    if (healthSync.triggeredAogAlert && healthSync.simulator) {
+      await broadcastOperationalAlert({
+        req,
+        type: 'SIMULATOR_AOG',
+        title: `AOG Alert: ${healthSync.simulator.bay_code} (${healthSync.simulator.name})`,
+        body: `Work Order #${rec.id} opened as AOG${rec.subsystem_code ? ` [${rec.subsystem_code}]` : ''}: ${rec.title}`,
+        link: '/maintenance',
+        excludeUserId: req.user.id
+      });
+    }
+    for (const spare of lowAogAlerts) {
+      await broadcastOperationalAlert({
+        req,
+        type: 'AOG_SPARE_LOW',
+        title: `AOG Critical Spare Low: ${spare.sku}`,
+        body: `${spare.name} dropped to ${spare.quantity} units (reorder point: ${spare.reorder_point}) after WO #${rec.id}.`,
+        link: '/warehouse',
+        excludeUserId: req.user.id
+      });
+    }
 
     const full = await MaintenanceRecord.findByPk(rec.id, { include: RECORD_INCLUDES });
     res.status(201).json({ success: true, data: full || rec });
   } catch (err) {
-    if (transaction) await transaction.rollback();
+    await transaction.rollback();
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ success: false, message: err.message });
+    }
     next(err);
   }
 });
@@ -372,55 +660,45 @@ router.get('/:id', validateIdParam, async (req, res, next) => {
 });
 
 router.put('/:id', validateIdParam, async (req, res, next) => {
-  const shouldDeduct = req.body?.deduct_stock === true && Array.isArray(req.body?.parts_used) && req.body.parts_used.length > 0;
-  const transaction = shouldDeduct ? await sequelize.transaction() : null;
+  const shouldDeduct = req.body?.deduct_stock === true;
+  const transaction = await sequelize.transaction();
 
   try {
-    const rec = await MaintenanceRecord.findByPk(req.params.id, transaction ? { transaction } : undefined);
+    const rec = await MaintenanceRecord.findByPk(req.params.id, { transaction });
     if (!rec) {
-      if (transaction) await transaction.rollback();
+      await transaction.rollback();
       return res.status(404).json({ success: false, message: 'Not found' });
     }
 
     const { data, error } = sanitizeMaintenancePayload(req.body, { isCreate: false });
     if (error) {
-      if (transaction) await transaction.rollback();
+      await transaction.rollback();
       return res.status(400).json({ success: false, message: error });
     }
 
     const previousStatus = rec.status;
-    await rec.update(data, transaction ? { transaction } : undefined);
+    const previousSeverity = rec.severity;
+    await rec.update(data, { transaction });
 
-    if (shouldDeduct && data.parts_used?.length) {
-      for (const part of data.parts_used) {
-        if (!part.item_id) continue;
-        const item = await InventoryItem.findByPk(part.item_id, { transaction, lock: transaction.LOCK.UPDATE });
-        if (!item) {
-          await transaction.rollback();
-          return res.status(404).json({ success: false, message: `Warehouse item #${part.item_id} not found.` });
-        }
-        const qtyBefore = Number(item.quantity) || 0;
-        const qtyAfter = qtyBefore - part.quantity;
-        if (qtyAfter < 0) {
-          await transaction.rollback();
-          return res.status(400).json({
-            success: false,
-            message: `Insufficient warehouse stock for "${item.name}" (${item.sku}): available ${qtyBefore}, requested ${part.quantity}.`
-          });
-        }
-        await StockMovement.create({
-          item_id: item.id,
-          user_id: req.user.id,
-          type: 'OUT',
-          quantity: part.quantity,
-          quantity_before: qtyBefore,
-          quantity_after: qtyAfter,
-          reference: `MAINT-#${rec.id}`,
-          reason: `Used in maintenance: ${rec.title}`
-        }, { transaction });
-        await item.update({ quantity: qtyAfter }, { transaction });
-      }
-    }
+    const nextParts = data.parts_used !== undefined ? data.parts_used : (rec.parts_used || []);
+    const explicitCostProvided = req.body?.cost !== undefined && req.body?.cost !== '' && req.body?.cost !== null && Number(req.body.cost) > 0;
+    const shouldRunDelta = shouldDeduct || (data.parts_used !== undefined && Array.isArray(rec.stock_deducted_snapshot) && rec.stock_deducted_snapshot.length > 0);
+    const { lowAogAlerts } = await syncMaintenancePartsAndStock({
+      rec,
+      nextParts,
+      shouldSyncStock: shouldRunDelta,
+      explicitCostProvided,
+      userId: req.user.id,
+      transaction
+    });
+
+    const healthSync = await syncSimulatorAndSubsystemHealth({
+      rec,
+      previousStatus,
+      previousSeverity,
+      userId: req.user.id,
+      transaction
+    });
 
     // Cyclic maintenance: auto-generate next scheduled record upon completion
     if (rec.status === 'COMPLETED' && previousStatus !== 'COMPLETED' && rec.next_scheduled) {
@@ -433,7 +711,7 @@ router.put('/:id', validateIdParam, async (req, res, next) => {
 
       const alreadyScheduled = await MaintenanceRecord.findOne({
         where: cycleWhere,
-        ...(transaction ? { transaction } : {})
+        transaction
       });
 
       if (!alreadyScheduled) {
@@ -450,28 +728,98 @@ router.put('/:id', validateIdParam, async (req, res, next) => {
           priority: rec.priority,
           scheduled_date: rec.next_scheduled,
           cost: 0.00,
-          parts_used: []
-        }, transaction ? { transaction } : undefined);
+          parts_used: [],
+          stock_deducted_snapshot: []
+        }, { transaction });
       }
     }
 
-    if (transaction) await transaction.commit();
+    await transaction.commit();
+
+    if (healthSync.triggeredAogAlert && healthSync.simulator) {
+      await broadcastOperationalAlert({
+        req,
+        type: 'SIMULATOR_AOG',
+        title: `AOG Escalation: ${healthSync.simulator.bay_code} (${healthSync.simulator.name})`,
+        body: `Work Order #${rec.id} escalated to AOG${rec.subsystem_code ? ` [${rec.subsystem_code}]` : ''}: ${rec.title}`,
+        link: '/maintenance',
+        excludeUserId: req.user.id
+      });
+    }
+    for (const spare of lowAogAlerts) {
+      await broadcastOperationalAlert({
+        req,
+        type: 'AOG_SPARE_LOW',
+        title: `AOG Critical Spare Low: ${spare.sku}`,
+        body: `${spare.name} dropped to ${spare.quantity} units (reorder point: ${spare.reorder_point}) after WO #${rec.id}.`,
+        link: '/warehouse',
+        excludeUserId: req.user.id
+      });
+    }
 
     const full = await MaintenanceRecord.findByPk(rec.id, { include: RECORD_INCLUDES });
     res.json({ success: true, data: full || rec });
   } catch (err) {
-    if (transaction) await transaction.rollback();
+    await transaction.rollback();
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ success: false, message: err.message });
+    }
     next(err);
   }
 });
 
 router.delete('/:id', validateIdParam, async (req, res, next) => {
+  const transaction = await sequelize.transaction();
   try {
-    const rec = await MaintenanceRecord.findByPk(req.params.id);
-    if (!rec) return res.status(404).json({ success: false, message: 'Not found' });
-    await rec.destroy();
+    const rec = await MaintenanceRecord.findByPk(req.params.id, { transaction });
+    if (!rec) {
+      await transaction.rollback();
+      return res.status(404).json({ success: false, message: 'Not found' });
+    }
+
+    // Automatically return any previously deducted warehouse stock before deleting
+    const prevSnapshot = Array.isArray(rec.stock_deducted_snapshot) ? rec.stock_deducted_snapshot : [];
+    if (prevSnapshot.length > 0) {
+      for (const entry of prevSnapshot) {
+        const item = await InventoryItem.findByPk(entry.item_id, { transaction, lock: transaction.LOCK.UPDATE });
+        if (!item || !(Number(entry.quantity) > 0)) continue;
+        const qtyBefore = Number(item.quantity) || 0;
+        const qtyAfter = qtyBefore + Number(entry.quantity);
+        await StockMovement.create({
+          item_id: item.id,
+          user_id: req.user.id,
+          simulator_id: rec.simulator_id || null,
+          maintenance_record_id: rec.id,
+          type: 'RETURN',
+          quantity: Number(entry.quantity),
+          quantity_before: qtyBefore,
+          quantity_after: qtyAfter,
+          reference: `MAINT-#${rec.id}`,
+          reason: `Auto-returned upon deletion of WO #${rec.id}: ${rec.title}`
+        }, { transaction });
+        await item.update({ quantity: qtyAfter }, { transaction });
+      }
+      await rec.update({ stock_deducted_snapshot: [] }, { transaction });
+    }
+
+    const simId = rec.simulator_id;
+    const subCode = rec.subsystem_code;
+    await rec.destroy({ transaction });
+
+    if (simId) {
+      await syncSimulatorAndSubsystemHealth({
+        rec: { id: rec.id, simulator_id: simId, subsystem_code: subCode, status: 'COMPLETED', severity: 'MINOR' },
+        userId: req.user.id,
+        transaction
+      });
+    }
+
+    await transaction.commit();
     res.json({ success: true });
-  } catch (err) { next(err); }
+  } catch (err) {
+    await transaction.rollback();
+    next(err);
+  }
 });
 
 module.exports = router;

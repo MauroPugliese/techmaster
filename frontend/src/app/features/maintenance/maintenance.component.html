@@ -4,18 +4,13 @@
   <div class="mnt-page-head">
     <div>
       <h2>Maintenance &amp; Assets</h2>
-      <p>Work orders, recurring preventive schedules, calendar checklists, and equipment registry.</p>
+      <p>Simulator work orders, snag discrepancy reports (DR), QTG compliance, and equipment registry.</p>
     </div>
 
     <div class="mnt-head-actions">
-      <app-export-menu *ngIf="activeTab !== 'planned'"
-                       endpoint="maintenance"
+      <app-export-menu endpoint="maintenance"
                        filename="Maintenance_Records"
                        [params]="workOrdersExportParams"></app-export-menu>
-      <app-export-menu *ngIf="activeTab === 'planned'"
-                       endpoint="planned-maintenance"
-                       filename="Planned_Maintenance"
-                       [params]="plannedExportParams"></app-export-menu>
 
       <button type="button" class="btn btn-primary" (click)="triggerPrimaryAction()">
         <span class="btn-icon">add</span> {{primaryActionLabel}}
@@ -23,7 +18,7 @@
     </div>
   </div>
 
-  <!-- ── Unified 3-Tab Switcher ──────────────────────────────────────────── -->
+  <!-- ── Main Maintenance 3-Tab Switcher (Planned Maintenance is standalone) -->
   <div class="mnt-tab-bar" role="tablist" aria-label="Maintenance sections">
     <button type="button"
             role="tab"
@@ -36,17 +31,6 @@
       <span class="mnt-tab-pill" [class.warn]="(maintSummary?.overdue_count ?? 0) > 0">
         {{maintSummary?.total ?? 0}}
       </span>
-    </button>
-
-    <button type="button"
-            role="tab"
-            class="mnt-tab-btn"
-            [class.active]="activeTab === 'planned'"
-            [attr.aria-selected]="activeTab === 'planned'"
-            (click)="selectTab('planned')">
-      <span class="mat-i">calendar_month</span>
-      <span>Planned Schedule</span>
-      <span class="mnt-tab-pill">{{plannedSummary?.active_series ?? 0}}</span>
     </button>
 
     <button type="button"
@@ -92,15 +76,6 @@
     (mutated)="onMutated()">
   </app-maintenance-work-orders>
 
-  <app-planned-maintenance-dashboard
-    *ngIf="activeTab === 'planned'"
-    [embedded]="true"
-    [refreshTick]="refreshTick"
-    (createWorkOrderRequested)="createWorkOrderFromPlanned($event)"
-    (summaryChange)="plannedSummary = $event"
-    (exportParamsChange)="plannedExportParams = $event">
-  </app-planned-maintenance-dashboard>
-
   <app-maintenance-assets
     *ngIf="activeTab === 'assets'"
     [assetCategories]="assetCategories"
@@ -116,6 +91,7 @@
     [simulators]="simulators"
     [preselectedSimulatorId]="externalSimulatorId"
     [refreshTick]="refreshTick"
+    (createWorkOrderRequested)="createWorkOrderFromQtg($event)"
     (mutated)="onMutated()">
   </app-maintenance-qtg>
 

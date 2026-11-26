@@ -378,9 +378,9 @@ test('bundled Red Hat TrueType fonts are present and valid', () => {
   }
 });
 
-test('all 13 report modules enforce unified CAE A4 diagonal-hero identity with unique docCodes and bespoke metadata', () => {
+test('all 14 report modules enforce unified CAE A4 diagonal-hero identity with unique docCodes and bespoke metadata', () => {
   const mods = Object.values(MODULES);
-  assert.equal(mods.length, 13);
+  assert.equal(mods.length, 14);
 
   const docCodes = new Set();
   for (const mod of mods) {
@@ -397,6 +397,8 @@ test('all 13 report modules enforce unified CAE A4 diagonal-hero identity with u
 
   assert.equal(Object.keys(THEMES).length, 1);
   assert.ok(MODULE_THEMES['wiki-article'], 'Expected wiki-article theme preset for standalone SOPs');
+  assert.ok(MODULE_THEMES['daily-station-ops'], 'Expected daily-station-ops theme preset');
+  assert.equal(typeof MODULES.simulators.buildSingleStation, 'function', 'Expected simulators.buildSingleStation for single station dossiers');
 });
 
 test('collectSpecData aggregates KPIs, insights, scorecards, highlights, charts & tables across spec.pages', () => {

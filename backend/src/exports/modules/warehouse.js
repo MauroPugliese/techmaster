@@ -1,14 +1,14 @@
 // =============================================================================
-// exports/modules/warehouse.js — Supply Chain & Procurement Pack (CAE-INV-07)
+// exports/modules/warehouse.js — Supply Chain, AOG Spares & LRU/RMA Pack (CAE-INV-07)
 // Blueprint:
-//   P1 Cover -> P2 Immediate Procurement Action Sheet (Alerts + Strip KPIs + Restock Table)
-//   -> P3 Capital Allocation & Velocity (ChartPair: Stock Health Donut + Category Lollipop + Spotlights)
-//   -> P4+ Inventory Valuation Catalogue -> P5+ Audited Stock Movements Ledger
+//   P1 Cover -> P2 Immediate Procurement & AOG Critical Action Sheet (Alerts + KPIs + Restock Table)
+//   -> P3 Capital Allocation, LRU/RMA & Simulator Consumption Velocity
+//   -> P4+ Inventory Valuation Catalogue -> P5+ Audited Stock Movements Ledger (with Simulator Bay)
 // =============================================================================
 const { Op } = require('sequelize');
-const { InventoryItem, ItemCategory, StockMovement, User } = require('../../models');
+const { InventoryItem, ItemCategory, StockMovement, Simulator, User } = require('../../models');
 const {
-  fmtDateTime, fmtNumber, fmtMoney, fmtPercent, fullName, dash,
+  fmtDate, fmtDateTime, fmtNumber, fmtMoney, fmtPercent, fullName, dash,
   parseRange, rangeLabel, cleanText, toNumber, pct, topEntries
 } = require('../core/helpers');
 const { COLORS } = require('../core/branding');
@@ -35,11 +35,15 @@ function summarizeInventory(items) {
   let outCount = 0;
   let lowCount = 0;
   let healthyCount = 0;
+  let aogCriticalLowCount = 0;
+  let inRmaCount = 0;
+  let onOrderUnits = 0;
   let totalUnits = 0;
   let totalValue = 0;
   const valueByCategory = {};
   const valueBySupplier = {};
   const priorityRestock = [];
+  const lruRmaRows = [];
 
   const itemRows = items.map((item) => {
     const qty = toNumber(item.quantity, 0);
@@ -48,9 +52,11 @@ function summarizeInventory(items) {
     const catName = item.category?.name || 'Uncategorized';
     const supName = item.supplier && String(item.supplier).trim() ? String(item.supplier).trim() : 'Unspecified';
     const health = classifyItemHealth(item);
+    const onOrder = toNumber(item.on_order_qty, 0);
 
     totalUnits += qty;
     totalValue += lineValue;
+    onOrderUnits += onOrder;
     valueByCategory[catName] = (valueByCategory[catName] || 0) + lineValue;
     valueBySupplier[supName] = (valueBySupplier[supName] || 0) + lineValue;
 
@@ -58,31 +64,59 @@ function summarizeInventory(items) {
     else if (health.label === 'LOW STOCK') lowCount += 1;
     else healthyCount += 1;
 
+    if (item.aog_critical && health.label !== 'HEALTHY') aogCriticalLowCount += 1;
+    if (item.lru_status === 'IN_REPAIR_RMA' || item.lru_status === 'UNSERVICEABLE' || item.lru_status === 'QUARANTINE') {
+      inRmaCount += 1;
+    }
+
+    if (item.part_classification === 'ROTATABLE_LRU' || item.lru_status === 'IN_REPAIR_RMA' || item.rma_reference || item.installedSimulator) {
+      lruRmaRows.push({
+        sku: item.sku,
+        name: cleanText(item.name, 42),
+        serial: dash(item.serial_number),
+        subsystem: item.subsystem_code || '—',
+        lru_status: item.lru_status || 'SERVICEABLE',
+        lru_status_tone: item.lru_status === 'IN_REPAIR_RMA' ? 'warning' : (item.lru_status === 'UNSERVICEABLE' ? 'danger' : 'info'),
+        installed_on: item.installedSimulator ? `${item.installedSimulator.bay_code} · ${item.installedSimulator.name}` : 'Warehouse Shelf',
+        rma: dash(item.rma_reference),
+        eta: item.expected_delivery_date ? fmtDate(item.expected_delivery_date) : '—'
+      });
+    }
+
     if (health.label !== 'HEALTHY') {
       const targetQty = Math.max(health.threshold || 1, toNumber(item.min_stock, 0));
       priorityRestock.push({
         sku: item.sku,
-        name: cleanText(item.name, 46),
+        name: `${item.aog_critical ? '[AOG] ' : ''}${cleanText(item.name, 42)}`,
         category: catName,
+        aog_critical: item.aog_critical ? 'YES' : 'NO',
         quantity: qty,
+        on_order: onOrder,
+        eta: item.expected_delivery_date ? fmtDate(item.expected_delivery_date) : '—',
         min_stock: toNumber(item.min_stock, 0),
         reorder_point: toNumber(item.reorder_point, 0),
         deficit: Math.max(1, targetQty - qty),
         est_restock_cost: Math.max(1, targetQty - qty) * unitCost,
         supplier: cleanText(supName, 26),
-        stock_status: health.label,
-        stock_status_tone: health.tone,
-        _flag: health.flag
+        stock_status: item.aog_critical ? 'AOG CRIT' : health.label,
+        stock_status_tone: item.aog_critical ? 'danger' : health.tone,
+        _flag: item.aog_critical ? 'danger' : health.flag
       });
     }
 
     return {
       sku: item.sku,
       part_number: dash(item.part_number),
-      name: cleanText(item.name, 48),
+      serial_number: dash(item.serial_number),
+      name: cleanText(item.name, 46),
       category: catName,
+      subsystem: item.subsystem_code || '—',
+      aog: item.aog_critical ? 'YES' : 'NO',
+      lru_status: item.lru_status || 'SERVICEABLE',
       unit: dash(item.unit || 'pcs'),
       quantity: qty,
+      on_order: onOrder,
+      eta: item.expected_delivery_date ? fmtDate(item.expected_delivery_date) : '—',
       min_stock: toNumber(item.min_stock, 0),
       reorder_point: toNumber(item.reorder_point, 0),
       unit_cost: unitCost,
@@ -91,20 +125,27 @@ function summarizeInventory(items) {
       is_active: item.is_active ? 'Active' : 'Inactive',
       stock_status: health.label,
       stock_status_tone: health.tone,
-      _flag: health.flag
+      _flag: item.aog_critical && health.label !== 'HEALTHY' ? 'danger' : health.flag
     };
   });
 
-  priorityRestock.sort((a, b) => (a.quantity - b.quantity) || (b.deficit - a.deficit));
+  priorityRestock.sort((a, b) => (b.aog_critical === 'YES' ? 1 : 0) - (a.aog_critical === 'YES' ? 1 : 0) || (a.quantity - b.quantity) || (b.deficit - a.deficit));
 
   return {
-    outCount, lowCount, healthyCount, totalUnits, totalValue,
-    valueByCategory, valueBySupplier, priorityRestock, itemRows
+    outCount, lowCount, healthyCount, aogCriticalLowCount, inRmaCount, onOrderUnits,
+    totalUnits, totalValue, valueByCategory, valueBySupplier, priorityRestock, lruRmaRows, itemRows
   };
 }
 
 function buildProcurementAlerts(stats, movementsLen, totalIn, totalOut) {
   const alerts = [];
+  if (stats.aogCriticalLowCount > 0) {
+    alerts.push({
+      severity: 'danger',
+      title: `${stats.aogCriticalLowCount} AOG-Critical Spare Part(s) Below Safety Buffer`,
+      detail: 'Immediate procurement or RMA expedite required — shortage risks grounding Full Flight Simulators or Test Places.'
+    });
+  }
   if (stats.outCount > 0) {
     alerts.push({
       severity: 'danger',
@@ -117,7 +158,14 @@ function buildProcurementAlerts(stats, movementsLen, totalIn, totalOut) {
     alerts.push({
       severity: 'warning',
       title: `${stats.lowCount} SKU${stats.lowCount > 1 ? 's' : ''} Breached Minimum / Reorder Threshold`,
-      detail: `Estimated replenishment spend to restore minimum buffers: ${fmtMoney(estCost)}. Trigger PO batch review.`
+      detail: `Estimated replenishment spend: ${fmtMoney(estCost)}. Currently ${fmtNumber(stats.onOrderUnits)} unit(s) on order.`
+    });
+  }
+  if (stats.inRmaCount > 0) {
+    alerts.push({
+      severity: 'info',
+      title: `${stats.inRmaCount} Rotable LRU(s) in Repair (RMA) / Unserviceable`,
+      detail: 'Track vendor turnaround ETA to protect rotable pool availability.'
     });
   }
   if (movementsLen > 0 && totalOut > totalIn * 1.25) {
@@ -130,7 +178,7 @@ function buildProcurementAlerts(stats, movementsLen, totalIn, totalOut) {
   if (!alerts.length) {
     alerts.push({
       severity: 'success',
-      title: 'All Tracked Spare Parts Within Safe Buffer Thresholds',
+      title: 'All Tracked Spare Parts & AOG Buffers Healthy',
       detail: 'No stockouts or reorder-point breaches detected across the filtered inventory scope.'
     });
   }
@@ -141,23 +189,28 @@ module.exports = {
   key: 'warehouse',
   docCode: 'CAE-INV-07',
   theme: 'warehouse',
-  title: 'Warehouse & Spare Parts Report',
-  subtitle: 'Stock valuation, replenishment exposure and audited movement ledger',
+  title: 'Warehouse, AOG Spares & LRU/RMA Report',
+  subtitle: 'AOG critical buffers, rotable LRU/RMA tracking, valuation and simulator-linked movement ledger',
   category: 'SUPPLY CHAIN & PROCUREMENT',
   orientation: 'portrait',
 
   async build(req) {
     const range = parseRange(req.query);
-    const { category_id, low_stock, search } = req.query;
+    const { category_id, low_stock, search, aog_critical, subsystem_code, lru_status } = req.query;
 
     const itemWhere = {};
     if (category_id) itemWhere.category_id = category_id;
+    if (aog_critical === 'true' || aog_critical === '1') itemWhere.aog_critical = true;
+    if (subsystem_code && String(subsystem_code).trim()) itemWhere.subsystem_code = String(subsystem_code).trim().toUpperCase();
+    if (lru_status && String(lru_status).trim()) itemWhere.lru_status = String(lru_status).trim().toUpperCase();
     if (search && String(search).trim()) {
       const q = `%${String(search).trim()}%`;
       itemWhere[Op.or] = [
         { name: { [Op.like]: q } },
         { sku: { [Op.like]: q } },
         { part_number: { [Op.like]: q } },
+        { serial_number: { [Op.like]: q } },
+        { rma_reference: { [Op.like]: q } },
         { supplier: { [Op.like]: q } }
       ];
     }
@@ -172,13 +225,17 @@ module.exports = {
     const [rawItems, movements] = await Promise.all([
       InventoryItem.findAll({
         where: itemWhere,
-        include: [{ model: ItemCategory, as: 'category', attributes: ['id', 'name', 'color'] }],
-        order: [['name', 'ASC']]
+        include: [
+          { model: ItemCategory, as: 'category', attributes: ['id', 'name', 'color'] },
+          { model: Simulator, as: 'installedSimulator', attributes: ['id', 'bay_code', 'name'], required: false }
+        ],
+        order: [['aog_critical', 'DESC'], ['name', 'ASC']]
       }),
       StockMovement.findAll({
         where: movWhere,
         include: [
           { model: InventoryItem, as: 'item', attributes: ['sku', 'name'] },
+          { model: Simulator, as: 'simulator', attributes: ['id', 'bay_code', 'name'], required: false },
           { model: User, as: 'user', attributes: ['first_name', 'last_name'] }
         ],
         order: [['movement_date', 'DESC']],
@@ -204,8 +261,9 @@ module.exports = {
         movement_date: m.movement_date ? fmtDateTime(m.movement_date) : '—',
         type: m.type,
         type_tone: MOVEMENT_TONE[m.type] || 'info',
-        item_name: cleanText(m.item?.name || 'Item', 40),
+        item_name: cleanText(m.item?.name || 'Item', 38),
         sku: dash(m.item?.sku),
+        simulator: m.simulator ? `${m.simulator.bay_code}` : '—',
         quantity: qty,
         delta_flow: `${before} -> ${after}`,
         quantity_before: before,
@@ -223,62 +281,83 @@ module.exports = {
     const healthyPct = pct(stats.healthyCount, items.length);
 
     const restockTable = {
-      name: 'Priority Restock Action List',
+      name: 'Priority Restock & AOG Action List',
       priority: true,
-      note: 'SKUs at or below reorder threshold requiring immediate procurement release.',
+      note: 'AOG-critical parts prioritized first, followed by SKUs at or below reorder threshold.',
       columns: [
-        { header: 'SKU', key: 'sku', width: 70, type: 'mono' },
-        { header: 'Spare Part / Item', key: 'name', width: 145 },
-        { header: 'Category', key: 'category', width: 95, printHidden: true },
-        { header: 'Status', key: 'stock_status', width: 82, type: 'badge', align: 'center' },
-        { header: 'On Hand', key: 'quantity', width: 54, type: 'number', align: 'right' },
-        { header: 'Deficit', key: 'deficit', width: 54, type: 'number', align: 'right', total: 'sum' },
-        { header: 'Supplier', key: 'supplier', width: 105 },
-        { header: 'Min Stock', key: 'min_stock', width: 65, type: 'number', align: 'right', printHidden: true },
-        { header: 'Est. PO Cost', key: 'est_restock_cost', width: 85, type: 'currency', align: 'right', printHidden: true }
+        { header: 'SKU', key: 'sku', width: 64, type: 'mono' },
+        { header: 'Spare Part / Item', key: 'name', width: 138 },
+        { header: 'Status', key: 'stock_status', width: 72, type: 'badge', align: 'center' },
+        { header: 'On Hand', key: 'quantity', width: 48, type: 'number', align: 'right' },
+        { header: 'On Ord.', key: 'on_order', width: 46, type: 'number', align: 'right', total: 'sum' },
+        { header: 'Deficit', key: 'deficit', width: 48, type: 'number', align: 'right', total: 'sum' },
+        { header: 'ETA / Supplier', key: 'supplier', width: 96 },
+        { header: 'ETA Date', key: 'eta', width: 68, printHidden: true },
+        { header: 'Est. PO Cost', key: 'est_restock_cost', width: 82, type: 'currency', align: 'right', printHidden: true }
       ],
       rows: stats.priorityRestock
     };
 
+    const lruTable = {
+      name: 'Rotable LRU & RMA Repair Tracker',
+      note: 'Serialized Line-Replaceable Units installed on simulator bays or undergoing vendor RMA repair.',
+      columns: [
+        { header: 'SKU', key: 'sku', width: 64, type: 'mono' },
+        { header: 'LRU Component', key: 'name', width: 126 },
+        { header: 'S/N', key: 'serial', width: 68, type: 'mono' },
+        { header: 'Status', key: 'lru_status', width: 78, type: 'badge', align: 'center' },
+        { header: 'Installed / Location', key: 'installed_on', width: 98 },
+        { header: 'RMA Ref', key: 'rma', width: 68, type: 'mono' },
+        { header: 'ETA', key: 'eta', width: 64, printHidden: true }
+      ],
+      rows: stats.lruRmaRows.slice(0, 20)
+    };
+
     const catalogueTable = {
       name: 'Inventory Valuation Catalogue',
-      note: 'Asset valuation per SKU (Unit Cost x Quantity on Hand). Extended warehouse metadata preserved in Excel.',
+      note: 'Asset valuation per SKU including AOG Criticality, LRU Status, On-Order & ETA (extended columns in Excel).',
       columns: [
-        { header: 'SKU', key: 'sku', width: 70, type: 'mono' },
-        { header: 'Item Name', key: 'name', width: 140 },
-        { header: 'Part Number', key: 'part_number', width: 85, type: 'mono', printHidden: true },
-        { header: 'Category', key: 'category', width: 88 },
-        { header: 'Unit', key: 'unit', width: 50, printHidden: true },
-        { header: 'Qty', key: 'quantity', width: 52, type: 'number', align: 'right', total: 'sum' },
-        { header: 'Min', key: 'min_stock', width: 50, type: 'number', align: 'right', printHidden: true },
-        { header: 'Reorder', key: 'reorder_point', width: 55, type: 'number', align: 'right', printHidden: true },
-        { header: 'Unit Cost', key: 'unit_cost', width: 72, type: 'currency', align: 'right' },
-        { header: 'Total Value', key: 'total_value', width: 88, type: 'currency', align: 'right', total: 'sum', dataBar: true },
-        { header: 'Supplier', key: 'supplier', width: 105, printHidden: true },
-        { header: 'Active', key: 'is_active', width: 60, printHidden: true }
+        { header: 'SKU', key: 'sku', width: 64, type: 'mono' },
+        { header: 'Item Name', key: 'name', width: 132 },
+        { header: 'P/N', key: 'part_number', width: 75, type: 'mono', printHidden: true },
+        { header: 'S/N', key: 'serial_number', width: 75, type: 'mono', printHidden: true },
+        { header: 'Subsys.', key: 'subsystem', width: 58, printHidden: true },
+        { header: 'AOG', key: 'aog', width: 42, printHidden: true },
+        { header: 'LRU Status', key: 'lru_status', width: 76, printHidden: true },
+        { header: 'Category', key: 'category', width: 82 },
+        { header: 'Qty', key: 'quantity', width: 48, type: 'number', align: 'right', total: 'sum' },
+        { header: 'On Ord.', key: 'on_order', width: 48, type: 'number', align: 'right', printHidden: true },
+        { header: 'ETA', key: 'eta', width: 64, printHidden: true },
+        { header: 'Unit Cost', key: 'unit_cost', width: 68, type: 'currency', align: 'right' },
+        { header: 'Total Value', key: 'total_value', width: 82, type: 'currency', align: 'right', total: 'sum', dataBar: true },
+        { header: 'Supplier', key: 'supplier', width: 95, printHidden: true }
       ],
       rows: stats.itemRows
     };
 
     const movementsTable = {
       name: 'Audited Stock Movements Ledger',
-      note: 'Chronological warehouse receipts, consumption issues, returns and adjustments.',
+      note: 'Chronological warehouse receipts, consumption issues linked to Simulator Bays & Work Orders.',
       columns: [
-        { header: 'Timestamp', key: 'movement_date', width: 92, type: 'date' },
-        { header: 'Type', key: 'type', width: 74, type: 'badge', align: 'center' },
-        { header: 'SKU', key: 'sku', width: 70, type: 'mono', printHidden: true },
-        { header: 'Item', key: 'item_name', width: 142 },
-        { header: 'Qty', key: 'quantity', width: 52, type: 'number', align: 'right', total: 'sum' },
-        { header: 'Balance Flow', key: 'delta_flow', width: 72, type: 'mono', align: 'center' },
-        { header: 'Operator', key: 'operator', width: 82 },
-        { header: 'Reference', key: 'reference', width: 85, type: 'mono', printHidden: true },
-        { header: 'Reason', key: 'reason', width: 150, printHidden: true }
+        { header: 'Timestamp', key: 'movement_date', width: 86, type: 'date' },
+        { header: 'Type', key: 'type', width: 66, type: 'badge', align: 'center' },
+        { header: 'SKU', key: 'sku', width: 66, type: 'mono', printHidden: true },
+        { header: 'Item', key: 'item_name', width: 126 },
+        { header: 'Bay', key: 'simulator', width: 54, type: 'mono', align: 'center' },
+        { header: 'Qty', key: 'quantity', width: 44, type: 'number', align: 'right', total: 'sum' },
+        { header: 'Flow', key: 'delta_flow', width: 64, type: 'mono', align: 'center' },
+        { header: 'Operator', key: 'operator', width: 76 },
+        { header: 'Reference', key: 'reference', width: 76, type: 'mono', printHidden: true },
+        { header: 'Reason', key: 'reason', width: 140, printHidden: true }
       ],
       rows: movementRows
     };
 
     const filters = { 'Movement Period': rangeLabel(range) };
     if (category_id) filters['Category ID'] = category_id;
+    if (aog_critical === 'true' || aog_critical === '1') filters['AOG Filter'] = 'AOG Critical Only';
+    if (subsystem_code) filters['Subsystem'] = subsystem_code;
+    if (lru_status) filters['LRU Status'] = lru_status;
     if (low_stock === 'true' || low_stock === '1') filters['Stock Filter'] = 'Low / Out of Stock Only';
     if (search) filters.Search = search;
 
@@ -286,14 +365,14 @@ module.exports = {
     const topSup = supTop[0];
 
     const page2Blocks = [
-      { type: 'alerts', title: 'Procurement & Buffer Exposure', items: buildProcurementAlerts(stats, movements.length, totalIn, totalOut) },
+      { type: 'alerts', title: 'Procurement, AOG Critical & RMA Exposure', items: buildProcurementAlerts(stats, movements.length, totalIn, totalOut) },
       {
         type: 'kpis',
         variant: 'strips',
         items: [
-          { label: 'Tracked SKUs', value: fmtNumber(items.length), rawValue: items.length, sublabel: `${fmtNumber(stats.totalUnits)} units in stock`, tone: 'primary' },
-          { label: 'Total Stock Valuation', value: fmtMoney(stats.totalValue), rawValue: stats.totalValue, numFmt: '€#,##0.00', sublabel: `${catTop.length} categories valued`, tone: 'info' },
-          { label: 'Replenishment Exposure', value: fmtNumber(atRisk), rawValue: atRisk, sublabel: `${stats.outCount} zero-stock · ${stats.lowCount} low`, tone: atRisk > 0 ? 'danger' : 'success' },
+          { label: 'Tracked SKUs', value: fmtNumber(items.length), rawValue: items.length, sublabel: `${fmtNumber(stats.totalUnits)} units · ${fmtNumber(stats.onOrderUnits)} on order`, tone: 'primary' },
+          { label: 'Total Stock Valuation', value: fmtMoney(stats.totalValue), rawValue: stats.totalValue, numFmt: '$#,##0.00', sublabel: `${catTop.length} categories valued`, tone: 'info' },
+          { label: 'AOG Critical / At-Risk', value: `${stats.aogCriticalLowCount} / ${atRisk}`, rawValue: atRisk, sublabel: `${stats.outCount} zero · ${stats.inRmaCount} in RMA`, tone: stats.aogCriticalLowCount > 0 || atRisk > 0 ? 'danger' : 'success' },
           { label: 'Net Period Flow', value: `${netFlow >= 0 ? '+' : ''}${fmtNumber(netFlow)} u`, rawValue: netFlow, sublabel: `${fmtNumber(totalIn)} in / ${fmtNumber(totalOut)} out`, tone: netFlow >= 0 ? 'success' : 'warning' }
         ]
       }
@@ -311,17 +390,17 @@ module.exports = {
 
     const pages = [
       {
-        title: 'Immediate Procurement Action Sheet',
-        subtitle: `${fmtNumber(atRisk)} SKUs requiring attention across ${fmtMoney(stats.totalValue)} inventory base`,
+        title: 'Immediate Procurement & AOG Spares Action Sheet',
+        subtitle: `${stats.aogCriticalLowCount} AOG-critical low · ${fmtNumber(atRisk)} total SKUs requiring attention`,
         blocks: page2Blocks
       },
       {
-        title: 'Capital Allocation & Velocity',
-        subtitle: 'Category capital concentration, buffer health ratio and inbound/outbound highlights',
+        title: 'Capital Allocation, LRU/RMA & Velocity',
+        subtitle: 'Category capital concentration, buffer health ratio and rotable LRU fleet status',
         blocks: [
           {
             type: 'chartPair',
-            height: 204,
+            height: 196,
             left: {
               type: 'donut',
               title: 'Stock Buffer Health',
@@ -339,6 +418,7 @@ module.exports = {
               values: catTop.map(([, v]) => Number(v.toFixed(2)))
             }
           },
+          ...(stats.lruRmaRows.length > 0 ? [{ type: 'table', showHeading: true, table: lruTable }] : []),
           {
             type: 'highlights',
             title: 'Supply Chain Highlights',
@@ -358,26 +438,20 @@ module.exports = {
                 tone: 'info'
               },
               {
-                eyebrow: 'BUFFER ADHERENCE',
-                metric: fmtPercent(healthyPct, 1),
-                title: `${fmtNumber(stats.healthyCount)} Healthy SKUs`,
-                detail: `${fmtNumber(atRisk)} SKU(s) currently below reorder threshold or depleted.`,
-                tone: healthyPct >= 85 ? 'success' : 'warning'
+                eyebrow: 'ROTABLE LRU / RMA POOL',
+                metric: `${fmtNumber(stats.inRmaCount)} RMA`,
+                title: `${fmtNumber(stats.lruRmaRows.length)} Tracked LRUs`,
+                detail: `${fmtNumber(stats.onOrderUnits)} inbound spare units currently on purchase order.`,
+                tone: stats.inRmaCount > 0 ? 'warning' : 'success'
               },
               {
                 eyebrow: 'AUDITED VELOCITY',
                 metric: `${fmtNumber(movements.length)} moves`,
                 title: `+${fmtNumber(totalIn)} IN  /  -${fmtNumber(totalOut)} OUT`,
-                detail: `Latest ${movements.length} stock transactions audited in selected period.`,
+                detail: `Latest ${movements.length} stock transactions audited with bay traceability.`,
                 tone: 'teal'
               }
             ]
-          },
-          {
-            type: 'brief',
-            title: 'Warehouse Valuation Narrative',
-            text: `Current spare-parts inventory totals ${fmtMoney(stats.totalValue)} across ${fmtNumber(stats.totalUnits)} physical units. `
-              + `Healthy buffer coverage stands at ${fmtPercent(healthyPct, 1)}, while ${fmtNumber(totalIn)} units were received against ${fmtNumber(totalOut)} consumed across ${fmtNumber(movements.length)} audited movements.`
           }
         ]
       },
@@ -388,7 +462,7 @@ module.exports = {
       },
       {
         title: 'Audited Stock Movements Ledger',
-        subtitle: `Chronological receipts, issues, transfers and balance deltas (${fmtNumber(movementRows.length)} records)`,
+        subtitle: `Chronological receipts, bay-linked issues, returns and deltas (${fmtNumber(movementRows.length)} records)`,
         blocks: [{ type: 'table', showHeading: false, table: movementsTable }]
       }
     ];
@@ -397,18 +471,18 @@ module.exports = {
       moduleKey: 'warehouse',
       docCode: 'CAE-INV-07',
       theme: 'warehouse',
-      title: 'Warehouse & Spare Parts Report',
-      subtitle: 'Stock valuation, replenishment exposure and audited movement ledger',
+      title: 'Warehouse, AOG Spares & LRU/RMA Report',
+      subtitle: 'Stock valuation, AOG critical buffers, rotable LRU/RMA & simulator-linked movement ledger',
       category: 'SUPPLY CHAIN & PROCUREMENT',
       orientation: 'portrait',
       coverHighlights: [
         { label: 'Total Stock Value', value: fmtMoney(stats.totalValue) },
-        { label: 'At-Risk SKUs', value: fmtNumber(atRisk) },
-        { label: 'Audited Movements', value: fmtNumber(movements.length) }
+        { label: 'AOG Crit / At-Risk', value: `${stats.aogCriticalLowCount} / ${fmtNumber(atRisk)}` },
+        { label: 'In RMA / On Order', value: `${stats.inRmaCount} / ${fmtNumber(stats.onOrderUnits)} u` }
       ],
       filters,
       pages,
-      tables: [catalogueTable, movementsTable, ...(stats.priorityRestock.length ? [restockTable] : [])]
+      tables: [catalogueTable, movementsTable, ...(stats.priorityRestock.length ? [restockTable] : []), ...(stats.lruRmaRows.length ? [lruTable] : [])]
     };
   }
 };

@@ -9,6 +9,7 @@ import {
 } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { ApiService } from '../../../core/services/api.service';
 import { ConfirmService } from '../../../core/services/confirm.service';
 import { ToastService } from '../../../core/services/toast.service';
@@ -22,6 +23,7 @@ import {
   MaintenanceRecord,
   MaintenanceStatus,
   MaintenanceType,
+  MelCategory,
   Priority,
   Simulator,
   SimulatorSubsystemCode
@@ -47,7 +49,7 @@ import {
 @Component({
   selector: 'app-maintenance-modals',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, DateTimePickerComponent, DropdownComponent, DropdownOptionComponent],
+  imports: [CommonModule, FormsModule, DatePipe, RouterLink, DateTimePickerComponent, DropdownComponent, DropdownOptionComponent],
   templateUrl: './maintenance-modals.component.html',
   styleUrls: ['./maintenance-modals.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -76,6 +78,8 @@ export class MaintenanceModalsComponent {
   selectedWarehouseItemId: number | null = null;
   selectedPartQty = 1;
   deductStock = true;
+  wikiArticles: Array<{ id: number; title: string; slug: string }> = [];
+  private wikiLoaded = false;
 
   // ── Work Order Detail Modal ────────────────────────────────────────────────
   detailRecord: MaintenanceRecord | null = null;
@@ -142,15 +146,48 @@ export class MaintenanceModalsComponent {
       findings: '',
       scheduled_date: new Date() as Date | null,
       next_scheduled: null as Date | null,
-      cost: null as number | null
+      cost: null as number | null,
+      parts_cost: null as number | null,
+      labor_cost: null as number | null,
+      mel_category: 'NONE' as MelCategory,
+      mel_expiry_date: null as Date | null,
+      wiki_article_id: null as number | null
     };
   }
 
+  private ensureWikiLoaded(): void {
+    if (this.wikiLoaded) return;
+    this.wikiLoaded = true;
+    this.api.get<any>('/wiki/articles', { status: 'PUBLISHED', limit: 100 }).subscribe({
+      next: (res) => {
+        const list = res?.data?.items || res?.data || [];
+        this.wikiArticles = Array.isArray(list) ? list : [];
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.wikiLoaded = false;
+      }
+    });
+  }
+
+  get estimatedPartsCost(): number {
+    let total = 0;
+    for (const part of this.partsList) {
+      if (!part.item_id) continue;
+      const item = this.warehouseItems.find(w => Number(w.id) === Number(part.item_id));
+      if (item && item.unit_cost) {
+        total += Number(item.unit_cost) * (Number(part.quantity) || 0);
+      }
+    }
+    return Math.round(total * 100) / 100;
+  }
+
   openRecordModal(record?: MaintenanceRecord, prefill?: Partial<MaintenanceRecord>): void {
+    this.ensureWikiLoaded();
     this.recordError = '';
     this.selectedWarehouseItemId = null;
     this.selectedPartQty = 1;
-    this.deductStock = !record;
+    this.deductStock = true;
 
     if (record) {
       this.editingRecord = record;
@@ -169,7 +206,12 @@ export class MaintenanceModalsComponent {
         findings: record.findings ?? '',
         scheduled_date: record.scheduled_date ? new Date(record.scheduled_date) : null,
         next_scheduled: record.next_scheduled ? new Date(record.next_scheduled) : null,
-        cost: record.cost ?? null
+        cost: record.cost ?? null,
+        parts_cost: record.parts_cost ?? null,
+        labor_cost: record.labor_cost ?? null,
+        mel_category: (record.mel_category || 'NONE') as MelCategory,
+        mel_expiry_date: record.mel_expiry_date ? new Date(`${String(record.mel_expiry_date).slice(0, 10)}T00:00:00`) : null,
+        wiki_article_id: record.wiki_article_id ?? record.wikiArticle?.id ?? null
       };
       const split = splitDowntimeHours(record.downtime_hours);
       this.downtimeHoursPart = split.hours;
@@ -193,7 +235,12 @@ export class MaintenanceModalsComponent {
         description: prefill?.description ?? '',
         scheduled_date: prefill?.scheduled_date ? new Date(prefill.scheduled_date) : new Date(),
         next_scheduled: prefill?.next_scheduled ? new Date(prefill.next_scheduled) : null,
-        cost: prefill?.cost ?? null
+        cost: prefill?.cost ?? null,
+        parts_cost: prefill?.parts_cost ?? null,
+        labor_cost: prefill?.labor_cost ?? null,
+        mel_category: (prefill?.mel_category || 'NONE') as MelCategory,
+        mel_expiry_date: prefill?.mel_expiry_date ? new Date(`${String(prefill.mel_expiry_date).slice(0, 10)}T00:00:00`) : null,
+        wiki_article_id: prefill?.wiki_article_id ?? null
       };
       this.downtimeHoursPart = 0;
       this.downtimeMinutesPart = 0;
@@ -281,6 +328,10 @@ export class MaintenanceModalsComponent {
       is_snag: Boolean(this.recordForm.is_snag),
       downtime_hours: downtime,
       parts_used: this.partsList,
+      labor_cost: this.recordForm.labor_cost !== null && this.recordForm.labor_cost !== '' ? Number(this.recordForm.labor_cost) : null,
+      mel_category: this.recordForm.mel_category || 'NONE',
+      mel_expiry_date: this.recordForm.mel_expiry_date ? formatLocalYmd(new Date(this.recordForm.mel_expiry_date)) : null,
+      wiki_article_id: this.recordForm.wiki_article_id ? Number(this.recordForm.wiki_article_id) : null,
       next_scheduled: this.recordForm.next_scheduled ? new Date(this.recordForm.next_scheduled).toISOString() : null
     };
 

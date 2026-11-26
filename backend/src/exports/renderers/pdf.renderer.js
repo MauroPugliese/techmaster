@@ -10,7 +10,7 @@ const PDFDocument = require('pdfkit');
 const { COMPANY, COLORS, toneStyle, getLogoBuffer } = require('../core/branding');
 const { registerPdfFonts } = require('../core/fonts');
 const { resolveTheme } = require('../core/themes');
-const { str, formatCell, computeColumnTotals, FORMAT_META } = require('../core/helpers');
+const { str, formatCell, computeColumnTotals, resolveBadgeTone, FORMAT_META } = require('../core/helpers');
 const { drawChartsGrid, drawChartCard, drawChartPair } = require('./pdf-charts');
 const {
   MARGIN,
@@ -44,14 +44,14 @@ function drawRunningHeader(doc, spec, F, theme) {
     doc.image(logo, x + 8, y + 4.5, { width: 40, height: 15 });
     textX = x + 56;
   }
-  doc.font(F.displayBold).fontSize(9).fillColor(COLORS.white)
-    .text(`${COMPANY.mark}  ·  ${spec.title}`, textX, y + 7, { width: w - 140, lineBreak: false });
+  doc.font(F.displayBold).fontSize(8.8).fillColor(COLORS.white)
+    .text(`${COMPANY.mark}  ·  ${spec.title}`, textX, y + 7, { width: Math.max(80, w - (textX - x) - 96), height: 12, lineBreak: false, ellipsis: true });
   doc.font(F.mono).fontSize(7.5).fillColor(theme.secondary || COLORS.cyan)
-    .text(docCode, x + w - 82, y + 7.5, { width: 74, align: 'right', lineBreak: false });
+    .text(docCode, x + w - 88, y + 7.5, { width: 80, height: 11, align: 'right', lineBreak: false, ellipsis: true });
   doc.rect(x, y + 24, w, 1.8).fill(theme.accent);
   doc.restore();
 
-  return y + 36;
+  return y + 38;
 }
 
 function ensurePage(doc, spec, y, neededH, F, theme) {
@@ -260,12 +260,12 @@ function drawTable(doc, spec, table, startY, F, theme, opts = {}) {
 
   rows.forEach((row, idx) => {
     doc.font(F.body).fontSize(8);
-    let rowH = 18;
+    let rowH = 20;
     const cellTexts = columns.map((col) => formatCell(row, col));
     cellTexts.forEach((txt, i) => {
       const col = columns[i];
       doc.font(col.type === 'mono' ? F.mono : F.body).fontSize(col.type === 'badge' ? 7 : 8);
-      const h = doc.heightOfString(txt, { width: Math.max(8, widths[i] - padding * 2) }) + 9;
+      const h = doc.heightOfString(txt, { width: Math.max(8, widths[i] - padding * 2) }) + 10;
       if (h > rowH) rowH = h;
     });
 
@@ -294,14 +294,14 @@ function drawTable(doc, spec, table, startY, F, theme, opts = {}) {
     let x = x0;
     columns.forEach((col, i) => {
       if (col.type === 'badge') {
-        const badgeTone = toneStyle(row._badgeTone || row._flag) || toneStyle('neutral');
+        const badgeTone = toneStyle(resolveBadgeTone(row, col)) || toneStyle('neutral');
         drawBadgeCell(doc, cellTexts[i], x, y, widths[i], rowH, badgeTone, F);
       } else {
         const isNum = col.type === 'number' || col.type === 'currency' || col.type === 'percent';
         const fontName = col.type === 'mono' ? F.mono : (isNum ? F.displayMedium : F.body);
         const textColor = rowTone && isNum ? rowTone.fg : COLORS.body;
         doc.font(fontName).fontSize(col.type === 'mono' ? 7.5 : 8).fillColor(textColor)
-          .text(cellTexts[i], x + padding, y + 4.5, {
+          .text(cellTexts[i], x + padding, y + 5, {
             width: Math.max(8, widths[i] - padding * 2),
             align: col.align || (isNum ? 'right' : 'left')
           });
@@ -415,16 +415,16 @@ function drawFooters(doc, spec, F, theme) {
   for (let i = range.start + 1; i < range.start + range.count; i += 1) {
     doc.switchToPage(i);
     const w = contentWidth(doc);
-    const yy = doc.page.height - MARGIN - 10;
+    const yy = doc.page.height - MARGIN - 14;
 
     doc.save();
     doc.lineWidth(0.5).strokeColor(COLORS.border)
       .moveTo(MARGIN, yy - 5).lineTo(MARGIN + w, yy - 5).stroke();
     doc.font(F.body).fontSize(7.5).fillColor(COLORS.subtle);
-    doc.text(`${COMPANY.name}  ·  ${docCode}`, MARGIN, yy, { width: w * 0.45, align: 'left', lineBreak: false });
-    doc.text(generated, MARGIN + w * 0.45, yy, { width: w * 0.25, align: 'center', lineBreak: false });
+    doc.text(`${COMPANY.name}  ·  ${docCode}`, MARGIN, yy, { width: w * 0.45, height: 11, align: 'left', lineBreak: false, ellipsis: true });
+    doc.text(generated, MARGIN + w * 0.45, yy, { width: w * 0.25, height: 11, align: 'center', lineBreak: false });
     doc.font(F.displaySemiBold).fillColor(theme.primary)
-      .text(`Page ${i - range.start + 1} of ${range.count}`, MARGIN + w * 0.70, yy, { width: w * 0.30, align: 'right', lineBreak: false });
+      .text(`Page ${i - range.start + 1} of ${range.count}`, MARGIN + w * 0.70, yy, { width: w * 0.30, height: 11, align: 'right', lineBreak: false });
     doc.restore();
   }
 }
@@ -452,7 +452,8 @@ function buildPdfBuffer(spec) {
     const w = contentWidth(doc);
 
     if (spec.pages && spec.pages.length) {
-      spec.pages.forEach((page, pIdx) => {
+      const renderablePages = spec.pages.filter((p) => p && (p.title || (Array.isArray(p.blocks) && p.blocks.length > 0)));
+      renderablePages.forEach((page, pIdx) => {
         doc.addPage();
         let y = drawRunningHeader(doc, spec, F, theme);
         if (page.title) {

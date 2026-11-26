@@ -102,6 +102,7 @@ export class TasksComponent implements OnInit, OnDestroy {
   statusFilter   = '';
   priorityFilter: Priority | '' = '';
   assigneeFilter: number | 'unassigned' | '' = '';
+  simulatorFilter: number | '' = '';
   statFilter:     StatFilterKey = 'all';
   searchTerm     = '';
   sortKey: SortKey = 'due';
@@ -166,6 +167,7 @@ export class TasksComponent implements OnInit, OnDestroy {
     if (this.statusFilter) n++;
     if (this.priorityFilter) n++;
     if (this.assigneeFilter !== '') n++;
+    if (this.simulatorFilter !== '') n++;
     if (this.statFilter !== 'all') n++;
     if (this.searchTerm.trim()) n++;
     return n;
@@ -173,12 +175,13 @@ export class TasksComponent implements OnInit, OnDestroy {
 
   private get filterState(): TaskFilterState {
     return {
-      priority:   this.priorityFilter,
-      assigneeId: this.assigneeFilter,
-      statFilter: this.statFilter,
-      searchTerm: this.searchTerm,
-      sortKey:    this.sortKey,
-      sortAsc:    this.sortAsc
+      priority:    this.priorityFilter,
+      assigneeId:  this.assigneeFilter,
+      simulatorId: this.simulatorFilter,
+      statFilter:  this.statFilter,
+      searchTerm:  this.searchTerm,
+      sortKey:     this.sortKey,
+      sortAsc:     this.sortAsc
     };
   }
 
@@ -358,12 +361,13 @@ export class TasksComponent implements OnInit, OnDestroy {
 
   clearFilters(): void {
     const serverChanged = this.activeInterval !== '' || this.statusFilter !== '';
-    this.activeInterval = '';
-    this.statusFilter   = '';
-    this.priorityFilter = '';
-    this.assigneeFilter = '';
-    this.statFilter     = 'all';
-    this.searchTerm     = '';
+    this.activeInterval  = '';
+    this.statusFilter    = '';
+    this.priorityFilter  = '';
+    this.assigneeFilter  = '';
+    this.simulatorFilter = '';
+    this.statFilter      = 'all';
+    this.searchTerm      = '';
     if (serverChanged) this.loadTasks();
   }
 

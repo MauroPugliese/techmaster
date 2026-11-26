@@ -13,12 +13,14 @@ import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../../core/services/api.service';
 import { ToastService } from '../../../core/services/toast.service';
 import { ShiftHandover } from '../../../core/models/interfaces';
+import { DateTimePickerComponent } from '../../../shared/components/datetime-picker/datetime-picker.component';
+import { DropdownComponent, DropdownOptionComponent } from '../../../shared/components/dropdown/dropdown.component';
 import { formatLocalYmd } from '../../../shared/components/datetime-picker/datetime-picker.utils';
 
 @Component({
   selector: 'app-shift-handover-modal',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe],
+  imports: [CommonModule, FormsModule, DatePipe, DateTimePickerComponent, DropdownComponent, DropdownOptionComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="modal-overlay" *ngIf="visible" (click)="onBackdropClick($event)">
@@ -46,25 +48,31 @@ import { formatLocalYmd } from '../../../shared/components/datetime-picker/datet
               <div class="form-row">
                 <div class="form-group">
                   <label class="form-label">Shift Date</label>
-                  <input type="date" class="form-control ho-num" [(ngModel)]="form.shift_date" />
+                  <app-datetime-picker
+                    class="form-control ho-num"
+                    mode="date"
+                    [clearable]="false"
+                    ariaLabel="Shift Date"
+                    [(ngModel)]="shiftDateObj">
+                  </app-datetime-picker>
                 </div>
                 <div class="form-group">
                   <label class="form-label">From Shift</label>
-                  <select class="form-control" [(ngModel)]="form.from_shift_code">
-                    <option value="MORNING">MORNING (06:00–14:00)</option>
-                    <option value="AFTERNOON">AFTERNOON (14:00–22:00)</option>
-                    <option value="NIGHT">NIGHT (22:00–06:00)</option>
-                    <option value="DAY">DAY</option>
-                  </select>
+                  <app-dropdown class="form-control" [(ngModel)]="form.from_shift_code" ariaLabel="From Shift">
+                    <app-dropdown-option value="MORNING">MORNING (06:00–14:00)</app-dropdown-option>
+                    <app-dropdown-option value="AFTERNOON">AFTERNOON (14:00–22:00)</app-dropdown-option>
+                    <app-dropdown-option value="NIGHT">NIGHT (22:00–06:00)</app-dropdown-option>
+                    <app-dropdown-option value="DAY">DAY</app-dropdown-option>
+                  </app-dropdown>
                 </div>
                 <div class="form-group">
                   <label class="form-label">To Incoming Shift</label>
-                  <select class="form-control" [(ngModel)]="form.to_shift_code">
-                    <option value="AFTERNOON">AFTERNOON (14:00–22:00)</option>
-                    <option value="NIGHT">NIGHT (22:00–06:00)</option>
-                    <option value="MORNING">MORNING (06:00–14:00)</option>
-                    <option value="DAY">DAY</option>
-                  </select>
+                  <app-dropdown class="form-control" [(ngModel)]="form.to_shift_code" ariaLabel="To Incoming Shift">
+                    <app-dropdown-option value="AFTERNOON">AFTERNOON (14:00–22:00)</app-dropdown-option>
+                    <app-dropdown-option value="NIGHT">NIGHT (22:00–06:00)</app-dropdown-option>
+                    <app-dropdown-option value="MORNING">MORNING (06:00–14:00)</app-dropdown-option>
+                    <app-dropdown-option value="DAY">DAY</app-dropdown-option>
+                  </app-dropdown>
                 </div>
               </div>
 
@@ -184,6 +192,7 @@ export class ShiftHandoverModalComponent implements OnChanges {
   showForm = true;
   handovers: ShiftHandover[] = [];
 
+  shiftDateObj: Date | null = new Date();
   form = this.emptyForm();
 
   constructor(
@@ -231,7 +240,12 @@ export class ShiftHandoverModalComponent implements OnChanges {
     this.saving = true;
     this.cdr.markForCheck();
 
-    this.api.post<any>('/shifts/handovers', this.form).subscribe({
+    const payload = {
+      ...this.form,
+      shift_date: formatLocalYmd(this.shiftDateObj || new Date())
+    };
+
+    this.api.post<any>('/shifts/handovers', payload).subscribe({
       next: (res) => {
         const created = res?.data;
         if (created) {
@@ -240,6 +254,7 @@ export class ShiftHandoverModalComponent implements OnChanges {
           this.loadHandovers();
         }
         this.saving = false;
+        this.shiftDateObj = new Date();
         this.form = this.emptyForm();
         this.toast.success('Shift handover recorded.');
         this.cdr.markForCheck();

@@ -153,14 +153,26 @@ export class OperationsDeepDiveComponent implements OnInit, AfterViewInit, OnCha
       simulator_id: number;
       simulator_code: string;
       bay_code: string;
+      station_kind?: string;
       aircraft_type: string;
       bay_status: string;
       sortie_count: number;
       scheduled_hours: number;
       actual_hours: number;
+      shift_hours?: number;
       lost_minutes: number;
       reliability_pct: number;
     }>;
+    totalShiftHours?: number;
+    reliability?: {
+      correctiveCount: number;
+      preventiveCount: number;
+      aogCount: number;
+      mttrHours: number;
+      mtbfHours: number | null;
+      activeMelCount: number;
+      melExpiringSoonCount: number;
+    };
     snagsBySubsystem: Array<{ subsystem: string; count: number; aog_count: number; lost_hours: number }>;
     hoursByCustomer: Array<{ customer: string; sorties: number; scheduled_hours: number; lost_minutes: number }>;
   } {

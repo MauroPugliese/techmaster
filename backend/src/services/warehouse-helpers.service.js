@@ -6,6 +6,7 @@ const { literal } = require('sequelize');
 const VALID_MOVEMENT_TYPES = new Set(['IN', 'OUT', 'TRANSFER', 'ADJUSTMENT', 'RETURN']);
 const VALID_BULK_ACTIONS = new Set(['category', 'location', 'deactivate']);
 const VALID_PART_CLASSIFICATIONS = new Set(['CONSUMABLE', 'ROTATABLE_LRU', 'TOOL_CALIBRATED']);
+const VALID_LRU_STATUSES = new Set(['SERVICEABLE', 'INSTALLED', 'UNSERVICEABLE', 'IN_REPAIR_RMA', 'QUARANTINE']);
 
 /**
  * Returns the effective low-stock alert threshold for an inventory item.
@@ -232,6 +233,51 @@ function sanitizeInventoryPayload(body = {}, { isCreate = false } = {}) {
     const uq = toNonNegativeInt(body.unserviceable_qty, 0);
     if (Number.isNaN(uq)) return { error: 'unserviceable_qty must be a non-negative integer.' };
     payload.unserviceable_qty = uq;
+  }
+
+  if (body.subsystem_code !== undefined) {
+    const sc = String(body.subsystem_code ?? '').trim().toUpperCase().slice(0, 60);
+    payload.subsystem_code = sc || null;
+  }
+
+  if (body.serial_number !== undefined) {
+    const sn = String(body.serial_number ?? '').trim().slice(0, 120);
+    payload.serial_number = sn || null;
+  }
+
+  if (body.lru_status !== undefined) {
+    const ls = String(body.lru_status || 'SERVICEABLE').trim().toUpperCase();
+    if (!VALID_LRU_STATUSES.has(ls)) return { error: 'Invalid lru_status.' };
+    payload.lru_status = ls;
+  }
+
+  if (body.installed_simulator_id !== undefined) {
+    const simId = toOptionalPositiveInt(body.installed_simulator_id);
+    if (Number.isNaN(simId)) return { error: 'installed_simulator_id must be a positive integer or empty.' };
+    payload.installed_simulator_id = simId;
+  }
+
+  if (body.rma_reference !== undefined) {
+    const rma = String(body.rma_reference ?? '').trim().slice(0, 120);
+    payload.rma_reference = rma || null;
+  }
+
+  if (body.on_order_qty !== undefined) {
+    const ooq = toNonNegativeInt(body.on_order_qty, 0);
+    if (Number.isNaN(ooq)) return { error: 'on_order_qty must be a non-negative integer.' };
+    payload.on_order_qty = ooq;
+  }
+
+  if (body.expected_delivery_date !== undefined) {
+    if (body.expected_delivery_date === null || body.expected_delivery_date === '') {
+      payload.expected_delivery_date = null;
+    } else {
+      const s = String(body.expected_delivery_date).trim().slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+        return { error: 'expected_delivery_date must use YYYY-MM-DD format.' };
+      }
+      payload.expected_delivery_date = s;
+    }
   }
 
   if (body.compatible_models !== undefined) {

@@ -10,6 +10,7 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../../core/services/api.service';
@@ -30,7 +31,7 @@ import {
 @Component({
   selector: 'app-warehouse-movements',
   standalone: true,
-  imports: [CommonModule, FormsModule, DropdownComponent, DropdownOptionComponent],
+  imports: [CommonModule, FormsModule, RouterLink, DropdownComponent, DropdownOptionComponent],
   templateUrl: './warehouse-movements.component.html',
   styleUrls: ['./warehouse-movements.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush

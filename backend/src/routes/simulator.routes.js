@@ -16,10 +16,13 @@ const {
   OperationType,
   MaintenanceRecord,
   InventoryItem,
+  StockMovement,
+  WikiArticle,
   User,
   sequelize
 } = require('../models');
 const { validateIdParam } = require('../middleware/validation.middleware');
+const { broadcastOperationalAlert } = require('../services/proactive-alerts.service');
 const {
   DEFAULT_SUBSYSTEM_TEMPLATES,
   VALID_SIM_STATUSES,
@@ -33,8 +36,10 @@ const {
   normalizeHhMm,
   computeTestingDurationMinutes,
   deriveEntryUsageStatus,
-  buildTimelineShiftBlocks
+  buildTimelineShiftBlocks,
+  buildTimelineMaintenanceBlocks
 } = require('../services/simulator-helpers.service');
+const { expandOccurrencesInRange } = require('../services/planned-recurrence.service');
 
 // ── Shared Daily-Sheet Orchestrator ──────────────────────────────────────────
 function resolveSheetDate(raw) {
@@ -49,10 +54,17 @@ function resolveStationKind(raw, fallback = 'TEST_PLACE') {
 }
 
 async function ensureDailySheetData(dateStr, stationKind, userId = null) {
-  const stations = await Simulator.findAll({
-    where: { station_kind: stationKind },
-    order: [['sort_order', 'ASC'], ['bay_code', 'ASC'], ['id', 'ASC']]
-  });
+  const [stations, activeStaff] = await Promise.all([
+    Simulator.findAll({
+      where: { station_kind: stationKind },
+      order: [['sort_order', 'ASC'], ['bay_code', 'ASC'], ['id', 'ASC']]
+    }),
+    User.findAll({
+      where: { is_active: true },
+      attributes: ['id', 'first_name', 'last_name', 'username', 'job_title'],
+      order: [['first_name', 'ASC'], ['last_name', 'ASC']]
+    })
+  ]);
 
   const [dailyLog] = await SimulatorDailyLog.findOrCreate({
     where: { log_date: dateStr, station_kind: stationKind },
@@ -66,8 +78,14 @@ async function ensureDailySheetData(dateStr, stationKind, userId = null) {
     }
   });
 
+  const SHIFT_USER_INCLUDES = [
+    { model: User, as: 'lead', attributes: ['id', 'first_name', 'last_name', 'username'], required: false },
+    { model: User, as: 'signer', attributes: ['id', 'first_name', 'last_name', 'username'], required: false }
+  ];
+
   let shifts = await SimulatorDailyShift.findAll({
     where: { daily_log_id: dailyLog.id },
+    include: SHIFT_USER_INCLUDES,
     order: [['shift_number', 'ASC'], ['id', 'ASC']]
   });
 
@@ -79,7 +97,8 @@ async function ensureDailySheetData(dateStr, stationKind, userId = null) {
       pre_flight_test_time: '06:40',
       lead_user_id: userId || null
     });
-    shifts = [s1];
+    const hydratedS1 = await SimulatorDailyShift.findByPk(s1.id, { include: SHIFT_USER_INCLUDES });
+    shifts = [hydratedS1 || s1];
   }
 
   const stationIds = stations.map(s => Number(s.id));
@@ -158,6 +177,7 @@ async function ensureDailySheetData(dateStr, stationKind, userId = null) {
     log: dailyLog.get({ plain: true }),
     shifts: hydratedShifts,
     stations: stations.map(s => s.get({ plain: true })),
+    staff: activeStaff.map(u => u.get({ plain: true })),
     summary: {
       total_stations: stations.length,
       in_use_count: inUseCount,
@@ -180,21 +200,43 @@ router.get('/daily-sheet', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// GET /simulators/daily-sheet/timeline — aggregated 24h timeline blocks for Sorties & Dispatch
+// GET /simulators/daily-sheet/timeline — aggregated 24h timeline blocks (shifts + maintenance) for Sorties & Dispatch
 router.get('/daily-sheet/timeline', async (req, res, next) => {
   try {
     const dateStr = resolveSheetDate(req.query.date);
-    const [tpSheet, iosSheet] = await Promise.all([
+    const dayStart = new Date(`${dateStr}T00:00:00.000Z`);
+    const dayEnd = new Date(`${dateStr}T23:59:59.999Z`);
+
+    const [tpSheet, iosSheet, dayMaint, plannedOccs, allSims] = await Promise.all([
       ensureDailySheetData(dateStr, 'TEST_PLACE', req.user?.id || null),
-      ensureDailySheetData(dateStr, 'IOS_CONSOLE', req.user?.id || null)
+      ensureDailySheetData(dateStr, 'IOS_CONSOLE', req.user?.id || null),
+      MaintenanceRecord.findAll({
+        where: {
+          simulator_id: { [Op.ne]: null },
+          status: { [Op.in]: ['SCHEDULED', 'IN_PROGRESS', 'DEFERRED'] },
+          scheduled_date: { [Op.between]: [dayStart, dayEnd] }
+        },
+        attributes: ['id', 'simulator_id', 'title', 'scheduled_date', 'downtime_hours', 'status', 'severity']
+      }),
+      expandOccurrencesInRange(dateStr, dateStr, 1).catch(() => []),
+      Simulator.findAll({ attributes: ['id', 'bay_code', 'code', 'name'] })
     ]);
+
     const sheets = [tpSheet, iosSheet];
     const { blocks, statusBySimulator } = buildTimelineShiftBlocks(sheets);
+    const maintenanceBlocks = buildTimelineMaintenanceBlocks(
+      dateStr,
+      dayMaint.map(m => m.get({ plain: true })),
+      plannedOccs,
+      allSims.map(s => s.get({ plain: true }))
+    );
+
     res.json({
       success: true,
       data: {
         date: dateStr,
         blocks,
+        maintenanceBlocks,
         statusBySimulator,
         operatingHours: {
           TEST_PLACE: tpSheet.log,
@@ -281,7 +323,158 @@ router.post('/daily-sheet/shifts', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// PUT /simulators/daily-sheet/shifts/:shiftId — update pre-flight test time or shift label
+// POST /simulators/daily-sheet/copy-previous — copy operating hours, shifts & carry over unresolved NA faults
+router.post('/daily-sheet/copy-previous', async (req, res, next) => {
+  const transaction = await sequelize.transaction();
+  try {
+    const dateStr = resolveSheetDate(req.body?.date || req.query?.date);
+    const stationKind = resolveStationKind(req.body?.station_kind || req.query?.station_kind, 'TEST_PLACE');
+
+    const prevLog = await SimulatorDailyLog.findOne({
+      where: {
+        station_kind: stationKind,
+        log_date: { [Op.lt]: dateStr }
+      },
+      include: [{
+        model: SimulatorDailyShift,
+        as: 'shifts',
+        include: [{ model: SimulatorShiftEntry, as: 'entries' }]
+      }],
+      order: [['log_date', 'DESC']],
+      transaction
+    });
+
+    if (!prevLog) {
+      await transaction.rollback();
+      return res.status(404).json({ success: false, message: 'No previous operating sheet found to copy from.' });
+    }
+
+    const [targetLog] = await SimulatorDailyLog.findOrCreate({
+      where: { log_date: dateStr, station_kind: stationKind },
+      defaults: {
+        log_date: dateStr,
+        station_kind: stationKind,
+        system_readiness_time: prevLog.system_readiness_time || '06:30',
+        post_testing_time: prevLog.post_testing_time || '17:00',
+        logout_time: prevLog.logout_time || '18:00',
+        general_notes: prevLog.general_notes || null,
+        updated_by: req.user?.id || null
+      },
+      transaction
+    });
+
+    await targetLog.update({
+      system_readiness_time: prevLog.system_readiness_time || targetLog.system_readiness_time,
+      post_testing_time: prevLog.post_testing_time || targetLog.post_testing_time,
+      logout_time: prevLog.logout_time || targetLog.logout_time,
+      updated_by: req.user?.id || null
+    }, { transaction });
+
+    const prevShifts = [...(prevLog.shifts || [])].sort(
+      (a, b) => (a.shift_number || 0) - (b.shift_number || 0) || (a.id || 0) - (b.id || 0)
+    );
+    const latestPrevShift = prevShifts[prevShifts.length - 1];
+    const carryNaMap = new Map();
+    if (latestPrevShift) {
+      for (const e of (latestPrevShift.entries || [])) {
+        if (e.usage_status === 'NA') {
+          const noteTxt = String(e.notes || '').trim();
+          carryNaMap.set(
+            Number(e.simulator_id),
+            noteTxt
+              ? (noteTxt.startsWith('[Carry-Over]') ? noteTxt : `[Carry-Over ${prevLog.log_date}] ${noteTxt}`)
+              : `[Carry-Over ${prevLog.log_date}] Station remained NA from previous shift.`
+          );
+        }
+      }
+    }
+
+    const stations = await Simulator.findAll({
+      where: { station_kind: stationKind },
+      order: [['sort_order', 'ASC'], ['bay_code', 'ASC'], ['id', 'ASC']],
+      transaction
+    });
+
+    const existingTargetShifts = await SimulatorDailyShift.findAll({
+      where: { daily_log_id: targetLog.id },
+      order: [['shift_number', 'ASC']],
+      transaction
+    });
+
+    const shiftsToMirror = prevShifts.length > 0 ? prevShifts : [{
+      shift_number: 1,
+      shift_name: 'SHIFT 1',
+      pre_flight_test_time: '06:40',
+      lead_user_id: req.user?.id || null
+    }];
+
+    for (const pShift of shiftsToMirror) {
+      let targetShift = existingTargetShifts.find(s => Number(s.shift_number) === Number(pShift.shift_number));
+      if (!targetShift) {
+        targetShift = await SimulatorDailyShift.create({
+          daily_log_id: targetLog.id,
+          shift_number: pShift.shift_number,
+          shift_name: pShift.shift_name || `SHIFT ${pShift.shift_number}`,
+          pre_flight_test_time: pShift.pre_flight_test_time || '06:40',
+          lead_user_id: pShift.lead_user_id || req.user?.id || null
+        }, { transaction });
+      } else {
+        await targetShift.update({
+          pre_flight_test_time: pShift.pre_flight_test_time || targetShift.pre_flight_test_time,
+          lead_user_id: pShift.lead_user_id || targetShift.lead_user_id
+        }, { transaction });
+      }
+
+      const existingEntries = await SimulatorShiftEntry.findAll({
+        where: { shift_id: targetShift.id },
+        transaction
+      });
+      const entryBySim = new Map(existingEntries.map(e => [Number(e.simulator_id), e]));
+
+      for (const st of stations) {
+        const simId = Number(st.id);
+        const carryNote = carryNaMap.get(simId);
+        const isNa = Boolean(carryNote) || st.status === 'AOG';
+        const ex = entryBySim.get(simId);
+        if (!ex) {
+          await SimulatorShiftEntry.create({
+            shift_id: targetShift.id,
+            simulator_id: simId,
+            usage_status: isNa ? 'NA' : 'READY',
+            sim_testing_start: '00:00',
+            sim_testing_end: '00:00',
+            notes: carryNote || null,
+            updated_by: req.user?.id || null
+          }, { transaction });
+        } else if (isNa && ex.usage_status !== 'IN_USE') {
+          await ex.update({
+            usage_status: 'NA',
+            sim_testing_start: '00:00',
+            sim_testing_end: '00:00',
+            notes: ex.notes || carryNote || null,
+            updated_by: req.user?.id || null
+          }, { transaction });
+        }
+      }
+    }
+
+    await transaction.commit();
+    const updatedSheet = await ensureDailySheetData(dateStr, stationKind, req.user?.id || null);
+    res.json({
+      success: true,
+      data: updatedSheet,
+      meta: {
+        copiedFromDate: prevLog.log_date,
+        carriedOverNaCount: carryNaMap.size
+      }
+    });
+  } catch (err) {
+    await transaction.rollback();
+    next(err);
+  }
+});
+
+// PUT /simulators/daily-sheet/shifts/:shiftId — update pre-flight test time, label, or Test Leader
 router.put('/daily-sheet/shifts/:shiftId', async (req, res, next) => {
   try {
     const shiftId = parseInt(req.params.shiftId, 10);
@@ -297,9 +490,50 @@ router.put('/daily-sheet/shifts/:shiftId', async (req, res, next) => {
     if (req.body?.shift_name !== undefined && String(req.body.shift_name).trim()) {
       updates.shift_name = String(req.body.shift_name).trim().toUpperCase().slice(0, 40);
     }
+    if (req.body?.lead_user_id !== undefined) {
+      if (req.body.lead_user_id === null || req.body.lead_user_id === '') {
+        updates.lead_user_id = null;
+      } else {
+        const uid = Number(req.body.lead_user_id);
+        if (!Number.isInteger(uid) || uid < 1) {
+          return res.status(400).json({ success: false, message: 'Invalid lead_user_id.' });
+        }
+        updates.lead_user_id = uid;
+      }
+    }
 
     await shift.update(updates);
-    res.json({ success: true, data: shift });
+    const full = await SimulatorDailyShift.findByPk(shift.id, {
+      include: [
+        { model: User, as: 'lead', attributes: ['id', 'first_name', 'last_name', 'username'], required: false },
+        { model: User, as: 'signer', attributes: ['id', 'first_name', 'last_name', 'username'], required: false }
+      ]
+    });
+    res.json({ success: true, data: full || shift });
+  } catch (err) { next(err); }
+});
+
+// POST /simulators/daily-sheet/shifts/:shiftId/sign-off — official Test Leader shift handover sign-off
+router.post('/daily-sheet/shifts/:shiftId/sign-off', async (req, res, next) => {
+  try {
+    const shiftId = parseInt(req.params.shiftId, 10);
+    if (Number.isNaN(shiftId)) return res.status(400).json({ success: false, message: 'Invalid shiftId' });
+
+    const shift = await SimulatorDailyShift.findByPk(shiftId);
+    if (!shift) return res.status(404).json({ success: false, message: 'Shift not found' });
+
+    await shift.update({
+      signed_off_at: new Date(),
+      signed_off_by: req.user?.id || null
+    });
+
+    const full = await SimulatorDailyShift.findByPk(shift.id, {
+      include: [
+        { model: User, as: 'lead', attributes: ['id', 'first_name', 'last_name', 'username'], required: false },
+        { model: User, as: 'signer', attributes: ['id', 'first_name', 'last_name', 'username'], required: false }
+      ]
+    });
+    res.json({ success: true, data: full || shift });
   } catch (err) { next(err); }
 });
 
@@ -432,7 +666,40 @@ router.patch('/daily-sheet/entries/:entryId', async (req, res, next) => {
       updates.notes = String(req.body.notes || '').trim() || null;
     }
 
+    const prevStatus = entry.usage_status;
     await entry.update(updates);
+
+    // Sync NA <-> Simulator status and trigger proactive alert on newly marked NA
+    if (nextStatus !== prevStatus && entry.simulator_id) {
+      const sim = await Simulator.findByPk(entry.simulator_id);
+      if (sim) {
+        if (nextStatus === 'NA') {
+          if (sim.status !== 'AOG') {
+            await sim.update({ status: 'AOG' });
+          }
+          await broadcastOperationalAlert({
+            req,
+            type: 'STATION_NA',
+            title: `Station Marked NA: ${sim.bay_code} (${sim.name})`,
+            body: updates.notes || entry.notes || `${sim.name} was marked Not Available (NA) on the daily shift sheet.`,
+            link: '/simulators',
+            excludeUserId: req.user?.id || null
+          });
+        } else if (prevStatus === 'NA' && sim.status === 'AOG') {
+          const openAogCount = await MaintenanceRecord.count({
+            where: {
+              simulator_id: sim.id,
+              severity: 'AOG',
+              status: { [Op.in]: ['SCHEDULED', 'IN_PROGRESS', 'DEFERRED'] }
+            }
+          });
+          if (openAogCount === 0) {
+            await sim.update({ status: 'READY' });
+          }
+        }
+      }
+    }
+
     const plain = entry.get({ plain: true });
     res.json({
       success: true,
@@ -444,14 +711,16 @@ router.patch('/daily-sheet/entries/:entryId', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// GET /simulators/summary — fleet readiness & QTG summary
+// GET /simulators/summary — fleet readiness & QTG summary cleanly separated by FFS_BAY, TEST_PLACE, IOS_CONSOLE
 router.get('/summary', async (req, res, next) => {
   try {
-    const simWhere = {};
-    if (req.query.station_kind && VALID_STATION_KINDS.has(String(req.query.station_kind).trim().toUpperCase())) {
-      simWhere.station_kind = String(req.query.station_kind).trim().toUpperCase();
-    }
-    const [sims, sorties, maint, qtg, subs] = await Promise.all([
+    const requestedKind = req.query.station_kind && VALID_STATION_KINDS.has(String(req.query.station_kind).trim().toUpperCase())
+      ? String(req.query.station_kind).trim().toUpperCase()
+      : null;
+    const simWhere = requestedKind ? { station_kind: requestedKind } : {};
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    const [sims, sorties, maint, qtg, subs, todayLogs] = await Promise.all([
       Simulator.findAll({ where: simWhere, order: [['sort_order', 'ASC'], ['bay_code', 'ASC']] }),
       Operation.findAll({
         where: { simulator_id: { [Op.ne]: null }, status: { [Op.ne]: 'CANCELLED' } },
@@ -459,17 +728,30 @@ router.get('/summary', async (req, res, next) => {
       }),
       MaintenanceRecord.findAll({
         where: { simulator_id: { [Op.ne]: null }, status: { [Op.in]: ['SCHEDULED', 'IN_PROGRESS', 'DEFERRED'] } },
-        attributes: ['id', 'simulator_id', 'status', 'severity']
+        attributes: ['id', 'simulator_id', 'status', 'severity', 'mel_category', 'mel_expiry_date']
       }),
       SimulatorQtgRecord.findAll({
         attributes: ['id', 'simulator_id', 'status', 'quarter', 'year']
       }),
       SimulatorSubsystem.findAll({
         attributes: ['id', 'simulator_id', 'status']
+      }),
+      SimulatorDailyLog.findAll({
+        where: { log_date: todayStr },
+        include: [{
+          model: SimulatorDailyShift,
+          as: 'shifts',
+          include: [{ model: SimulatorShiftEntry, as: 'entries' }]
+        }]
       })
     ]);
 
     const now = new Date();
+    const soonMs = now.getTime() + 7 * 86400000;
+    const ffsList = requestedKind ? sims : sims.filter(s => (s.station_kind || 'FFS_BAY') === 'FFS_BAY');
+    const metricBase = ffsList.length > 0 ? ffsList : sims;
+    const metricBaseIds = new Set(metricBase.map(s => Number(s.id)));
+
     let readyCount = 0;
     let inSortieCount = 0;
     let degradedCount = 0;
@@ -482,42 +764,120 @@ router.get('/summary', async (req, res, next) => {
 
     for (const s of sims) {
       const plain = s.get({ plain: true });
-      if (plain.status === 'READY' || plain.status === 'PRE_FLIGHT') readyCount += 1;
-      else if (plain.status === 'IN_SORTIE') inSortieCount += 1;
-      else if (plain.status === 'DEGRADED') degradedCount += 1;
-      else if (plain.status === 'AOG' || plain.status === 'MAINTENANCE') aogOrMaintCount += 1;
+      const simId = Number(plain.id);
+      const isMetricBase = metricBaseIds.has(simId);
+      if (isMetricBase) {
+        if (plain.status === 'READY' || plain.status === 'PRE_FLIGHT') readyCount += 1;
+        else if (plain.status === 'IN_SORTIE') inSortieCount += 1;
+        else if (plain.status === 'DEGRADED') degradedCount += 1;
+        else if (plain.status === 'AOG' || plain.status === 'MAINTENANCE') aogOrMaintCount += 1;
+      }
 
       const t = computeSimulatorTelemetry(plain, {
-        sorties: sorties.filter(x => Number(x.simulator_id) === Number(plain.id)).map(x => x.get({ plain: true })),
-        maintenance: maint.filter(x => Number(x.simulator_id) === Number(plain.id)).map(x => x.get({ plain: true })),
-        qtgRecords: qtg.filter(x => Number(x.simulator_id) === Number(plain.id)).map(x => x.get({ plain: true })),
-        subsystems: subs.filter(x => Number(x.simulator_id) === Number(plain.id)).map(x => x.get({ plain: true })),
+        sorties: sorties.filter(x => Number(x.simulator_id) === simId).map(x => x.get({ plain: true })),
+        maintenance: maint.filter(x => Number(x.simulator_id) === simId).map(x => x.get({ plain: true })),
+        qtgRecords: qtg.filter(x => Number(x.simulator_id) === simId).map(x => x.get({ plain: true })),
+        subsystems: subs.filter(x => Number(x.simulator_id) === simId).map(x => x.get({ plain: true })),
         now
       });
 
       totalFlightHoursToday += t.todayFlightHours;
-      reliabilitySum += t.dispatchReliabilityPct;
-      qtgTotal += t.qtgSummary.total;
-      qtgPassed += t.qtgSummary.passed + t.qtgSummary.warn;
-      if (t.certificate.status === 'EXPIRING_SOON' || t.certificate.status === 'EXPIRED') {
-        certExpiringSoon += 1;
+      if (isMetricBase) {
+        reliabilitySum += t.dispatchReliabilityPct;
+        qtgTotal += t.qtgSummary.total;
+        qtgPassed += t.qtgSummary.passed + t.qtgSummary.warn;
+        if (t.certificate.status === 'EXPIRING_SOON' || t.certificate.status === 'EXPIRED') {
+          certExpiringSoon += 1;
+        }
       }
     }
 
-    const fleetCount = sims.length;
+    const summarizeKindLive = (kind) => {
+      const kindSims = sims.filter(s => s.station_kind === kind);
+      const log = todayLogs.find(l => l.station_kind === kind);
+      let inUse = 0;
+      let ready = 0;
+      let na = 0;
+      let totalMin = 0;
+
+      if (log && Array.isArray(log.shifts) && log.shifts.length > 0) {
+        const sortedShifts = [...log.shifts].sort((a, b) => (a.shift_number || 0) - (b.shift_number || 0));
+        sortedShifts.forEach((sh, idx) => {
+          for (const e of (sh.entries || [])) {
+            totalMin += computeTestingDurationMinutes(e.sim_testing_start, e.sim_testing_end);
+            if (idx === 0) {
+              if (e.usage_status === 'IN_USE') inUse += 1;
+              else if (e.usage_status === 'NA') na += 1;
+              else ready += 1;
+            }
+          }
+        });
+      } else {
+        for (const st of kindSims) {
+          if (st.status === 'AOG') na += 1;
+          else if (st.status === 'IN_SORTIE') inUse += 1;
+          else ready += 1;
+        }
+      }
+
+      return {
+        total: kindSims.length,
+        in_use: inUse,
+        ready,
+        na,
+        today_shift_hours: Number((totalMin / 60).toFixed(1))
+      };
+    };
+
+    const testPlacesLive = summarizeKindLive('TEST_PLACE');
+    const iosConsolesLive = summarizeKindLive('IOS_CONSOLE');
+
+    let melActiveCount = 0;
+    let melExpiringCount = 0;
+    for (const m of maint) {
+      if (m.mel_category && m.mel_category !== 'NONE') {
+        melActiveCount += 1;
+        if (m.mel_expiry_date) {
+          const expMs = new Date(`${String(m.mel_expiry_date).slice(0, 10)}T23:59:59Z`).getTime();
+          if (!Number.isNaN(expMs) && expMs <= soonMs) melExpiringCount += 1;
+        }
+      }
+    }
+
+    const baseCount = metricBase.length;
+    const avgDispatchRel = baseCount > 0 ? Math.round((reliabilitySum / baseCount) * 10) / 10 : 100;
+    const qtgPct = qtgTotal > 0 ? Math.round((qtgPassed / qtgTotal) * 100) : 100;
+    const todayStationHours = Number((testPlacesLive.today_shift_hours + iosConsolesLive.today_shift_hours).toFixed(1));
+
     res.json({
       success: true,
       data: {
-        total_simulators: fleetCount,
+        total_simulators: sims.length,
         ready_count: readyCount,
         in_sortie_count: inSortieCount,
         degraded_count: degradedCount,
         aog_or_maint_count: aogOrMaintCount,
         today_flight_hours: Math.round(totalFlightHoursToday * 10) / 10,
-        avg_dispatch_reliability_pct: fleetCount > 0 ? Math.round((reliabilitySum / fleetCount) * 10) / 10 : 100,
-        qtg_compliance_pct: qtgTotal > 0 ? Math.round((qtgPassed / qtgTotal) * 100) : 100,
+        today_station_hours: todayStationHours,
+        avg_dispatch_reliability_pct: avgDispatchRel,
+        qtg_compliance_pct: qtgPct,
         cert_expiring_count: certExpiringSoon,
-        open_snags_count: maint.length
+        open_snags_count: maint.length,
+        mel_active_count: melActiveCount,
+        mel_expiring_count: melExpiringCount,
+        ffs_fleet: {
+          total: baseCount,
+          ready: readyCount,
+          in_sortie: inSortieCount,
+          degraded: degradedCount,
+          aog_or_maint: aogOrMaintCount,
+          today_flight_hours: Math.round(totalFlightHoursToday * 10) / 10,
+          avg_dispatch_reliability_pct: avgDispatchRel,
+          qtg_compliance_pct: qtgPct,
+          cert_expiring_count: certExpiringSoon
+        },
+        test_places_live: testPlacesLive,
+        ios_consoles_live: iosConsolesLive
       }
     });
   } catch (err) { next(err); }
@@ -687,7 +1047,7 @@ router.get('/:id', validateIdParam, async (req, res, next) => {
     const sim = await Simulator.findByPk(req.params.id);
     if (!sim) return res.status(404).json({ success: false, message: 'Simulator not found' });
 
-    const [subsystems, qtgRecords, sorties, maintenanceRecords, allItems] = await Promise.all([
+    const [subsystems, qtgRecords, sorties, maintenanceRecords, allItems, recentStockMovements] = await Promise.all([
       SimulatorSubsystem.findAll({
         where: { simulator_id: sim.id },
         order: [['subsystem_code', 'ASC'], ['name', 'ASC']]
@@ -708,13 +1068,25 @@ router.get('/:id', validateIdParam, async (req, res, next) => {
       }),
       MaintenanceRecord.findAll({
         where: { simulator_id: sim.id },
-        include: [{ model: User, as: 'technician', attributes: ['id', 'first_name', 'last_name', 'username'] }],
+        include: [
+          { model: User, as: 'technician', attributes: ['id', 'first_name', 'last_name', 'username'] },
+          { model: WikiArticle, as: 'wikiArticle', attributes: ['id', 'title', 'slug'], required: false }
+        ],
         order: [['scheduled_date', 'DESC']],
         limit: 40
       }),
       InventoryItem.findAll({
         where: { is_active: true },
-        attributes: ['id', 'sku', 'part_number', 'name', 'unit', 'quantity', 'reorder_point', 'part_classification', 'aog_critical', 'compatible_models']
+        attributes: ['id', 'sku', 'part_number', 'name', 'unit', 'quantity', 'reorder_point', 'part_classification', 'aog_critical', 'compatible_models', 'lru_status', 'on_order_qty', 'expected_delivery_date']
+      }),
+      StockMovement.findAll({
+        where: { simulator_id: sim.id },
+        include: [
+          { model: InventoryItem, as: 'item', attributes: ['id', 'sku', 'name', 'unit'] },
+          { model: User, as: 'user', attributes: ['id', 'first_name', 'last_name'] }
+        ],
+        order: [['movement_date', 'DESC']],
+        limit: 15
       })
     ]);
 
@@ -731,9 +1103,22 @@ router.get('/:id', validateIdParam, async (req, res, next) => {
         });
       });
 
+    const plainMaint = maintenanceRecords.map(x => x.get({ plain: true }));
+    const nowMs = Date.now();
+    const melRecords = plainMaint
+      .filter(m => ['SCHEDULED', 'IN_PROGRESS', 'DEFERRED'].includes(m.status) && m.mel_category && m.mel_category !== 'NONE')
+      .map(m => {
+        let daysRemaining = null;
+        if (m.mel_expiry_date) {
+          const expMs = new Date(`${String(m.mel_expiry_date).slice(0, 10)}T23:59:59Z`).getTime();
+          if (!Number.isNaN(expMs)) daysRemaining = Math.ceil((expMs - nowMs) / 86400000);
+        }
+        return { ...m, days_remaining: daysRemaining };
+      });
+
     const telemetry = computeSimulatorTelemetry(plainSim, {
       sorties: sorties.map(x => x.get({ plain: true })),
-      maintenance: maintenanceRecords.map(x => x.get({ plain: true })),
+      maintenance: plainMaint,
       qtgRecords: qtgRecords.map(x => x.get({ plain: true })),
       subsystems: subsystems.map(x => x.get({ plain: true }))
     });
@@ -747,6 +1132,8 @@ router.get('/:id', validateIdParam, async (req, res, next) => {
         qtgRecords,
         sorties,
         maintenanceRecords,
+        melRecords,
+        recentStockMovements,
         compatibleSpares
       }
     });
@@ -958,6 +1345,83 @@ router.put('/:id/qtg/:qtgId', validateIdParam, async (req, res, next) => {
       include: [{ model: User, as: 'executor', attributes: ['id', 'first_name', 'last_name', 'username'] }]
     });
     res.json({ success: true, data: full || record });
+  } catch (err) { next(err); }
+});
+
+// POST /simulators/:id/qtg/clone-year — clone previous/source year's QTG schedule into target year as PENDING
+router.post('/:id/qtg/clone-year', validateIdParam, async (req, res, next) => {
+  try {
+    const sim = await Simulator.findByPk(req.params.id, { attributes: ['id'] });
+    if (!sim) return res.status(404).json({ success: false, message: 'Simulator not found' });
+
+    const targetYear = Number(req.body?.target_year) || (new Date().getUTCFullYear() + 1);
+    if (!Number.isInteger(targetYear) || targetYear < 2020 || targetYear > 2050) {
+      return res.status(400).json({ success: false, message: 'Valid target_year (2020–2050) is required.' });
+    }
+
+    let sourceYear = Number(req.body?.source_year) || (targetYear - 1);
+    let sourceRows = await SimulatorQtgRecord.findAll({
+      where: { simulator_id: sim.id, year: sourceYear },
+      order: [['quarter', 'ASC'], ['test_code', 'ASC']]
+    });
+
+    if (!sourceRows.length) {
+      const latest = await SimulatorQtgRecord.findOne({
+        where: { simulator_id: sim.id, year: { [Op.ne]: targetYear } },
+        order: [['year', 'DESC']]
+      });
+      if (latest) {
+        sourceYear = latest.year;
+        sourceRows = await SimulatorQtgRecord.findAll({
+          where: { simulator_id: sim.id, year: sourceYear },
+          order: [['quarter', 'ASC'], ['test_code', 'ASC']]
+        });
+      }
+    }
+
+    if (!sourceRows.length) {
+      return res.status(400).json({ success: false, message: 'No existing QTG records found to clone.' });
+    }
+
+    const existingTarget = await SimulatorQtgRecord.findAll({
+      where: { simulator_id: sim.id, year: targetYear },
+      attributes: ['quarter', 'test_code']
+    });
+    const existingKeys = new Set(existingTarget.map(r => `${r.quarter}::${r.test_code}`));
+
+    const quarterDueDefault = { Q1: '03-31', Q2: '06-30', Q3: '09-30', Q4: '12-15' };
+    const toInsert = [];
+    for (const row of sourceRows) {
+      const key = `${row.quarter}::${row.test_code}`;
+      if (existingKeys.has(key)) continue;
+      const dueSuffix = row.due_date ? String(row.due_date).slice(5, 10) : (quarterDueDefault[row.quarter] || '12-15');
+      toInsert.push({
+        simulator_id: sim.id,
+        test_code: row.test_code,
+        title: row.title,
+        category: row.category,
+        quarter: row.quarter,
+        year: targetYear,
+        mode: row.mode || 'AUTO',
+        status: 'PENDING',
+        due_date: `${targetYear}-${dueSuffix}`,
+        notes: null
+      });
+    }
+
+    if (toInsert.length > 0) {
+      await SimulatorQtgRecord.bulkCreate(toInsert);
+    }
+
+    res.status(201).json({
+      success: true,
+      data: {
+        source_year: sourceYear,
+        target_year: targetYear,
+        created_count: toInsert.length,
+        skipped_count: sourceRows.length - toInsert.length
+      }
+    });
   } catch (err) { next(err); }
 });
 

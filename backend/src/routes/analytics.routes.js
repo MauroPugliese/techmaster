@@ -12,6 +12,8 @@ const {
   buildExecutiveInsights,
   toDateKey
 } = require('../services/analytics-helpers.service');
+const { computeTestingDurationMinutes } = require('../services/simulator-helpers.service');
+const { computeReliabilityMetrics } = require('../services/maintenance-helpers.service');
 
 function buildSqlDateRange(col, from, to, prefix, replacements) {
   let sql = '';
@@ -596,6 +598,7 @@ router.get('/operations-metrics', parseDateFilter, async (req, res, next) => {
         s.id AS simulator_id,
         s.code AS simulator_code,
         s.bay_code,
+        s.station_kind,
         s.aircraft_type,
         s.status AS bay_status,
         s.daily_available_hours,
@@ -605,8 +608,24 @@ router.get('/operations-metrics', parseDateFilter, async (req, res, next) => {
         COALESCE(SUM(COALESCE(o.lost_training_minutes, 0)), 0) AS lost_minutes
       FROM simulators s
       LEFT JOIN operations o ON o.simulator_id = s.id AND o.status != 'CANCELLED' ${dateFilter}
-      GROUP BY s.id, s.code, s.bay_code, s.aircraft_type, s.status, s.daily_available_hours
-      ORDER BY s.bay_code ASC
+      GROUP BY s.id, s.code, s.bay_code, s.station_kind, s.aircraft_type, s.status, s.daily_available_hours
+      ORDER BY s.sort_order ASC, s.bay_code ASC
+    `;
+
+    const shiftRangeCond = buildSqlDateRange('dl.log_date', window.from ? toDateKey(window.from) : null, window.to ? toDateKey(window.to) : null, 'sh', replacements);
+    const shiftEntriesQuery = `
+      SELECT e.simulator_id, e.sim_testing_start, e.sim_testing_end, e.usage_status
+      FROM simulator_shift_entries e
+      JOIN simulator_daily_shifts ds ON e.shift_id = ds.id
+      JOIN simulator_daily_logs dl ON ds.daily_log_id = dl.id
+      WHERE 1=1 ${shiftRangeCond}
+    `;
+
+    const maintRelCond = buildSqlDateRange('scheduled_date', window.from, window.to, 'mrRel', replacements);
+    const maintReliabilityQuery = `
+      SELECT id, type, status, severity, is_snag, subsystem_code, downtime_hours, lost_training_hours, mel_category, mel_expiry_date
+      FROM maintenance_records
+      WHERE deleted_at IS NULL ${maintRelCond}
     `;
 
     const snagsBySubsystemQuery = `
@@ -635,33 +654,53 @@ router.get('/operations-metrics', parseDateFilter, async (req, res, next) => {
       LIMIT 8
     `;
 
-    const [[simScorecardRows], [snagSubRows], [custRows]] = await Promise.all([
+    const [[simScorecardRows], [snagSubRows], [custRows], [shiftEntriesRows], [maintRelRows]] = await Promise.all([
       sequelize.query(simScorecardQuery, { replacements }).catch(() => [[]]),
       sequelize.query(snagsBySubsystemQuery).catch(() => [[]]),
-      sequelize.query(hoursByCustomerQuery, { replacements }).catch(() => [[]])
+      sequelize.query(hoursByCustomerQuery, { replacements }).catch(() => [[]]),
+      sequelize.query(shiftEntriesQuery, { replacements }).catch(() => [[]]),
+      sequelize.query(maintReliabilityQuery, { replacements }).catch(() => [[]])
     ]);
 
+    const shiftMinBySim = new Map();
+    let totalShiftMin = 0;
+    for (const se of shiftEntriesRows) {
+      const dur = computeTestingDurationMinutes(se.sim_testing_start, se.sim_testing_end);
+      totalShiftMin += dur;
+      const sid = Number(se.simulator_id);
+      if (sid && dur > 0) {
+        shiftMinBySim.set(sid, (shiftMinBySim.get(sid) || 0) + dur);
+      }
+    }
+
     const bySimulator = simScorecardRows.map((r) => {
+      const simId = Number(r.simulator_id);
       const schedH = Math.round((Number(r.scheduled_hours) || 0) * 10) / 10;
       const actualH = Math.round((Number(r.actual_hours) || 0) * 10) / 10;
+      const shiftH = Math.round(((shiftMinBySim.get(simId) || 0) / 60) * 10) / 10;
       const lostMin = Math.max(0, Number(r.lost_minutes) || 0);
       const schedMin = schedH * 60;
       const reliabilityPct = schedMin > 0
         ? Math.max(0, Math.min(100, Math.round(((schedMin - lostMin) / schedMin) * 1000) / 10))
         : 100;
       return {
-        simulator_id: Number(r.simulator_id),
+        simulator_id: simId,
         simulator_code: r.simulator_code,
         bay_code: r.bay_code,
+        station_kind: r.station_kind || 'FFS_BAY',
         aircraft_type: r.aircraft_type,
         bay_status: r.bay_status,
         sortie_count: Number(r.sortie_count) || 0,
         scheduled_hours: schedH,
         actual_hours: actualH,
+        shift_hours: shiftH,
         lost_minutes: lostMin,
         reliability_pct: reliabilityPct
       };
     });
+
+    const totalOperatingHours = Number(((totalMinutes + totalShiftMin) / 60).toFixed(1));
+    const reliability = computeReliabilityMetrics(maintRelRows, totalOperatingHours, now);
 
     res.json({
       success: true,
@@ -691,6 +730,8 @@ router.get('/operations-metrics', parseDateFilter, async (req, res, next) => {
         },
         simulatorMetrics: {
           bySimulator,
+          totalShiftHours: Number((totalShiftMin / 60).toFixed(1)),
+          reliability,
           snagsBySubsystem: snagSubRows.map((r) => ({
             subsystem: r.subsystem,
             count: Number(r.count) || 0,

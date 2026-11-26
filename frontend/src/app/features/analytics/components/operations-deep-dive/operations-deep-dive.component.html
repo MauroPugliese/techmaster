@@ -165,12 +165,33 @@
     </div>
   </div>
 
+  <!-- ── Reliability Engineering Strip (MTBF / MTTR / Prev vs Corr / MEL) ─── -->
+  <div class="an-ops-insights" *ngIf="simulatorMetrics.reliability as rel">
+    <div class="an-insight-card">
+      <div class="an-insight-domain">Fleet MTBF / MTTR</div>
+      <div class="an-insight-val an-num">{{ rel.mtbfHours !== null ? (rel.mtbfHours + 'h') : 'N/A' }} · {{ rel.mttrHours }}h</div>
+      <div class="an-insight-detail">Mean Time Between Failures / Mean Time To Repair</div>
+    </div>
+
+    <div class="an-insight-card tone-ok">
+      <div class="an-insight-domain">Preventive vs Corrective</div>
+      <div class="an-insight-val an-num">{{ rel.preventiveCount }} Prev · {{ rel.correctiveCount }} Corr</div>
+      <div class="an-insight-detail">{{ rel.aogCount }} AOG fault event(s) in window</div>
+    </div>
+
+    <div class="an-insight-card">
+      <div class="an-insight-domain">TP / IOS Shifts &amp; Active MEL</div>
+      <div class="an-insight-val an-num">{{ simulatorMetrics.totalShiftHours ?? 0 }}h · {{ rel.activeMelCount }} MEL</div>
+      <div class="an-insight-detail">Daily station shift hours · {{ rel.melExpiringSoonCount }} MEL expiring &lt;= 7d</div>
+    </div>
+  </div>
+
   <!-- ── CAE Simulator Telemetry: Reliability Scorecard, Subsystems & Customers -->
   <div class="card an-card" *ngIf="simulatorMetrics.bySimulator.length > 0">
     <div class="an-card-head">
       <div>
-        <h3>Simulator Bay Dispatch Reliability &amp; Utilization Scorecard</h3>
-        <p>Per-bay training delivery, lost training minutes &amp; technical dispatch rate</p>
+        <h3>Simulator Bay &amp; Station Utilization Scorecard</h3>
+        <p>Per-bay training sorties, Test Place / IOS shift hours, lost minutes &amp; technical dispatch rate</p>
       </div>
       <span class="an-badge-pill">FSTD Fleet</span>
     </div>
@@ -183,7 +204,8 @@
             <th>Simulator</th>
             <th>Aircraft</th>
             <th>Sorties</th>
-            <th>Scheduled vs Actual Hrs</th>
+            <th>Sched / Actual Hrs</th>
+            <th>Shift Hrs</th>
             <th>Lost Min</th>
             <th>Dispatch Reliability</th>
           </tr>
@@ -195,6 +217,7 @@
             <td>{{row.aircraft_type}}</td>
             <td class="an-num">{{row.sortie_count}}</td>
             <td class="an-num">{{row.scheduled_hours}}h / {{row.actual_hours}}h</td>
+            <td class="an-num">{{row.shift_hours ?? 0}}h</td>
             <td class="an-num" [style.color]="row.lost_minutes > 0 ? '#b91c1c' : '#475569'">{{row.lost_minutes}}m</td>
             <td>
               <div class="an-rel-cell">

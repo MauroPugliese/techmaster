@@ -674,6 +674,51 @@ const MIGRATIONS = [
         }
       }
     }
+  },
+  {
+    name: '008_cae_enterprise_ops',
+    description: 'Add LRU/RMA/AOG/On-Order spare tracking, MEL/SOP/parts-delta fields on maintenance, shift sign-off, and stock movement simulator traceability',
+    up: async (queryInterface) => {
+      const addIfMissing = async (table, col, def) => {
+        const cols = await queryInterface.describeTable(table).catch(() => ({}));
+        if (!cols[col]) {
+          await queryInterface.addColumn(table, col, def);
+        }
+      };
+
+      // 1. simulator_daily_shifts: sign-off tracking
+      await addIfMissing('simulator_daily_shifts', 'signed_off_at', { type: Sequelize.DATE, allowNull: true });
+      await addIfMissing('simulator_daily_shifts', 'signed_off_by', { type: Sequelize.INTEGER.UNSIGNED, allowNull: true });
+
+      // 2. maintenance_records: parts/labor costs, stock deduction delta snapshot, structured MEL & Wiki SOP link
+      await addIfMissing('maintenance_records', 'parts_cost', { type: Sequelize.DECIMAL(10, 2), allowNull: true });
+      await addIfMissing('maintenance_records', 'labor_cost', { type: Sequelize.DECIMAL(10, 2), allowNull: true });
+      await addIfMissing('maintenance_records', 'stock_deducted_snapshot', { type: Sequelize.JSON, allowNull: true });
+      await addIfMissing('maintenance_records', 'mel_category', {
+        type: Sequelize.ENUM('NONE', 'CAT_A', 'CAT_B', 'CAT_C', 'CAT_D'),
+        allowNull: false,
+        defaultValue: 'NONE'
+      });
+      await addIfMissing('maintenance_records', 'mel_expiry_date', { type: Sequelize.DATEONLY, allowNull: true });
+      await addIfMissing('maintenance_records', 'wiki_article_id', { type: Sequelize.INTEGER.UNSIGNED, allowNull: true });
+
+      // 3. inventory_items: subsystem, S/N, LRU status, installed simulator, RMA & on-order ETA
+      await addIfMissing('inventory_items', 'subsystem_code', { type: Sequelize.STRING(60), allowNull: true });
+      await addIfMissing('inventory_items', 'serial_number', { type: Sequelize.STRING(100), allowNull: true });
+      await addIfMissing('inventory_items', 'lru_status', {
+        type: Sequelize.ENUM('SERVICEABLE', 'INSTALLED', 'UNSERVICEABLE', 'IN_REPAIR_RMA', 'QUARANTINE'),
+        allowNull: false,
+        defaultValue: 'SERVICEABLE'
+      });
+      await addIfMissing('inventory_items', 'installed_simulator_id', { type: Sequelize.INTEGER.UNSIGNED, allowNull: true });
+      await addIfMissing('inventory_items', 'rma_reference', { type: Sequelize.STRING(100), allowNull: true });
+      await addIfMissing('inventory_items', 'on_order_qty', { type: Sequelize.INTEGER, allowNull: false, defaultValue: 0 });
+      await addIfMissing('inventory_items', 'expected_delivery_date', { type: Sequelize.DATEONLY, allowNull: true });
+
+      // 4. stock_movements: explicit simulator & work-order traceability
+      await addIfMissing('stock_movements', 'simulator_id', { type: Sequelize.INTEGER.UNSIGNED, allowNull: true });
+      await addIfMissing('stock_movements', 'maintenance_record_id', { type: Sequelize.INTEGER.UNSIGNED, allowNull: true });
+    }
   }
 ];
 

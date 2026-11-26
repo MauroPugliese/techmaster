@@ -25,11 +25,12 @@ module.exports = {
 
   async build(req) {
     const range = parseRange(req.query);
-    const { status, repeat_task_type, search } = req.query;
+    const { status, repeat_task_type, system, search } = req.query;
 
     const where = {};
     if (status) where.status = status;
     if (repeat_task_type) where.repeat_task_type = repeat_task_type;
+    if (system && String(system).trim()) where.system = String(system).trim();
     if (search && String(search).trim()) {
       const q = `%${String(search).trim()}%`;
       where[Op.or] = [
@@ -64,7 +65,7 @@ module.exports = {
       expandedInPeriod = await expandOccurrencesInRange(
         range.from.toISOString().slice(0, 10),
         range.to.toISOString().slice(0, 10),
-        93,
+        366,
         where
       );
     }
@@ -277,6 +278,7 @@ module.exports = {
       ],
       filters: [
         { label: 'Period', value: rangeLabel(range) },
+        ...(system ? [{ label: 'System', value: system }] : []),
         { label: 'Status', value: status || 'All' },
         ...(repeat_task_type ? [{ label: 'Recurrence', value: repeat_task_type }] : []),
         ...(search ? [{ label: 'Search', value: search }] : []),

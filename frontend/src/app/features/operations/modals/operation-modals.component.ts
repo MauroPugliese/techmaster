@@ -64,6 +64,12 @@ export class OperationModalsComponent {
   @Output() mutated = new EventEmitter<void>();
 
   readonly durationPresets = DURATION_PRESETS;
+  readonly caeSlotPresets: Array<{ label: string; startHour: number; endHour: number }> = [
+    { label: '06:00–10:00', startHour: 6, endHour: 10 },
+    { label: '10:00–14:00', startHour: 10, endHour: 14 },
+    { label: '14:00–18:00', startHour: 14, endHour: 18 },
+    { label: '18:00–22:00', startHour: 18, endHour: 22 }
+  ];
   readonly roleSuggestions = CREW_ROLE_SUGGESTIONS;
   readonly weatherPresets = WEATHER_PRESETS;
   readonly subsystemOptions = SUBSYSTEM_OPTIONS;
@@ -117,6 +123,27 @@ export class OperationModalsComponent {
     description: ''
   };
 
+  // ── 1-Click Quick Debrief & Close ──────────────────────────────────────────
+  showDebriefForm = false;
+  submittingDebrief = false;
+  debriefForm: {
+    outcome: SortieOutcome;
+    actual_flight_hours: number;
+    lost_training_minutes: number;
+    snag_summary: string;
+    open_snag_wo: boolean;
+    subsystem_code: SimulatorSubsystemCode;
+    severity: 'MINOR' | 'DEGRADED' | 'AOG';
+  } = {
+    outcome: 'CLEAN',
+    actual_flight_hours: 4,
+    lost_training_minutes: 0,
+    snag_summary: '',
+    open_snag_wo: false,
+    subsystem_code: 'VISUAL',
+    severity: 'DEGRADED'
+  };
+
   constructor(
     private api: ApiService,
     private uiCustomization: UiCustomizationService,
@@ -167,7 +194,8 @@ export class OperationModalsComponent {
       start_date: new Date() as Date | null,
       end_date: addHoursToDate(new Date(), 4) as Date | null,
       description: '',
-      notes: ''
+      notes: '',
+      repeat_days: 1
     };
   }
 
@@ -287,6 +315,18 @@ export class OperationModalsComponent {
     this.cdr.markForCheck();
   }
 
+  applyCaeSlotPreset(startHour: number, endHour: number): void {
+    const base = this.form.start_date ? new Date(this.form.start_date) : new Date();
+    const s = new Date(base.getFullYear(), base.getMonth(), base.getDate(), startHour, 0, 0, 0);
+    const e = new Date(base.getFullYear(), base.getMonth(), base.getDate(), endHour, 0, 0, 0);
+    this.form.start_date = s;
+    this.form.end_date = e;
+    this.form.scheduled_hours = Math.max(0.5, endHour - startHour);
+    this.formError = '';
+    this.checkBayConflict();
+    this.cdr.markForCheck();
+  }
+
   get plannedFormDuration(): string {
     return formatDurationRange(this.form.start_date, this.form.end_date);
   }
@@ -350,6 +390,7 @@ export class OperationModalsComponent {
       motion_required: this.form.motion_required !== false,
       start_date: startObj ? startObj.toISOString() : null,
       end_date: endObj ? endObj.toISOString() : null,
+      repeat_days: this.editingOp ? 1 : Math.min(7, Math.max(1, Number(this.form.repeat_days) || 1)),
       members: this.draftMembers.map(m => ({
         user_id: m.user_id,
         role_in_op: m.role_in_op.trim() || null
@@ -363,10 +404,15 @@ export class OperationModalsComponent {
       : this.api.post<any>('/operations', payload);
 
     req$.subscribe({
-      next: () => {
+      next: (res) => {
         this.saving = false;
         this.showFormModal = false;
-        this.toast.success(isEdit ? 'Operation updated.' : 'Operation created.');
+        const createdCount = res?.meta?.createdCount || 1;
+        this.toast.success(
+          isEdit
+            ? 'Operation updated.'
+            : (createdCount > 1 ? `Scheduled ${createdCount}-day training sortie series.` : 'Operation created.')
+        );
         this.mutated.emit();
         this.cdr.markForCheck();
       },
@@ -387,6 +433,17 @@ export class OperationModalsComponent {
     this.detailLoading = true;
     this.showSnagForm = false;
     this.submittingSnag = false;
+    this.showDebriefForm = false;
+    this.submittingDebrief = false;
+    this.debriefForm = {
+      outcome: (op.outcome && op.outcome !== 'PENDING') ? op.outcome : 'CLEAN',
+      actual_flight_hours: Number(op.actual_flight_hours ?? op.scheduled_hours ?? 4),
+      lost_training_minutes: Number(op.lost_training_minutes ?? 0),
+      snag_summary: op.snag_summary || '',
+      open_snag_wo: false,
+      subsystem_code: 'VISUAL',
+      severity: 'DEGRADED'
+    };
     this.snagForm = {
       title: '',
       subsystem_code: 'VISUAL',
@@ -517,7 +574,63 @@ export class OperationModalsComponent {
 
   toggleSnagForm(): void {
     this.showSnagForm = !this.showSnagForm;
+    if (this.showSnagForm) this.showDebriefForm = false;
     this.cdr.markForCheck();
+  }
+
+  toggleDebriefForm(): void {
+    this.showDebriefForm = !this.showDebriefForm;
+    if (this.showDebriefForm) {
+      this.showSnagForm = false;
+      if (this.detailOp) {
+        this.debriefForm = {
+          outcome: (this.detailOp.outcome && this.detailOp.outcome !== 'PENDING') ? this.detailOp.outcome : 'CLEAN',
+          actual_flight_hours: Number(this.detailOp.actual_flight_hours ?? this.detailOp.scheduled_hours ?? 4),
+          lost_training_minutes: Number(this.detailOp.lost_training_minutes ?? 0),
+          snag_summary: this.detailOp.snag_summary || '',
+          open_snag_wo: false,
+          subsystem_code: 'VISUAL',
+          severity: 'DEGRADED'
+        };
+      }
+    }
+    this.cdr.markForCheck();
+  }
+
+  submitDebrief(): void {
+    if (!this.detailOp || this.submittingDebrief) return;
+    this.submittingDebrief = true;
+    this.cdr.markForCheck();
+
+    this.api.post<any>(`/operations/${this.detailOp.id}/debrief`, {
+      outcome: this.debriefForm.outcome,
+      actual_flight_hours: Number(this.debriefForm.actual_flight_hours) || 0,
+      lost_training_minutes: Number(this.debriefForm.lost_training_minutes) || 0,
+      snag_summary: this.debriefForm.snag_summary.trim() || null,
+      open_snag_wo: this.debriefForm.open_snag_wo && Boolean(this.debriefForm.snag_summary.trim()),
+      subsystem_code: this.debriefForm.subsystem_code,
+      severity: this.debriefForm.severity
+    }).subscribe({
+      next: (res) => {
+        this.submittingDebrief = false;
+        this.showDebriefForm = false;
+        const wo = res?.data?.maintenanceRecord;
+        this.toast.success(
+          wo
+            ? `Sortie debriefed & closed · Corrective WO #${wo.id} opened in Maintenance.`
+            : 'Sortie debriefed & closed · Simulator hours updated.'
+        );
+        this.mutated.emit();
+        if (this.detailOp) {
+          this.openDetailModal(this.detailOp);
+        }
+      },
+      error: (err: any) => {
+        this.submittingDebrief = false;
+        this.toast.error(err?.error?.message || 'Failed to complete sortie debrief.');
+        this.cdr.markForCheck();
+      }
+    });
   }
 
   submitSnag(): void {

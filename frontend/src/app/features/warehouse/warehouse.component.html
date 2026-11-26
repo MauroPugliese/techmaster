@@ -146,7 +146,8 @@
     *ngIf="activeTab === 'reorder'"
     [refreshTick]="refreshTick"
     (quickRestockRequested)="openQuickRestock($event)"
-    (detailRequested)="openDetail($event)">
+    (detailRequested)="openDetail($event)"
+    (mutated)="onMutated()">
   </app-warehouse-reorder>
 
 </div>
@@ -155,6 +156,7 @@
 <app-warehouse-modals
   [categories]="categories"
   [locations]="locations"
+  [simulators]="simulators"
   [uiPrefs]="uiPrefs"
   (mutated)="onMutated()">
 </app-warehouse-modals>

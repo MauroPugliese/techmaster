@@ -13,21 +13,36 @@
     </div>
 
     <div class="bulk-actions">
-      <select class="bulk-select" (change)="onBulkSelect('status', $event)" [disabled]="busyBulk" aria-label="Bulk status">
-        <option value="">Set status…</option>
-        <option *ngFor="let opt of statusOptions" [value]="opt.value">{{opt.label}}</option>
-      </select>
+      <app-dropdown class="bulk-dropdown"
+                    [ngModel]="bulkStatusVal"
+                    (ngModelChange)="onBulkSelect('status', $event)"
+                    [disabled]="busyBulk"
+                    placeholder="Set status…"
+                    ariaLabel="Bulk status">
+        <app-dropdown-option value="">Set status…</app-dropdown-option>
+        <app-dropdown-option *ngFor="let opt of statusOptions" [value]="opt.value">{{opt.label}}</app-dropdown-option>
+      </app-dropdown>
 
-      <select class="bulk-select" (change)="onBulkSelect('priority', $event)" [disabled]="busyBulk" aria-label="Bulk priority">
-        <option value="">Set priority…</option>
-        <option *ngFor="let opt of priorityOptions" [value]="opt.value">{{opt.label}}</option>
-      </select>
+      <app-dropdown class="bulk-dropdown"
+                    [ngModel]="bulkPriorityVal"
+                    (ngModelChange)="onBulkSelect('priority', $event)"
+                    [disabled]="busyBulk"
+                    placeholder="Set priority…"
+                    ariaLabel="Bulk priority">
+        <app-dropdown-option value="">Set priority…</app-dropdown-option>
+        <app-dropdown-option *ngFor="let opt of priorityOptions" [value]="opt.value">{{opt.label}}</app-dropdown-option>
+      </app-dropdown>
 
-      <select class="bulk-select" (change)="onBulkSelect('assign', $event)" [disabled]="busyBulk" aria-label="Bulk assign">
-        <option value="">Reassign to…</option>
-        <option value="__unassigned__">— Unassigned —</option>
-        <option *ngFor="let u of assignees" [value]="u.id">{{userName(u)}}</option>
-      </select>
+      <app-dropdown class="bulk-dropdown"
+                    [ngModel]="bulkAssignVal"
+                    (ngModelChange)="onBulkSelect('assign', $event)"
+                    [disabled]="busyBulk"
+                    placeholder="Reassign to…"
+                    ariaLabel="Bulk assign">
+        <app-dropdown-option value="">Reassign to…</app-dropdown-option>
+        <app-dropdown-option value="__unassigned__">— Unassigned —</app-dropdown-option>
+        <app-dropdown-option *ngFor="let u of assignees" [value]="u.id" [label]="userName(u)">{{userName(u)}}</app-dropdown-option>
+      </app-dropdown>
 
       <button type="button" class="btn-bulk-danger" (click)="onBulkDelete()" [disabled]="busyBulk">
         <span class="mat-i">delete</span> Delete
@@ -96,23 +111,23 @@
           </td>
 
           <td (click)="$event.stopPropagation()">
-            <select class="cell-select status-pill"
-                    [style.--pill-color]="statusColor(task.status)"
-                    [value]="task.status"
-                    (change)="onInlineStatus(task, $event)"
-                    aria-label="Task status">
-              <option *ngFor="let opt of statusOptions" [value]="opt.value">{{opt.label}}</option>
-            </select>
+            <app-dropdown class="cell-dropdown status-pill"
+                          [style.--pill-color]="statusColor(task.status)"
+                          [ngModel]="task.status"
+                          (ngModelChange)="onInlineStatus(task, $event)"
+                          ariaLabel="Task status">
+              <app-dropdown-option *ngFor="let opt of statusOptions" [value]="opt.value">{{opt.label}}</app-dropdown-option>
+            </app-dropdown>
           </td>
 
           <td (click)="$event.stopPropagation()">
-            <select class="cell-select prio-pill"
-                    [style.--pill-color]="priorityColor(task.priority)"
-                    [value]="task.priority"
-                    (change)="onInlinePriority(task, $event)"
-                    aria-label="Task priority">
-              <option *ngFor="let opt of priorityOptions" [value]="opt.value">{{opt.label}}</option>
-            </select>
+            <app-dropdown class="cell-dropdown prio-pill"
+                          [style.--pill-color]="priorityColor(task.priority)"
+                          [ngModel]="task.priority"
+                          (ngModelChange)="onInlinePriority(task, $event)"
+                          ariaLabel="Task priority">
+              <app-dropdown-option *ngFor="let opt of priorityOptions" [value]="opt.value">{{opt.label}}</app-dropdown-option>
+            </app-dropdown>
           </td>
 
           <td (click)="$event.stopPropagation()">
@@ -122,13 +137,14 @@
                     [style.background]="avatarColor(task.assignee)">
                 {{initials(task.assignee)}}
               </span>
-              <select class="cell-select assignee-select"
-                      [value]="task.assigned_to ?? task.assignee?.id ?? ''"
-                      (change)="onInlineAssignee(task, $event)"
-                      aria-label="Task assignee">
-                <option value="">Unassigned</option>
-                <option *ngFor="let u of assignees" [value]="u.id">{{userName(u)}}</option>
-              </select>
+              <app-dropdown class="cell-dropdown assignee-select"
+                            [ngModel]="task.assigned_to ?? task.assignee?.id ?? ''"
+                            (ngModelChange)="onInlineAssignee(task, $event)"
+                            placeholder="Unassigned"
+                            ariaLabel="Task assignee">
+                <app-dropdown-option value="">Unassigned</app-dropdown-option>
+                <app-dropdown-option *ngFor="let u of assignees" [value]="u.id" [label]="userName(u)">{{userName(u)}}</app-dropdown-option>
+              </app-dropdown>
             </div>
           </td>
 

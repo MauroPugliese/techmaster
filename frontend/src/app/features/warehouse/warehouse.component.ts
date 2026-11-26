@@ -14,6 +14,7 @@ import { ApiService } from '../../core/services/api.service';
 import { UiCustomizationService, UiSectionPreferences } from '../../core/services/ui-customization.service';
 import {
   InventoryItem,
+  Simulator,
   WarehouseLocation,
   WarehouseStockStatus,
   WarehouseSummary
@@ -53,6 +54,7 @@ export class WarehouseComponent implements OnInit, OnDestroy {
   categories: any[] = [];
   locations: WarehouseLocation[] = [];
   suppliers: string[] = [];
+  simulators: Simulator[] = [];
   uiPrefs: UiSectionPreferences | null = null;
   summary: WarehouseSummary | null = null;
 
@@ -144,6 +146,9 @@ export class WarehouseComponent implements OnInit, OnDestroy {
     });
     this.api.get<any>('/warehouse/suppliers').subscribe({
       next: r => { this.suppliers = r?.data || []; this.cdr.markForCheck(); }
+    });
+    this.api.get<any>('/simulators').subscribe({
+      next: r => { this.simulators = r?.data || []; this.cdr.markForCheck(); }
     });
   }
 

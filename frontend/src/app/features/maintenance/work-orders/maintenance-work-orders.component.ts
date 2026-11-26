@@ -87,10 +87,19 @@ export class MaintenanceWorkOrdersComponent implements OnInit, OnChanges, OnDest
   statusFilter = '';
   priorityFilter = '';
   typeFilter = '';
+  severityFilter = '';
+  subsystemFilter = '';
+  snagsOnly = false;
+  melActiveOnly = false;
   assetFilter: number | '' = '';
   simulatorFilter: number | '' = '';
   sortBy = 'scheduled_date';
   sortDir: 'ASC' | 'DESC' = 'ASC';
+
+  readonly subsystemOptions = Object.entries(SUBSYSTEM_META).map(([code, meta]) => ({
+    code,
+    label: meta.label
+  }));
 
   openMenuRecordId: number | null = null;
   selectedIds = new Set<number>();
@@ -212,6 +221,10 @@ export class MaintenanceWorkOrdersComponent implements OnInit, OnChanges, OnDest
       status: this.statusFilter,
       priority: this.priorityFilter,
       type: this.typeFilter,
+      severity: this.severityFilter,
+      subsystem_code: this.subsystemFilter,
+      is_snag: this.snagsOnly ? 'true' : '',
+      mel_category: this.melActiveOnly ? 'ACTIVE' : '',
       asset_id: this.assetFilter || '',
       simulator_id: this.simulatorFilter || '',
       sort_by: this.sortBy,
@@ -224,6 +237,10 @@ export class MaintenanceWorkOrdersComponent implements OnInit, OnChanges, OnDest
       status: this.statusFilter,
       priority: this.priorityFilter,
       type: this.typeFilter,
+      severity: this.severityFilter,
+      subsystem_code: this.subsystemFilter,
+      is_snag: this.snagsOnly ? 'true' : '',
+      mel_category: this.melActiveOnly ? 'ACTIVE' : '',
       asset_id: this.assetFilter || '',
       simulator_id: this.simulatorFilter || '',
       search: this.searchQuery.trim()
@@ -273,9 +290,23 @@ export class MaintenanceWorkOrdersComponent implements OnInit, OnChanges, OnDest
       this.statusFilter ||
       this.priorityFilter ||
       this.typeFilter ||
+      this.severityFilter ||
+      this.subsystemFilter ||
+      this.snagsOnly ||
+      this.melActiveOnly ||
       this.assetFilter !== '' ||
       this.simulatorFilter !== ''
     );
+  }
+
+  toggleSnagsOnly(): void {
+    this.snagsOnly = !this.snagsOnly;
+    this.applyFilters();
+  }
+
+  toggleMelOnly(): void {
+    this.melActiveOnly = !this.melActiveOnly;
+    this.applyFilters();
   }
 
   resetFilters(): void {
@@ -283,6 +314,10 @@ export class MaintenanceWorkOrdersComponent implements OnInit, OnChanges, OnDest
     this.statusFilter = '';
     this.priorityFilter = '';
     this.typeFilter = '';
+    this.severityFilter = '';
+    this.subsystemFilter = '';
+    this.snagsOnly = false;
+    this.melActiveOnly = false;
     this.assetFilter = '';
     this.simulatorFilter = '';
     this.applyFilters();

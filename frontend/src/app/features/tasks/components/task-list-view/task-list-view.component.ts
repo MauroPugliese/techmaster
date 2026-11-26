@@ -8,6 +8,7 @@ import {
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Priority, Task, TaskAssignee, TaskStatus } from '../../../../core/models/interfaces';
+import { DropdownComponent, DropdownOptionComponent } from '../../../../shared/components/dropdown/dropdown.component';
 import {
   SortKey,
   daysUntilDue,
@@ -33,7 +34,7 @@ export interface BulkTaskCommand {
 @Component({
   selector: 'app-task-list-view',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, DropdownComponent, DropdownOptionComponent],
   templateUrl: './task-list-view.component.html',
   styleUrls: ['./task-list-view.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -53,6 +54,9 @@ export class TaskListViewComponent implements OnChanges {
   @Output() bulkAction   = new EventEmitter<BulkTaskCommand>();
 
   selectedIds = new Set<number>();
+  bulkStatusVal = '';
+  bulkPriorityVal = '';
+  bulkAssignVal = '';
 
   readonly statusOptions: Array<{ value: TaskStatus; label: string }> = [
     { value: 'TODO',        label: 'To Do' },
@@ -103,13 +107,13 @@ export class TaskListViewComponent implements OnChanges {
     this.selectedIds = new Set<number>();
   }
 
-  onBulkSelect(action: BulkActionType, event: Event): void {
-    const sel = event.target as HTMLSelectElement;
-    const raw = sel.value;
-    if (raw === '' || !this.selectedIds.size) return;
+  onBulkSelect(action: BulkActionType, raw: any): void {
+    if (raw === '' || raw === null || raw === undefined || !this.selectedIds.size) return;
     const value = action === 'assign' ? (raw === '__unassigned__' ? null : Number(raw)) : raw;
     this.bulkAction.emit({ ids: Array.from(this.selectedIds), action, value });
-    sel.value = '';
+    this.bulkStatusVal = '';
+    this.bulkPriorityVal = '';
+    this.bulkAssignVal = '';
   }
 
   onBulkDelete(): void {
@@ -117,26 +121,20 @@ export class TaskListViewComponent implements OnChanges {
     this.bulkAction.emit({ ids: Array.from(this.selectedIds), action: 'delete' });
   }
 
-  onInlineStatus(task: Task, event: Event): void {
-    event.stopPropagation();
-    const status = (event.target as HTMLSelectElement).value as TaskStatus;
+  onInlineStatus(task: Task, status: TaskStatus): void {
     if (status && status !== task.status) {
       this.inlineUpdate.emit({ task, patch: { status } });
     }
   }
 
-  onInlinePriority(task: Task, event: Event): void {
-    event.stopPropagation();
-    const priority = (event.target as HTMLSelectElement).value as Priority;
+  onInlinePriority(task: Task, priority: Priority): void {
     if (priority && priority !== task.priority) {
       this.inlineUpdate.emit({ task, patch: { priority } });
     }
   }
 
-  onInlineAssignee(task: Task, event: Event): void {
-    event.stopPropagation();
-    const raw = (event.target as HTMLSelectElement).value;
-    const assigned_to = raw ? Number(raw) : null;
+  onInlineAssignee(task: Task, raw: any): void {
+    const assigned_to = raw !== '' && raw !== null && raw !== undefined ? Number(raw) : null;
     if ((task.assigned_to ?? task.assignee?.id ?? null) !== assigned_to) {
       this.inlineUpdate.emit({ task, patch: { assigned_to } });
     }

@@ -15,11 +15,16 @@ import { ToastService } from '../../../core/services/toast.service';
 import { UiCustomizationService, UiSectionPreferences } from '../../../core/services/ui-customization.service';
 import {
   InventoryItem,
+  LruStatus,
   MovementType,
+  Simulator,
   StockMovement,
   WarehouseLocation
 } from '../../../core/models/interfaces';
 import { DropdownComponent, DropdownOptionComponent } from '../../../shared/components/dropdown/dropdown.component';
+import { DateTimePickerComponent } from '../../../shared/components/datetime-picker/datetime-picker.component';
+import { formatLocalYmd } from '../../../shared/components/datetime-picker/datetime-picker.utils';
+import { SUBSYSTEM_OPTIONS } from '../../simulators/simulator-helpers';
 import {
   MOVEMENT_TYPES,
   formatMoney,
@@ -46,7 +51,7 @@ export interface MovementPreset {
 @Component({
   selector: 'app-warehouse-modals',
   standalone: true,
-  imports: [CommonModule, FormsModule, DecimalPipe, DropdownComponent, DropdownOptionComponent],
+  imports: [CommonModule, FormsModule, DecimalPipe, DropdownComponent, DropdownOptionComponent, DateTimePickerComponent],
   templateUrl: './warehouse-modals.component.html',
   styleUrls: ['./warehouse-modals.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -54,10 +59,12 @@ export interface MovementPreset {
 export class WarehouseModalsComponent {
   @Input() categories: any[] = [];
   @Input() locations: WarehouseLocation[] = [];
+  @Input() simulators: Simulator[] = [];
   @Input() uiPrefs: UiSectionPreferences | null = null;
   @Output() mutated = new EventEmitter<void>();
 
   readonly movementTypes = MOVEMENT_TYPES;
+  readonly subsystemOptions = SUBSYSTEM_OPTIONS;
 
   // Create / Edit modal state
   showItemModal = false;
@@ -76,6 +83,7 @@ export class WarehouseModalsComponent {
     reason: string;
     destination: string;
     to_location_id: number | null;
+    simulator_id: number | null;
   } = this.emptyMovementForm();
   transferMode: 'relocate' | 'external' = 'relocate';
   movementError = '';
@@ -144,6 +152,13 @@ export class WarehouseModalsComponent {
       aog_critical: false,
       lead_time_days: 7,
       unserviceable_qty: 0,
+      subsystem_code: '',
+      serial_number: '',
+      lru_status: 'SERVICEABLE' as LruStatus,
+      installed_simulator_id: null as number | null,
+      rma_reference: '',
+      on_order_qty: 0,
+      expected_delivery_date: null as Date | null,
       compatible_models_text: '',
       quantity: 0,
       min_stock: 0,
@@ -170,6 +185,13 @@ export class WarehouseModalsComponent {
         aog_critical: Boolean(item.aog_critical),
         lead_time_days: item.lead_time_days ?? 7,
         unserviceable_qty: item.unserviceable_qty ?? 0,
+        subsystem_code: item.subsystem_code ?? '',
+        serial_number: item.serial_number ?? '',
+        lru_status: (item.lru_status || 'SERVICEABLE') as LruStatus,
+        installed_simulator_id: item.installed_simulator_id ?? null,
+        rma_reference: item.rma_reference ?? '',
+        on_order_qty: item.on_order_qty ?? 0,
+        expected_delivery_date: item.expected_delivery_date ? new Date(`${String(item.expected_delivery_date).slice(0, 10)}T00:00:00`) : null,
         compatible_models_text: Array.isArray(item.compatible_models) ? item.compatible_models.join(', ') : '',
         quantity: item.quantity,
         min_stock: item.min_stock ?? 0,
@@ -251,6 +273,13 @@ export class WarehouseModalsComponent {
       aog_critical: Boolean(rest.aog_critical),
       lead_time_days: Math.max(0, Math.floor(Number(rest.lead_time_days || 0))),
       unserviceable_qty: Math.max(0, Math.floor(Number(rest.unserviceable_qty || 0))),
+      on_order_qty: Math.max(0, Math.floor(Number(rest.on_order_qty || 0))),
+      subsystem_code: rest.subsystem_code || null,
+      serial_number: String(rest.serial_number || '').trim() || null,
+      lru_status: rest.lru_status || 'SERVICEABLE',
+      installed_simulator_id: rest.installed_simulator_id ? Number(rest.installed_simulator_id) : null,
+      rma_reference: String(rest.rma_reference || '').trim() || null,
+      expected_delivery_date: rest.expected_delivery_date ? formatLocalYmd(new Date(rest.expected_delivery_date)) : null,
       compatible_models: compatList
     };
     const req$ = isEdit
@@ -301,7 +330,8 @@ export class WarehouseModalsComponent {
       reference: '',
       reason: '',
       destination: '',
-      to_location_id: null as number | null
+      to_location_id: null as number | null,
+      simulator_id: null as number | null
     };
   }
 
@@ -319,7 +349,8 @@ export class WarehouseModalsComponent {
       reference: preset?.reference || '',
       reason: preset?.reason || '',
       destination: '',
-      to_location_id: null
+      to_location_id: null,
+      simulator_id: item.installed_simulator_id ?? null
     };
     this.transferMode = this.availableTransferLocations.length > 0 ? 'relocate' : 'external';
     this.showMovementModal = true;
@@ -488,6 +519,8 @@ export class WarehouseModalsComponent {
       payload['to_location_id'] = this.movementForm.to_location_id;
     } else if (this.movementForm.type === 'TRANSFER' && this.movementForm.destination?.trim()) {
       payload['destination'] = this.movementForm.destination.trim();
+    } else if ((this.movementForm.type === 'OUT' || this.movementForm.type === 'RETURN') && this.movementForm.simulator_id) {
+      payload['simulator_id'] = Number(this.movementForm.simulator_id);
     }
 
     this.saving = true;
