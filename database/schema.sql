@@ -741,10 +741,11 @@ CREATE TABLE IF NOT EXISTS ui_table_column_preferences (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================================================
--- SEED DATA - Lookup / Reference tables
+-- SEED DATA - Minimal System Lookups & Default Admin Account ONLY (Zero Demo Data)
 -- =============================================================================
 
--- Schema migrations tracking baseline
+-- Schema migrations tracking baseline (all 8 migrations marked applied so
+-- backend/src/config/migrate.js will NOT auto-seed demo simulators/sorties)
 INSERT IGNORE INTO schema_migrations (id, name) VALUES
 (1, '001_baseline_schema'),
 (2, '002_add_part_number_to_inventory_items'),
@@ -752,7 +753,8 @@ INSERT IGNORE INTO schema_migrations (id, name) VALUES
 (4, '004_create_ui_preferences'),
 (5, '005_enhance_shifts_custom_and_leave'),
 (6, '006_flight_simulator_domain'),
-(7, '007_station_daily_ops');
+(7, '007_station_daily_ops'),
+(8, '008_cae_enterprise_ops');
 
 -- Roles
 INSERT IGNORE INTO roles (id, name, description, permissions) VALUES
@@ -784,10 +786,10 @@ INSERT IGNORE INTO shift_types (id, name, code, start_time, end_time, color, cat
 
 -- Warehouse locations
 INSERT IGNORE INTO warehouse_locations (id, name, code, description) VALUES
-(1, 'Main Warehouse', 'WH-MAIN', 'Primary storage facility'),
-(2, 'Server Room A',  'SR-A',    'Server hardware storage'),
-(3, 'Server Room B',  'SR-B',    'Backup equipment storage'),
-(4, 'Field Storage',  'FLD',     'Mobile/field equipment');
+(1, 'Main Aviation Spares Vault', 'WH-MAIN', 'Primary climate-controlled spares storage'),
+(2, 'Bay-Side Line Stock',        'BAY-STK', 'Fast-access bay line replacement spares'),
+(3, 'Quarantine & RMA Bench',     'RMA-BAY', 'Unserviceable LRUs awaiting vendor RMA'),
+(4, 'Calibrated Tooling Lab',     'CAL-LAB', 'Optical alignment & calibrated test equipment');
 
 -- Asset categories
 INSERT IGNORE INTO asset_categories (id, name, type) VALUES
@@ -795,97 +797,47 @@ INSERT IGNORE INTO asset_categories (id, name, type) VALUES
 (2, 'Workstations',        'HARDWARE'),
 (3, 'Network Equipment',   'HARDWARE'),
 (4, 'Storage Devices',     'HARDWARE'),
-(5, 'Operating Systems',   'SOFTWARE'),
+(5, 'Power & HVAC',        'HARDWARE'),
 (6, 'Enterprise Software', 'SOFTWARE'),
-(7, 'Security Tools',      'SOFTWARE');
+(7, 'Security & Safety',   'OTHER');
 
 -- Task categories
 INSERT IGNORE INTO task_categories (id, name, color, icon) VALUES
-(1, 'Infrastructure', '#1565C0', 'storage'),
-(2, 'Security',       '#B71C1C', 'security'),
-(3, 'Development',    '#1B5E20', 'code'),
-(4, 'Support',        '#E65100', 'support_agent'),
-(5, 'Compliance',     '#4A148C', 'gavel');
+(1, 'Simulators & Bays', '#1565C0', 'flight_takeoff'),
+(2, 'Safety & LOTO',     '#B71C1C', 'security'),
+(3, 'Engineering',       '#1B5E20', 'build'),
+(4, 'Logistics & RMA',   '#E65100', 'inventory_2'),
+(5, 'QTG & Compliance',  '#4A148C', 'gavel');
 
 -- Wiki categories
 INSERT IGNORE INTO wiki_categories (id, name, slug, icon, sort_order) VALUES
 (1, 'Getting Started',   'getting-started',   'start',       1),
-(2, 'Infrastructure',    'infrastructure',    'dns',         2),
-(3, 'Security Policies', 'security-policies', 'lock',        3),
-(4, 'SOPs',              'sops',              'description', 4),
+(2, 'Simulator Systems', 'simulator-systems', 'dns',         2),
+(3, 'Safety & LOTO',     'safety-loto',       'lock',        3),
+(4, 'SOPs & Runbooks',   'sops',              'description', 4),
 (5, 'Troubleshooting',   'troubleshooting',   'build',       5);
 
 -- Item categories
-INSERT IGNORE INTO item_categories (id, name, description) VALUES
-(1, 'Cables & Connectors', 'Network and power cables'),
-(2, 'Hardware Parts',      'Replacement parts and components'),
-(3, 'Consumables',         'Toner, paper, cleaning supplies'),
-(4, 'Peripherals',         'Keyboards, mice, monitors'),
-(5, 'Storage Media',       'SSDs, HDDs, USBs');
+INSERT IGNORE INTO item_categories (id, name, description, color) VALUES
+(1, 'Visual & Laser Optics',     'Projectors, laser modules, mirrors and collimation parts', '#0288D1'),
+(2, 'Motion & Actuation LRUs',   'eMotion actuators, servo drives, hydraulic seals and sensors', '#1565C0'),
+(3, 'Avionics & Host Compute',   'Host blades, GPUs, ARINC 429 boards and cockpit displays', '#7C3AED'),
+(4, 'Control Loading & Cockpit', 'CLS sensors, sidesticks, throttles, headsets and switches', '#0F766E'),
+(5, 'Consumables & Filters',     'HVAC filters, cooling fluids, cables, fuses and fasteners', '#D97706'),
+(6, 'Calibrated Tooling',        'Photometers, torque wrenches and optical calibration rigs', '#37474F');
 
--- Assets
-INSERT IGNORE INTO assets
-  (id, category_id, name, serial_number, model, manufacturer, location, status)
-VALUES
-  (1, 1, 'Primary Web Server',     'SRV-001-WEB',  'PowerEdge R740',   'Dell',    'Server Room A', 'ACTIVE'),
-  (2, 1, 'Database Server',        'SRV-002-DB',   'PowerEdge R640',   'Dell',    'Server Room A', 'ACTIVE'),
-  (3, 1, 'Backup Server',          'SRV-003-BCK',  'ProLiant DL380',   'HP',      'Server Room B', 'ACTIVE'),
-  (4, 3, 'Core Switch',            'NET-001-SW',   'Catalyst 9300',    'Cisco',   'Server Room A', 'ACTIVE'),
-  (5, 3, 'Edge Firewall',          'NET-002-FW',   'FortiGate 100F',   'Fortinet','Server Room A', 'ACTIVE'),
-  (6, 3, 'Wi-Fi Access Point L1',  'NET-003-AP1',  'UniFi U6-Pro',     'Ubiquiti','Floor 1',       'ACTIVE'),
-  (7, 2, 'IT Workstation #1',      'WS-001',       'OptiPlex 7090',    'Dell',    'IT Office',     'ACTIVE'),
-  (8, 2, 'IT Workstation #2',      'WS-002',       'OptiPlex 7090',    'Dell',    'IT Office',     'ACTIVE'),
-  (9, 4, 'NAS Storage Array',      'STR-001-NAS',  'DS1823xs+',        'Synology','Server Room B', 'ACTIVE'),
-  (10,4, 'Tape Library',           'STR-002-TAPE', 'StoreEver MSL3040','HP',      'Server Room B', 'INACTIVE');
-
--- Default CAE Flight Simulators
-INSERT IGNORE INTO simulators
-  (id, code, name, bay_code, platform_category, aircraft_type, manufacturer, serial_number, authority, qualification_level, certificate_code, daily_available_hours, engine_avionics, software_load, airac_cycle, visual_system, motion_system, control_loading, ios_config, status, power_on_hours, motion_hours, visual_lamp_hours, limitations_mel, notes)
-VALUES
-  (1, 'FFS-A320-01', 'Airbus A320neo Full Flight Simulator #1', 'BAY-01', 'COMMERCIAL_FIXED_WING', 'Airbus A320neo / CEO', 'CAE 7000XR', 'CAE-7000XR-A320-104', 'EASA', 'CS-FSTD Level D', 'EASA.IT.FSTD.014', 20.0, 'CFM LEAP-1A26 / Thales FMS R2', 'Host Load v4.18.2', 'AIRAC 2611', 'CAE Tropos 6000XR · 200x40 Laser 3ch', 'CAE 6-DOF Electric eMotion', 'Moog/CAE Digital CLS-500', 'Dual-Screen Instructor Console v8', 'IN_SORTIE', 18420.5, 14210.0, 3120.4, NULL, 'Primary commercial narrowbody bay. Cat IIIB LVP qualified.'),
-  (2, 'FFS-B737-02', 'Boeing 737 MAX 8 Full Flight Simulator #2', 'BAY-02', 'COMMERCIAL_FIXED_WING', 'Boeing 737 MAX 8 / 800', 'CAE 7000XR', 'CAE-7000XR-B737-209', 'EASA', 'CS-FSTD Level D', 'EASA.IT.FSTD.022', 20.0, 'CFM LEAP-1B / Rockwell Collins ProLine', 'Host Load v5.04.1', 'AIRAC 2611', 'CAE Medallion-6000XR · 220x40 LED', 'CAE 6-DOF Electric eMotion', 'CAE Digital CLS-500', 'Mobile Tablet + Desk IOS', 'READY', 15290.0, 11845.5, 2410.0, NULL, 'Annual EASA re-evaluation tracking active.'),
-  (3, 'FFS-A350-03', 'Airbus A350-900 Full Flight Simulator #3', 'BAY-03', 'COMMERCIAL_FIXED_WING', 'Airbus A350-900 XWB', 'CAE 7000XR', 'CAE-7000XR-A350-312', 'EASA / FAA', 'Level D Dual-Qual', 'EASA.FAA.350.008', 20.0, 'Trent XWB-84 / Honeywell Primus Epic', 'Host Load v3.22.0', 'AIRAC 2611', 'CAE Tropos 6000XR · 4K Laser Array', 'CAE 6-DOF Hydraulic-Free', 'Active Side-Stick CLS', 'CAE Rise IOS + Debrief Pod', 'DEGRADED', 9840.2, 7610.8, 1890.0, 'Visual Ch.3 right peripheral projector dimmed by 12% (MEL Cat B pending laser module swap).', 'Long-haul widebody fleet bay.'),
-  (4, 'FFS-AW139-04', 'Leonardo AW139 Rotorcraft FFS #4', 'BAY-04', 'ROTORCRAFT', 'Leonardo AW139', 'CAE 3000 Series', 'CAE-3000-AW139-077', 'EASA / ENAC', 'CS-FSTD(H) Level D', 'ENAC.FSTD.H.005', 18.0, 'PT6C-67C / Honeywell Phase 8', 'RotorHost v6.1.4', 'AIRAC 2611', '8-Channel Extreme FOV Chin-Window Dome', 'CAE 6-DOF High-Frequency Rotor', '4-Axis Helicopter AFCS CLS', 'HEMS / SAR Mission IOS', 'READY', 11340.0, 9450.0, 2105.5, NULL, 'Offshore Oil&Gas, HEMS & NVG Level D certified.'),
-  (5, 'FMS-M346-05', 'Leonardo M-346 Full Mission Simulator #5', 'BAY-05', 'DEFENSE_FMS', 'Leonardo M-346 Master AJT', 'CAE FMS-5000', 'CAE-FMS-M346-019', 'MAA / AER(EP)', 'Level D Tactical', 'MAA.IFTS.FMS.005', 16.0, 'F124-GA-200 / Embedded ETTS', 'TacCore v7.3.0', 'Tactical DB 26-B', '360 Partial Dome 9ch LCoS', 'Fixed-Base G-Seat + G-Suit', 'Fighter HOTAS Force-Feel', 'LVC Tactical White-Force IOS', 'READY', 7620.0, 0.0, 1480.0, NULL, 'LVC networked for multi-ship BFM/ACM & EW sorties.');
-
--- Planned maintenance tasks
-INSERT IGNORE INTO planned_maintenance_tasks
-  (id, `system`, subsystem, task, reference, operation_date_start, operation_date_end, repeat_task_type, repeat_task_number, report_template, status, optional)
-VALUES
-  (1, 'Server Room', 'DEHUMIDIFIER', 'Empty the external tank', '', '2025-02-03 09:00:00', '2025-02-03 09:15:00', 'DAY', 1, '', 'TODO', 0),
-  (2, 'Server Room', 'DATALOGGERS', 'Collect log files', '', '2025-02-03 10:00:00', '2025-02-03 10:30:00', 'WEEK', 2, '', 'TODO', 0),
-  (3, 'Computer and Peripherials', 'OPSERVER', 'Check the auto-backup on Windows Backup Server', '', '2025-02-04 10:00:00', '2025-02-04 10:30:00', 'WEEK', 1, '', 'TODO', 0),
-  (4, 'Computer and Peripherials', 'ALL', 'Swap main/backup disks on all the nodes but OPSERVER', '', '2025-02-07 14:00:00', '2025-02-07 15:00:00', 'WEEK', 2, '', 'TODO', 0),
-  (5, 'Computer and Peripherials', 'SESRV1', 'Check integrity of the RAID, check status of RAID BATTERY', '', '2025-02-07 10:00:00', '2025-02-07 10:15:00', 'WEEK', 1, '', 'TODO', 0),
-  (6, 'Server Room', 'DEHUMIDIFIER', 'Check filter status and clean if necessary', '', '2026-05-14 09:00:00', '2026-05-14 09:15:00', 'MONTH', 1, '', 'DONE', 0),
-  (7, 'Server Room', 'ELECTRICAL PANELS', 'Apply Lockout-Tagout Procedure to Server Room Electrical Panels', '', '2026-05-14 00:00:00', '2026-05-14 00:00:00', 'WEEK', 1, '', 'TODO', 1),
-  (8, 'Server Room', 'ALL', 'Restore all systems in Server Room', '', '2026-05-14 00:00:00', '2026-05-14 00:00:00', 'WEEK', 1, '', 'TODO', 1),
-  (9, 'Server Room', 'ALL', 'Shutdown all systems in Server Room', '', '2026-05-14 00:00:00', '2026-05-14 00:00:00', 'WEEK', 1, '', 'TODO', 1),
-  (10, 'Server Room', 'DEHUMIDIFIER', 'Empty the external tank', '', '2026-05-14 09:00:00', '2026-05-14 09:15:00', 'DAY', 1, '', 'DONE', 0),
-  (11, 'Computer and Peripherials', 'OPSERVER', 'Check the funcionality of the hi-temp emergency shutdown system', '', '2026-05-14 17:00:00', '2026-05-14 18:00:00', 'WEEK', 1, '', 'TODO', 0),
-  (12, 'Computer and Peripherials', 'ALL', 'Verify network connectivity on all nodes', '', '2026-05-15 08:00:00', '2026-05-15 08:30:00', 'WEEK', 1, '', 'TODO', 0),
-  (13, 'Server Room', 'DATALOGGERS', 'Download and archive temperature logs', '', '2026-05-18 10:00:00', '2026-05-18 10:30:00', 'WEEK', 2, '', 'TODO', 0),
-  (14, 'Computer and Peripherials', 'SESRV1', 'Update firmware on RAID controller', '', '2026-05-20 14:00:00', '2026-05-20 15:00:00', 'MONTH', 1, '', 'TODO', 0),
-  (15, 'Server Room', 'ELECTRICAL PANELS', 'Inspect UPS battery status and run self-test', '', '2026-05-21 09:00:00', '2026-05-21 09:45:00', 'WEEK', 1, '', 'TODO', 0),
-  (16, 'Computer and Peripherials', 'OPSERVER', 'Rotate backup tapes and verify offsite copy', '', '2026-05-25 11:00:00', '2026-05-25 12:00:00', 'WEEK', 2, '', 'TODO', 1),
-  (17, 'Server Room', 'DEHUMIDIFIER', 'Quarterly deep cleaning of internal coils', '', '2026-05-28 08:00:00', '2026-05-28 10:00:00', 'MONTH', 1, '', 'TODO', 0);
-
--- Demo admin users
--- Password: Admin@1234 (bcrypt hash, 12 rounds)
-INSERT IGNORE INTO users (id, role_id, username, email, password_hash, first_name, last_name, department, job_title) VALUES
+-- Default Administrator account ONLY
+-- Login:    admin  (or admin@smart.local)
+-- Password: Admin@1234  (verified bcrypt hash)
+INSERT IGNORE INTO users (id, role_id, username, email, password_hash, first_name, last_name, department, job_title, is_active) VALUES
 (1, 1, 'admin', 'admin@smart.local',
- '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewFX5nGLPBhDvb4W',
- 'System', 'Admin', 'IT', 'Platform Administrator');
-
-INSERT IGNORE INTO users (id, role_id, username, email, password_hash, first_name, last_name, is_active, created_at, updated_at) VALUES
-(2, 1, 'Admin2', 'admin@admin.com',
- '$2a$12$mT2ebUe8xkTaPtkN1um38eHC8WoWiFH2wMa1LiqXyRUv6SdxhTKZm',
- 'System', 'Administrator', TRUE, NOW(), NOW());
+ '$2a$10$rZUO5AEvFPhymrjKuac.QuNWfwqgfzJ6UHc8m3q.Y/bIOsymF8z7u',
+ 'System', 'Administrator', 'Operations & IT', 'Platform Administrator', TRUE);
 
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- Confirmation message (visible in docker logs on first boot)
 SELECT CONCAT(
-    'SMaRT schema initialised successfully. ',
+    'SMaRT clean schema initialised successfully (0 operational records). ',
     COUNT(*), ' roles loaded.'
 ) AS init_status FROM roles;

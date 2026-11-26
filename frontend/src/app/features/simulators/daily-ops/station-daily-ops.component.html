@@ -257,9 +257,9 @@
     <table class="data-table daily-matrix-table">
       <thead>
         <tr>
-          <th style="width: 245px">Station</th>
-          <th style="width: 142px">Status</th>
-          <th style="width: 132px">
+          <th style="width: 222px">Station</th>
+          <th style="width: 126px">Status</th>
+          <th style="width: 122px">
             <button
               type="button"
               class="th-bulk-btn"
@@ -269,7 +269,7 @@
               <span class="mat-i">bolt</span>
             </button>
           </th>
-          <th style="width: 132px">
+          <th style="width: 122px">
             <button
               type="button"
               class="th-bulk-btn"
@@ -279,8 +279,9 @@
               <span class="mat-i">bolt</span>
             </button>
           </th>
-          <th style="width: 96px">Hours</th>
+          <th style="width: 84px">Hours</th>
           <th>Handover Notes</th>
+          <th class="text-right" style="width: 86px">Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -291,7 +292,7 @@
           [class.row-ready]="entry.usage_status === 'READY'"
           [class.row-na]="entry.usage_status === 'NA'">
 
-          <!-- Station Cell: Click -> MNT Records; subtle MNT tag + hover Dossier icon -->
+          <!-- Station Cell: Click -> MNT Records -->
           <td>
             <div class="station-cell">
               <button
@@ -303,16 +304,6 @@
                 <strong class="station-name-txt">{{ entry.station?.name || ('Station #' + entry.simulator_id) }}</strong>
                 <span class="station-mnt-chip">MNT</span>
               </button>
-
-              <div class="row-hover-actions">
-                <button
-                  type="button"
-                  class="mini-ico-btn"
-                  (click)="triggerWorkspace(entry, $event)"
-                  title="Open Technical Dossier">
-                  <span class="mat-i">open_in_new</span>
-                </button>
-              </div>
             </div>
           </td>
 
@@ -405,16 +396,6 @@
               <div class="note-cell-actions">
                 <button
                   type="button"
-                  class="na-log-wo-btn"
-                  *ngIf="entry.usage_status === 'NA'"
-                  (click)="openFaultWoModal(entry, $event)"
-                  title="Log a Corrective Work Order in Maintenance directly from this NA station">
-                  <span class="mat-i">build_circle</span>
-                  <span>Log WO</span>
-                </button>
-
-                <button
-                  type="button"
                   class="note-save-mini"
                   *ngIf="isNoteDirty(entry)"
                   [disabled]="savingEntryIds.has(entry.id)"
@@ -438,10 +419,42 @@
               </div>
             </div>
           </td>
+
+          <!-- Dedicated Row Actions Column (Log WO on NA + Station Shortcuts) -->
+          <td class="actions-td text-right">
+            <div class="row-actions-group">
+              <button
+                type="button"
+                class="na-log-wo-btn"
+                *ngIf="entry.usage_status === 'NA'"
+                (click)="openFaultWoModal(entry, $event)"
+                aria-label="Log Corrective Work Order"
+                title="Log Corrective Work Order (Maintenance)">
+                <span class="mat-i">build_circle</span>
+              </button>
+
+              <button
+                type="button"
+                class="mini-ico-btn"
+                *ngIf="entry.usage_status !== 'NA'"
+                (click)="triggerMntModal(entry)"
+                title="Open Rapid Maintenance History (MNT Records)">
+                <span class="mat-i">history</span>
+              </button>
+
+              <button
+                type="button"
+                class="mini-ico-btn"
+                (click)="triggerWorkspace(entry, $event)"
+                title="Open Technical Dossier">
+                <span class="mat-i">open_in_new</span>
+              </button>
+            </div>
+          </td>
         </tr>
 
         <tr *ngIf="visibleEntries.length === 0">
-          <td colspan="6" class="empty-matrix-cell">
+          <td colspan="7" class="empty-matrix-cell">
             No stations match this status filter.
             <button type="button" class="btn btn-ghost btn-sm" (click)="statusFilter = 'ALL'">
               Show all
