@@ -1,20 +1,22 @@
 const router = require('express').Router();
 const { sequelize } = require('../models');
 
+let sectionPrefsTableInitPromise = null;
+let sectionRolePrefsTableInitPromise = null;
 let sectionAccessTableInitPromise = null;
 
 const UI_SECTION_CATALOG = {
   simulators: {
-    table: ['code', 'name', 'bay_code', 'aircraft_type', 'qualification_level', 'certificate_expiry', 'status'],
-    form: ['code', 'name', 'bay_code', 'platform_category', 'aircraft_type', 'manufacturer', 'authority', 'qualification_level', 'certificate_code', 'certificate_expiry', 'visual_system', 'motion_system', 'airac_cycle', 'status', 'limitations_mel']
+    table: ['code', 'name', 'bay_code', 'station_kind', 'scheduling_mode', 'aircraft_type', 'qualification_level', 'certificate_expiry', 'status'],
+    form: ['code', 'name', 'bay_code', 'station_kind', 'scheduling_mode', 'schedule_config', 'daily_available_hours', 'platform_category', 'aircraft_type', 'manufacturer', 'authority', 'qualification_level', 'certificate_code', 'certificate_expiry', 'visual_system', 'motion_system', 'airac_cycle', 'status', 'limitations_mel']
   },
   operations: {
-    table: ['sortie_code', 'title', 'simulator', 'customer_operator', 'type', 'status', 'priority', 'start_date', 'creator'],
-    form: ['title', 'sortie_code', 'simulator_id', 'type_id', 'customer_operator', 'scenario_code', 'weather_profile', 'motion_required', 'priority', 'status', 'location', 'start_date', 'end_date', 'scheduled_hours', 'actual_flight_hours', 'lost_training_minutes', 'outcome', 'description', 'notes']
+    table: ['sortie_code', 'title', 'mission_name', 'simulator', 'instructor_name', 'pilot_name', 'customer_operator', 'type', 'status', 'priority', 'start_date', 'creator'],
+    form: ['title', 'sortie_code', 'mission_name', 'simulator_id', 'type_id', 'instructor_name', 'pilot_name', 'copilot_name', 'customer_operator', 'scenario_code', 'weather_profile', 'motion_required', 'priority', 'status', 'location', 'start_date', 'end_date', 'scheduled_hours', 'actual_flight_hours', 'lost_training_minutes', 'outcome', 'description', 'notes']
   },
   maintenance: {
-    table: ['title', 'asset', 'type', 'status', 'priority', 'scheduled_date', 'technician', 'cost'],
-    form: ['title', 'asset_id', 'type', 'priority', 'status', 'scheduled_date', 'downtime_hours', 'cost', 'next_scheduled', 'parts_used', 'description', 'findings']
+    table: ['title', 'simulator', 'asset', 'part_number', 'broken_serial_number', 'new_serial_number', 'type', 'status', 'priority', 'scheduled_date', 'technician', 'cost'],
+    form: ['title', 'simulator_id', 'subsystem_code', 'severity', 'asset_id', 'part_number', 'broken_serial_number', 'new_serial_number', 'type', 'priority', 'status', 'scheduled_date', 'downtime_hours', 'labor_cost', 'cost', 'next_scheduled', 'parts_used', 'description', 'findings']
   },
   warehouse: {
     table: ['sku', 'part_number', 'name', 'category', 'location', 'quantity', 'stock_status', 'reorder_point', 'unit_cost', 'supplier'],

@@ -11,6 +11,7 @@ import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../../../core/services/api.service';
+import { AuthService } from '../../../core/services/auth.service';
 import { ConfirmService } from '../../../core/services/confirm.service';
 import { ToastService } from '../../../core/services/toast.service';
 import { UiCustomizationService, UiSectionPreferences } from '../../../core/services/ui-customization.service';
@@ -78,6 +79,8 @@ export class MaintenanceModalsComponent {
   selectedWarehouseItemId: number | null = null;
   selectedPartQty = 1;
   deductStock = true;
+  showPartsSection = false;
+  showAdvancedSection = false;
   wikiArticles: Array<{ id: number; title: string; slug: string }> = [];
   private wikiLoaded = false;
 
@@ -99,6 +102,7 @@ export class MaintenanceModalsComponent {
   ];
 
   constructor(
+    public auth: AuthService,
     private api: ApiService,
     private uiCustomization: UiCustomizationService,
     private toast: ToastService,
@@ -108,6 +112,9 @@ export class MaintenanceModalsComponent {
 
   @HostListener('document:keydown.escape')
   onEsc(): void {
+    if (typeof document !== 'undefined' && document.querySelector('.confirm-overlay, .cdk-overlay-pane')) {
+      return;
+    }
     if (this.showAssetModal) {
       this.showAssetModal = false;
       this.cdr.markForCheck();
@@ -185,6 +192,35 @@ export class MaintenanceModalsComponent {
     return Math.round(total * 100) / 100;
   }
 
+  get partsSectionBadge(): string {
+    if (this.partsList.length > 0) {
+      return `${this.partsList.length} part${this.partsList.length > 1 ? 's' : ''}`;
+    }
+    if (
+      String(this.recordForm.part_number || '').trim() ||
+      String(this.recordForm.broken_serial_number || '').trim() ||
+      String(this.recordForm.new_serial_number || '').trim()
+    ) {
+      return 'Serials set';
+    }
+    return '';
+  }
+
+  get advancedSectionBadge(): string {
+    let count = 0;
+    if (this.recordForm.subsystem_code) count++;
+    if (this.recordForm.is_snag) count++;
+    if (Number(this.recordForm.lost_training_hours) > 0) count++;
+    if (this.downtimeHoursPart > 0 || this.downtimeMinutesPart > 0) count++;
+    if (this.recordForm.mel_category && this.recordForm.mel_category !== 'NONE') count++;
+    if (this.recordForm.cost !== null && this.recordForm.cost !== '') count++;
+    if (this.recordForm.labor_cost !== null && this.recordForm.labor_cost !== '') count++;
+    if (this.recordForm.next_scheduled) count++;
+    if (this.recordForm.wiki_article_id) count++;
+    if (String(this.recordForm.findings || '').trim()) count++;
+    return count > 0 ? `${count} set` : '';
+  }
+
   openRecordModal(record?: MaintenanceRecord, prefill?: Partial<MaintenanceRecord>): void {
     this.ensureWikiLoaded();
     this.recordError = '';
@@ -223,6 +259,13 @@ export class MaintenanceModalsComponent {
       this.downtimeHoursPart = split.hours;
       this.downtimeMinutesPart = split.minutes;
       this.partsList = Array.isArray(record.parts_used) ? record.parts_used.map(p => ({ ...p })) : [];
+      this.showPartsSection = Boolean(
+        this.partsList.length > 0 ||
+        this.recordForm.part_number ||
+        this.recordForm.broken_serial_number ||
+        this.recordForm.new_serial_number
+      );
+      this.showAdvancedSection = false;
     } else {
       this.editingRecord = null;
       const base = this.emptyRecordForm();
@@ -254,6 +297,8 @@ export class MaintenanceModalsComponent {
       this.downtimeHoursPart = 0;
       this.downtimeMinutesPart = 0;
       this.partsList = [];
+      this.showPartsSection = Boolean(prefill?.part_number || prefill?.broken_serial_number || prefill?.new_serial_number);
+      this.showAdvancedSection = Boolean(prefill?.is_snag || (prefill?.mel_category && prefill.mel_category !== 'NONE') || prefill?.subsystem_code);
     }
 
     this.showRecordModal = true;
@@ -328,8 +373,12 @@ export class MaintenanceModalsComponent {
       }
     }
 
-    this.recordForm.part_number = resolvedPn;
-    this.recordForm.new_serial_number = resolvedNewSn;
+    if (resolvedPn) {
+      this.recordForm.part_number = resolvedPn;
+    }
+    if (resolvedNewSn) {
+      this.recordForm.new_serial_number = resolvedNewSn;
+    }
     if (resolvedBrokenSn) {
       this.recordForm.broken_serial_number = resolvedBrokenSn;
     }

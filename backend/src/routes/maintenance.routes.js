@@ -31,6 +31,7 @@ const {
   computeReliabilityMetrics
 } = require('../services/maintenance-helpers.service');
 const { broadcastOperationalAlert } = require('../services/proactive-alerts.service');
+const { emitDomainUpdate } = require('../config/socket');
 
 const RECORD_INCLUDES = [
   { model: Asset, as: 'asset', include: [{ model: AssetCategory, as: 'category' }], required: false },

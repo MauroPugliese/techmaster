@@ -22,6 +22,10 @@ export class AuthService {
 
   get currentUser(): User | null { return this.currentUserSubject.value; }
   get isAuthenticated(): boolean  { return !!this.getAccessToken(); }
+  get isAdmin(): boolean          { return this.hasRole('admin'); }
+  get canManage(): boolean        { return this.hasRole('admin', 'manager'); }
+  get canWrite(): boolean         { return this.hasRole('admin', 'manager', 'tech'); }
+  get isViewer(): boolean         { return this.currentUser?.role?.name === 'viewer'; }
 
   login(payload: LoginPayload): Observable<ApiResponse<{ user: User } & AuthTokens>> {
     return this.http.post<any>(`${this.API}/login`, payload).pipe(
@@ -43,8 +47,12 @@ export class AuthService {
     const refresh = localStorage.getItem('refresh_token');
     return this.http.post<any>(`${this.API}/refresh`, { refresh_token: refresh }).pipe(
       tap(res => {
-        localStorage.setItem('access_token', res.data.access_token);
-        localStorage.setItem('refresh_token', res.data.refresh_token);
+        if (res?.data?.access_token) {
+          localStorage.setItem('access_token', res.data.access_token);
+        }
+        if (res?.data?.refresh_token) {
+          localStorage.setItem('refresh_token', res.data.refresh_token);
+        }
         this.injector.get(SocketService).reconnectWithFreshToken();
       })
     );

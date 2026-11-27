@@ -136,6 +136,195 @@
   gap: 10px;
 }
 
+/* ── Binary Scheduling Mode & Operating Hours Card ────────────────────── */
+.sched-mode-card {
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  margin-bottom: 14px;
+
+  .form-group {
+    margin-bottom: 0;
+  }
+}
+
+.sched-window-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--blue-50);
+  color: var(--primary);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.mode-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.mode-card-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--border);
+  background: var(--surface-raised);
+  text-align: left;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: var(--transition);
+
+  .mat-i {
+    font-size: 20px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  .mode-txt {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+
+    strong {
+      font-size: 0.83rem;
+      font-weight: 800;
+      color: var(--blue-950);
+    }
+
+    span {
+      font-size: 0.71rem;
+      color: var(--text-muted);
+      line-height: 1.3;
+    }
+  }
+
+  .mode-radio-dot {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid #cbd5e1;
+    flex-shrink: 0;
+    position: relative;
+  }
+
+  &:hover:not(.active) {
+    border-color: var(--blue-300);
+    background: var(--surface);
+  }
+
+  &.active {
+    border-color: #1d4ed8;
+    background: #eff6ff;
+    box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.12);
+
+    .mat-i, .mode-txt strong { color: #1d4ed8; }
+    .mode-radio-dot {
+      border-color: #1d4ed8;
+      &::after {
+        content: '';
+        position: absolute;
+        inset: 2px;
+        border-radius: 50%;
+        background: #1d4ed8;
+      }
+    }
+  }
+
+  &.mode-shifts.active {
+    border-color: #0f766e;
+    background: #f0fdfa;
+    box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.12);
+
+    .mat-i, .mode-txt strong { color: #0f766e; }
+    .mode-radio-dot {
+      border-color: #0f766e;
+      &::after { background: #0f766e; }
+    }
+  }
+}
+
+.sched-hours-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.presets-block {
+  border-top: 1px solid var(--border);
+  padding-top: 9px;
+}
+
+.presets-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+
+.presets-lbl {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.preset-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.preset-row {
+  display: grid;
+  grid-template-columns: 104px 16px 104px 1fr 28px;
+  align-items: center;
+  gap: 6px;
+
+  &.shift-preset-row {
+    grid-template-columns: 1fr 104px 16px 104px 28px;
+  }
+}
+
+.preset-sep {
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.preset-label-inp,
+.preset-name-inp {
+  height: 32px !important;
+  padding: 4px 10px !important;
+  font-size: 0.79rem !important;
+}
+
+.preset-del-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+
+  .mat-i { font-size: 16px; }
+  &:hover {
+    background: #fee2e2;
+    color: #b91c1c;
+  }
+}
+
 /* ── Optional Modular Subsections Bar ─────────────────────────────────── */
 .opt-sections-bar {
   display: flex;
@@ -311,8 +500,14 @@
 
 @media (max-width: 720px) {
   .kind-picker-grid,
+  .mode-picker-grid,
+  .sched-hours-row,
   .sim-grid-4-ess,
   .sim-grid-3 {
     grid-template-columns: 1fr;
+  }
+  .preset-row,
+  .preset-row.shift-preset-row {
+    grid-template-columns: 1fr 16px 1fr 28px;
   }
 }

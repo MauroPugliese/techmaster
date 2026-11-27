@@ -14,7 +14,7 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
-import { ApiService, ConfirmService, ToastService } from '../../../core/services/services';
+import { ApiService, AuthService, ConfirmService, ToastService } from '../../../core/services/services';
 import {
   QtgCategory,
   QtgStatus,
@@ -29,12 +29,14 @@ import { DropdownComponent, DropdownOptionComponent } from '../../../shared/comp
 import { ExportMenuComponent } from '../../../shared/components/export-menu/export-menu.component';
 import {
   QTG_STATUS_META,
+  SCHEDULING_MODE_META,
   SIM_CATEGORY_LABELS,
   SIM_STATUS_META,
   SUBSYSTEM_META,
   SUBSYSTEM_OPTIONS,
   SUBSYSTEM_STATUS_META,
-  formatCertExpiryBadge
+  formatCertExpiryBadge,
+  resolveSimulatorSchedulingMode
 } from '../simulator-helpers';
 
 export type SimulatorWorkspaceTab = 'overview' | 'subsystems' | 'qtg' | 'maintenance' | 'sorties';
@@ -116,7 +118,30 @@ export class SimulatorWorkspaceComponent implements OnChanges, OnDestroy {
 
   readonly subsystemOptions = SUBSYSTEM_OPTIONS;
 
+  schedulingModeOf(sim: Simulator): 'SORTIES' | 'SHIFTS' {
+    return resolveSimulatorSchedulingMode(sim);
+  }
+
+  schedulingModeMeta(sim: Simulator) {
+    return SCHEDULING_MODE_META[resolveSimulatorSchedulingMode(sim)];
+  }
+
+  operatingWindowLabel(sim: Simulator): string {
+    const cfg = sim.schedule_config;
+    if (cfg?.operating_start && cfg?.operating_end) {
+      return `${cfg.operating_start}–${cfg.operating_end}`;
+    }
+    return resolveSimulatorSchedulingMode(sim) === 'SHIFTS' ? '06:30–18:00' : '06:00–22:00';
+  }
+
+  dailyShiftsViewFor(sim: Simulator): string {
+    if (sim.station_kind === 'IOS_CONSOLE') return 'ios-consoles';
+    if (sim.station_kind === 'FFS_BAY') return 'ffs-shifts';
+    return 'test-places';
+  }
+
   constructor(
+    public auth: AuthService,
     private api: ApiService,
     private toast: ToastService,
     private confirm: ConfirmService,

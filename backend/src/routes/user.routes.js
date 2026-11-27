@@ -1,6 +1,8 @@
 const router = require('express').Router();
-const { User, Role } = require('../models');
+const { sequelize, User, Role, RefreshToken } = require('../models');
 const { authorize } = require('../middleware/auth.middleware');
+const { guardSelfOrLastAdminAction } = require('../services/admin-helpers.service');
+const { disconnectUserSockets } = require('../config/socket');
 
 router.get('/', authorize('admin', 'manager'), async (req, res, next) => {
   try {
@@ -42,21 +44,67 @@ router.get('/:id', async (req, res, next) => {
 });
 
 router.patch('/:id/status', authorize('admin'), async (req, res, next) => {
+  const transaction = await sequelize.transaction();
   try {
     const targetId = parseInt(req.params.id, 10);
     if (Number.isNaN(targetId)) {
+      await transaction.rollback().catch(() => {});
       return res.status(400).json({ success: false, message: 'Invalid user ID' });
     }
 
-    const user = await User.findByPk(targetId);
-    if (!user) return res.status(404).json({ success: false, message: 'Not found' });
-    await user.update({ is_active: Boolean(req.body.is_active) });
+    const user = await User.findByPk(targetId, {
+      include: [{ model: Role, as: 'role' }],
+      transaction,
+      lock: transaction.LOCK.UPDATE
+    });
+    if (!user) {
+      await transaction.rollback().catch(() => {});
+      return res.status(404).json({ success: false, message: 'Not found' });
+    }
+
+    const nextActive = Boolean(req.body.is_active);
+    if (!nextActive && user.is_active) {
+      const activeAdmins = await User.findAll({
+        where: { is_active: true },
+        include: [{ model: Role, as: 'role', where: { name: 'admin' } }],
+        attributes: ['id'],
+        transaction,
+        lock: transaction.LOCK.UPDATE
+      });
+      const guard = guardSelfOrLastAdminAction({
+        actorId: req.user?.id,
+        targetUser: user,
+        action: 'deactivate',
+        activeAdminCount: activeAdmins.length
+      });
+      if (!guard.allowed) {
+        await transaction.rollback().catch(() => {});
+        return res.status(guard.status).json({ success: false, message: guard.message });
+      }
+    }
+
+    await user.update({ is_active: nextActive }, { transaction });
+    if (!nextActive) {
+      await RefreshToken.update(
+        { is_revoked: true },
+        { where: { user_id: user.id, is_revoked: false }, transaction }
+      );
+    }
+    await transaction.commit();
+
+    if (!nextActive) {
+      disconnectUserSockets(user.id);
+    }
+
     const updated = await User.findByPk(targetId, {
       attributes: { exclude: ['password_hash'] },
       include: [{ model: Role, as: 'role' }]
     });
     res.json({ success: true, data: updated });
-  } catch (err) { next(err); }
+  } catch (err) {
+    await transaction.rollback().catch(() => {});
+    next(err);
+  }
 });
 
 module.exports = router;

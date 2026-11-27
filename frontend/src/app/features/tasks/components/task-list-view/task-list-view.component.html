@@ -4,7 +4,7 @@
 
 <div class="list-view-wrap">
   <!-- ── Floating Bulk Action Bar ────────────────────────────────────────── -->
-  <div class="bulk-bar" *ngIf="selectedCount > 0">
+  <div class="bulk-bar" *ngIf="auth.canManage && selectedCount > 0">
     <div class="bulk-left">
       <span class="bulk-count">{{selectedCount}} selected</span>
       <button type="button" class="bulk-clear" (click)="clearSelection()" [disabled]="busyBulk">
@@ -55,7 +55,7 @@
     <table class="tasks-table" *ngIf="tasks.length; else emptyState">
       <thead>
         <tr>
-          <th class="col-check">
+          <th class="col-check" *ngIf="auth.canManage">
             <input type="checkbox"
                    [checked]="allSelected"
                    [indeterminate]="someSelected"
@@ -88,7 +88,7 @@
             [class.row-done]="task.status==='DONE'"
             (click)="taskClick.emit(task)">
 
-          <td class="col-check" (click)="$event.stopPropagation()">
+          <td class="col-check" *ngIf="auth.canManage" (click)="$event.stopPropagation()">
             <input type="checkbox"
                    [checked]="selectedIds.has(task.id)"
                    (change)="toggleRow(task.id, $event)"
@@ -112,6 +112,7 @@
 
           <td (click)="$event.stopPropagation()">
             <app-dropdown class="cell-dropdown status-pill"
+                          [disabled]="!auth.canWrite"
                           [style.--pill-color]="statusColor(task.status)"
                           [ngModel]="task.status"
                           (ngModelChange)="onInlineStatus(task, $event)"
@@ -122,6 +123,7 @@
 
           <td (click)="$event.stopPropagation()">
             <app-dropdown class="cell-dropdown prio-pill"
+                          [disabled]="!auth.canWrite"
                           [style.--pill-color]="priorityColor(task.priority)"
                           [ngModel]="task.priority"
                           (ngModelChange)="onInlinePriority(task, $event)"
@@ -138,6 +140,7 @@
                 {{initials(task.assignee)}}
               </span>
               <app-dropdown class="cell-dropdown assignee-select"
+                            [disabled]="!auth.canWrite"
                             [ngModel]="task.assigned_to ?? task.assignee?.id ?? ''"
                             (ngModelChange)="onInlineAssignee(task, $event)"
                             placeholder="Unassigned"
@@ -185,10 +188,10 @@
               <button type="button" class="icon-btn" title="Open detail" (click)="taskClick.emit(task)">
                 <span class="mat-i">open_in_new</span>
               </button>
-              <button type="button" class="icon-btn" title="Duplicate" (click)="duplicate.emit(task)">
+              <button *ngIf="auth.canWrite" type="button" class="icon-btn" title="Duplicate" (click)="duplicate.emit(task)">
                 <span class="mat-i">content_copy</span>
               </button>
-              <button type="button" class="icon-btn danger" title="Delete" (click)="remove.emit(task)">
+              <button *ngIf="auth.canManage" type="button" class="icon-btn danger" title="Delete" (click)="remove.emit(task)">
                 <span class="mat-i">delete</span>
               </button>
             </div>

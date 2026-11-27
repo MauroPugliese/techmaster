@@ -3,6 +3,7 @@
 // =============================================================================
 import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
+import { AuthService } from '../../../core/services/auth.service';
 import { Shift, ShiftType } from '../../../core/models/interfaces';
 import {
   formatHours,
@@ -144,7 +145,7 @@ import {
           </div>
 
           <div class="modal-footer detail-footer">
-            <button type="button" class="btn btn-ghost detail-delete-btn" (click)="remove.emit(shift)">
+            <button *ngIf="auth.canManage" type="button" class="btn btn-ghost detail-delete-btn" (click)="remove.emit(shift)">
               <span class="btn-icon">delete</span>
               Delete
             </button>
@@ -166,7 +167,7 @@ import {
                 <span class="btn-icon sh-icon-out">logout</span>
                 Check Out
               </button>
-              <button type="button" class="btn btn-primary" (click)="edit.emit(shift)">
+              <button *ngIf="auth.canManage" type="button" class="btn btn-primary" (click)="edit.emit(shift)">
                 <span class="btn-icon">edit</span>
                 Edit
               </button>
@@ -187,6 +188,8 @@ export class ShiftDetailModalComponent {
   @Output() checkOut = new EventEmitter<Shift>();
   @Output() edit = new EventEmitter<Shift>();
   @Output() remove = new EventEmitter<Shift>();
+
+  constructor(public auth: AuthService) {}
 
   onBackdrop(event: MouseEvent): void {
     if ((event.target as HTMLElement).classList.contains('modal-overlay')) {
@@ -220,12 +223,19 @@ export class ShiftDetailModalComponent {
     return `${person.first_name || ''} ${person.last_name || ''}`.trim() || '—';
   }
 
+  private canClockShift(shift: Shift): boolean {
+    if (this.auth.canManage) return true;
+    return this.auth.canWrite && Number(shift.user_id) === Number(this.auth.currentUser?.id);
+  }
+
   canCheckIn(shift: Shift): boolean {
+    if (!this.canClockShift(shift)) return false;
     const info = this.getInfo(shift);
     return !info.isLeave && (shift.status === 'SCHEDULED' || shift.status === 'CONFIRMED');
   }
 
   canCheckOut(shift: Shift): boolean {
+    if (!this.canClockShift(shift)) return false;
     const info = this.getInfo(shift);
     return !info.isLeave && shift.status === 'IN_PROGRESS';
   }

@@ -216,9 +216,26 @@ function buildTemplateDataTable(table, { totalWidthDxa = 9810 } = {}) {
 
   const weights = columns.map((c) => c.docxWidth || c.width || 14);
   const weightSum = weights.reduce((a, b) => a + b, 0) || 1;
-  const colWidths = weights.map((w) => Math.max(600, Math.round((w / weightSum) * totalWidthDxa)));
-  const sumFix = colWidths.reduce((a, b) => a + b, 0);
-  colWidths[colWidths.length - 1] += (totalWidthDxa - sumFix);
+  const minColW = Math.max(200, Math.min(600, Math.floor(totalWidthDxa / columns.length)));
+  let colWidths = weights.map((w) => Math.max(minColW, Math.round((w / weightSum) * totalWidthDxa)));
+  let sumFix = colWidths.reduce((a, b) => a + b, 0);
+  if (sumFix > totalWidthDxa) {
+    const scale = totalWidthDxa / sumFix;
+    colWidths = colWidths.map((w) => Math.max(200, Math.floor(w * scale)));
+    sumFix = colWidths.reduce((a, b) => a + b, 0);
+  }
+  const diff = totalWidthDxa - sumFix;
+  if (diff >= 0) {
+    colWidths[colWidths.length - 1] += diff;
+  } else {
+    let excess = -diff;
+    for (let i = colWidths.length - 1; i >= 0 && excess > 0; i--) {
+      const reducible = Math.max(0, colWidths[i] - 200);
+      const take = Math.min(reducible, excess);
+      colWidths[i] -= take;
+      excess -= take;
+    }
+  }
 
   const tblPr = `<w:tblPr><w:tblW w:w="${totalWidthDxa}" w:type="dxa"/><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="${BORDER_SUBTLE}"/><w:left w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:bottom w:val="single" w:sz="6" w:space="0" w:color="${NAVY}"/><w:right w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="${BORDER_SUBTLE}"/><w:insideV w:val="none" w:sz="0" w:space="0" w:color="auto"/></w:tblBorders><w:tblCellMar><w:top w:w="65" w:type="dxa"/><w:left w:w="90" w:type="dxa"/><w:bottom w:w="65" w:type="dxa"/><w:right w:w="90" w:type="dxa"/></w:tblCellMar><w:tblLayout w:type="fixed"/></w:tblPr>`;
   const tblGrid = `<w:tblGrid>${colWidths.map((w) => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>`;

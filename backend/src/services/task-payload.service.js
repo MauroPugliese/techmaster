@@ -63,7 +63,7 @@ function normalizeTags(raw) {
  * Validate and normalize incoming task creation or partial update payloads.
  * Returns { error, data } without mutating the source object.
  */
-function sanitizeTaskPayload(body, { isCreate = false, taskId = null } = {}) {
+function sanitizeTaskPayload(body, { isCreate = false, taskId = null, existingStatus = null, existingCompletedAt = null } = {}) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return { error: 'Invalid request payload', data: null };
   }
@@ -97,7 +97,13 @@ function sanitizeTaskPayload(body, { isCreate = false, taskId = null } = {}) {
       return { error: `Invalid status: ${status}`, data: null };
     }
     data.status = status;
-    data.completed_at = status === 'DONE' ? new Date() : null;
+    if (status === 'DONE') {
+      if (existingStatus !== 'DONE' || !existingCompletedAt) {
+        data.completed_at = new Date();
+      }
+    } else {
+      data.completed_at = null;
+    }
   }
 
   if (isCreate || hasOwn(body, 'priority')) {

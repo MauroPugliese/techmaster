@@ -48,13 +48,14 @@
           </div>
 
           <div class="doc-actions">
-            <button type="button" class="btn btn-primary btn-sm" (click)="edit.emit(article)">
+            <button *ngIf="auth.canWrite" type="button" class="btn btn-primary btn-sm" (click)="edit.emit(article)">
               <span class="btn-icon">edit</span> Edit
             </button>
             <button type="button" class="btn btn-secondary btn-sm" (click)="copyShareLink()" title="Copy share link">
               <span class="btn-icon">link</span> Share
             </button>
-            <button type="button"
+            <button *ngIf="auth.canManage"
+                    type="button"
                     class="btn btn-secondary btn-sm pin-btn"
                     [class.is-pinned]="article.is_pinned"
                     (click)="togglePin.emit(article)"
@@ -67,7 +68,8 @@
                              [includeDateRange]="false"
                              [showPeriodSelector]="false"
                              label="Export"></app-export-menu>
-            <button type="button"
+            <button *ngIf="auth.canManage"
+                    type="button"
                     class="btn btn-ghost btn-icon-only btn-sm danger-btn"
                     (click)="remove.emit(article)"
                     title="Delete document">

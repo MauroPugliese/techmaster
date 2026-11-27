@@ -55,13 +55,15 @@ module.exports = {
     const range = parseRange(req.query);
     const { status, category_id, tag, search } = req.query;
 
+    const isViewer = req.user?.role?.name === 'viewer';
     const where = {};
     if (range.from || range.to) {
       where.updated_at = {};
       if (range.from) where.updated_at[Op.gte] = range.from;
       if (range.to) where.updated_at[Op.lte] = range.to;
     }
-    if (status) where.status = status;
+    if (isViewer) where.status = 'PUBLISHED';
+    else if (status) where.status = status;
     if (category_id) where.category_id = category_id;
     if (search && String(search).trim()) {
       const q = `%${String(search).trim()}%`;
@@ -230,7 +232,7 @@ module.exports = {
       ]
     });
 
-    if (!article) {
+    if (!article || (req.user?.role?.name === 'viewer' && article.status !== 'PUBLISHED')) {
       const err = new Error('Wiki article not found');
       err.status = 404;
       throw err;

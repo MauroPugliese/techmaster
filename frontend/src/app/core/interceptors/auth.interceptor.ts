@@ -39,6 +39,11 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
         );
       }
 
+      if (!localStorage.getItem('refresh_token')) {
+        auth.logout();
+        return throwError(() => err);
+      }
+
       isRefreshing = true;
       let settled = false;
       refreshState$.next({ status: 'pending', token: null });

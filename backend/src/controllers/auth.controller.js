@@ -4,6 +4,19 @@ const jwt    = require('jsonwebtoken');
 const { User, Role, RefreshToken, sequelize } = require('../models');
 const { Op } = require('sequelize');
 const { recordFailedAttempt, checkBruteForce, clearLoginAttempts } = require('../middleware/auth.middleware');
+const { disconnectUserSockets } = require('../config/socket');
+
+const pruneExpiredRefreshTokens = () => {
+  const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  RefreshToken.destroy({
+    where: {
+      [Op.or]: [
+        { expires_at: { [Op.lt]: new Date() } },
+        { is_revoked: true, updated_at: { [Op.lt]: cutoff } }
+      ]
+    }
+  }).catch(() => {});
+};
 
 const hashRefreshToken = (token) =>
   crypto.createHash('sha256').update(String(token || '')).digest('hex');
@@ -175,6 +188,7 @@ exports.refresh = async (req, res) => {
     await storedToken.update({ is_revoked: true }, { transaction });
     const tokens = await generateTokens(decoded.id, transaction);
     await transaction.commit();
+    pruneExpiredRefreshTokens();
 
     return res.json({ success: true, data: { access_token: tokens.access, refresh_token: tokens.refresh } });
   } catch (err) {
@@ -212,6 +226,7 @@ exports.logout = async (req, res, next) => {
         { is_revoked: true },
         { where: { user_id: targetUserId, is_revoked: false } }
       );
+      disconnectUserSockets(targetUserId);
     }
 
     res.json({ success: true, message: 'Logged out' });
@@ -246,6 +261,7 @@ exports.updateProfile = async (req, res, next) => {
         { is_revoked: true },
         { where: { user_id: req.user.id, is_revoked: false } }
       );
+      disconnectUserSockets(req.user.id);
     }
 
     const updatedUser = await User.findByPk(req.user.id, {
@@ -289,6 +305,7 @@ exports.revokeSessions = async (req, res, next) => {
       { is_revoked: true },
       { where: { user_id: req.user.id, is_revoked: false } }
     );
+    disconnectUserSockets(req.user.id);
     res.json({
       success: true,
       message: 'All active sessions revoked',

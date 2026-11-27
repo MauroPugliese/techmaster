@@ -2,7 +2,7 @@
      CREATE / EDIT FLIGHT SORTIE MODAL
      ========================================================================== -->
 <div class="modal-overlay" *ngIf="showFormModal" (click)="closeFormModal($event)">
-  <div class="modal ops-modal-wide" (click)="$event.stopPropagation()">
+  <div class="modal ops-modal-wide" role="dialog" aria-modal="true" (click)="$event.stopPropagation()">
     <div class="modal-header">
       <h3>{{editingOp ? 'Edit Flight Sortie' : 'Schedule Flight Sortie'}}</h3>
       <button type="button" class="btn btn-ghost btn-icon-only" (click)="showFormModal = false">
@@ -40,96 +40,32 @@
         </div>
       </div>
 
+      <!-- ── TIER 1: Essential Sortie Scheduling Fields ────────────────────── -->
       <div class="form-row">
-        <div class="form-group" style="grid-column:1 / -1" *ngIf="showFormField('title')">
-          <label class="form-label">{{fieldLabel('form','title','Sortie Title / Training Session')}} *</label>
-          <input class="form-control" [(ngModel)]="form.title" placeholder="e.g. A320 Type Rating — LOFT 04 / Cat III Approaches">
-        </div>
-
         <div class="form-group">
           <label class="form-label">Simulator Bay (FSTD)</label>
           <app-dropdown class="form-control"
                         [(ngModel)]="form.simulator_id"
                         (ngModelChange)="checkBayConflict()"
                         [searchable]="true"
-                        [creatable]="true"
+                        [creatable]="auth.canManage"
                         searchPlaceholder="Search bay code, name, or aircraft…"
                         createLabel="Create new simulator bay"
                         createPlaceholder="e.g. BAY-05 · A350 FFS"
                         (createOption)="quickCreateSimulator($event)"
                         placeholder="— Select FSTD Bay —">
             <app-dropdown-option [ngValue]="null">— Unassigned —</app-dropdown-option>
-            <app-dropdown-option *ngFor="let s of simulators"
+            <app-dropdown-option *ngFor="let s of orderedSimulatorsForSortie"
                                  [ngValue]="s.id"
                                  [searchText]="(s.bay_code || '') + ' ' + (s.code || '') + ' ' + (s.name || '') + ' ' + (s.aircraft_type || '')">
-              {{s.bay_code}} · {{s.code}} ({{s.aircraft_type}} · {{s.status}})
+              {{s.bay_code}} · {{s.code}} ({{s.aircraft_type}} · {{simulatorModeOf(s)}})
             </app-dropdown-option>
           </app-dropdown>
         </div>
 
-        <div class="form-group" *ngIf="showFormField('type_id')">
-          <label class="form-label">{{fieldLabel('form','type_id','Training Profile')}} *</label>
-          <app-dropdown class="form-control"
-                        [(ngModel)]="form.type_id"
-                        [searchable]="true"
-                        [creatable]="true"
-                        createLabel="Create new training profile"
-                        createPlaceholder="e.g. Recurrent LPC / OPC"
-                        (createOption)="quickCreateOperationType($event)"
-                        placeholder="— Select profile —">
-            <app-dropdown-option [ngValue]="undefined">— Select profile —</app-dropdown-option>
-            <app-dropdown-option *ngFor="let t of opTypes" [ngValue]="t.id">{{t.name}}</app-dropdown-option>
-          </app-dropdown>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Customer / Airline Operator</label>
-          <input class="form-control" [(ngModel)]="form.customer_operator" placeholder="e.g. ITA Airways / Lufthansa / Italian Air Force">
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Sortie Code (Auto if blank)</label>
-          <input class="form-control ops-num" [(ngModel)]="form.sortie_code" placeholder="e.g. SRT-A320-104">
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Scenario / ICAO Route</label>
-          <input class="form-control ops-num" [(ngModel)]="form.scenario_code" placeholder="e.g. LIRF-LIML RNAV + OEI">
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Weather &amp; RVR Profile</label>
-          <input class="form-control" [(ngModel)]="form.weather_profile" placeholder="e.g. CAT IIIB / RVR 75m">
-          <div class="ops-preset-chips">
-            <button *ngFor="let wp of weatherPresets"
-                    type="button"
-                    class="ops-preset-chip"
-                    [class.active]="form.weather_profile === wp"
-                    (click)="form.weather_profile = wp">
-              {{wp}}
-            </button>
-          </div>
-        </div>
-
-        <div class="form-group" *ngIf="showFormField('priority')">
-          <label class="form-label">{{fieldLabel('form','priority','Priority')}}</label>
-          <app-dropdown class="form-control" [(ngModel)]="form.priority">
-            <app-dropdown-option value="LOW">Low</app-dropdown-option>
-            <app-dropdown-option value="MEDIUM">Medium</app-dropdown-option>
-            <app-dropdown-option value="HIGH">High</app-dropdown-option>
-            <app-dropdown-option value="CRITICAL">Critical</app-dropdown-option>
-          </app-dropdown>
-        </div>
-
-        <div class="form-group" *ngIf="showFormField('status')">
-          <label class="form-label">{{fieldLabel('form','status','Workflow Status')}}</label>
-          <app-dropdown class="form-control" [(ngModel)]="form.status">
-            <app-dropdown-option value="PLANNED">Planned</app-dropdown-option>
-            <app-dropdown-option value="IN_PROGRESS">In Simulator</app-dropdown-option>
-            <app-dropdown-option value="ON_HOLD">On Hold</app-dropdown-option>
-            <app-dropdown-option value="COMPLETED">Completed</app-dropdown-option>
-            <app-dropdown-option value="CANCELLED">Cancelled</app-dropdown-option>
-          </app-dropdown>
+        <div class="form-group" *ngIf="showFormField('title')">
+          <label class="form-label">{{fieldLabel('form','title','Sortie Title')}} <span class="ops-opt-tag">(Optional)</span></label>
+          <input class="form-control" [(ngModel)]="form.title" placeholder="Auto-filled from mission or bay if blank">
         </div>
 
         <div class="form-group" *ngIf="showFormField('start_date')">
@@ -141,10 +77,10 @@
                                placeholder="Select slot start">
           </app-datetime-picker>
           <div class="ops-quick-presets">
-            <button *ngFor="let slot of caeSlotPresets"
+            <button *ngFor="let slot of activeSlotPresets"
                     type="button"
                     class="ops-preset-btn ops-num"
-                    (click)="applyCaeSlotPreset(slot.startHour, slot.endHour)">
+                    (click)="applySlotPreset(slot)">
               {{slot.label}}
             </button>
           </div>
@@ -173,108 +109,194 @@
           </div>
         </div>
 
-        <div class="form-group">
-          <label class="form-label">Sortie Outcome</label>
-          <app-dropdown class="form-control" [(ngModel)]="form.outcome">
-            <app-dropdown-option *ngFor="let o of outcomeOptions" [value]="o.value">{{o.label}}</app-dropdown-option>
-          </app-dropdown>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">6-DOF Motion Platform</label>
-          <label class="flex items-center gap-2" style="padding:8px 0;cursor:pointer;font-size:0.84rem">
-            <input type="checkbox" [(ngModel)]="form.motion_required" (ngModelChange)="checkBayConflict()" />
-            <span>Motion System Required (Level D Wet/Full Motion)</span>
-          </label>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Scheduled / Actual / Lost Min</label>
-          <div class="flex items-center gap-2">
-            <input type="number" step="0.5" min="0" class="form-control ops-num" [(ngModel)]="form.scheduled_hours" placeholder="Sched h" title="Scheduled Hours" />
-            <input type="number" step="0.5" min="0" class="form-control ops-num" [(ngModel)]="form.actual_flight_hours" placeholder="Actual h" title="Actual Flown Hours" />
-            <input type="number" min="0" class="form-control ops-num" [(ngModel)]="form.lost_training_minutes" placeholder="Lost min" title="Lost Training Minutes" />
+        <!-- Optional Mission, External Instructor & External Pilot (Direct Typing) -->
+        <div class="ops-ext-crew-grid" style="grid-column:1 / -1">
+          <div class="form-group">
+            <label class="form-label">Mission <span class="ops-opt-tag">(Optional)</span></label>
+            <input class="form-control" list="ops-mission-list" [(ngModel)]="form.mission_name" placeholder="e.g. LOFT-04 / Type Rating">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Instructor <span class="ops-opt-tag">(External · Optional)</span></label>
+            <input class="form-control" list="ops-instructor-list" [(ngModel)]="form.instructor_name" placeholder="Type instructor name…">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Pilot <span class="ops-opt-tag">(External · Optional)</span></label>
+            <input class="form-control" list="ops-pilot-list" [(ngModel)]="form.pilot_name" placeholder="Type pilot name…">
           </div>
         </div>
 
-        <div class="form-group" *ngIf="!editingOp">
-          <label class="form-label">Repeat Series (Consecutive Days)</label>
-          <app-dropdown class="form-control" [(ngModel)]="form.repeat_days" ariaLabel="Repeat Series">
-            <app-dropdown-option [ngValue]="1">Single Day (1 sortie)</app-dropdown-option>
-            <app-dropdown-option [ngValue]="2">2 Consecutive Days</app-dropdown-option>
-            <app-dropdown-option [ngValue]="3">3 Consecutive Days</app-dropdown-option>
-            <app-dropdown-option [ngValue]="4">4 Consecutive Days</app-dropdown-option>
-            <app-dropdown-option [ngValue]="5">5 Consecutive Days (Full Week)</app-dropdown-option>
-          </app-dropdown>
-        </div>
+        <!-- ── TIER 2 ACCORDION 1: Optional Flight Profile, Co-Pilot, Weather & Recurrence ── -->
+        <div class="ux-accordion-section" [class.is-open]="showFlightDetails">
+          <button type="button"
+                  class="ux-accordion-head"
+                  [attr.aria-expanded]="showFlightDetails"
+                  (click)="showFlightDetails = !showFlightDetails">
+            <span class="ux-acc-left">
+              <span class="ux-acc-icon">flight</span>
+              <span>
+                <span>Additional Mission Data, Scenario, Weather &amp; Repeat</span>
+                <span class="ux-acc-sub"> — Co-Pilot, Customer, Profile, ICAO Scenario, Weather, Motion &amp; Notes (all optional)</span>
+              </span>
+            </span>
+            <span class="ux-acc-right">
+              <span class="ux-acc-badge" *ngIf="flightDetailsBadge">{{flightDetailsBadge}}</span>
+              <span class="ux-acc-chevron">expand_more</span>
+            </span>
+          </button>
 
-        <div class="form-group" *ngIf="showFormField('location')">
-          <label class="form-label">{{fieldLabel('form','location','Bay / Briefing Room')}}</label>
-          <input class="form-control" [(ngModel)]="form.location" placeholder="Auto-filled from bay or Briefing Room B">
-        </div>
+          <div class="ux-accordion-body" *ngIf="showFlightDetails">
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Co-Pilot / Pilot 2 (External)</label>
+                <input class="form-control" list="ops-pilot-list" [(ngModel)]="form.copilot_name" placeholder="Optional second pilot name…">
+              </div>
 
-        <!-- Initial Crew Assignment -->
-        <div class="form-group" style="grid-column:1 / -1">
-          <label class="form-label">Crew Roster</label>
-          <div class="ops-crew-picker">
-            <app-dropdown class="form-control ops-crew-select"
-                          [(ngModel)]="selectedDraftUserId"
-                          [searchable]="true"
-                          searchPlaceholder="Search crew name or title…"
-                          placeholder="— Select crew member —">
-              <app-dropdown-option [ngValue]="null">— Select crew member —</app-dropdown-option>
-              <app-dropdown-option *ngFor="let u of availableDraftStaff" [ngValue]="u.id">
-                {{userName(u)}}{{u.job_title ? ' (' + u.job_title + ')' : ''}}
-              </app-dropdown-option>
-            </app-dropdown>
-            <input class="form-control ops-crew-role"
-                   [(ngModel)]="selectedDraftRole"
-                   placeholder="Role (e.g. Mission Lead)">
-            <button type="button"
-                    class="btn btn-secondary btn-sm"
-                    [disabled]="!selectedDraftUserId"
-                    (click)="addDraftMember()">
-              <span class="btn-icon">person_add</span> Assign
-            </button>
-          </div>
+              <div class="form-group">
+                <label class="form-label">Customer / Airline Operator</label>
+                <input class="form-control" list="ops-customer-list" [(ngModel)]="form.customer_operator" placeholder="e.g. ITA Airways / Lufthansa">
+              </div>
 
-          <div class="ops-quick-presets" *ngIf="selectedDraftUserId">
-            <button *ngFor="let r of roleSuggestions"
-                    type="button"
-                    class="ops-preset-btn"
-                    (click)="selectedDraftRole = r">
-              {{r}}
-            </button>
-          </div>
+              <div class="form-group" *ngIf="showFormField('type_id')">
+                <label class="form-label">{{fieldLabel('form','type_id','Training Profile')}}</label>
+                <app-dropdown class="form-control"
+                              [(ngModel)]="form.type_id"
+                              [searchable]="true"
+                              [creatable]="true"
+                              createLabel="Create new training profile"
+                              createPlaceholder="e.g. Recurrent LPC / OPC"
+                              (createOption)="quickCreateOperationType($event)"
+                              placeholder="— Optional profile —">
+                  <app-dropdown-option [ngValue]="undefined">— Default profile —</app-dropdown-option>
+                  <app-dropdown-option *ngFor="let t of opTypes" [ngValue]="t.id">{{t.name}}</app-dropdown-option>
+                </app-dropdown>
+              </div>
 
-          <div class="ops-crew-list" *ngIf="draftMembers.length > 0">
-            <div class="ops-crew-chip" *ngFor="let m of draftMembers">
-              <div class="ops-head-actions">
-                <span class="ops-avatar">{{userInitials(m.user)}}</span>
-                <div>
-                  <div class="font-bold">{{userName(m.user)}}</div>
-                  <div class="ops-subtext" *ngIf="m.role_in_op">{{m.role_in_op}}</div>
+              <div class="form-group" *ngIf="showFormField('priority')">
+                <label class="form-label">{{fieldLabel('form','priority','Priority')}}</label>
+                <app-dropdown class="form-control" [(ngModel)]="form.priority">
+                  <app-dropdown-option value="LOW">Low</app-dropdown-option>
+                  <app-dropdown-option value="MEDIUM">Medium</app-dropdown-option>
+                  <app-dropdown-option value="HIGH">High</app-dropdown-option>
+                  <app-dropdown-option value="CRITICAL">Critical</app-dropdown-option>
+                </app-dropdown>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Sortie Code (Auto if blank)</label>
+                <input class="form-control ops-num" [(ngModel)]="form.sortie_code" placeholder="e.g. SRT-A320-104">
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Scenario / ICAO Route</label>
+                <input class="form-control ops-num" list="ops-scenario-list" [(ngModel)]="form.scenario_code" placeholder="e.g. LIRF-LIML RNAV + OEI">
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Weather &amp; RVR Profile</label>
+                <input class="form-control" [(ngModel)]="form.weather_profile" placeholder="Optional (e.g. CAT IIIB / RVR 75m)">
+                <div class="ops-preset-chips">
+                  <button *ngFor="let wp of weatherPresets"
+                          type="button"
+                          class="ops-preset-chip"
+                          [class.active]="form.weather_profile === wp"
+                          (click)="form.weather_profile = form.weather_profile === wp ? '' : wp">
+                    {{wp}}
+                  </button>
                 </div>
               </div>
-              <button type="button" class="btn btn-ghost btn-icon-only btn-sm" (click)="removeDraftMember(m.user_id)" title="Remove member">
-                <span class="btn-icon" style="font-size:16px">close</span>
-              </button>
+
+              <div class="form-group" *ngIf="showFormField('status')">
+                <label class="form-label">{{fieldLabel('form','status','Workflow Status')}}</label>
+                <app-dropdown class="form-control" [(ngModel)]="form.status">
+                  <app-dropdown-option value="PLANNED">Planned</app-dropdown-option>
+                  <app-dropdown-option value="IN_PROGRESS">In Simulator</app-dropdown-option>
+                  <app-dropdown-option value="ON_HOLD">On Hold</app-dropdown-option>
+                  <app-dropdown-option value="COMPLETED">Completed</app-dropdown-option>
+                  <app-dropdown-option value="CANCELLED">Cancelled</app-dropdown-option>
+                </app-dropdown>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">6-DOF Motion Platform</label>
+                <label class="flex items-center gap-2" style="padding:8px 0;cursor:pointer;font-size:0.84rem">
+                  <input type="checkbox" [(ngModel)]="form.motion_required" (ngModelChange)="checkBayConflict()" />
+                  <span>Motion System Required</span>
+                </label>
+              </div>
+
+              <div class="form-group" *ngIf="!editingOp">
+                <label class="form-label">Repeat Series (Consecutive Days)</label>
+                <app-dropdown class="form-control" [(ngModel)]="form.repeat_days" ariaLabel="Repeat Series">
+                  <app-dropdown-option [ngValue]="1">Single Day (1 sortie)</app-dropdown-option>
+                  <app-dropdown-option [ngValue]="2">2 Consecutive Days</app-dropdown-option>
+                  <app-dropdown-option [ngValue]="3">3 Consecutive Days</app-dropdown-option>
+                  <app-dropdown-option [ngValue]="4">4 Consecutive Days</app-dropdown-option>
+                  <app-dropdown-option [ngValue]="5">5 Consecutive Days (Full Week)</app-dropdown-option>
+                </app-dropdown>
+              </div>
+
+              <div class="form-group" *ngIf="showFormField('location')">
+                <label class="form-label">{{fieldLabel('form','location','Bay / Hall')}}</label>
+                <input class="form-control" [(ngModel)]="form.location" placeholder="Auto-filled from bay">
+              </div>
+
+              <div class="form-group" style="grid-column:1 / -1" *ngIf="showFormField('description')">
+                <label class="form-label">{{fieldLabel('form','description','Description')}}</label>
+                <textarea class="form-control ops-textarea-sm"
+                          [(ngModel)]="form.description"
+                          placeholder="Optional mission objective…"></textarea>
+              </div>
+
+              <div class="form-group" style="grid-column:1 / -1" *ngIf="showFormField('notes')">
+                <label class="form-label">{{fieldLabel('form','notes','Notes')}}</label>
+                <textarea class="form-control ops-textarea-sm"
+                          [(ngModel)]="form.notes"
+                          placeholder="Optional operational or handover notes…"></textarea>
+              </div>
             </div>
           </div>
         </div>
 
-        <div class="form-group" style="grid-column:1 / -1" *ngIf="showFormField('description')">
-          <label class="form-label">{{fieldLabel('form','description','Description')}}</label>
-          <textarea class="form-control ops-textarea-sm"
-                    [(ngModel)]="form.description"
-                    placeholder="Mission objective and flight/operation profile…"></textarea>
-        </div>
+        <!-- ── TIER 2 ACCORDION 2: Post-Sortie Outcome & Hours (Edit/Active only) -->
+        <div class="ux-accordion-section"
+             [class.is-open]="showDebriefSection"
+             *ngIf="editingOp || form.status === 'IN_PROGRESS' || form.status === 'COMPLETED'">
+          <button type="button"
+                  class="ux-accordion-head"
+                  [attr.aria-expanded]="showDebriefSection"
+                  (click)="showDebriefSection = !showDebriefSection">
+            <span class="ux-acc-left">
+              <span class="ux-acc-icon">task_alt</span>
+              <span>
+                <span>Post-Sortie Outcome &amp; Flight Hours</span>
+                <span class="ux-acc-sub"> — Training outcome, scheduled vs actual hours &amp; lost minutes</span>
+              </span>
+            </span>
+            <span class="ux-acc-right">
+              <span class="ux-acc-badge" *ngIf="debriefSectionBadge">{{debriefSectionBadge}}</span>
+              <span class="ux-acc-chevron">expand_more</span>
+            </span>
+          </button>
 
-        <div class="form-group" style="grid-column:1 / -1" *ngIf="showFormField('notes')">
-          <label class="form-label">{{fieldLabel('form','notes','Notes')}}</label>
-          <textarea class="form-control ops-textarea-sm"
-                    [(ngModel)]="form.notes"
-                    placeholder="Safety constraints, equipment checklist, handover notes…"></textarea>
+          <div class="ux-accordion-body" *ngIf="showDebriefSection">
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Sortie Outcome</label>
+                <app-dropdown class="form-control" [(ngModel)]="form.outcome">
+                  <app-dropdown-option *ngFor="let o of outcomeOptions" [value]="o.value">{{o.label}}</app-dropdown-option>
+                </app-dropdown>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Scheduled / Actual / Lost Min</label>
+                <div class="flex items-center gap-2">
+                  <input type="number" step="0.5" min="0" class="form-control ops-num" [(ngModel)]="form.scheduled_hours" placeholder="Sched h" title="Scheduled Hours" />
+                  <input type="number" step="0.5" min="0" class="form-control ops-num" [(ngModel)]="form.actual_flight_hours" placeholder="Actual h" title="Actual Flown Hours" />
+                  <input type="number" min="0" class="form-control ops-num" [(ngModel)]="form.lost_training_minutes" placeholder="Lost min" title="Lost Training Minutes" />
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -343,16 +365,30 @@
           <span class="detail-label">Customer / Operator</span>
           <span class="detail-value">{{detailOp.customer_operator || '—'}}</span>
         </div>
+        <div class="detail-field" *ngIf="detailOp.mission_name">
+          <span class="detail-label">Mission</span>
+          <span class="detail-value">{{detailOp.mission_name}}</span>
+        </div>
+        <div class="detail-field" *ngIf="detailOp.instructor_name">
+          <span class="detail-label">Instructor (External)</span>
+          <span class="detail-value">{{detailOp.instructor_name}}</span>
+        </div>
+        <div class="detail-field" *ngIf="detailOp.pilot_name || detailOp.copilot_name">
+          <span class="detail-label">Pilot(s) (External)</span>
+          <span class="detail-value">
+            {{detailOp.pilot_name || ''}}{{detailOp.pilot_name && detailOp.copilot_name ? ' / ' : ''}}{{detailOp.copilot_name || ''}}
+          </span>
+        </div>
         <div class="detail-field">
           <span class="detail-label">Slot Window (Start → End)</span>
           <span class="detail-value ops-num">
-            {{detailOp.start_date ? (detailOp.start_date | date:'dd MMM, HH:mm') : '—'}} → {{detailOp.end_date ? (detailOp.end_date | date:'HH:mm') : '—'}}
+            {{detailOp.start_date ? (detailOp.start_date | date:'dd MMM, HH:mm') : '—'}} → {{detailOp.end_date ? (detailOp.end_date | date:'dd MMM, HH:mm') : '—'}}
           </span>
         </div>
         <div class="detail-field">
           <span class="detail-label">Scenario / Weather / Motion</span>
           <span class="detail-value ops-num">
-            {{detailOp.scenario_code || 'Standard'}} · {{detailOp.weather_profile || 'CAVOK'}} · {{detailOp.motion_required !== false ? 'Motion ON' : 'Fixed-Base'}}
+            {{detailOp.scenario_code || '—'}} · {{detailOp.weather_profile || '—'}} · {{detailOp.motion_required !== false ? 'Motion ON' : 'Fixed-Base'}}
           </span>
         </div>
         <div class="detail-field">
@@ -451,7 +487,7 @@
       <!-- Interactive Crew Roster -->
       <div class="detail-section mt-4">
         <span class="detail-section-title">Crew Roster ({{detailMembers.length}})</span>
-        <div class="ops-crew-picker">
+        <div class="ops-crew-picker" *ngIf="auth.canWrite">
           <app-dropdown class="form-control ops-crew-select"
                         [(ngModel)]="newMemberUserId"
                         placeholder="— Assign operator —">
@@ -478,7 +514,8 @@
                 <div class="ops-subtext">{{m.role_in_op || m.user?.job_title || 'Crew Member'}}</div>
               </div>
             </div>
-            <button type="button"
+            <button *ngIf="auth.canWrite"
+                    type="button"
                     class="btn btn-ghost btn-icon-only btn-sm"
                     [disabled]="memberBusy"
                     (click)="removeDetailMember(m)"
@@ -498,7 +535,7 @@
           <span class="detail-section-title">Sortie Log ({{detailLogs.length}})</span>
           <button type="button"
                   class="btn btn-secondary btn-sm"
-                  *ngIf="detailOp.simulator_id || detailOp.simulator?.id"
+                  *ngIf="auth.canWrite && (detailOp.simulator_id || detailOp.simulator?.id)"
                   (click)="toggleSnagForm()">
             <span class="btn-icon">report_problem</span>
             {{ showSnagForm ? 'Cancel Snag DR' : 'Report Simulator Snag (DR)' }}
@@ -506,7 +543,7 @@
         </div>
 
         <!-- 1-Click Report Simulator Snag (DR) -->
-        <div class="ops-snag-panel" *ngIf="showSnagForm">
+        <div class="ops-snag-panel" *ngIf="auth.canWrite && showSnagForm">
           <div class="ops-snag-panel-head">
             <strong>
               <span class="mat-i">report_problem</span>
@@ -557,7 +594,7 @@
           </div>
         </div>
 
-        <div class="ops-crew-picker">
+        <div class="ops-crew-picker" *ngIf="auth.canWrite">
           <input class="form-control ops-crew-select"
                  [(ngModel)]="newLogAction"
                  placeholder="Log update (e.g. Wheels up, Check completed)…">
@@ -590,36 +627,185 @@
     </div>
 
     <div class="modal-footer detail-footer">
-      <button type="button" class="btn btn-ghost detail-delete-btn" (click)="deleteOperation(detailOp)">
+      <button *ngIf="auth.canManage" type="button" class="btn btn-ghost detail-delete-btn" (click)="deleteOperation(detailOp)">
         <span class="btn-icon">delete</span> Delete
       </button>
 
       <div class="detail-footer-actions">
-        <button type="button" class="btn btn-secondary" (click)="duplicateOperation(detailOp)" title="Clone as Planned">
-          <span class="btn-icon">content_copy</span> Duplicate
-        </button>
-        <button type="button"
-                class="btn btn-secondary"
-                *ngIf="detailOp.status === 'PLANNED' || detailOp.status === 'ON_HOLD'"
-                (click)="updateStatus(detailOp, 'IN_PROGRESS')">
-          <span class="btn-icon text-primary">play_circle</span> Start
-        </button>
-        <button type="button"
-                class="btn btn-secondary"
-                *ngIf="detailOp.status === 'IN_PROGRESS'"
-                (click)="updateStatus(detailOp, 'ON_HOLD')">
-          <span class="btn-icon" style="color:#D97706">pause_circle</span> Hold
-        </button>
-        <button type="button"
-                class="btn btn-secondary"
-                *ngIf="detailOp.status !== 'COMPLETED' && detailOp.status !== 'CANCELLED'"
-                (click)="toggleDebriefForm()">
-          <span class="btn-icon" style="color:#16A34A">task_alt</span> Debrief &amp; Close
-        </button>
-        <button type="button" class="btn btn-primary" (click)="editFromDetail()">
-          <span class="btn-icon">edit</span> Edit
-        </button>
+        <button *ngIf="!auth.canWrite" type="button" class="btn btn-secondary" (click)="detailOp = null">Close</button>
+        <ng-container *ngIf="auth.canWrite">
+          <button type="button" class="btn btn-secondary" (click)="duplicateOperation(detailOp)" title="Clone as Planned">
+            <span class="btn-icon">content_copy</span> Duplicate
+          </button>
+          <button type="button"
+                  class="btn btn-secondary"
+                  *ngIf="detailOp.status === 'PLANNED' || detailOp.status === 'ON_HOLD'"
+                  (click)="updateStatus(detailOp, 'IN_PROGRESS')">
+            <span class="btn-icon text-primary">play_circle</span> Start
+          </button>
+          <button type="button"
+                  class="btn btn-secondary"
+                  *ngIf="detailOp.status === 'IN_PROGRESS'"
+                  (click)="updateStatus(detailOp, 'ON_HOLD')">
+            <span class="btn-icon" style="color:#D97706">pause_circle</span> Hold
+          </button>
+          <button type="button"
+                  class="btn btn-secondary"
+                  *ngIf="detailOp.status !== 'COMPLETED' && detailOp.status !== 'CANCELLED'"
+                  (click)="toggleDebriefForm()">
+            <span class="btn-icon" style="color:#16A34A">task_alt</span> Debrief &amp; Close
+          </button>
+          <button type="button" class="btn btn-primary" (click)="editFromDetail()">
+            <span class="btn-icon">edit</span> Edit
+          </button>
+        </ng-container>
       </div>
     </div>
   </div>
 </div>
+
+<!-- ==========================================================================
+     QUICK SHIFT SESSION MODAL (SHIFTS-mode simulators right from 24h Timeline)
+     ========================================================================== -->
+<div class="modal-overlay" *ngIf="showQuickShiftModal && quickShiftSim" (click)="closeQuickShiftModal($event)">
+  <div class="modal ops-modal-wide" role="dialog" aria-modal="true" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <div>
+        <h3>Daily Shift · {{ quickShiftSim.bay_code }} ({{ quickShiftSim.code }})</h3>
+        <div class="ops-subtext ops-num">{{ quickShiftDate }} · {{ quickShiftSim.name }} · All mission &amp; crew fields optional</div>
+      </div>
+      <button type="button" class="btn btn-ghost btn-icon-only" (click)="showQuickShiftModal = false" title="Close">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="ops-inline-error" *ngIf="quickShiftError">
+        <span class="mat-i">error_outline</span>
+        <span>{{ quickShiftError }}</span>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Shift</label>
+          <app-dropdown class="form-control" [(ngModel)]="quickShiftForm.shift_id" ariaLabel="Select shift">
+            <app-dropdown-option *ngFor="let sh of quickShiftAvailableShifts" [ngValue]="sh.id">
+              {{ sh.shift_name }}
+            </app-dropdown-option>
+            <app-dropdown-option [ngValue]="'NEW'">+ Add New Shift</app-dropdown-option>
+          </app-dropdown>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Station Status</label>
+          <div class="qs-status-strip">
+            <button
+              type="button"
+              class="qs-status-btn"
+              *ngFor="let st of shiftStatusChoices"
+              [class.active]="quickShiftForm.usage_status === st"
+              [style.background]="quickShiftForm.usage_status === st ? shiftStatusMeta(st).bg : ''"
+              [style.color]="quickShiftForm.usage_status === st ? shiftStatusMeta(st).color : ''"
+              [style.border-color]="quickShiftForm.usage_status === st ? shiftStatusMeta(st).border : ''"
+              (click)="quickShiftForm.usage_status = st">
+              <span class="qs-dot" [style.background]="shiftStatusMeta(st).dot"></span>
+              <span>{{ shiftStatusMeta(st).label }}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <ng-container *ngIf="quickShiftForm.usage_status === 'IN_USE'">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Session Start</label>
+            <app-time-picker [compact]="true" [allowReset]="false" [(ngModel)]="quickShiftForm.sim_testing_start" ariaLabel="Shift start time"></app-time-picker>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Session End</label>
+            <app-time-picker [compact]="true" [allowReset]="false" [(ngModel)]="quickShiftForm.sim_testing_end" ariaLabel="Shift end time"></app-time-picker>
+          </div>
+        </div>
+        <div class="ops-quick-presets" style="margin:-4px 0 12px">
+          <button
+            type="button"
+            class="ops-preset-btn ops-num"
+            *ngFor="let p of quickShiftPresets()"
+            (click)="applyQuickShiftPreset(p)">
+            {{ p.name }}: {{ p.start }}–{{ p.end }}
+          </button>
+        </div>
+      </ng-container>
+
+      <div class="ops-ext-crew-grid" style="margin-bottom:12px">
+        <div class="form-group">
+          <label class="form-label">Mission <span class="ops-opt-tag">(Optional)</span></label>
+          <input class="form-control" list="ops-mission-list" [(ngModel)]="quickShiftForm.mission_name" placeholder="e.g. SMT / Checkout">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Instructor <span class="ops-opt-tag">(External)</span></label>
+          <input class="form-control" list="ops-instructor-list" [(ngModel)]="quickShiftForm.instructor_name" placeholder="Type name…">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Pilot <span class="ops-opt-tag">(External)</span></label>
+          <input class="form-control" list="ops-pilot-list" [(ngModel)]="quickShiftForm.pilot_name" placeholder="Type name…">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Co-Pilot / Pilot 2 <span class="ops-opt-tag">(Optional)</span></label>
+          <input class="form-control" list="ops-pilot-list" [(ngModel)]="quickShiftForm.copilot_name" placeholder="Optional second pilot…">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Scenario / Weather <span class="ops-opt-tag">(Optional)</span></label>
+          <div class="flex items-center gap-2">
+            <input class="form-control" list="ops-scenario-list" [(ngModel)]="quickShiftForm.scenario_code" placeholder="Scenario / ICAO">
+            <input class="form-control" list="ops-weather-list" [(ngModel)]="quickShiftForm.weather_profile" placeholder="Weather">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-bottom:0">
+        <label class="form-label">Handover Notes <span class="ops-opt-tag">(Optional)</span></label>
+        <textarea class="form-control ops-textarea-sm" [(ngModel)]="quickShiftForm.notes" placeholder="Optional shift notes or fault details…"></textarea>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <div class="qs-footer-between">
+        <button type="button" class="btn btn-ghost btn-sm" (click)="jumpToFullDailySheet()">
+          <span class="btn-icon">open_in_new</span>
+          Open Full Daily Sheet
+        </button>
+        <div class="flex items-center gap-2">
+          <button type="button" class="btn btn-ghost" (click)="showQuickShiftModal = false">Cancel</button>
+          <button *ngIf="auth.canWrite" type="button" class="btn btn-primary" [disabled]="quickShiftSaving" (click)="saveQuickShift()">
+            <span class="btn-icon">{{ quickShiftSaving ? 'hourglass_top' : 'save' }}</span>
+            {{ quickShiftSaving ? 'Saving…' : 'Save Shift' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Shared External Crew & Mission Autocomplete Lists -->
+<datalist id="ops-instructor-list">
+  <option *ngFor="let name of crewSuggestions.instructors" [value]="name"></option>
+</datalist>
+<datalist id="ops-pilot-list">
+  <option *ngFor="let name of crewSuggestions.pilots" [value]="name"></option>
+</datalist>
+<datalist id="ops-mission-list">
+  <option *ngFor="let m of crewSuggestions.missions" [value]="m"></option>
+</datalist>
+<datalist id="ops-scenario-list">
+  <option *ngFor="let s of crewSuggestions.scenarios" [value]="s"></option>
+</datalist>
+<datalist id="ops-customer-list">
+  <option *ngFor="let c of crewSuggestions.customers" [value]="c"></option>
+</datalist>
+<datalist id="ops-weather-list">
+  <option *ngFor="let w of weatherPresets" [value]="w"></option>
+</datalist>

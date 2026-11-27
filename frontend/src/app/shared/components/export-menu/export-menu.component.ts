@@ -3,8 +3,10 @@ import {
   ChangeDetectorRef,
   Component,
   ElementRef,
+  EventEmitter,
   HostListener,
   Input,
+  Output,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -196,6 +198,26 @@ function formatShortHumanDate(d: Date): string {
               <span class="export-item-desc">{{ fmt.description }}</span>
             </span>
             <span class="export-item-ext">.{{ fmt.value }}</span>
+          </button>
+
+          <button
+            *ngIf="showJsonOption"
+            type="button"
+            class="export-dropdown-item"
+            role="menuitem"
+            [disabled]="busy"
+            (click)="triggerJsonExport()">
+            <span class="export-item-icon fmt-json">
+              <svg class="export-fmt-svg" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path d="M7.5 4.5C6.2 4.5 5.8 5.2 5.8 6.4v1.8c0 .8-.5 1.4-1.3 1.8.8.4 1.3 1 1.3 1.8v1.8c0 1.2.4 1.9 1.7 1.9M12.5 4.5c1.3 0 1.7.7 1.7 1.9v1.8c0 .8.5 1.4 1.3 1.8-.8.4-1.3 1-1.3 1.8v1.8c0 1.2-.4 1.9-1.7 1.9"
+                      stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+            <span class="export-item-body">
+              <span class="export-item-title">Raw Data</span>
+              <span class="export-item-desc">Structured JSON snapshot</span>
+            </span>
+            <span class="export-item-ext">.json</span>
           </button>
         </div>
       </div>
@@ -419,6 +441,10 @@ function formatShortHumanDate(d: Date): string {
       background: #ffedd5;
       color: #c2410c;
     }
+    .export-item-icon.fmt-json {
+      background: #ede9fe;
+      color: #6d28d9;
+    }
     .export-fmt-svg {
       width: 18px;
       height: 18px;
@@ -463,6 +489,8 @@ export class ExportMenuComponent {
   @Input() showPeriodSelector = true;
   @Input() menuAlign: 'right' | 'left' = 'right';
   @Input() formats: readonly ExportFormatOption[] = ExportService.FORMATS;
+  @Input() showJsonOption = false;
+  @Output() jsonExportRequested = new EventEmitter<void>();
 
   open = false;
   busy = false;
@@ -576,6 +604,12 @@ export class ExportMenuComponent {
       },
       useGlobalRange: false,
     };
+  }
+
+  triggerJsonExport(): void {
+    this.open = false;
+    this.jsonExportRequested.emit();
+    this.cdr.markForCheck();
   }
 
   async download(format: ExportFormat): Promise<void> {

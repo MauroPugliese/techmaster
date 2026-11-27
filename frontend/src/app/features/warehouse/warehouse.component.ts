@@ -11,6 +11,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../core/services/api.service';
+import { AuthService } from '../../core/services/auth.service';
 import { UiCustomizationService, UiSectionPreferences } from '../../core/services/ui-customization.service';
 import {
   InventoryItem,
@@ -65,6 +66,7 @@ export class WarehouseComponent implements OnInit, OnDestroy {
   private actionHandled = false;
 
   constructor(
+    public auth: AuthService,
     private api: ApiService,
     private uiCustomization: UiCustomizationService,
     private route: ActivatedRoute,
@@ -108,14 +110,14 @@ export class WarehouseComponent implements OnInit, OnDestroy {
         this.actionHandled = false;
       }
       if (act === 'movement') {
-        this.activeTab = 'movements';
+        this.activeTab = this.auth.canWrite ? 'inventory' : 'movements';
         this.router.navigate([], {
           relativeTo: this.route,
-          queryParams: { action: null, tab: 'movements' },
+          queryParams: { action: null, tab: this.activeTab },
           queryParamsHandling: 'merge',
           replaceUrl: true
         });
-      } else if (act === 'new' && !this.actionHandled) {
+      } else if (act === 'new' && !this.actionHandled && this.auth.canWrite) {
         this.actionHandled = true;
         setTimeout(() => {
           this.openAddItem();

@@ -58,7 +58,7 @@ function buildSearchGroups(payload = {}) {
         id: sim.id,
         kind: 'simulator',
         title: `${sim.bay_code || ''} · ${sim.code || sim.name}`.replace(/^\s*·\s*/, ''),
-        subtitle: joinSubtitle([sim.aircraft_type, sim.qualification_level]),
+        subtitle: joinSubtitle([sim.scheduling_mode, sim.aircraft_type, sim.qualification_level]),
         badge: sim.status || 'READY',
         badgeTone: statusToTone(sim.status),
         route: '/simulators',
@@ -73,7 +73,13 @@ function buildSearchGroups(payload = {}) {
         id: op.id,
         kind: 'operation',
         title: op.sortie_code ? `${op.sortie_code} · ${op.title}` : (op.title || `Sortie #${op.id}`),
-        subtitle: joinSubtitle([op.customer_operator, op.location, op.priority]),
+        subtitle: joinSubtitle([
+          op.mission_name,
+          op.instructor_name ? `Inst: ${op.instructor_name}` : null,
+          op.pilot_name ? `Pilot: ${op.pilot_name}` : null,
+          op.customer_operator,
+          op.location
+        ]),
         badge: op.status || 'PLANNED',
         badgeTone: statusToTone(op.status),
         route: '/operations',
@@ -84,16 +90,27 @@ function buildSearchGroups(payload = {}) {
       key: 'maintenance',
       label: 'Maintenance',
       sectionKey: 'maintenance',
-      items: (src.maintenance || []).map((rec) => ({
-        id: rec.id,
-        kind: 'maintenance',
-        title: rec.title || `Work Order #${rec.id}`,
-        subtitle: joinSubtitle([rec.asset?.name, rec.type, rec.priority]),
-        badge: rec.status || 'SCHEDULED',
-        badgeTone: statusToTone(rec.status),
-        route: '/maintenance',
-        queryParams: { tab: 'work-orders', search: rec.title || String(rec.id) }
-      }))
+      items: (src.maintenance || []).map((rec) => {
+        const snPair = (rec.broken_serial_number || rec.new_serial_number)
+          ? `S/N ${rec.broken_serial_number || '—'} → ${rec.new_serial_number || '—'}`
+          : null;
+        return {
+          id: rec.id,
+          kind: 'maintenance',
+          title: rec.title || `Work Order #${rec.id}`,
+          subtitle: joinSubtitle([
+            rec.simulator?.bay_code || rec.asset?.name,
+            rec.part_number ? `P/N ${rec.part_number}` : null,
+            snPair,
+            rec.type,
+            rec.priority
+          ]),
+          badge: rec.status || 'SCHEDULED',
+          badgeTone: statusToTone(rec.status),
+          route: '/maintenance',
+          queryParams: { tab: 'work-orders', search: rec.part_number || rec.title || String(rec.id) }
+        };
+      })
     },
     {
       key: 'assets',

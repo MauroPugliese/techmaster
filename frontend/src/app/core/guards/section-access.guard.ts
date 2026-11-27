@@ -14,8 +14,11 @@ export const sectionAccessGuard: CanActivateFn = (route) => {
 
   return sectionAccess.load(false).pipe(
     map((sections) => {
+      if (!sections || sections.length === 0) {
+        return router.createUrlTree(['/profile']);
+      }
       const match = sections.find(s => s.section_key === sectionKey);
-      const isAllowed = !match || sectionAccess.isVisible(match);
+      const isAllowed = Boolean(match) && sectionAccess.isVisible(match);
 
       if (isAllowed) {
         return true;

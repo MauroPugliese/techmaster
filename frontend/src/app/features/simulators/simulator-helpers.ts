@@ -1,7 +1,10 @@
 import {
   QtgStatus,
   ShiftUsageStatus,
+  Simulator,
   SimulatorPlatformCategory,
+  SimulatorScheduleConfig,
+  SimulatorSchedulingMode,
   SimulatorStationKind,
   SimulatorStatus,
   SimulatorSubsystemCode,
@@ -20,6 +23,64 @@ export const STATION_KIND_LABELS: Record<SimulatorStationKind, string> = {
   IOS_CONSOLE: 'IOS Console',
   FFS_BAY: 'FFS Simulator Bay'
 };
+
+export const SCHEDULING_MODE_META: Record<SimulatorSchedulingMode, { label: string; short: string; icon: string; bg: string; color: string; border: string }> = {
+  SORTIES: { label: 'Sorties', short: 'SORTIES', icon: 'flight_takeoff', bg: '#EFF6FF', color: '#1D4ED8', border: '#BFDBFE' },
+  SHIFTS:  { label: 'Shifts',  short: 'SHIFTS',  icon: 'schedule',       bg: '#ECFEFF', color: '#0F766E', border: '#A5F3FC' }
+};
+
+export function resolveSimulatorSchedulingMode(sim?: Partial<Simulator> | null): SimulatorSchedulingMode {
+  if (sim?.scheduling_mode === 'SORTIES' || sim?.scheduling_mode === 'SHIFTS') {
+    return sim.scheduling_mode;
+  }
+  const kind = sim?.station_kind || 'FFS_BAY';
+  return (kind === 'TEST_PLACE' || kind === 'IOS_CONSOLE') ? 'SHIFTS' : 'SORTIES';
+}
+
+export function buildDefaultScheduleConfig(mode: SimulatorSchedulingMode): SimulatorScheduleConfig {
+  if (mode === 'SHIFTS') {
+    return {
+      operating_start: '06:30',
+      operating_end: '18:00',
+      default_slot_hours: 6,
+      turnaround_minutes: 0,
+      slot_presets: [],
+      shift_presets: [
+        { name: 'SHIFT 1', start: '07:00', end: '13:00', pre_flight: '06:40' },
+        { name: 'SHIFT 2', start: '13:30', end: '19:30', pre_flight: '13:00' }
+      ]
+    };
+  }
+  return {
+    operating_start: '06:00',
+    operating_end: '22:00',
+    default_slot_hours: 4,
+    turnaround_minutes: 0,
+    slot_presets: [
+      { label: '06:00–10:00', start: '06:00', end: '10:00' },
+      { label: '10:00–14:00', start: '10:00', end: '14:00' },
+      { label: '14:00–18:00', start: '14:00', end: '18:00' },
+      { label: '18:00–22:00', start: '18:00', end: '22:00' }
+    ],
+    shift_presets: []
+  };
+}
+
+export function computeOperatingWindowHours(startHhMm?: string, endHhMm?: string): number {
+  const parse = (v?: string): number | null => {
+    const m = String(v || '').trim().match(/^(\d{1,2}):(\d{2})$/);
+    if (!m) return null;
+    const h = Number(m[1]);
+    const min = Number(m[2]);
+    if (h < 0 || h > 23 || min < 0 || min > 59) return null;
+    return h * 60 + min;
+  };
+  const s = parse(startHhMm);
+  const e = parse(endHhMm);
+  if (s === null || e === null || s === e) return 16;
+  const diffMin = e > s ? (e - s) : (24 * 60 - s + e);
+  return Math.max(1, Math.round((diffMin / 60) * 2) / 2);
+}
 
 export const SHIFT_USAGE_STATUS_META: Record<ShiftUsageStatus, { label: string; bg: string; color: string; dot: string; border: string }> = {
   IN_USE: { label: 'IN USE', bg: '#E0F2FE', color: '#0369A1', dot: '#0288D1', border: '#7DD3FC' },

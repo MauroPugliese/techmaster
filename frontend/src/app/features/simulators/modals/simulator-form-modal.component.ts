@@ -12,11 +12,21 @@ import { ApiService, ToastService } from '../../../core/services/services';
 import {
   Simulator,
   SimulatorPlatformCategory,
+  SimulatorScheduleConfig,
+  SimulatorSchedulingMode,
+  SimulatorShiftPreset,
+  SimulatorSlotPreset,
   SimulatorStationKind,
   SimulatorStatus
 } from '../../../core/models/interfaces';
 import { DropdownComponent, DropdownOptionComponent } from '../../../shared/components/dropdown/dropdown.component';
 import { DateTimePickerComponent } from '../../../shared/components/datetime-picker/datetime-picker.component';
+import { TimePickerComponent } from '../../../shared/components/time-picker/time-picker.component';
+import {
+  buildDefaultScheduleConfig,
+  computeOperatingWindowHours,
+  resolveSimulatorSchedulingMode
+} from '../simulator-helpers';
 
 interface SectionToggles {
   identity: boolean;
@@ -28,7 +38,7 @@ interface SectionToggles {
 @Component({
   selector: 'app-simulator-form-modal',
   standalone: true,
-  imports: [CommonModule, FormsModule, DropdownComponent, DropdownOptionComponent, DateTimePickerComponent],
+  imports: [CommonModule, FormsModule, DropdownComponent, DropdownOptionComponent, DateTimePickerComponent, TimePickerComponent],
   templateUrl: './simulator-form-modal.component.html',
   styleUrls: ['./simulator-form-modal.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -54,6 +64,13 @@ export class SimulatorFormModalComponent {
     name: string;
     bay_code: string;
     station_kind: SimulatorStationKind;
+    scheduling_mode: SimulatorSchedulingMode;
+    operating_start: string;
+    operating_end: string;
+    default_slot_hours: number;
+    turnaround_minutes: number;
+    slot_presets: SimulatorSlotPreset[];
+    shift_presets: SimulatorShiftPreset[];
     sort_order: number;
     platform_category: SimulatorPlatformCategory;
     aircraft_type: string;
@@ -115,11 +132,19 @@ export class SimulatorFormModalComponent {
   }
 
   private createEmptyForm() {
+    const defCfg = buildDefaultScheduleConfig('SHIFTS');
     return {
       code: '',
       name: '',
       bay_code: '',
       station_kind: 'TEST_PLACE' as SimulatorStationKind,
+      scheduling_mode: 'SHIFTS' as SimulatorSchedulingMode,
+      operating_start: defCfg.operating_start,
+      operating_end: defCfg.operating_end,
+      default_slot_hours: defCfg.default_slot_hours,
+      turnaround_minutes: defCfg.turnaround_minutes,
+      slot_presets: [...(defCfg.slot_presets || [])],
+      shift_presets: [...(defCfg.shift_presets || [])],
       sort_order: 1,
       platform_category: 'FTD_FNPT' as SimulatorPlatformCategory,
       aircraft_type: '',
@@ -156,45 +181,158 @@ export class SimulatorFormModalComponent {
     const base = this.createEmptyForm();
 
     if (kind === 'TEST_PLACE') {
+      const cfg = buildDefaultScheduleConfig('SHIFTS');
       base.station_kind = 'TEST_PLACE';
+      base.scheduling_mode = 'SHIFTS';
+      base.operating_start = cfg.operating_start;
+      base.operating_end = cfg.operating_end;
+      base.default_slot_hours = cfg.default_slot_hours;
+      base.turnaround_minutes = cfg.turnaround_minutes;
+      base.slot_presets = [];
+      base.shift_presets = (cfg.shift_presets || []).map(p => ({ ...p }));
       base.sort_order = nextNum;
       base.code = `TP-${pad2}`;
       base.name = `TEST PLACE ${nextNum}`;
       base.bay_code = `TPS-${pad2}`;
       base.platform_category = 'FTD_FNPT';
       base.aircraft_type = 'Test Place';
-      base.daily_available_hours = 16;
+      base.daily_available_hours = computeOperatingWindowHours(cfg.operating_start, cfg.operating_end);
       base.scaffold_subsystems = false;
       base.scaffold_qtg = false;
       this.sections = { identity: false, qualification: false, hardware: false, opsNotes: false };
     } else if (kind === 'IOS_CONSOLE') {
+      const cfg = buildDefaultScheduleConfig('SHIFTS');
       base.station_kind = 'IOS_CONSOLE';
+      base.scheduling_mode = 'SHIFTS';
+      base.operating_start = cfg.operating_start;
+      base.operating_end = cfg.operating_end;
+      base.default_slot_hours = cfg.default_slot_hours;
+      base.turnaround_minutes = cfg.turnaround_minutes;
+      base.slot_presets = [];
+      base.shift_presets = (cfg.shift_presets || []).map(p => ({ ...p }));
       base.sort_order = nextNum;
       base.code = `IOS-${pad2}`;
       base.name = `IOS CONSOLE ${nextNum}`;
       base.bay_code = `IOS-${pad2}`;
       base.platform_category = 'FTD_FNPT';
       base.aircraft_type = 'IOS Console';
-      base.daily_available_hours = 16;
+      base.daily_available_hours = computeOperatingWindowHours(cfg.operating_start, cfg.operating_end);
       base.scaffold_subsystems = false;
       base.scaffold_qtg = false;
       this.sections = { identity: false, qualification: false, hardware: false, opsNotes: false };
     } else {
+      const cfg = buildDefaultScheduleConfig('SORTIES');
       base.station_kind = 'FFS_BAY';
+      base.scheduling_mode = 'SORTIES';
+      base.operating_start = cfg.operating_start;
+      base.operating_end = cfg.operating_end;
+      base.default_slot_hours = cfg.default_slot_hours;
+      base.turnaround_minutes = cfg.turnaround_minutes;
+      base.slot_presets = (cfg.slot_presets || []).map(p => ({ ...p }));
+      base.shift_presets = [];
       base.sort_order = nextNum;
       base.platform_category = 'COMMERCIAL_FIXED_WING';
       base.manufacturer = 'FSTD Series';
-      base.daily_available_hours = 20;
+      base.daily_available_hours = computeOperatingWindowHours(cfg.operating_start, cfg.operating_end);
       base.visual_system = 'Collimated Visual · Laser Projection';
       base.motion_system = '6-DOF Electric Motion';
       base.control_loading = 'Digital Control Loading System';
       base.ios_config = 'Dual-Screen Instructor Operating Station';
       base.scaffold_subsystems = true;
       base.scaffold_qtg = true;
-      this.sections = { identity: true, qualification: true, hardware: false, opsNotes: false };
+      this.sections = { identity: true, qualification: false, hardware: false, opsNotes: false };
     }
 
     this.form = base;
+  }
+
+  selectSchedulingMode(mode: SimulatorSchedulingMode): void {
+    if (this.form.scheduling_mode === mode) return;
+    const def = buildDefaultScheduleConfig(mode);
+    const nextSlotPresets = mode === 'SORTIES'
+      ? (this.form.slot_presets.length > 0 ? this.form.slot_presets : (def.slot_presets || []).map(p => ({ ...p })))
+      : this.form.slot_presets;
+    const nextShiftPresets = mode === 'SHIFTS'
+      ? (this.form.shift_presets.length > 0 ? this.form.shift_presets : (def.shift_presets || []).map(p => ({ ...p })))
+      : this.form.shift_presets;
+    this.form = {
+      ...this.form,
+      scheduling_mode: mode,
+      default_slot_hours: mode === 'SORTIES' ? (this.form.default_slot_hours || 4) : (this.form.default_slot_hours || 6),
+      slot_presets: nextSlotPresets,
+      shift_presets: nextShiftPresets
+    };
+    this.cdr.markForCheck();
+  }
+
+  onOperatingHoursChange(): void {
+    const hrs = computeOperatingWindowHours(this.form.operating_start, this.form.operating_end);
+    this.form = { ...this.form, daily_available_hours: hrs };
+    this.cdr.markForCheck();
+  }
+
+  addSlotPreset(): void {
+    if (this.form.slot_presets.length >= 12) return;
+    const last = this.form.slot_presets[this.form.slot_presets.length - 1];
+    const start = last?.end && last.end !== '24:00' ? last.end : this.form.operating_start || '08:00';
+    const [sh, sm] = start.split(':').map(Number);
+    const durMin = Math.round((Number(this.form.default_slot_hours) || 4) * 60);
+    const endTotal = Math.min(23 * 60 + 45, (sh * 60 + sm) + durMin);
+    const end = `${String(Math.floor(endTotal / 60)).padStart(2, '0')}:${String(endTotal % 60).padStart(2, '0')}`;
+    this.form = {
+      ...this.form,
+      slot_presets: [...this.form.slot_presets, { label: `${start}–${end}`, start, end }]
+    };
+    this.cdr.markForCheck();
+  }
+
+  removeSlotPreset(index: number): void {
+    this.form = {
+      ...this.form,
+      slot_presets: this.form.slot_presets.filter((_, i) => i !== index)
+    };
+    this.cdr.markForCheck();
+  }
+
+  updateSlotPresetTime(index: number, field: 'start' | 'end', val: string): void {
+    this.form = {
+      ...this.form,
+      slot_presets: this.form.slot_presets.map((p, i) => {
+        if (i !== index) return p;
+        const next = { ...p, [field]: val || '00:00' };
+        next.label = `${next.start}–${next.end}`;
+        return next;
+      })
+    };
+    this.cdr.markForCheck();
+  }
+
+  addShiftPreset(): void {
+    if (this.form.shift_presets.length >= 6) return;
+    const nextNum = this.form.shift_presets.length + 1;
+    const defaults: Record<number, SimulatorShiftPreset> = {
+      1: { name: 'SHIFT 1', start: '07:00', end: '13:00', pre_flight: '06:40' },
+      2: { name: 'SHIFT 2', start: '13:30', end: '19:30', pre_flight: '13:00' },
+      3: { name: 'SHIFT 3', start: '20:00', end: '02:00', pre_flight: '19:40' }
+    };
+    const item = defaults[nextNum] || { name: `SHIFT ${nextNum}`, start: '08:00', end: '14:00', pre_flight: '07:40' };
+    this.form = {
+      ...this.form,
+      shift_presets: [...this.form.shift_presets, item]
+    };
+    this.cdr.markForCheck();
+  }
+
+  removeShiftPreset(index: number): void {
+    this.form = {
+      ...this.form,
+      shift_presets: this.form.shift_presets.filter((_, i) => i !== index)
+    };
+    this.cdr.markForCheck();
+  }
+
+  get computedOperatingHours(): number {
+    return computeOperatingWindowHours(this.form.operating_start, this.form.operating_end);
   }
 
   selectKind(kind: SimulatorStationKind): void {
@@ -230,12 +368,29 @@ export class SimulatorFormModalComponent {
     if (sim) {
       const base = this.createEmptyForm();
       const kind = sim.station_kind || 'FFS_BAY';
+      const mode = resolveSimulatorSchedulingMode(sim);
+      const defCfg = buildDefaultScheduleConfig(mode);
+      const cfg: SimulatorScheduleConfig = {
+        ...defCfg,
+        ...(sim.schedule_config || {})
+      };
       this.form = {
         ...base,
         code: sim.code || '',
         name: sim.name || '',
         bay_code: sim.bay_code || '',
         station_kind: kind,
+        scheduling_mode: mode,
+        operating_start: cfg.operating_start || defCfg.operating_start,
+        operating_end: cfg.operating_end || defCfg.operating_end,
+        default_slot_hours: Number(cfg.default_slot_hours ?? defCfg.default_slot_hours),
+        turnaround_minutes: Number(cfg.turnaround_minutes ?? 0),
+        slot_presets: Array.isArray(cfg.slot_presets) && cfg.slot_presets.length > 0
+          ? cfg.slot_presets.map(p => ({ ...p }))
+          : (mode === 'SORTIES' ? (defCfg.slot_presets || []).map(p => ({ ...p })) : []),
+        shift_presets: Array.isArray(cfg.shift_presets) && cfg.shift_presets.length > 0
+          ? cfg.shift_presets.map(p => ({ ...p }))
+          : (mode === 'SHIFTS' ? (defCfg.shift_presets || []).map(p => ({ ...p })) : []),
         sort_order: Number(sim.sort_order ?? 100),
         platform_category: sim.platform_category || 'COMMERCIAL_FIXED_WING',
         aircraft_type: sim.aircraft_type || '',
@@ -319,11 +474,34 @@ export class SimulatorFormModalComponent {
     this.errorMsg = '';
     this.cdr.markForCheck();
 
+    const scheduleConfig: SimulatorScheduleConfig = {
+      operating_start: this.form.operating_start || '06:00',
+      operating_end: this.form.operating_end || '22:00',
+      default_slot_hours: Number(this.form.default_slot_hours) || (this.form.scheduling_mode === 'SORTIES' ? 4 : 6),
+      turnaround_minutes: Number(this.form.turnaround_minutes) || 0,
+      slot_presets: this.form.scheduling_mode === 'SORTIES'
+        ? this.form.slot_presets.map(p => ({ label: p.label || `${p.start}–${p.end}`, start: p.start, end: p.end }))
+        : [],
+      shift_presets: this.form.scheduling_mode === 'SHIFTS'
+        ? this.form.shift_presets.map((p, idx) => ({
+            name: (p.name || `SHIFT ${idx + 1}`).trim().toUpperCase(),
+            start: p.start,
+            end: p.end,
+            pre_flight: p.pre_flight || p.start
+          }))
+        : []
+    };
+
     const payload: any = {
       code: this.form.code.trim().toUpperCase(),
       name: this.form.name.trim(),
       bay_code: this.form.bay_code.trim().toUpperCase(),
       station_kind: kind,
+      scheduling_mode: this.form.scheduling_mode,
+      schedule_config: scheduleConfig,
+      daily_available_hours: this.sections.identity
+        ? (Number(this.form.daily_available_hours) || this.computedOperatingHours)
+        : this.computedOperatingHours,
       status: this.form.status
     };
 

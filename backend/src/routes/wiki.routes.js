@@ -53,9 +53,11 @@ async function resolveUniqueArticleSlug(title, excludeId = null) {
 
 router.get('/categories', async (req, res, next) => {
   try {
+    const isViewer = req.user?.role?.name === 'viewer';
     const { status } = req.query;
     const articleWhere = {};
-    if (status && status !== 'ALL') articleWhere.status = status;
+    if (isViewer) articleWhere.status = 'PUBLISHED';
+    else if (status && status !== 'ALL') articleWhere.status = status;
 
     const [cats, countRows] = await Promise.all([
       WikiCategory.findAll({
@@ -146,9 +148,11 @@ router.delete('/categories/:id', authorize('admin', 'manager'), async (req, res,
 
 router.get('/tags', async (req, res, next) => {
   try {
+    const isViewer = req.user?.role?.name === 'viewer';
     const { status } = req.query;
     const where = {};
-    if (status && status !== 'ALL') where.status = status;
+    if (isViewer) where.status = 'PUBLISHED';
+    else if (status && status !== 'ALL') where.status = status;
 
     const rows = await WikiArticle.findAll({ where, attributes: ['tags'], raw: true });
     const tally = new Map();
@@ -191,8 +195,11 @@ router.get('/articles', async (req, res, next) => {
       limit = 20
     } = req.query;
 
+    const isViewer = req.user?.role?.name === 'viewer';
     const andClauses = [];
-    if (status && status !== 'ALL') {
+    if (isViewer) {
+      andClauses.push({ status: 'PUBLISHED' });
+    } else if (status && status !== 'ALL') {
       andClauses.push({ status });
     }
 
@@ -256,6 +263,9 @@ router.get('/articles/:slug', async (req, res, next) => {
       article = await WikiArticle.findByPk(Number(param), { include: ARTICLE_INCLUDES });
     }
     if (!article) return res.status(404).json({ success: false, message: 'Article not found' });
+    if (req.user?.role?.name === 'viewer' && article.status !== 'PUBLISHED') {
+      return res.status(404).json({ success: false, message: 'Article not found' });
+    }
 
     await article.increment('view_count');
     res.json({ success: true, data: { ...article.toJSON(), view_count: (article.view_count || 0) + 1 } });
@@ -286,6 +296,18 @@ router.put('/articles/:id', authorize('admin', 'manager', 'tech'), async (req, r
     const article = await WikiArticle.findByPk(req.params.id);
     if (!article) return res.status(404).json({ success: false, message: 'Not found' });
 
+    const roleName = req.user?.role?.name;
+    const isPrivileged = roleName === 'admin' || roleName === 'manager';
+    if (!isPrivileged) {
+      const requestedStatus = req.body?.status ? String(req.body.status).toUpperCase() : null;
+      if (requestedStatus === 'ARCHIVED' || (article.status === 'PUBLISHED' && Number(article.author_id) !== Number(req.user?.id))) {
+        return res.status(403).json({
+          success: false,
+          message: 'Only managers or administrators can archive or modify published SOPs authored by others.'
+        });
+      }
+    }
+
     const { error, data, isContentChange } = sanitizeArticlePayload(req.body, { isCreate: false });
     if (error) return res.status(400).json({ success: false, message: error });
 
@@ -304,7 +326,7 @@ router.put('/articles/:id', authorize('admin', 'manager', 'tech'), async (req, r
   } catch (err) { next(err); }
 });
 
-router.patch('/articles/:id/pin', authorize('admin', 'manager', 'tech'), async (req, res, next) => {
+router.patch('/articles/:id/pin', authorize('admin', 'manager'), async (req, res, next) => {
   try {
     const article = await WikiArticle.findByPk(req.params.id);
     if (!article) return res.status(404).json({ success: false, message: 'Not found' });

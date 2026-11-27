@@ -29,7 +29,7 @@ const MAX_COL_WIDTH = 44;
 function sanitizeExcelText(val) {
   const s = str(val);
   if (!s) return '';
-  if (/^[=@\t\r]/.test(s) || (/^[+-]/.test(s) && !/^[+-]\s?\d[\d,.]*(?:\s?(?:%|h|u|units|min|m|IN|OUT).*)?$/i.test(s))) {
+  if (/^[=@\t\r]/.test(s) || (/^[+-]/.test(s) && !/^[+-]\s?\d[\d,.]*(?:\s?(?:%|h|u|units|min|m|IN|OUT))?$/i.test(s))) {
     return `'${s}`;
   }
   return s;
@@ -139,7 +139,7 @@ function styleHeaderRow(ws, columns, theme) {
   columns.forEach((col, idx) => {
     const cell = hdrRow.getCell(idx + 1);
     const isNum = col.type === 'number' || col.type === 'currency' || col.type === 'percent';
-    cell.value = String(col.header || '');
+    cell.value = sanitizeExcelText(col.header || '');
     cell.font = { name: F_DISP, size: 10, bold: true, color: { argb: argb(COLORS.white) } };
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerBg } };
     cell.alignment = {

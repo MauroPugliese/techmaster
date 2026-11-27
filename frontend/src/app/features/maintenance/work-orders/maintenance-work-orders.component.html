@@ -68,7 +68,7 @@
   </button>
 </div>
 
-<!-- ── Single-Row Filter Toolbar ───────────────────────────────────────── -->
+<!-- ── Clean Progressive Filter Toolbar ────────────────────────────────── -->
 <div class="mnt-toolbar-card">
   <div class="mnt-filter-row">
     <div class="mnt-search-wrap">
@@ -77,7 +77,7 @@
         <input #searchInput
                [ngModel]="searchQuery"
                (ngModelChange)="onSearchModelChange($event)"
-               placeholder="Search title, asset, serial no… ( / )"
+               placeholder="Search title, asset, P/N, broken/new S/N… ( / )"
                aria-label="Search work orders">
         <button *ngIf="searchQuery"
                 type="button"
@@ -99,6 +99,31 @@
       <app-dropdown-option value="DEFERRED">Deferred</app-dropdown-option>
     </app-dropdown>
 
+    <app-dropdown class="form-control mnt-filter-select" [(ngModel)]="simulatorFilter" (change)="applyFilters()" placeholder="All Bays">
+      <app-dropdown-option [ngValue]="''">All Simulator Bays</app-dropdown-option>
+      <app-dropdown-option *ngFor="let s of simulators" [ngValue]="s.id">{{s.bay_code}} · {{s.code}}</app-dropdown-option>
+    </app-dropdown>
+
+    <button type="button"
+            class="ux-filter-toggle"
+            [class.active]="showAdvancedFilters"
+            [class.has-active]="advancedFilterCount > 0"
+            [attr.aria-expanded]="showAdvancedFilters"
+            (click)="showAdvancedFilters = !showAdvancedFilters">
+      <span class="mat-i">tune</span>
+      <span>Filters</span>
+      <span class="ux-count-pill" *ngIf="advancedFilterCount > 0">{{advancedFilterCount}}</span>
+    </button>
+
+    <button *ngIf="hasActiveFilters" type="button" class="btn btn-ghost btn-sm" (click)="resetFilters()">
+      <span class="btn-icon">filter_alt_off</span> Reset
+    </button>
+  </div>
+
+  <!-- Collapsible Secondary Maintenance Filters -->
+  <div class="ux-advanced-drawer" *ngIf="showAdvancedFilters">
+    <span class="ux-drawer-label">More Filters</span>
+
     <app-dropdown class="form-control mnt-filter-select" [(ngModel)]="priorityFilter" (change)="applyFilters()" placeholder="All Priorities">
       <app-dropdown-option value="">All Priorities</app-dropdown-option>
       <app-dropdown-option value="LOW">Low</app-dropdown-option>
@@ -114,11 +139,6 @@
       <app-dropdown-option value="PREDICTIVE">Predictive</app-dropdown-option>
       <app-dropdown-option value="UPGRADE">Upgrade</app-dropdown-option>
       <app-dropdown-option value="INSPECTION">Inspection</app-dropdown-option>
-    </app-dropdown>
-
-    <app-dropdown class="form-control mnt-filter-select" [(ngModel)]="simulatorFilter" (change)="applyFilters()" placeholder="All Bays">
-      <app-dropdown-option [ngValue]="''">All Simulator Bays</app-dropdown-option>
-      <app-dropdown-option *ngFor="let s of simulators" [ngValue]="s.id">{{s.bay_code}} · {{s.code}}</app-dropdown-option>
     </app-dropdown>
 
     <app-dropdown class="form-control mnt-filter-select" [(ngModel)]="severityFilter" (change)="applyFilters()" placeholder="All Severities">
@@ -155,15 +175,11 @@
       <span class="mat-i" style="font-size:15px">pending_actions</span>
       MEL Active
     </button>
-
-    <button *ngIf="hasActiveFilters" type="button" class="btn btn-ghost btn-sm" (click)="resetFilters()">
-      <span class="btn-icon">filter_alt_off</span> Reset
-    </button>
   </div>
 </div>
 
 <!-- ── Contextual Bulk Action Bar ──────────────────────────────────────── -->
-<div class="mnt-bulk-bar" *ngIf="selectedIds.size > 0">
+<div class="mnt-bulk-bar" *ngIf="auth.canManage && selectedIds.size > 0">
   <div class="mnt-head-actions">
     <span class="mat-i">checklist</span>
     <strong>{{selectedIds.size}} record{{selectedIds.size > 1 ? 's' : ''}} selected</strong>
@@ -206,7 +222,7 @@
   <table class="data-table mnt-table">
     <thead>
       <tr>
-        <th style="width:36px">
+        <th style="width:36px" *ngIf="auth.canManage">
           <input type="checkbox"
                  class="mnt-checkbox"
                  [checked]="allVisibleSelected"
@@ -253,10 +269,10 @@
       </tr>
     </thead>
     <tbody>
-      <tr *ngFor="let r of records; let idx = index"
+      <tr *ngFor="let r of records; let idx = index; trackBy: trackByRecordId"
           class="row-clickable"
           (click)="detailRequested.emit(r)">
-        <td (click)="$event.stopPropagation()">
+        <td *ngIf="auth.canManage" (click)="$event.stopPropagation()">
           <input type="checkbox"
                  class="mnt-checkbox"
                  [checked]="selectedIds.has(r.id)"
@@ -298,14 +314,14 @@
 
         <td class="mnt-col-actions" (click)="$event.stopPropagation()">
           <div class="mnt-row-actions">
-            <button *ngIf="r.status === 'SCHEDULED' || r.status === 'DEFERRED'"
+            <button *ngIf="auth.canWrite && (r.status === 'SCHEDULED' || r.status === 'DEFERRED')"
                     type="button"
                     class="btn btn-ghost btn-icon-only btn-sm"
                     (click)="statusChangeRequested.emit({ record: r, status: 'IN_PROGRESS' })"
                     title="Start Work">
               <span class="btn-icon text-primary">play_circle</span>
             </button>
-            <button *ngIf="r.status === 'IN_PROGRESS'"
+            <button *ngIf="auth.canWrite && r.status === 'IN_PROGRESS'"
                     type="button"
                     class="btn btn-ghost btn-icon-only btn-sm"
                     (click)="statusChangeRequested.emit({ record: r, status: 'COMPLETED' })"
@@ -313,7 +329,8 @@
               <span class="btn-icon" style="color:#16A34A">check_circle</span>
             </button>
 
-            <button type="button"
+            <button *ngIf="auth.canWrite"
+                    type="button"
                     class="btn btn-ghost btn-icon-only btn-sm"
                     (click)="editWorkOrderRequested.emit(r)"
                     title="Edit">
@@ -337,25 +354,27 @@
                   <span class="mat-i text-muted">visibility</span>
                   <span>View Details</span>
                 </button>
-                <button *ngIf="r.status !== 'COMPLETED' && r.status !== 'FAILED'"
+                <button *ngIf="auth.canWrite && r.status !== 'COMPLETED' && r.status !== 'FAILED'"
                         type="button"
                         class="mnt-menu-item"
                         (click)="closeRowMenu(); statusChangeRequested.emit({ record: r, status: 'COMPLETED' })">
                   <span class="mat-i" style="color:#16A34A">check_circle</span>
                   <span>Mark Complete</span>
                 </button>
-                <button *ngIf="r.status === 'SCHEDULED' || r.status === 'IN_PROGRESS'"
+                <button *ngIf="auth.canWrite && (r.status === 'SCHEDULED' || r.status === 'IN_PROGRESS')"
                         type="button"
                         class="mnt-menu-item"
                         (click)="closeRowMenu(); statusChangeRequested.emit({ record: r, status: 'DEFERRED' })">
                   <span class="mat-i" style="color:#D97706">schedule</span>
                   <span>Defer Work Order</span>
                 </button>
-                <div class="mnt-menu-divider"></div>
-                <button type="button" class="mnt-menu-item danger" (click)="closeRowMenu(); deleteRequested.emit(r)">
-                  <span class="mat-i">delete</span>
-                  <span>Delete</span>
-                </button>
+                <ng-container *ngIf="auth.canManage">
+                  <div class="mnt-menu-divider"></div>
+                  <button type="button" class="mnt-menu-item danger" (click)="closeRowMenu(); deleteRequested.emit(r)">
+                    <span class="mat-i">delete</span>
+                    <span>Delete</span>
+                  </button>
+                </ng-container>
               </div>
             </div>
           </div>
@@ -368,7 +387,7 @@
     <span class="empty-icon">build_circle</span>
     <h3>No matching work orders</h3>
     <p *ngIf="hasActiveFilters">Try clearing one or more filters to view all maintenance records.</p>
-    <button *ngIf="!hasActiveFilters" type="button" class="btn btn-primary" (click)="logWorkOrderRequested.emit()">
+    <button *ngIf="!hasActiveFilters && auth.canWrite" type="button" class="btn btn-primary" (click)="logWorkOrderRequested.emit()">
       Log First Work Order
     </button>
     <button *ngIf="hasActiveFilters" type="button" class="btn btn-secondary" (click)="resetFilters()">

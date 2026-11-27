@@ -27,7 +27,7 @@ import {
   PlannedMaintenanceTask
 } from '../../../core/models/interfaces';
 import { PlannedMaintenanceService } from './planned-maintenance.service';
-import { ApiService, ConfirmService, ToastService, UiCustomizationService, UiSectionPreferences } from '../../../core/services/services';
+import { ApiService, AuthService, ConfirmService, ToastService, UiCustomizationService, UiSectionPreferences } from '../../../core/services/services';
 import { ExportService } from '../../../core/services/export.service';
 import { DateTimePickerComponent } from '../../../shared/components/datetime-picker/datetime-picker.component';
 import { formatLocalYmd, parseIncomingDate } from '../../../shared/components/datetime-picker/datetime-picker.utils';
@@ -60,6 +60,9 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnChanges, 
   private indicatorsReqSeq = 0;
   exportParams: Record<string, string> = {};
   Math = Math;
+
+  // View Mode (Task-First: Today's Agenda & Calendar upfront; Series Catalog 1 click away)
+  activeView: 'agenda' | 'series' = 'agenda';
 
   // Table & Filters
   tasks: PlannedMaintenanceTask[] = [];
@@ -107,6 +110,7 @@ export class PlannedMaintenanceDashboardComponent implements OnInit, OnChanges, 
   uiPrefs: UiSectionPreferences | null = null;
 
   constructor(
+    public auth: AuthService,
     private svc: PlannedMaintenanceService,
     private api: ApiService,
     private uiCustomization: UiCustomizationService,

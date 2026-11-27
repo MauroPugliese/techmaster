@@ -15,6 +15,7 @@ import { FormsModule } from '@angular/forms';
 import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../../core/services/api.service';
+import { AuthService } from '../../../core/services/auth.service';
 import { ToastService } from '../../../core/services/toast.service';
 import { InventoryItem, WarehouseReorderItem } from '../../../core/models/interfaces';
 import { formatMoney } from '../warehouse-helpers';
@@ -64,6 +65,7 @@ export class WarehouseReorderComponent implements OnInit, OnChanges, OnDestroy {
   receivingPoIds = new Set<number>();
 
   constructor(
+    public auth: AuthService,
     private api: ApiService,
     private toast: ToastService,
     private cdr: ChangeDetectorRef

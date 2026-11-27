@@ -4,11 +4,11 @@
 -- =============================================================================
 -- Scenario: Global Flight Simulation Training Center (Vendor-Neutral / International)
 --   - 8 users across all 4 roles (admin, manager, tech, viewer)
---   - 6 Full Flight Simulators (A320neo, B737 MAX, A350-900, H145, AJT-50, B787-9)
---   - 6 Test Places (TP-01..TP-06) & 6 IOS Consoles (IOS-01..IOS-06)
---   - 48 simulator subsystems, 24 QTG compliance tests, 7 days of daily shift logs
---   - 28 flight sorties spanning -25d to +3d (including 6 live today on 24h timeline)
---   - 10 facility assets, 18 simulator/station/asset work orders & MEL snags (DR)
+--   - 6 Full Flight Simulators (SORTIES mode, tailored operating windows & slot presets)
+--   - 6 Test Places & 6 IOS Consoles (SHIFTS mode, shift presets + overnight cross-midnight shift)
+--   - 48 simulator subsystems, 24 QTG compliance tests, 7 days of daily shift logs w/ optional mission/crew
+--   - 29 flight sorties spanning -25d to +3d (7 today incl. overnight +1d sortie, optional external crew)
+--   - 10 facility assets, 18 simulator/station/asset work orders & MEL snags (DR) w/ P/N & broken/new S/N
 --   - 14 standalone Planned Maintenance schedules (Daily/Weekly/Monthly) + instances
 --   - 14 aviation spares (AOG critical, Rotable LRUs, RMA, inbound POs w/ ETA) + 18 movements
 --   - 14 days of workforce shift roster (MOR/AFT/NGT/CST/VAC) + 4 shift handovers
@@ -16,8 +16,9 @@
 --   - Live notifications & audit trail
 --
 -- ALL dates are dynamically anchored to CURDATE() so every dashboard widget,
--- 24h bay timeline, urgent alert center, MEL countdown, planned calendar, and
--- Daily / Weekly / Monthly / Custom report looks 100% live on ANY presentation date.
+-- 24h bay timeline (incl. cross-midnight splits & off-hours shading), urgent alert
+-- center, MEL countdown, planned calendar, and Daily / Weekly / Monthly / Custom
+-- report looks 100% live on ANY presentation date.
 --
 -- Demo Login Credentials:
 --   Administrator : admin        / Admin@1234
@@ -81,7 +82,10 @@ INSERT IGNORE INTO schema_migrations (id, name) VALUES
 (5, '005_enhance_shifts_custom_and_leave'),
 (6, '006_flight_simulator_domain'),
 (7, '007_station_daily_ops'),
-(8, '008_cae_enterprise_ops');
+(8, '008_cae_enterprise_ops'),
+(9, '009_maintenance_serials_subsystems_and_indexes'),
+(10, '010_simulator_scheduling_mode_and_crew'),
+(11, '011_repair_missing_indexes_and_fks');
 
 INSERT IGNORE INTO roles (id, name, description, permissions) VALUES
 (1, 'admin',   'System Administrator',  '["*"]'),
@@ -163,34 +167,34 @@ VALUES
 (8, 4, 'olivia.grant',   'olivia.grant@smart-demo.local','$2a$10$Mlp3VMrzeZMkCXUNYsBOuOehSA6VJZvQRf/IjW69n3T5SUtYOPzju', 'Olivia', 'Grant',   'Quality & Compliance', 'Aviation Quality & Safety Auditor','+1-555-0108', TRUE, '["EASA / FAA FSTD Auditor","ISO 9001 Lead Auditor"]',                       DATE_SUB(NOW(), INTERVAL 1 DAY));
 
 -- =============================================================================
--- 3. FLIGHT SIMULATORS FLEET (6 FFS Bays + 6 Test Places + 6 IOS Consoles)
+-- 3. FLIGHT SIMULATORS FLEET (6 FFS Bays [SORTIES] + 6 Test Places & 6 IOS [SHIFTS])
 -- =============================================================================
 INSERT INTO simulators
-  (id, code, name, bay_code, station_kind, sort_order, platform_category, aircraft_type, manufacturer, serial_number, authority, qualification_level, certificate_code, certificate_expiry, last_eval_date, daily_available_hours, engine_avionics, software_load, airac_cycle, visual_system, motion_system, control_loading, ios_config, status, power_on_hours, motion_hours, visual_lamp_hours, limitations_mel, notes)
+  (id, code, name, bay_code, station_kind, scheduling_mode, schedule_config, sort_order, platform_category, aircraft_type, manufacturer, serial_number, authority, qualification_level, certificate_code, certificate_expiry, last_eval_date, daily_available_hours, engine_avionics, software_load, airac_cycle, visual_system, motion_system, control_loading, ios_config, status, power_on_hours, motion_hours, visual_lamp_hours, limitations_mel, notes)
 VALUES
--- 6 Full Flight Simulators (FFS_BAY)
-(1, 'FFS-A320-01', 'Airbus A320neo Full Flight Simulator #1',  'BAY-01', 'FFS_BAY', 1, 'COMMERCIAL_FIXED_WING', 'Airbus A320neo / CEO',        'AeroSim Pro-7000', 'AS7K-A320-104', 'EASA / FAA',    'CS-FSTD Level D',    'FSTD.INT.014', DATE_ADD(CURDATE(), INTERVAL 185 DAY), DATE_SUB(CURDATE(), INTERVAL 180 DAY), 20.0, 'CFM LEAP-1A26 / Digital FMS R2',         'Host Load v4.18.2', 'AIRAC 2611', 'OptiDome 6000 · 200x40 Laser 3ch',     '6-DOF Electric eDrive Platform',  'Digital CLS-500 Force-Feel', 'Dual-Screen FlexIOS Console v8',  'IN_SORTIE',   18420.5, 14210.0, 3120.4, NULL, 'Primary narrowbody revenue bay. Cat IIIB LVP & UPRT qualified.'),
-(2, 'FFS-B737-02', 'Boeing 737 MAX 8 Full Flight Simulator #2','BAY-02', 'FFS_BAY', 2, 'COMMERCIAL_FIXED_WING', 'Boeing 737 MAX 8 / 800',      'AeroSim Pro-7000', 'AS7K-B737-209', 'EASA / FAA',    'CS-FSTD Level D',    'FSTD.INT.022', DATE_ADD(CURDATE(), INTERVAL 18 DAY),  DATE_SUB(CURDATE(), INTERVAL 347 DAY), 20.0, 'CFM LEAP-1B / Integrated Flight Deck',   'Host Load v5.04.1', 'AIRAC 2611', 'LumaDome 6000 · 220x40 LED Array',     '6-DOF Electric eDrive Platform',  'Digital Control Column CLS', 'Mobile Tablet + Desk FlexIOS',    'READY',       15290.0, 11845.5, 2410.0, NULL, 'Annual recurrent regulatory evaluation scheduled in 18 days; QTG pack 96% complete.'),
-(3, 'FFS-A350-03', 'Airbus A350-900 Full Flight Simulator #3', 'BAY-03', 'FFS_BAY', 3, 'COMMERCIAL_FIXED_WING', 'Airbus A350-900 XWB',         'AeroSim Pro-7000', 'AS7K-A350-312', 'EASA / FAA',    'Level D Dual-Qual',  'FSTD.INT.035', DATE_ADD(CURDATE(), INTERVAL 260 DAY), DATE_SUB(CURDATE(), INTERVAL 105 DAY), 20.0, 'Trent XWB-84 / 6-Display Glass Suite',   'Host Load v3.22.0', 'AIRAC 2611', 'OptiDome 6000 · 4K Laser Array',       '6-DOF Hydraulic-Free Electric',   'Active Side-Stick CLS',      'FlexIOS v8 + Debrief Pod',        'DEGRADED',     9840.2,  7610.8, 1890.0, 'MEL CAT B: Visual Ch.3 right peripheral laser dimmed 12%. Day/Night training cleared; LVP Cat III restricted until module swap.', 'Long-haul widebody fleet bay. Inbound replacement laser module ETA +4d.'),
-(4, 'FFS-H145-04', 'Airbus H145 Rotorcraft FFS #4',            'BAY-04', 'FFS_BAY', 4, 'ROTORCRAFT',            'Airbus H145 D3',              'HeliSim Pro-3000', 'HS3K-H145-077', 'EASA / FAA',    'CS-FSTD(H) Level D', 'FSTD.H.005',   DATE_ADD(CURDATE(), INTERVAL 140 DAY), DATE_SUB(CURDATE(), INTERVAL 225 DAY), 18.0, 'Safran Arriel 2E / Helionix Step 3',     'RotorHost v6.1.4',  'AIRAC 2611', '8-Channel Extreme FOV Chin-Window Dome','6-DOF High-Frequency Rotor Drive','4-Axis Helicopter AFCS CLS', 'HEMS / SAR Mission FlexIOS',      'READY',       11340.0,  9450.0, 2105.5, NULL, 'Offshore Oil&Gas, HEMS & NVG Level D certified.'),
-(5, 'FMS-AJT-05',  'AJT-50 Advanced Jet Trainer FMS #5',       'BAY-05', 'FFS_BAY', 5, 'DEFENSE_FMS',           'AJT-50 Advanced Jet Trainer', 'TacSim FMS-500',   'TF5-AJT-019',   'ICAO / STANAG', 'Level D Tactical',   'FMS.TAC.005',  DATE_ADD(CURDATE(), INTERVAL 210 DAY), DATE_SUB(CURDATE(), INTERVAL 155 DAY), 16.0, 'F404-GE-102 / Embedded Tactical Suite',  'TacCore v7.3.0',    'Tactical DB 26-B', '360° Partial Dome 9ch LCoS',     'Fixed-Base G-Seat + G-Suit',      'Fighter HOTAS Force-Feel',   'LVC Tactical White-Force IOS',    'IN_SORTIE',    7620.0,     0.0, 1480.0, NULL, 'LVC networked for multi-ship BFM/ACM & EW tactical sorties.'),
-(6, 'FFS-B787-06', 'Boeing 787-9 Dreamliner FFS #6',           'BAY-06', 'FFS_BAY', 6, 'COMMERCIAL_FIXED_WING', 'Boeing 787-9 Dreamliner',     'AeroSim Pro-7000', 'AS7K-B787-402', 'EASA / FAA',    'CS-FSTD Level D',    'FSTD.INT.031', DATE_ADD(CURDATE(), INTERVAL 310 DAY), DATE_SUB(CURDATE(), INTERVAL 55 DAY),  20.0, 'GEnx-1B74 / Common Core Avionics',       'Host Load v4.11.0', 'AIRAC 2611', 'OptiDome 6000 · 4K Laser 3ch',         '6-DOF Electric eDrive Platform',  'Dual-HUD + Digital CLS',     'FlexIOS v8.4 Instructor Station', 'MAINTENANCE',  6450.0,  5120.5, 1120.0, 'Bay offline under LOTO #412 for Actuator #4 servo drive replacement and pitch QTG re-test.', 'Scheduled return-to-service tonight after QTG 3.A.2 verification.'),
+-- 6 Full Flight Simulators (FFS_BAY · SORTIES mode with custom operating hours & slot presets)
+(1, 'FFS-A320-01', 'Airbus A320neo Full Flight Simulator #1',  'BAY-01', 'FFS_BAY', 'SORTIES', '{"operating_start":"06:00","operating_end":"22:00","default_slot_hours":4,"turnaround_minutes":15,"slot_presets":[{"label":"06:00–10:00","start":"06:00","end":"10:00"},{"label":"10:00–14:00","start":"10:00","end":"14:00"},{"label":"14:00–18:00","start":"14:00","end":"18:00"},{"label":"18:00–22:00","start":"18:00","end":"22:00"}],"shift_presets":[]}', 1, 'COMMERCIAL_FIXED_WING', 'Airbus A320neo / CEO',        'AeroSim Pro-7000', 'AS7K-A320-104', 'EASA / FAA',    'CS-FSTD Level D',    'FSTD.INT.014', DATE_ADD(CURDATE(), INTERVAL 185 DAY), DATE_SUB(CURDATE(), INTERVAL 180 DAY), 16.0, 'CFM LEAP-1A26 / Digital FMS R2',         'Host Load v4.18.2', 'AIRAC 2611', 'OptiDome 6000 · 200x40 Laser 3ch',     '6-DOF Electric eDrive Platform',  'Digital CLS-500 Force-Feel', 'Dual-Screen FlexIOS Console v8',  'IN_SORTIE',   18420.5, 14210.0, 3120.4, NULL, 'Primary narrowbody revenue bay. Cat IIIB LVP & UPRT qualified.'),
+(2, 'FFS-B737-02', 'Boeing 737 MAX 8 Full Flight Simulator #2','BAY-02', 'FFS_BAY', 'SORTIES', '{"operating_start":"06:00","operating_end":"22:00","default_slot_hours":4,"turnaround_minutes":15,"slot_presets":[{"label":"06:00–10:00","start":"06:00","end":"10:00"},{"label":"10:00–14:00","start":"10:00","end":"14:00"},{"label":"14:00–18:00","start":"14:00","end":"18:00"},{"label":"18:00–22:00","start":"18:00","end":"22:00"}],"shift_presets":[]}', 2, 'COMMERCIAL_FIXED_WING', 'Boeing 737 MAX 8 / 800',      'AeroSim Pro-7000', 'AS7K-B737-209', 'EASA / FAA',    'CS-FSTD Level D',    'FSTD.INT.022', DATE_ADD(CURDATE(), INTERVAL 18 DAY),  DATE_SUB(CURDATE(), INTERVAL 347 DAY), 16.0, 'CFM LEAP-1B / Integrated Flight Deck',   'Host Load v5.04.1', 'AIRAC 2611', 'LumaDome 6000 · 220x40 LED Array',     '6-DOF Electric eDrive Platform',  'Digital Control Column CLS', 'Mobile Tablet + Desk FlexIOS',    'READY',       15290.0, 11845.5, 2410.0, NULL, 'Annual recurrent regulatory evaluation scheduled in 18 days; QTG pack 96% complete.'),
+(3, 'FFS-A350-03', 'Airbus A350-900 Full Flight Simulator #3', 'BAY-03', 'FFS_BAY', 'SORTIES', '{"operating_start":"06:00","operating_end":"22:00","default_slot_hours":4,"turnaround_minutes":15,"slot_presets":[{"label":"06:00–10:00","start":"06:00","end":"10:00"},{"label":"10:00–14:00","start":"10:00","end":"14:00"},{"label":"14:00–18:00","start":"14:00","end":"18:00"},{"label":"18:00–22:00","start":"18:00","end":"22:00"}],"shift_presets":[]}', 3, 'COMMERCIAL_FIXED_WING', 'Airbus A350-900 XWB',         'AeroSim Pro-7000', 'AS7K-A350-312', 'EASA / FAA',    'Level D Dual-Qual',  'FSTD.INT.035', DATE_ADD(CURDATE(), INTERVAL 260 DAY), DATE_SUB(CURDATE(), INTERVAL 105 DAY), 16.0, 'Trent XWB-84 / 6-Display Glass Suite',   'Host Load v3.22.0', 'AIRAC 2611', 'OptiDome 6000 · 4K Laser Array',       '6-DOF Hydraulic-Free Electric',   'Active Side-Stick CLS',      'FlexIOS v8 + Debrief Pod',        'DEGRADED',     9840.2,  7610.8, 1890.0, 'MEL CAT B: Visual Ch.3 right peripheral laser dimmed 12%. Day/Night training cleared; LVP Cat III restricted until module swap.', 'Long-haul widebody fleet bay. Inbound replacement laser module ETA +4d.'),
+(4, 'FFS-H145-04', 'Airbus H145 Rotorcraft FFS #4',            'BAY-04', 'FFS_BAY', 'SORTIES', '{"operating_start":"06:00","operating_end":"22:00","default_slot_hours":3.5,"turnaround_minutes":30,"slot_presets":[{"label":"06:00–09:30","start":"06:00","end":"09:30"},{"label":"09:30–13:00","start":"09:30","end":"13:00"},{"label":"13:00–16:30","start":"13:00","end":"16:30"},{"label":"17:00–20:30","start":"17:00","end":"20:30"}],"shift_presets":[]}', 4, 'ROTORCRAFT',            'Airbus H145 D3',              'HeliSim Pro-3000', 'HS3K-H145-077', 'EASA / FAA',    'CS-FSTD(H) Level D', 'FSTD.H.005',   DATE_ADD(CURDATE(), INTERVAL 140 DAY), DATE_SUB(CURDATE(), INTERVAL 225 DAY), 16.0, 'Safran Arriel 2E / Helionix Step 3',     'RotorHost v6.1.4',  'AIRAC 2611', '8-Channel Extreme FOV Chin-Window Dome','6-DOF High-Frequency Rotor Drive','4-Axis Helicopter AFCS CLS', 'HEMS / SAR Mission FlexIOS',      'READY',       11340.0,  9450.0, 2105.5, NULL, 'Offshore Oil&Gas, HEMS & NVG Level D certified.'),
+(5, 'FMS-AJT-05',  'AJT-50 Advanced Jet Trainer FMS #5',       'BAY-05', 'FFS_BAY', 'SORTIES', '{"operating_start":"07:00","operating_end":"21:00","default_slot_hours":3.5,"turnaround_minutes":30,"slot_presets":[{"label":"07:30–11:00","start":"07:30","end":"11:00"},{"label":"11:30–15:00","start":"11:30","end":"15:00"},{"label":"15:30–19:00","start":"15:30","end":"19:00"}],"shift_presets":[]}', 5, 'DEFENSE_FMS',           'AJT-50 Advanced Jet Trainer', 'TacSim FMS-500',   'TF5-AJT-019',   'ICAO / STANAG', 'Level D Tactical',   'FMS.TAC.005',  DATE_ADD(CURDATE(), INTERVAL 210 DAY), DATE_SUB(CURDATE(), INTERVAL 155 DAY), 14.0, 'F404-GE-102 / Embedded Tactical Suite',  'TacCore v7.3.0',    'Tactical DB 26-B', '360° Partial Dome 9ch LCoS',     'Fixed-Base G-Seat + G-Suit',      'Fighter HOTAS Force-Feel',   'LVC Tactical White-Force IOS',    'IN_SORTIE',    7620.0,     0.0, 1480.0, NULL, 'LVC networked for multi-ship BFM/ACM & EW tactical sorties.'),
+(6, 'FFS-B787-06', 'Boeing 787-9 Dreamliner FFS #6',           'BAY-06', 'FFS_BAY', 'SORTIES', '{"operating_start":"06:00","operating_end":"22:00","default_slot_hours":4,"turnaround_minutes":15,"slot_presets":[{"label":"06:00–10:00","start":"06:00","end":"10:00"},{"label":"10:00–14:00","start":"10:00","end":"14:00"},{"label":"14:00–18:00","start":"14:00","end":"18:00"},{"label":"18:00–22:00","start":"18:00","end":"22:00"}],"shift_presets":[]}', 6, 'COMMERCIAL_FIXED_WING', 'Boeing 787-9 Dreamliner',     'AeroSim Pro-7000', 'AS7K-B787-402', 'EASA / FAA',    'CS-FSTD Level D',    'FSTD.INT.031', DATE_ADD(CURDATE(), INTERVAL 310 DAY), DATE_SUB(CURDATE(), INTERVAL 55 DAY),  16.0, 'GEnx-1B74 / Common Core Avionics',       'Host Load v4.11.0', 'AIRAC 2611', 'OptiDome 6000 · 4K Laser 3ch',         '6-DOF Electric eDrive Platform',  'Dual-HUD + Digital CLS',     'FlexIOS v8.4 Instructor Station', 'MAINTENANCE',  6450.0,  5120.5, 1120.0, 'Bay offline under LOTO #412 for Actuator #4 servo drive replacement and pitch QTG re-test.', 'Scheduled return-to-service tonight after QTG 3.A.2 verification.'),
 
--- 6 Test Places (TEST_PLACE)
-(7,  'TP-01', 'TEST PLACE 1', 'TP-01', 'TEST_PLACE', 1, 'FTD_FNPT', 'Multi-Role Sim Test Place', 'AeroSim Systems', 'AS-TPS-001', 'EASA / FAA', 'FSTD / TPS', 'TPS-STD-01', DATE_ADD(CURDATE(), INTERVAL 300 DAY), DATE_SUB(CURDATE(), INTERVAL 65 DAY), 16.0, 'Digital Flight Deck Sim Rack', 'TPS Load v5.4', 'AIRAC 2611', 'Collimated 3-Ch LED', 'Fixed-Base TPS', 'Control Loading Bench', 'Dual-Screen FlexIOS v8', 'READY',    3420.0, 0.0, 980.0, NULL, 'Primary avionics & FMS software integration Test Place.'),
-(8,  'TP-02', 'TEST PLACE 2', 'TP-02', 'TEST_PLACE', 2, 'FTD_FNPT', 'Multi-Role Sim Test Place', 'AeroSim Systems', 'AS-TPS-002', 'EASA / FAA', 'FSTD / TPS', 'TPS-STD-02', DATE_ADD(CURDATE(), INTERVAL 300 DAY), DATE_SUB(CURDATE(), INTERVAL 65 DAY), 16.0, 'Digital Flight Deck Sim Rack', 'TPS Load v5.4', 'AIRAC 2611', 'Collimated 3-Ch LED', 'Fixed-Base TPS', 'Control Loading Bench', 'Dual-Screen FlexIOS v8', 'READY',    3180.0, 0.0, 910.0, NULL, 'A320 / B737 avionics regression bench.'),
-(9,  'TP-03', 'TEST PLACE 3', 'TP-03', 'TEST_PLACE', 3, 'FTD_FNPT', 'Multi-Role Sim Test Place', 'AeroSim Systems', 'AS-TPS-003', 'EASA / FAA', 'FSTD / TPS', 'TPS-STD-03', DATE_ADD(CURDATE(), INTERVAL 300 DAY), DATE_SUB(CURDATE(), INTERVAL 65 DAY), 16.0, 'Digital Flight Deck Sim Rack', 'TPS Load v5.4', 'AIRAC 2611', 'Collimated 3-Ch LED', 'Fixed-Base TPS', 'Control Loading Bench', 'Dual-Screen FlexIOS v8', 'READY',    2940.0, 0.0, 845.0, NULL, 'Visual database & terrain validation station.'),
-(10, 'TP-04', 'TEST PLACE 4', 'TP-04', 'TEST_PLACE', 4, 'FTD_FNPT', 'Multi-Role Sim Test Place', 'AeroSim Systems', 'AS-TPS-004', 'EASA / FAA', 'FSTD / TPS', 'TPS-STD-04', DATE_ADD(CURDATE(), INTERVAL 300 DAY), DATE_SUB(CURDATE(), INTERVAL 65 DAY), 16.0, 'Digital Flight Deck Sim Rack', 'TPS Load v5.4', 'AIRAC 2611', 'Collimated 3-Ch LED', 'Fixed-Base TPS', 'Control Loading Bench', 'Dual-Screen FlexIOS v8', 'READY',    3610.0, 0.0, 1020.0, NULL, 'Widebody & rotorcraft multi-role test place.'),
-(11, 'TP-05', 'TEST PLACE 5', 'TP-05', 'TEST_PLACE', 5, 'FTD_FNPT', 'Multi-Role Sim Test Place', 'AeroSim Systems', 'AS-TPS-005', 'EASA / FAA', 'FSTD / TPS', 'TPS-STD-05', DATE_ADD(CURDATE(), INTERVAL 300 DAY), DATE_SUB(CURDATE(), INTERVAL 65 DAY), 16.0, 'Digital Flight Deck Sim Rack', 'TPS Load v5.4', 'AIRAC 2611', 'Collimated 3-Ch LED', 'Fixed-Base TPS', 'Control Loading Bench', 'Dual-Screen FlexIOS v8', 'DEGRADED', 3290.0, 0.0, 940.0, 'GPU channel #2 froze during morning pre-flight; under troubleshooting.', 'Active corrective work order open on visual rack GPU.'),
-(12, 'TP-06', 'TEST PLACE 6', 'TP-06', 'TEST_PLACE', 6, 'FTD_FNPT', 'Multi-Role Sim Test Place', 'AeroSim Systems', 'AS-TPS-006', 'EASA / FAA', 'FSTD / TPS', 'TPS-STD-06', DATE_ADD(CURDATE(), INTERVAL 300 DAY), DATE_SUB(CURDATE(), INTERVAL 65 DAY), 16.0, 'Digital Flight Deck Sim Rack', 'TPS Load v5.4', 'AIRAC 2611', 'Collimated 3-Ch LED', 'Fixed-Base TPS', 'Control Loading Bench', 'Dual-Screen FlexIOS v8', 'READY',    2750.0, 0.0, 790.0, NULL, 'Reserve acceptance & instructor checkout station.'),
+-- 6 Test Places (TEST_PLACE · SHIFTS mode with shift presets; TP-06 includes NIGHT SHIFT)
+(7,  'TP-01', 'TEST PLACE 1', 'TP-01', 'TEST_PLACE', 'SHIFTS', '{"operating_start":"06:30","operating_end":"18:00","default_slot_hours":5.5,"turnaround_minutes":0,"slot_presets":[],"shift_presets":[{"name":"SHIFT 1","start":"07:00","end":"12:30","pre_flight":"06:40"},{"name":"SHIFT 2","start":"13:30","end":"17:30","pre_flight":"13:15"}]}', 1, 'FTD_FNPT', 'Multi-Role Sim Test Place', 'AeroSim Systems', 'AS-TPS-001', 'EASA / FAA', 'FSTD / TPS', 'TPS-STD-01', DATE_ADD(CURDATE(), INTERVAL 300 DAY), DATE_SUB(CURDATE(), INTERVAL 65 DAY), 11.5, 'Digital Flight Deck Sim Rack', 'TPS Load v5.4', 'AIRAC 2611', 'Collimated 3-Ch LED', 'Fixed-Base TPS', 'Control Loading Bench', 'Dual-Screen FlexIOS v8', 'READY',    3420.0, 0.0, 980.0, NULL, 'Primary avionics & FMS software integration Test Place.'),
+(8,  'TP-02', 'TEST PLACE 2', 'TP-02', 'TEST_PLACE', 'SHIFTS', '{"operating_start":"06:30","operating_end":"18:00","default_slot_hours":5.5,"turnaround_minutes":0,"slot_presets":[],"shift_presets":[{"name":"SHIFT 1","start":"07:00","end":"12:30","pre_flight":"06:40"},{"name":"SHIFT 2","start":"13:30","end":"17:30","pre_flight":"13:15"}]}', 2, 'FTD_FNPT', 'Multi-Role Sim Test Place', 'AeroSim Systems', 'AS-TPS-002', 'EASA / FAA', 'FSTD / TPS', 'TPS-STD-02', DATE_ADD(CURDATE(), INTERVAL 300 DAY), DATE_SUB(CURDATE(), INTERVAL 65 DAY), 11.5, 'Digital Flight Deck Sim Rack', 'TPS Load v5.4', 'AIRAC 2611', 'Collimated 3-Ch LED', 'Fixed-Base TPS', 'Control Loading Bench', 'Dual-Screen FlexIOS v8', 'READY',    3180.0, 0.0, 910.0, NULL, 'A320 / B737 avionics regression bench.'),
+(9,  'TP-03', 'TEST PLACE 3', 'TP-03', 'TEST_PLACE', 'SHIFTS', '{"operating_start":"06:30","operating_end":"18:00","default_slot_hours":5.5,"turnaround_minutes":0,"slot_presets":[],"shift_presets":[{"name":"SHIFT 1","start":"07:00","end":"12:30","pre_flight":"06:40"},{"name":"SHIFT 2","start":"13:30","end":"17:30","pre_flight":"13:15"}]}', 3, 'FTD_FNPT', 'Multi-Role Sim Test Place', 'AeroSim Systems', 'AS-TPS-003', 'EASA / FAA', 'FSTD / TPS', 'TPS-STD-03', DATE_ADD(CURDATE(), INTERVAL 300 DAY), DATE_SUB(CURDATE(), INTERVAL 65 DAY), 11.5, 'Digital Flight Deck Sim Rack', 'TPS Load v5.4', 'AIRAC 2611', 'Collimated 3-Ch LED', 'Fixed-Base TPS', 'Control Loading Bench', 'Dual-Screen FlexIOS v8', 'READY',    2940.0, 0.0, 845.0, NULL, 'Visual database & terrain validation station.'),
+(10, 'TP-04', 'TEST PLACE 4', 'TP-04', 'TEST_PLACE', 'SHIFTS', '{"operating_start":"06:30","operating_end":"18:00","default_slot_hours":5.5,"turnaround_minutes":0,"slot_presets":[],"shift_presets":[{"name":"SHIFT 1","start":"07:00","end":"12:30","pre_flight":"06:40"},{"name":"SHIFT 2","start":"13:30","end":"17:30","pre_flight":"13:15"}]}', 4, 'FTD_FNPT', 'Multi-Role Sim Test Place', 'AeroSim Systems', 'AS-TPS-004', 'EASA / FAA', 'FSTD / TPS', 'TPS-STD-04', DATE_ADD(CURDATE(), INTERVAL 300 DAY), DATE_SUB(CURDATE(), INTERVAL 65 DAY), 11.5, 'Digital Flight Deck Sim Rack', 'TPS Load v5.4', 'AIRAC 2611', 'Collimated 3-Ch LED', 'Fixed-Base TPS', 'Control Loading Bench', 'Dual-Screen FlexIOS v8', 'READY',    3610.0, 0.0, 1020.0, NULL, 'Widebody & rotorcraft multi-role test place.'),
+(11, 'TP-05', 'TEST PLACE 5', 'TP-05', 'TEST_PLACE', 'SHIFTS', '{"operating_start":"06:30","operating_end":"18:00","default_slot_hours":5.5,"turnaround_minutes":0,"slot_presets":[],"shift_presets":[{"name":"SHIFT 1","start":"07:00","end":"12:30","pre_flight":"06:40"},{"name":"SHIFT 2","start":"13:30","end":"17:30","pre_flight":"13:15"}]}', 5, 'FTD_FNPT', 'Multi-Role Sim Test Place', 'AeroSim Systems', 'AS-TPS-005', 'EASA / FAA', 'FSTD / TPS', 'TPS-STD-05', DATE_ADD(CURDATE(), INTERVAL 300 DAY), DATE_SUB(CURDATE(), INTERVAL 65 DAY), 11.5, 'Digital Flight Deck Sim Rack', 'TPS Load v5.4', 'AIRAC 2611', 'Collimated 3-Ch LED', 'Fixed-Base TPS', 'Control Loading Bench', 'Dual-Screen FlexIOS v8', 'DEGRADED', 3290.0, 0.0, 940.0, 'GPU channel #2 froze during morning pre-flight; under troubleshooting.', 'Active corrective work order open on visual rack GPU.'),
+(12, 'TP-06', 'TEST PLACE 6', 'TP-06', 'TEST_PLACE', 'SHIFTS', '{"operating_start":"06:30","operating_end":"23:30","default_slot_hours":5.5,"turnaround_minutes":0,"slot_presets":[],"shift_presets":[{"name":"SHIFT 1","start":"07:00","end":"12:30","pre_flight":"06:40"},{"name":"SHIFT 2","start":"13:30","end":"17:30","pre_flight":"13:15"},{"name":"NIGHT SHIFT","start":"22:00","end":"02:00","pre_flight":"21:45"}]}', 6, 'FTD_FNPT', 'Multi-Role Sim Test Place', 'AeroSim Systems', 'AS-TPS-006', 'EASA / FAA', 'FSTD / TPS', 'TPS-STD-06', DATE_ADD(CURDATE(), INTERVAL 300 DAY), DATE_SUB(CURDATE(), INTERVAL 65 DAY), 17.0, 'Digital Flight Deck Sim Rack', 'TPS Load v5.4', 'AIRAC 2611', 'Collimated 3-Ch LED', 'Fixed-Base TPS', 'Control Loading Bench', 'Dual-Screen FlexIOS v8', 'READY',    2750.0, 0.0, 790.0, NULL, 'Reserve acceptance, instructor checkout & overnight NavDB soak bench.'),
 
--- 6 IOS Consoles (IOS_CONSOLE)
-(13, 'IOS-01', 'IOS CONSOLE 1', 'IOS-01', 'IOS_CONSOLE', 1, 'FTD_FNPT', 'Instructor Operating Console', 'AeroSim Systems', 'AS-IOS-101', 'EASA / FAA', 'IOS Station', 'IOS-STD-01', DATE_ADD(CURDATE(), INTERVAL 330 DAY), DATE_SUB(CURDATE(), INTERVAL 35 DAY), 16.0, 'FlexIOS Host Telemetry', 'IOS v8.4', 'AIRAC 2611', 'Dual 27-in Touch Displays', 'Fixed Console', 'Instructor Desk', 'Primary IOS Console #1', 'READY',    2840.0, 0.0, 0.0, NULL, 'Paired with BAY-01 / TP-01 scenario debrief.'),
-(14, 'IOS-02', 'IOS CONSOLE 2', 'IOS-02', 'IOS_CONSOLE', 2, 'FTD_FNPT', 'Instructor Operating Console', 'AeroSim Systems', 'AS-IOS-102', 'EASA / FAA', 'IOS Station', 'IOS-STD-02', DATE_ADD(CURDATE(), INTERVAL 330 DAY), DATE_SUB(CURDATE(), INTERVAL 35 DAY), 16.0, 'FlexIOS Host Telemetry', 'IOS v8.4', 'AIRAC 2611', 'Dual 27-in Touch Displays', 'Fixed Console', 'Instructor Desk', 'Primary IOS Console #2', 'READY',    2690.0, 0.0, 0.0, NULL, 'Paired with BAY-02 / TP-02 scenario debrief.'),
-(15, 'IOS-03', 'IOS CONSOLE 3', 'IOS-03', 'IOS_CONSOLE', 3, 'FTD_FNPT', 'Instructor Operating Console', 'AeroSim Systems', 'AS-IOS-103', 'EASA / FAA', 'IOS Station', 'IOS-STD-03', DATE_ADD(CURDATE(), INTERVAL 330 DAY), DATE_SUB(CURDATE(), INTERVAL 35 DAY), 16.0, 'FlexIOS Host Telemetry', 'IOS v8.4', 'AIRAC 2611', 'Dual 27-in Touch Displays', 'Fixed Console', 'Instructor Desk', 'Primary IOS Console #3', 'READY',    2510.0, 0.0, 0.0, NULL, 'Paired with BAY-03 / TP-03 scenario debrief.'),
-(16, 'IOS-04', 'IOS CONSOLE 4', 'IOS-04', 'IOS_CONSOLE', 4, 'FTD_FNPT', 'Instructor Operating Console', 'AeroSim Systems', 'AS-IOS-104', 'EASA / FAA', 'IOS Station', 'IOS-STD-04', DATE_ADD(CURDATE(), INTERVAL 330 DAY), DATE_SUB(CURDATE(), INTERVAL 35 DAY), 16.0, 'FlexIOS Host Telemetry', 'IOS v8.4', 'AIRAC 2611', 'Dual 27-in Touch Displays', 'Fixed Console', 'Instructor Desk', 'Primary IOS Console #4', 'DEGRADED', 2920.0, 0.0, 0.0, 'Right intercom PTT audio matrix crackle on Ch.2 (MEL Cat C).', 'Audio card swap planned in afternoon window.'),
-(17, 'IOS-05', 'IOS CONSOLE 5', 'IOS-05', 'IOS_CONSOLE', 5, 'FTD_FNPT', 'Instructor Operating Console', 'AeroSim Systems', 'AS-IOS-105', 'EASA / FAA', 'IOS Station', 'IOS-STD-05', DATE_ADD(CURDATE(), INTERVAL 330 DAY), DATE_SUB(CURDATE(), INTERVAL 35 DAY), 16.0, 'FlexIOS Host Telemetry', 'IOS v8.4', 'AIRAC 2611', 'Dual 27-in Touch Displays', 'Fixed Console', 'Instructor Desk', 'Primary IOS Console #5', 'READY',    2380.0, 0.0, 0.0, NULL, 'LVC tactical white-force debrief station.'),
-(18, 'IOS-06', 'IOS CONSOLE 6', 'IOS-06', 'IOS_CONSOLE', 6, 'FTD_FNPT', 'Instructor Operating Console', 'AeroSim Systems', 'AS-IOS-106', 'EASA / FAA', 'IOS Station', 'IOS-STD-06', DATE_ADD(CURDATE(), INTERVAL 330 DAY), DATE_SUB(CURDATE(), INTERVAL 35 DAY), 16.0, 'FlexIOS Host Telemetry', 'IOS v8.4', 'AIRAC 2611', 'Dual 27-in Touch Displays', 'Fixed Console', 'Instructor Desk', 'Primary IOS Console #6', 'READY',    2190.0, 0.0, 0.0, NULL, 'Reserve instructor console & QTG recording desk.');
+-- 6 IOS Consoles (IOS_CONSOLE · SHIFTS mode with shift presets)
+(13, 'IOS-01', 'IOS CONSOLE 1', 'IOS-01', 'IOS_CONSOLE', 'SHIFTS', '{"operating_start":"06:30","operating_end":"18:00","default_slot_hours":5,"turnaround_minutes":0,"slot_presets":[],"shift_presets":[{"name":"SHIFT 1","start":"07:15","end":"12:30","pre_flight":"06:45"},{"name":"SHIFT 2","start":"13:30","end":"17:30","pre_flight":"13:15"}]}', 1, 'FTD_FNPT', 'Instructor Operating Console', 'AeroSim Systems', 'AS-IOS-101', 'EASA / FAA', 'IOS Station', 'IOS-STD-01', DATE_ADD(CURDATE(), INTERVAL 330 DAY), DATE_SUB(CURDATE(), INTERVAL 35 DAY), 11.5, 'FlexIOS Host Telemetry', 'IOS v8.4', 'AIRAC 2611', 'Dual 27-in Touch Displays', 'Fixed Console', 'Instructor Desk', 'Primary IOS Console #1', 'READY',    2840.0, 0.0, 0.0, NULL, 'Paired with BAY-01 / TP-01 scenario debrief.'),
+(14, 'IOS-02', 'IOS CONSOLE 2', 'IOS-02', 'IOS_CONSOLE', 'SHIFTS', '{"operating_start":"06:30","operating_end":"18:00","default_slot_hours":5,"turnaround_minutes":0,"slot_presets":[],"shift_presets":[{"name":"SHIFT 1","start":"07:15","end":"12:30","pre_flight":"06:45"},{"name":"SHIFT 2","start":"13:30","end":"17:30","pre_flight":"13:15"}]}', 2, 'FTD_FNPT', 'Instructor Operating Console', 'AeroSim Systems', 'AS-IOS-102', 'EASA / FAA', 'IOS Station', 'IOS-STD-02', DATE_ADD(CURDATE(), INTERVAL 330 DAY), DATE_SUB(CURDATE(), INTERVAL 35 DAY), 11.5, 'FlexIOS Host Telemetry', 'IOS v8.4', 'AIRAC 2611', 'Dual 27-in Touch Displays', 'Fixed Console', 'Instructor Desk', 'Primary IOS Console #2', 'READY',    2690.0, 0.0, 0.0, NULL, 'Paired with BAY-02 / TP-02 scenario debrief.'),
+(15, 'IOS-03', 'IOS CONSOLE 3', 'IOS-03', 'IOS_CONSOLE', 'SHIFTS', '{"operating_start":"06:30","operating_end":"18:00","default_slot_hours":5,"turnaround_minutes":0,"slot_presets":[],"shift_presets":[{"name":"SHIFT 1","start":"07:15","end":"12:30","pre_flight":"06:45"},{"name":"SHIFT 2","start":"13:30","end":"17:30","pre_flight":"13:15"}]}', 3, 'FTD_FNPT', 'Instructor Operating Console', 'AeroSim Systems', 'AS-IOS-103', 'EASA / FAA', 'IOS Station', 'IOS-STD-03', DATE_ADD(CURDATE(), INTERVAL 330 DAY), DATE_SUB(CURDATE(), INTERVAL 35 DAY), 11.5, 'FlexIOS Host Telemetry', 'IOS v8.4', 'AIRAC 2611', 'Dual 27-in Touch Displays', 'Fixed Console', 'Instructor Desk', 'Primary IOS Console #3', 'READY',    2510.0, 0.0, 0.0, NULL, 'Paired with BAY-03 / TP-03 scenario debrief.'),
+(16, 'IOS-04', 'IOS CONSOLE 4', 'IOS-04', 'IOS_CONSOLE', 'SHIFTS', '{"operating_start":"06:30","operating_end":"18:00","default_slot_hours":5,"turnaround_minutes":0,"slot_presets":[],"shift_presets":[{"name":"SHIFT 1","start":"07:15","end":"12:30","pre_flight":"06:45"},{"name":"SHIFT 2","start":"13:30","end":"17:30","pre_flight":"13:15"}]}', 4, 'FTD_FNPT', 'Instructor Operating Console', 'AeroSim Systems', 'AS-IOS-104', 'EASA / FAA', 'IOS Station', 'IOS-STD-04', DATE_ADD(CURDATE(), INTERVAL 330 DAY), DATE_SUB(CURDATE(), INTERVAL 35 DAY), 11.5, 'FlexIOS Host Telemetry', 'IOS v8.4', 'AIRAC 2611', 'Dual 27-in Touch Displays', 'Fixed Console', 'Instructor Desk', 'Primary IOS Console #4', 'DEGRADED', 2920.0, 0.0, 0.0, 'Right intercom PTT audio matrix crackle on Ch.2 (MEL Cat C).', 'Audio card swap planned in afternoon window.'),
+(17, 'IOS-05', 'IOS CONSOLE 5', 'IOS-05', 'IOS_CONSOLE', 'SHIFTS', '{"operating_start":"06:30","operating_end":"18:00","default_slot_hours":5,"turnaround_minutes":0,"slot_presets":[],"shift_presets":[{"name":"SHIFT 1","start":"07:15","end":"12:30","pre_flight":"06:45"},{"name":"SHIFT 2","start":"13:30","end":"17:30","pre_flight":"13:15"}]}', 5, 'FTD_FNPT', 'Instructor Operating Console', 'AeroSim Systems', 'AS-IOS-105', 'EASA / FAA', 'IOS Station', 'IOS-STD-05', DATE_ADD(CURDATE(), INTERVAL 330 DAY), DATE_SUB(CURDATE(), INTERVAL 35 DAY), 11.5, 'FlexIOS Host Telemetry', 'IOS v8.4', 'AIRAC 2611', 'Dual 27-in Touch Displays', 'Fixed Console', 'Instructor Desk', 'Primary IOS Console #5', 'READY',    2380.0, 0.0, 0.0, NULL, 'LVC tactical white-force debrief station.'),
+(18, 'IOS-06', 'IOS CONSOLE 6', 'IOS-06', 'IOS_CONSOLE', 'SHIFTS', '{"operating_start":"06:30","operating_end":"18:00","default_slot_hours":5,"turnaround_minutes":0,"slot_presets":[],"shift_presets":[{"name":"SHIFT 1","start":"07:15","end":"12:30","pre_flight":"06:45"},{"name":"SHIFT 2","start":"13:30","end":"17:30","pre_flight":"13:15"}]}', 6, 'FTD_FNPT', 'Instructor Operating Console', 'AeroSim Systems', 'AS-IOS-106', 'EASA / FAA', 'IOS Station', 'IOS-STD-06', DATE_ADD(CURDATE(), INTERVAL 330 DAY), DATE_SUB(CURDATE(), INTERVAL 35 DAY), 11.5, 'FlexIOS Host Telemetry', 'IOS v8.4', 'AIRAC 2611', 'Dual 27-in Touch Displays', 'Fixed Console', 'Instructor Desk', 'Primary IOS Console #6', 'READY',    2190.0, 0.0, 0.0, NULL, 'Reserve instructor console & QTG recording desk.');
 
 -- =============================================================================
 -- 4. SIMULATOR SUBSYSTEMS (48 rows: 8 subsystems x 6 FFS Bays)
@@ -329,10 +333,12 @@ VALUES
 (4,  4,  1, 'SHIFT 1', '06:40', 3, TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 3 DAY), '14:15:00'), 3),
 (5,  5,  1, 'SHIFT 1', '06:40', 6, TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 2 DAY), '14:05:00'), 6),
 (6,  6,  1, 'SHIFT 1', '06:40', 6, TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 1 DAY), '14:00:00'), 6),
-(7,  6,  2, 'SHIFT 2', '13:30', 4, TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 1 DAY), '18:10:00'), 4),
--- TODAY TP shifts (SHIFT 1 + SHIFT 2)
-(8,  7,  1, 'SHIFT 1', '06:40', 6, NULL, NULL),
-(9,  7,  2, 'SHIFT 2', '13:30', 4, NULL, NULL),
+(7,  6,  2, 'SHIFT 2',     '13:30', 4, TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 1 DAY), '18:10:00'), 4),
+(18, 6,  3, 'NIGHT SHIFT', '21:45', 7, TIMESTAMP(CURDATE(), '02:15:00'), 7),
+-- TODAY TP shifts (SHIFT 1 + SHIFT 2 + overnight NIGHT SHIFT for cross-midnight demo)
+(8,  7,  1, 'SHIFT 1',     '06:40', 6, NULL, NULL),
+(9,  7,  2, 'SHIFT 2',     '13:30', 4, NULL, NULL),
+(19, 7,  3, 'NIGHT SHIFT', '21:45', 7, NULL, NULL),
 -- Historical IOS shifts (signed off)
 (10, 8,  1, 'SHIFT 1', '06:45', 6, TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 6 DAY), '14:05:00'), 6),
 (11, 9,  1, 'SHIFT 1', '06:45', 4, TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 5 DAY), '14:10:00'), 4),
@@ -344,162 +350,179 @@ VALUES
 (16, 14, 1, 'SHIFT 1', '06:45', 6, NULL, NULL),
 (17, 14, 2, 'SHIFT 2', '13:30', 4, NULL, NULL);
 
--- Shift entries for TEST_PLACE (simulators 7..12)
+-- Shift entries for TEST_PLACE (simulators 7..12) & IOS_CONSOLE (simulators 13..18)
+-- Includes optional external Mission, Instructor, Pilot, Co-Pilot, Weather & Scenario
 INSERT INTO simulator_shift_entries
-  (shift_id, simulator_id, usage_status, sim_testing_start, sim_testing_end, notes, updated_by)
+  (shift_id, simulator_id, usage_status, sim_testing_start, sim_testing_end, mission_name, instructor_name, pilot_name, copilot_name, weather_profile, scenario_code, notes, updated_by)
 VALUES
 -- Day -6 (shift 1)
-(1, 7, 'IN_USE', '07:00', '12:30', 'A320 FMS regression OK', 6),
-(1, 8, 'IN_USE', '07:30', '13:00', 'B737 flight model check', 6),
-(1, 9, 'IN_USE', '08:00', '12:00', 'Terrain DB validation', 6),
-(1, 10,'READY',  '00:00', '00:00', NULL, 6),
-(1, 11,'IN_USE', '08:30', '13:00', 'Nominal session', 6),
-(1, 12,'READY',  '00:00', '00:00', NULL, 6),
+(1, 7, 'IN_USE', '07:00', '12:30', 'A320 FMS Regression',   'Capt. M. Rossi (TRI)',  'FO L. Bianchi',   NULL,             'CAVOK / Day',       'EGLL-EDDF',       'A320 FMS regression OK', 6),
+(1, 8, 'IN_USE', '07:30', '13:00', 'B737 Model Checkout',   'Capt. H. Weber (TRE)',  'Capt. J. Novak',  NULL,             'Crosswind 25kt',    'EIDW-EGSS',       'B737 flight model check', 6),
+(1, 9, 'IN_USE', '08:00', '12:00', 'Terrain DB Validation', NULL,                    NULL,              NULL,             NULL,                'EDDF-LOWI',       'Terrain DB validation', 6),
+(1, 10,'READY',  '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 6),
+(1, 11,'IN_USE', '08:30', '13:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              'Nominal session', 6),
+(1, 12,'READY',  '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 6),
 -- Day -5 (shift 2)
-(2, 7, 'IN_USE', '07:00', '13:00', 'AIRAC 2611 load verified', 6),
-(2, 8, 'IN_USE', '07:00', '12:30', 'AIRAC 2611 load verified', 6),
-(2, 9, 'IN_USE', '08:00', '13:30', 'AIRAC 2611 load verified', 6),
-(2, 10,'IN_USE', '07:30', '12:00', 'H145 nav verification', 6),
-(2, 11,'READY',  '00:00', '00:00', NULL, 6),
-(2, 12,'READY',  '00:00', '00:00', NULL, 6),
+(2, 7, 'IN_USE', '07:00', '13:00', 'AIRAC 2611 Verification',NULL,                   NULL,              NULL,             NULL,                'AIRAC 2611',      'AIRAC 2611 load verified', 6),
+(2, 8, 'IN_USE', '07:00', '12:30', 'AIRAC 2611 Verification',NULL,                   NULL,              NULL,             NULL,                'AIRAC 2611',      'AIRAC 2611 load verified', 6),
+(2, 9, 'IN_USE', '08:00', '13:30', 'AIRAC 2611 Verification',NULL,                   NULL,              NULL,             NULL,                'AIRAC 2611',      'AIRAC 2611 load verified', 6),
+(2, 10,'IN_USE', '07:30', '12:00', 'H145 Nav Verification', 'Capt. K. Solberg',      'FO A. Morales',   NULL,             'IMC / Low Cloud',   'ENBR-ENZV',       'H145 nav verification', 6),
+(2, 11,'READY',  '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 6),
+(2, 12,'READY',  '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 6),
 -- Day -4 (shift 3)
-(3, 7, 'IN_USE', '07:00', '13:30', 'Full acceptance suite', 3),
-(3, 8, 'IN_USE', '07:00', '13:30', 'Full acceptance suite', 3),
-(3, 9, 'IN_USE', '07:30', '12:30', 'Visual terrain check', 3),
-(3, 10,'IN_USE', '08:00', '13:00', 'Rotorcraft autopilot test', 3),
-(3, 11,'IN_USE', '08:00', '12:00', 'Nominal', 3),
-(3, 12,'READY',  '00:00', '00:00', NULL, 3),
+(3, 7, 'IN_USE', '07:00', '13:30', 'Full Acceptance Suite', 'Capt. M. Rossi (TRI)',  'FO S. Conti',     NULL,             'VMC / Standard',    'LFPG-LEMD',       'Full acceptance suite', 3),
+(3, 8, 'IN_USE', '07:00', '13:30', 'Full Acceptance Suite', 'Capt. H. Weber (TRE)',  'FO C. Byrne',     NULL,             'VMC / Standard',    'EIDW-LPPT',       'Full acceptance suite', 3),
+(3, 9, 'IN_USE', '07:30', '12:30', 'Visual Terrain Check',  NULL,                    NULL,              NULL,             'Dusk / Wet Rwy',    'LOWI-LSZH',       'Visual terrain check', 3),
+(3, 10,'IN_USE', '08:00', '13:00', 'Rotorcraft AFCS Test',  'Capt. K. Solberg',      'FO M. Lindqvist', NULL,             'Sea State 4',       'ENBR-Rig A',      'Rotorcraft autopilot test', 3),
+(3, 11,'IN_USE', '08:00', '12:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              'Nominal', 3),
+(3, 12,'READY',  '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 3),
 -- Day -3 (shift 4)
-(4, 7, 'IN_USE', '07:00', '12:30', NULL, 3),
-(4, 8, 'IN_USE', '07:30', '13:00', NULL, 3),
-(4, 9, 'READY',  '00:00', '00:00', NULL, 3),
-(4, 10,'IN_USE', '08:00', '12:30', 'Brief SMT freeze on cold start — restarted OK', 3),
-(4, 11,'IN_USE', '07:30', '13:00', NULL, 3),
-(4, 12,'READY',  '00:00', '00:00', NULL, 3),
+(4, 7, 'IN_USE', '07:00', '12:30', 'A320 Avionics Bench',   'Capt. A. Dupont (TRI)', 'FO D. Ferraro',   NULL,             NULL,                NULL,              NULL, 3),
+(4, 8, 'IN_USE', '07:30', '13:00', 'B737 MCP Checkout',     'Capt. H. Weber (TRE)',  'FO N. Kelly',     NULL,             NULL,                NULL,              NULL, 3),
+(4, 9, 'READY',  '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 3),
+(4, 10,'IN_USE', '08:00', '12:30', 'Widebody Cold Start',   NULL,                    NULL,              NULL,             NULL,                NULL,              'Brief SMT freeze on cold start — restarted OK', 3),
+(4, 11,'IN_USE', '07:30', '13:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 3),
+(4, 12,'READY',  '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 3),
 -- Day -2 (shift 5)
-(5, 7, 'IN_USE', '07:00', '12:30', NULL, 6),
-(5, 8, 'IN_USE', '07:00', '12:30', NULL, 6),
-(5, 9, 'IN_USE', '08:00', '13:00', NULL, 6),
-(5, 10,'IN_USE', '08:00', '12:00', NULL, 6),
-(5, 11,'READY',  '00:00', '00:00', NULL, 6),
-(5, 12,'READY',  '00:00', '00:00', NULL, 6),
--- Day -1 (shift 6 morning + shift 7 afternoon)
-(6, 7, 'IN_USE', '07:00', '12:30', NULL, 6),
-(6, 8, 'IN_USE', '07:00', '13:00', NULL, 6),
-(6, 9, 'IN_USE', '08:00', '12:30', NULL, 6),
-(6, 10,'IN_USE', '07:30', '12:00', NULL, 6),
-(6, 11,'IN_USE', '08:00', '12:00', 'Intermittent frame drop observed at 11:45', 6),
-(6, 12,'READY',  '00:00', '00:00', NULL, 6),
-(7, 7, 'IN_USE', '13:30', '17:00', NULL, 4),
-(7, 8, 'IN_USE', '13:30', '17:00', NULL, 4),
-(7, 9, 'READY',  '00:00', '00:00', NULL, 4),
-(7, 10,'IN_USE', '14:00', '17:00', NULL, 4),
-(7, 11,'NA',     '00:00', '00:00', 'GPU channel #2 froze during reboot — moved to troubleshooting', 4),
-(7, 12,'READY',  '00:00', '00:00', NULL, 4),
--- TODAY (shift 8 morning + shift 9 afternoon)
-(8, 7, 'IN_USE', '07:00', '12:30', 'A320neo avionics pre-eval run — nominal', 6),
-(8, 8, 'IN_USE', '07:00', '12:30', 'B737 MAX flight deck checkout — nominal', 6),
-(8, 9, 'IN_USE', '07:30', '12:00', 'EGLL/EDDF visual database verification', 6),
-(8, 10,'IN_USE', '08:00', '12:30', 'H145 offshore helideck scenario test', 6),
-(8, 11,'NA',     '00:00', '00:00', 'NOT STARTING — GPU CH.2 FAULT, UNDER BENCH REPAIR (WO #4)', 6),
-(8, 12,'READY',  '08:00', '12:00', 'Hot standby reserve for customer instructors', 6),
-(9, 7, 'IN_USE', '13:30', '17:30', 'Afternoon FMS acceptance batch', 4),
-(9, 8, 'IN_USE', '13:30', '17:00', 'Annual QTG prep dry-run', 4),
-(9, 9, 'IN_USE', '14:00', '17:30', 'Night LVP scene verification', 4),
-(9, 10,'READY',  '13:30', '17:00', 'Ready for customer booking', 4),
-(9, 11,'NA',     '00:00', '00:00', 'Awaiting GPU thermal module re-test', 4),
-(9, 12,'READY',  '13:30', '17:00', 'Standby reserve', 4),
+(5, 7, 'IN_USE', '07:00', '12:30', 'FMS Regression Pack',   'Capt. M. Rossi (TRI)',  'FO L. Bianchi',   NULL,             NULL,                NULL,              NULL, 6),
+(5, 8, 'IN_USE', '07:00', '12:30', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 6),
+(5, 9, 'IN_USE', '08:00', '13:00', 'Night Scene Audit',     NULL,                    NULL,              NULL,             'Night LVP',         'EGLL RWY 27L',    NULL, 6),
+(5, 10,'IN_USE', '08:00', '12:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 6),
+(5, 11,'READY',  '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 6),
+(5, 12,'READY',  '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 6),
+-- Day -1 (shift 6 morning + shift 7 afternoon + shift 18 overnight)
+(6, 7, 'IN_USE', '07:00', '12:30', 'A320 LVP Prep',         'Capt. M. Rossi (TRI)',  'Capt. P. Gallo',  'FO D. Ferraro',  'Fog RVR 125m',      'EHAM-EGLL',       NULL, 6),
+(6, 8, 'IN_USE', '07:00', '13:00', 'B737 Pre-Audit Bench',  'Capt. H. Weber (TRE)',  'Capt. J. Novak',  NULL,             'Crosswind 25kt',    'EIDW-LEMD',       NULL, 6),
+(6, 9, 'IN_USE', '08:00', '12:30', 'ETOPS Terrain Check',   'Capt. A. Dupont (TRI)', 'Capt. R. Keller', NULL,             'Icing / Diversion', 'EDDM-CYYZ',       NULL, 6),
+(6, 10,'IN_USE', '07:30', '12:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 6),
+(6, 11,'IN_USE', '08:00', '12:00', 'Visual IG Stress Run',  NULL,                    NULL,              NULL,             NULL,                NULL,              'Intermittent frame drop observed at 11:45', 6),
+(6, 12,'READY',  '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 6),
+(7, 7, 'IN_USE', '13:30', '17:00', 'FMS Afternoon Batch',   'Capt. M. Rossi (TRI)',  'FO S. Conti',     NULL,             NULL,                NULL,              NULL, 4),
+(7, 8, 'IN_USE', '13:30', '17:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 4),
+(7, 9, 'READY',  '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 4),
+(7, 10,'IN_USE', '14:00', '17:00', 'HEMS Nav Validation',   'Capt. K. Solberg',      'FO A. Morales',   NULL,             'Night NVG',         'ENBR-Rig B',      NULL, 4),
+(7, 11,'NA',     '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              'GPU channel #2 froze during reboot — moved to troubleshooting', 4),
+(7, 12,'READY',  '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 4),
+-- Day -1 NIGHT SHIFT (shift 18): TP-06 runs 22:00 -> 02:00 (renders as <- 00:00-02:00 on TODAY 24h timeline!)
+(18, 7, 'READY',  '00:00', '00:00', NULL,                   NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 7),
+(18, 8, 'READY',  '00:00', '00:00', NULL,                   NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 7),
+(18, 9, 'READY',  '00:00', '00:00', NULL,                   NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 7),
+(18, 10,'READY',  '00:00', '00:00', NULL,                   NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 7),
+(18, 11,'NA',     '00:00', '00:00', NULL,                   NULL,                    NULL,              NULL,             NULL,                NULL,              'Isolated NA overnight pending GPU swap', 7),
+(18, 12,'IN_USE', '22:00', '02:00', 'Overnight NavDB Soak', NULL,                    NULL,              NULL,             'Night VMC',         'AIRAC 2611 Batch','Automated overnight cross-midnight soak run completed at 02:00.', 7),
+-- TODAY (shift 8 morning + shift 9 afternoon + shift 19 overnight)
+(8, 7, 'IN_USE', '07:00', '12:30', 'A320neo FMS Regression','Capt. M. Rossi (TRI)',  'FO L. Bianchi',   NULL,             'VMC / CAVOK',       'EGLL-EDDF RNAV',  'A320neo avionics pre-eval run — nominal', 6),
+(8, 8, 'IN_USE', '07:00', '12:30', 'B737 MAX Pre-Eval',     'Capt. H. Weber (TRE)',  'Capt. J. Novak',  'FO E. Lindholm', 'Crosswind 25kt',    'EIDW-EGSS ILS',   'B737 MAX flight deck checkout — nominal', 6),
+(8, 9, 'IN_USE', '07:30', '12:00', 'Visual Terrain Audit',  NULL,                    NULL,              NULL,             'Night LVP / RVR 75m','EGLL / EDDF',    'EGLL/EDDF visual database verification', 6),
+(8, 10,'IN_USE', '08:00', '12:30', 'H145 Helideck Scenario','Capt. K. Solberg',      'FO A. Morales',   NULL,             'Night NVG · Sea 5', 'ENBR-Rig B',      'H145 offshore helideck scenario test', 6),
+(8, 11,'NA',     '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              'NOT STARTING — GPU CH.2 FAULT, UNDER BENCH REPAIR (WO #4)', 6),
+(8, 12,'READY',  '08:00', '12:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              'Hot standby reserve for customer instructors', 6),
+(9, 7, 'IN_USE', '13:30', '17:30', 'FMS Acceptance Batch',  'Capt. M. Rossi (TRI)',  'FO S. Conti',     NULL,             NULL,                'LFPG-LEMD',       'Afternoon FMS acceptance batch', 4),
+(9, 8, 'IN_USE', '13:30', '17:00', 'Annual QTG Dry-Run',    NULL,                    NULL,              NULL,             'Standard QTG',      'EDDF Local',      'Annual QTG prep dry-run', 4),
+(9, 9, 'IN_USE', '14:00', '17:30', 'Night LVP Scene Audit', NULL,                    NULL,              NULL,             'CAT IIIB / RVR 75m','EGLL RWY 27L',    'Night LVP scene verification', 4),
+(9, 10,'READY',  '13:30', '17:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              'Ready for customer booking', 4),
+(9, 11,'NA',     '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              'Awaiting GPU thermal module re-test', 4),
+(9, 12,'READY',  '13:30', '17:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              'Standby reserve', 4),
+-- TODAY NIGHT SHIFT (shift 19): TP-06 runs 22:00 -> 02:00 (renders as 22:00-24:00 +1d on TODAY 24h timeline!)
+(19, 7, 'READY', '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 7),
+(19, 8, 'READY', '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 7),
+(19, 9, 'READY', '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 7),
+(19, 10,'READY', '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 7),
+(19, 11,'NA',    '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              'Pending final GPU burn-in', 7),
+(19, 12,'IN_USE','22:00', '02:00', 'Overnight NavDB Soak',  NULL,                    NULL,              NULL,             'Night VMC',         'AIRAC 2611 Batch','Scheduled overnight cross-midnight validation batch.', 7),
 
 -- Shift entries for IOS_CONSOLE (simulators 13..18)
-(10,13,'IN_USE', '07:00', '12:30', NULL, 6),
-(10,14,'IN_USE', '07:00', '12:30', NULL, 6),
-(10,15,'IN_USE', '08:00', '12:00', NULL, 6),
-(10,16,'IN_USE', '08:00', '12:00', NULL, 6),
-(10,17,'READY',  '00:00', '00:00', NULL, 6),
-(10,18,'READY',  '00:00', '00:00', NULL, 6),
-(11,13,'IN_USE', '07:00', '13:00', 'IOS v8.4 patch verified', 4),
-(11,14,'IN_USE', '07:00', '13:00', 'IOS v8.4 patch verified', 4),
-(11,15,'IN_USE', '07:30', '12:30', 'IOS v8.4 patch verified', 4),
-(11,16,'IN_USE', '08:00', '12:30', 'IOS v8.4 patch verified', 4),
-(11,17,'IN_USE', '08:30', '12:00', 'LVC debrief ok', 4),
-(11,18,'READY',  '00:00', '00:00', NULL, 4),
-(12,13,'IN_USE', '07:00', '13:00', NULL, 6),
-(12,14,'IN_USE', '07:00', '12:30', NULL, 6),
-(12,15,'IN_USE', '07:30', '13:00', NULL, 6),
-(12,16,'READY',  '00:00', '00:00', NULL, 6),
-(12,17,'IN_USE', '09:00', '13:00', NULL, 6),
-(12,18,'READY',  '00:00', '00:00', NULL, 6),
-(13,13,'IN_USE', '07:00', '12:30', NULL, 6),
-(13,14,'IN_USE', '07:30', '12:30', NULL, 6),
-(13,15,'IN_USE', '08:00', '12:30', NULL, 6),
-(13,16,'IN_USE', '08:00', '12:00', NULL, 6),
-(13,17,'READY',  '00:00', '00:00', NULL, 6),
-(13,18,'READY',  '00:00', '00:00', NULL, 6),
-(14,13,'IN_USE', '07:00', '12:30', NULL, 7),
-(14,14,'IN_USE', '07:00', '12:30', NULL, 7),
-(14,15,'READY',  '00:00', '00:00', NULL, 7),
-(14,16,'IN_USE', '08:00', '12:00', NULL, 7),
-(14,17,'IN_USE', '08:30', '13:30', 'Multi-ship LVC debrief active', 7),
-(14,18,'READY',  '00:00', '00:00', NULL, 7),
-(15,13,'IN_USE', '07:00', '12:30', NULL, 4),
-(15,14,'IN_USE', '07:00', '12:30', NULL, 4),
-(15,15,'IN_USE', '08:00', '12:30', NULL, 4),
-(15,16,'IN_USE', '08:00', '11:30', 'Intercom Ch.2 PTT crackle — MEL Cat C opened', 4),
-(15,17,'IN_USE', '09:00', '13:00', NULL, 4),
-(15,18,'READY',  '00:00', '00:00', NULL, 4),
+(10,13,'IN_USE', '07:00', '12:30', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 6),
+(10,14,'IN_USE', '07:00', '12:30', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 6),
+(10,15,'IN_USE', '08:00', '12:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 6),
+(10,16,'IN_USE', '08:00', '12:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 6),
+(10,17,'READY',  '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 6),
+(10,18,'READY',  '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 6),
+(11,13,'IN_USE', '07:00', '13:00', 'IOS v8.4 Patch Check',  NULL,                    NULL,              NULL,             NULL,                NULL,              'IOS v8.4 patch verified', 4),
+(11,14,'IN_USE', '07:00', '13:00', 'IOS v8.4 Patch Check',  NULL,                    NULL,              NULL,             NULL,                NULL,              'IOS v8.4 patch verified', 4),
+(11,15,'IN_USE', '07:30', '12:30', 'IOS v8.4 Patch Check',  NULL,                    NULL,              NULL,             NULL,                NULL,              'IOS v8.4 patch verified', 4),
+(11,16,'IN_USE', '08:00', '12:30', 'IOS v8.4 Patch Check',  NULL,                    NULL,              NULL,             NULL,                NULL,              'IOS v8.4 patch verified', 4),
+(11,17,'IN_USE', '08:30', '12:00', 'LVC Tactical Replay',   'Maj. E. Vance (IP)',    'Lt. R. Hayes',    NULL,             'CAVOK',             'EGOV-Range',      'LVC debrief ok', 4),
+(11,18,'READY',  '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 4),
+(12,13,'IN_USE', '07:00', '13:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 6),
+(12,14,'IN_USE', '07:00', '12:30', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 6),
+(12,15,'IN_USE', '07:30', '13:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 6),
+(12,16,'READY',  '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 6),
+(12,17,'IN_USE', '09:00', '13:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 6),
+(12,18,'READY',  '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 6),
+(13,13,'IN_USE', '07:00', '12:30', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 6),
+(13,14,'IN_USE', '07:30', '12:30', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 6),
+(13,15,'IN_USE', '08:00', '12:30', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 6),
+(13,16,'IN_USE', '08:00', '12:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 6),
+(13,17,'READY',  '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 6),
+(13,18,'READY',  '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 6),
+(14,13,'IN_USE', '07:00', '12:30', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 7),
+(14,14,'IN_USE', '07:00', '12:30', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 7),
+(14,15,'READY',  '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 7),
+(14,16,'IN_USE', '08:00', '12:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 7),
+(14,17,'IN_USE', '08:30', '13:30', 'Multi-Ship LVC Control','Maj. E. Vance (IP)',    'Lt. R. Hayes',    NULL,             'CAVOK / High Alt',  'EGOV-Range',      'Multi-ship LVC debrief active', 7),
+(14,18,'READY',  '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 7),
+(15,13,'IN_USE', '07:00', '12:30', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 4),
+(15,14,'IN_USE', '07:00', '12:30', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 4),
+(15,15,'IN_USE', '08:00', '12:30', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 4),
+(15,16,'IN_USE', '08:00', '11:30', 'Intercom Diagnostics',  NULL,                    NULL,              NULL,             NULL,                NULL,              'Intercom Ch.2 PTT crackle — MEL Cat C opened', 4),
+(15,17,'IN_USE', '09:00', '13:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 4),
+(15,18,'READY',  '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              NULL, 4),
 -- TODAY IOS (shift 16 morning + shift 17 afternoon)
-(16,13,'IN_USE', '07:15', '12:30', 'Paired with BAY-01 SkyLine Airways LPC', 6),
-(16,14,'IN_USE', '07:15', '12:00', 'Paired with BAY-02 EuroJet Express Type Rating', 6),
-(16,15,'IN_USE', '08:00', '12:30', 'Paired with BAY-03 Meridian Global crew brief', 6),
-(16,16,'IN_USE', '08:00', '12:00', 'Using primary intercom Ch.1 (MEL Cat C on Ch.2)', 6),
-(16,17,'READY',  '08:00', '12:00', 'Ready for AJT-50 debrief', 6),
-(16,18,'READY',  '08:00', '12:00', 'Standby reserve', 6),
-(17,13,'IN_USE', '13:30', '17:30', 'Afternoon debrief session', 4),
-(17,14,'IN_USE', '13:30', '17:30', 'Afternoon debrief session', 4),
-(17,15,'READY',  '13:30', '17:30', 'Available', 4),
-(17,16,'NA',     '00:00', '00:00', 'Scheduled 14:00 audio routing card swap', 4),
-(17,17,'IN_USE', '13:30', '17:00', 'Tactical debrief active', 4),
-(17,18,'READY',  '13:30', '17:30', 'Standby reserve', 4);
+(16,13,'IN_USE', '07:15', '12:30', 'SkyLine A320 LPC Desk', 'Capt. M. Rossi (TRI)',  'Capt. P. Gallo',  'FO D. Ferraro',  'Night IMC / RVR 75m','EGLL → EDDF',    'Paired with BAY-01 SkyLine Airways LPC', 6),
+(16,14,'IN_USE', '07:15', '12:00', 'EuroJet B737 TR Desk',  'Capt. H. Weber (TRE)',  'FO C. Byrne',     'FO N. Kelly',    'Crosswind 28kt',    'EIDW → EGSS',     'Paired with BAY-02 EuroJet Express Type Rating', 6),
+(16,15,'IN_USE', '08:00', '12:30', 'Meridian A350 Prep',    'Capt. A. Dupont (TRI)', 'Capt. R. Keller', 'FO T. Wagner',   'North Atlantic Turb.','EDDF → KJFK',   'Paired with BAY-03 Meridian Global crew brief', 6),
+(16,16,'IN_USE', '08:00', '12:00', 'HEMS Scenario Setup',   'Capt. K. Solberg',      'FO A. Morales',   NULL,             'Night NVG · Sea 5', 'ENBR → Rig B',    'Using primary intercom Ch.1 (MEL Cat C on Ch.2)', 6),
+(16,17,'READY',  '08:00', '12:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              'Ready for AJT-50 debrief', 6),
+(16,18,'READY',  '08:00', '12:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              'Standby reserve', 6),
+(17,13,'IN_USE', '13:30', '17:30', 'A320 Afternoon Support','Capt. M. Rossi (TRI)',  'FO S. Conti',     NULL,             NULL,                NULL,              'Afternoon debrief session', 4),
+(17,14,'IN_USE', '13:30', '17:30', 'B737 Afternoon Support','Capt. H. Weber (TRE)',  'Capt. J. Novak',  NULL,             NULL,                NULL,              'Afternoon debrief session', 4),
+(17,15,'READY',  '13:30', '17:30', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              'Available', 4),
+(17,16,'NA',     '00:00', '00:00', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              'Scheduled 14:00 audio routing card swap', 4),
+(17,17,'IN_USE', '13:30', '17:00', 'AJT-50 White-Force',    'Maj. E. Vance (IP)',    'Lt. R. Hayes',    NULL,             'CAVOK / High Alt',  'EGOV → Range',    'Tactical debrief active', 4),
+(17,18,'READY',  '13:30', '17:30', NULL,                    NULL,                    NULL,              NULL,             NULL,                NULL,              'Standby reserve', 4);
 
 -- =============================================================================
--- 7. SORTIES & DISPATCH (28 realistic sorties across -25d .. +3d, 6 LIVE TODAY)
+-- 7. SORTIES & DISPATCH (29 realistic sorties across -25d .. +3d, 7 TODAY incl. +1d overnight)
+--    External Instructor & Pilot names are free-text & optional (NULL on engineering flights)
 -- =============================================================================
 INSERT INTO operations
-  (id, sortie_code, type_id, simulator_id, created_by, title, customer_operator, scenario_code, weather_profile, motion_required, scheduled_hours, actual_flight_hours, lost_training_minutes, outcome, snag_summary, description, status, priority, location, start_date, end_date, actual_end_date, notes)
+  (id, sortie_code, type_id, simulator_id, created_by, title, customer_operator, mission_name, instructor_name, pilot_name, copilot_name, scenario_code, weather_profile, motion_required, scheduled_hours, actual_flight_hours, lost_training_minutes, outcome, snag_summary, description, status, priority, location, start_date, end_date, actual_end_date, notes)
 VALUES
--- ── TODAY (6 sorties across BAY-01..BAY-05 for live 24h Bay Timeline) ───────
-(1,  'SRT-TDY-01', 1, 2, 2, 'B737 MAX 8 Type Rating — Phase 2',            'EuroJet Express',      'EIDW → EGSS',       'Crosswind 28kt / Gusts',    TRUE, 4.00, 4.00, 0,  'CLEAN',                NULL, 'Normal & abnormal procedures, single-engine go-around.',              'COMPLETED',   'MEDIUM',   'BAY-02', TIMESTAMP(CURDATE(), '06:00:00'), TIMESTAMP(CURDATE(), '10:00:00'), TIMESTAMP(CURDATE(), '10:00:00'), 'Zero snags. Crew debriefed on IOS-02.'),
-(2,  'SRT-TDY-02', 2, 1, 2, 'A320neo LVP CAT IIIB Recurrent LPC',          'SkyLine Airways',      'EGLL → EDDF',       'Night IMC / RVR 75m',       TRUE, 4.00, NULL, 0,  'PENDING',              NULL, 'Biannual LPC crew proficiency check with dual engine failure.',       'IN_PROGRESS', 'HIGH',     'BAY-01', TIMESTAMP(CURDATE(), '08:00:00'), TIMESTAMP(CURDATE(), '12:00:00'), NULL,                             'Live revenue sortie — BAY-01 nominal.'),
-(3,  'SRT-TDY-03', 5, 5, 2, 'AJT-50 2v2 BFM / ACM Tactical LVC Mission',   'Allied Flight Academy','EGOV → Range',      'CAVOK / High Alt',          TRUE, 3.50, NULL, 0,  'PENDING',              NULL, 'Networked LVC tactical intercept & electronic warfare rehearsal.',    'IN_PROGRESS', 'CRITICAL', 'BAY-05', TIMESTAMP(CURDATE(), '09:30:00'), TIMESTAMP(CURDATE(), '13:00:00'), NULL,                             'White-force live on IOS-05.'),
-(4,  'SRT-TDY-04', 5, 4, 2, 'H145 Offshore Helideck Night NVG & Hoist',    'NorthSea HEMS',        'ENBR → Rig B',      'Night NVG · Sea State 5',   TRUE, 3.50, NULL, 0,  'PENDING',              NULL, 'Offshore deck landing, OEI fly-away and hoist emergency recovery.',   'PLANNED',     'HIGH',     'BAY-04', TIMESTAMP(CURDATE(), '13:00:00'), TIMESTAMP(CURDATE(), '16:30:00'), NULL,                             'NVG filters verified.'),
-(5,  'SRT-TDY-05', 3, 3, 2, 'A350-900 ETOPS Transatlantic LOFT',           'Meridian Global Air',  'EDDF → KJFK',       'North Atlantic Turbulence', TRUE, 4.00, NULL, 0,  'PENDING',              NULL, 'Full LOFT mission; MEL Cat B briefed to instructor (no LVP Cat III).','PLANNED',     'HIGH',     'BAY-03', TIMESTAMP(CURDATE(), '14:00:00'), TIMESTAMP(CURDATE(), '18:00:00'), NULL,                             'Briefed on Visual Ch.3 MEL Cat B.'),
-(6,  'SRT-TDY-06', 4, 1, 2, 'A320neo Authority Skill Test / ZFT',          'Nordic Air',           'LFPG → LEMD',       'Low Ceiling / Wind Shear',  TRUE, 4.00, NULL, 0,  'PENDING',              NULL, 'TRE authority skill test and Zero Flight Time qualification.',        'PLANNED',     'HIGH',     'BAY-01', TIMESTAMP(CURDATE(), '18:30:00'), TIMESTAMP(CURDATE(), '22:30:00'), NULL,                             'Examiner confirmed.'),
+-- ── TODAY (7 sorties across BAY-01..BAY-05 for live 24h Bay Timeline incl. overnight +1d)
+(1,  'SRT-TDY-01', 1, 2, 2, 'B737 MAX 8 Type Rating — Phase 2',            'EuroJet Express',      'TR-737 Phase 2',        'Capt. H. Weber (TRE)',  'FO C. Byrne',     'FO N. Kelly',    'EIDW → EGSS',       'Crosswind 28kt / Gusts',    TRUE, 4.00, 4.00, 0,  'CLEAN',                NULL, 'Normal & abnormal procedures, single-engine go-around.',              'COMPLETED',   'MEDIUM',   'BAY-02', TIMESTAMP(CURDATE(), '06:00:00'), TIMESTAMP(CURDATE(), '10:00:00'), TIMESTAMP(CURDATE(), '10:00:00'), 'Zero snags. Crew debriefed on IOS-02.'),
+(2,  'SRT-TDY-02', 2, 1, 2, 'A320neo LVP CAT IIIB Recurrent LPC',          'SkyLine Airways',      'LPC-320 CAT IIIB',      'Capt. M. Rossi (TRI)',  'Capt. P. Gallo',  'FO D. Ferraro',  'EGLL → EDDF',       'Night IMC / RVR 75m',       TRUE, 4.00, NULL, 0,  'PENDING',              NULL, 'Biannual LPC crew proficiency check with dual engine failure.',       'IN_PROGRESS', 'HIGH',     'BAY-01', TIMESTAMP(CURDATE(), '08:00:00'), TIMESTAMP(CURDATE(), '12:00:00'), NULL,                             'Live revenue sortie — BAY-01 nominal.'),
+(3,  'SRT-TDY-03', 5, 5, 2, 'AJT-50 2v2 BFM / ACM Tactical LVC Mission',   'Allied Flight Academy','LVC-BFM 2v2',           'Maj. E. Vance (IP)',    'Lt. R. Hayes',    NULL,             'EGOV → Range',      'CAVOK / High Alt',          TRUE, 3.50, NULL, 0,  'PENDING',              NULL, 'Networked LVC tactical intercept & electronic warfare rehearsal.',    'IN_PROGRESS', 'CRITICAL', 'BAY-05', TIMESTAMP(CURDATE(), '09:30:00'), TIMESTAMP(CURDATE(), '13:00:00'), NULL,                             'White-force live on IOS-05.'),
+(4,  'SRT-TDY-04', 5, 4, 2, 'H145 Offshore Helideck Night NVG & Hoist',    'NorthSea HEMS',        'HEMS-NVG Hoist',        'Capt. K. Solberg',      'FO A. Morales',   NULL,             'ENBR → Rig B',      'Night NVG · Sea State 5',   TRUE, 3.50, NULL, 0,  'PENDING',              NULL, 'Offshore deck landing, OEI fly-away and hoist emergency recovery.',   'PLANNED',     'HIGH',     'BAY-04', TIMESTAMP(CURDATE(), '13:00:00'), TIMESTAMP(CURDATE(), '16:30:00'), NULL,                             'NVG filters verified.'),
+(5,  'SRT-TDY-05', 3, 3, 2, 'A350-900 ETOPS Transatlantic LOFT',           'Meridian Global Air',  'LOFT-350 ETOPS',        'Capt. A. Dupont (TRI)', 'Capt. R. Keller', 'FO T. Wagner',   'EDDF → KJFK',       'North Atlantic Turbulence', TRUE, 4.00, NULL, 0,  'PENDING',              NULL, 'Full LOFT mission; MEL Cat B briefed to instructor (no LVP Cat III).','PLANNED',     'HIGH',     'BAY-03', TIMESTAMP(CURDATE(), '14:00:00'), TIMESTAMP(CURDATE(), '18:00:00'), NULL,                             'Briefed on Visual Ch.3 MEL Cat B.'),
+(6,  'SRT-TDY-06', 4, 1, 2, 'A320neo Authority Skill Test / ZFT',          'Nordic Air',           'ZFT-320 Skill Test',    'Capt. S. Lindgren (TRE)','Capt. O. Berg',  'FO E. Lindholm', 'LFPG → LEMD',       'Low Ceiling / Wind Shear',  TRUE, 4.00, NULL, 0,  'PENDING',              NULL, 'TRE authority skill test and Zero Flight Time qualification.',        'PLANNED',     'HIGH',     'BAY-01', TIMESTAMP(CURDATE(), '18:30:00'), TIMESTAMP(CURDATE(), '22:30:00'), NULL,                             'Examiner confirmed.'),
+(29, 'SRT-TDY-07', 6, 2, 3, 'B737 MAX Night Optical Collimation Fly-Out',  'Internal Engineering', 'QTG-4.D.1 Night Cal',   NULL,                    NULL,              NULL,             'EDDF Local',        'Night Calibration',         FALSE,2.50, NULL, 0,  'PENDING',              NULL, 'Overnight optical luminance & horizon alignment verification (external crew optional/omitted).', 'PLANNED', 'LOW', 'BAY-02', TIMESTAMP(CURDATE(), '22:30:00'), TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 1 DAY), '01:00:00'), NULL, 'Cross-midnight engineering calibration slot (+1d on 24h timeline).'),
 
 -- ── PAST 25 DAYS (18 completed/snagged sorties for rich Weekly & Monthly KPIs)
-(7,  'SRT-W01-01', 2, 1, 2, 'A320neo Recurrent OPC Crew Alpha',            'SkyLine Airways',      'EHAM → EGLL',       'Fog RVR 125m',              TRUE, 4.00, 4.00, 0,  'CLEAN',                NULL, 'Standard OPC check.',                                                 'COMPLETED',   'MEDIUM',   'BAY-01', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 1 DAY), '07:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 1 DAY), '11:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 1 DAY), '11:00:00'), '100% dispatch reliability.'),
-(8,  'SRT-W01-02', 3, 3, 2, 'A350 Long-Haul ETOPS Diversion LOFT',         'Meridian Global Air',  'EDDM → CYYZ',       'Icing / Diversion',         TRUE, 4.00, 3.75, 15, 'COMPLETED_WITH_SNAGS', 'Visual Ch.3 peripheral dimmer noticed in night scene; MEL Cat B logged.', 'Completed with minor 15 min pause for visual check.', 'COMPLETED', 'HIGH', 'BAY-03', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 1 DAY), '13:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 1 DAY), '17:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 1 DAY), '17:15:00'), 'DR opened on Visual Ch.3.'),
-(9,  'SRT-W01-03', 1, 2, 2, 'B737 MAX Type Rating — Slot #3',              'EuroJet Express',      'EIDW → LEMD',       'Gusty Crosswind 25kt',      TRUE, 4.00, 4.00, 0,  'CLEAN',                NULL, 'Manual flight & raw data ILS approaches.',                            'COMPLETED',   'MEDIUM',   'BAY-02', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 2 DAY), '08:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 2 DAY), '12:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 2 DAY), '12:00:00'), 'Clean sortie.'),
-(10, 'SRT-W01-04', 2, 6, 2, 'B787-9 Recurrent LPC — Crew Charlie',         'TransOceanic Airlines','EGKK → KMIA',       'Thunderstorms / Shear',     TRUE, 4.00, 2.50, 90, 'INTERRUPTED_TECH',     'Motion Actuator #4 servo fault tripped platform to park; bay placed in AOG/MAINT.', 'Sortie aborted at 2.5h; crew rescheduled.', 'COMPLETED', 'CRITICAL', 'BAY-06', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 2 DAY), '14:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 2 DAY), '18:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 2 DAY), '16:30:00'), 'WO #1 opened immediately.'),
-(11, 'SRT-W01-05', 5, 4, 2, 'H145 Mountain SAR & High-Alt Hover',          'Coastal SAR Ops',      'LOWI → High Ridge', 'Snow / Whiteout',           TRUE, 3.00, 3.00, 0,  'CLEAN',                NULL, 'High-altitude rescue procedures and confined area landing.',          'COMPLETED',   'MEDIUM',   'BAY-04', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 3 DAY), '09:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 3 DAY), '12:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 3 DAY), '12:00:00'), 'Clean.'),
-(12, 'SRT-W01-06', 5, 5, 2, 'AJT-50 Air-to-Air Refueling & Radar Ops',     'Allied Flight Academy','EGOV → North Range','Scattered 4000ft',          TRUE, 3.50, 3.50, 0,  'CLEAN',                NULL, 'Formation rejoin and embedded tactical radar modes.',                 'COMPLETED',   'HIGH',     'BAY-05', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 4 DAY), '10:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 4 DAY), '13:30:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 4 DAY), '13:30:00'), 'Clean.'),
-(13, 'SRT-W01-07', 6, 1, 3, 'A320neo Q4 Visual & Motion Engineering Fly',  'Internal Engineering', 'EGLL Local',        'Day & Night Calibration',   TRUE, 2.00, 2.00, 0,  'CLEAN',                NULL, 'QTG Q4 validation fly-out by Lead Engineer.',                         'COMPLETED',   'LOW',      'BAY-01', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 5 DAY), '06:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 5 DAY), '08:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 5 DAY), '08:00:00'), 'QTG-4.D.1 passed.'),
-(14, 'SRT-W02-01', 1, 1, 2, 'A320neo Initial Type Rating — Batch 14',      'Nordic Air',           'EHAM → LSGG',       'Wet Runway / Autobrake',    TRUE, 4.00, 4.00, 0,  'CLEAN',                NULL, 'Rejected takeoff and contaminated runway landings.',                  'COMPLETED',   'MEDIUM',   'BAY-01', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 7 DAY), '08:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 7 DAY), '12:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 7 DAY), '12:00:00'), 'Clean.'),
-(15, 'SRT-W02-02', 2, 2, 2, 'B737 MAX Recurrent LPC — Crew Delta',         'EuroJet Express',      'EHAM → EBBR',       'Low Vis CAT II',            TRUE, 4.00, 4.00, 0,  'CLEAN',                NULL, 'Engine failure after V1 and single-channel autopilot approach.',      'COMPLETED',   'MEDIUM',   'BAY-02', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 8 DAY), '14:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 8 DAY), '18:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 8 DAY), '18:00:00'), 'Clean.'),
-(16, 'SRT-W02-03', 3, 3, 2, 'A350-900 Cabin Smoke & Rapid Descent LOFT',   'Nordic Air',           'LFPG → OMDB',       'Night VMC',                 TRUE, 4.00, 4.00, 0,  'CLEAN',                NULL, 'Emergency descent and diversion coordination.',                       'COMPLETED',   'HIGH',     'BAY-03', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 10 DAY),'09:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 10 DAY),'13:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 10 DAY),'13:00:00'), 'Clean.'),
-(17, 'SRT-W02-04', 4, 4, 2, 'H145 Skill Test — Offshore Captain Upgrade',  'NorthSea HEMS',        'ENZV → Rig A',      'Low Cloud / Drizzle',       TRUE, 3.50, 3.50, 0,  'CLEAN',                NULL, 'Command upgrade examiner flight.',                                    'COMPLETED',   'HIGH',     'BAY-04', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 11 DAY),'13:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 11 DAY),'16:30:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 11 DAY),'16:30:00'), 'Clean.'),
-(18, 'SRT-W02-05', 1, 6, 2, 'B787-9 Transition Course — Module 6',         'TransOceanic Airlines','EHAM → RJTT',       'Crosswind 30kt',            TRUE, 4.00, 3.85, 10, 'COMPLETED_WITH_SNAGS', 'Brief HUD combiner dimming glitch cleared on reset.',                 'Minor 10 min HUD reset.',                                             'COMPLETED',   'MEDIUM',   'BAY-06', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 12 DAY),'08:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 12 DAY),'12:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 12 DAY),'12:10:00'), 'HUD reset ok.'),
-(19, 'SRT-W03-01', 2, 1, 2, 'A320neo UPRT & High-Altitude Stall Recov.',   'SkyLine Airways',      'EGLL → LSZH',       'Severe Turbulence',         TRUE, 4.00, 4.00, 0,  'CLEAN',                NULL, 'UPRT upset prevention and recovery training.',                        'COMPLETED',   'MEDIUM',   'BAY-01', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 15 DAY),'10:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 15 DAY),'14:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 15 DAY),'14:00:00'), 'Clean.'),
-(20, 'SRT-W03-02', 5, 5, 2, 'AJT-50 Night Close Air Support Rehearsal',    'Allied Flight Academy','EGOV → Range',      'Night NVG',                 TRUE, 3.50, 3.50, 0,  'CLEAN',                NULL, 'Night tactical CAS profile.',                                         'COMPLETED',   'HIGH',     'BAY-05', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 17 DAY),'16:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 17 DAY),'19:30:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 17 DAY),'19:30:00'), 'Clean.'),
-(21, 'SRT-W03-03', 1, 2, 2, 'B737 MAX Type Rating — Batch 11',             'EuroJet Express',      'EIDW → LPPT',       'Gusty Coastal Wind',        TRUE, 4.00, 4.00, 0,  'CLEAN',                NULL, 'Normal procedures & RNAV approaches.',                                'COMPLETED',   'MEDIUM',   'BAY-02', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 19 DAY),'07:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 19 DAY),'11:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 19 DAY),'11:00:00'), 'Clean.'),
-(22, 'SRT-W04-01', 3, 3, 2, 'A350-900 Polar Route Navigation LOFT',        'Meridian Global Air',  'EDDF → RJAA',       'Solar Storm / Polar',       TRUE, 4.00, 4.00, 0,  'CLEAN',                NULL, 'True-north navigation & fuel freeze procedures.',                     'COMPLETED',   'MEDIUM',   'BAY-03', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 21 DAY),'09:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 21 DAY),'13:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 21 DAY),'13:00:00'), 'Clean.'),
-(23, 'SRT-W04-02', 2, 4, 2, 'H145 Annual Instrument Proficiency Check',    'NorthSea HEMS',        'ENBR → ENZV',       'IMC / Freezing Rain',       TRUE, 3.00, 3.00, 0,  'CLEAN',                NULL, 'IFR approaches & AFCS degradation handling.',                         'COMPLETED',   'MEDIUM',   'BAY-04', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 23 DAY),'11:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 23 DAY),'14:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 23 DAY),'14:00:00'), 'Clean.'),
-(24, 'SRT-W04-03', 4, 6, 2, 'B787-9 Authority Checkride — Crew Bravo',     'TransOceanic Airlines','EGLL → KJFK',       'Night IMC',                 TRUE, 4.00, 4.00, 0,  'CLEAN',                NULL, 'Regulatory examiner checkride.',                                      'COMPLETED',   'HIGH',     'BAY-06', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 25 DAY),'14:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 25 DAY),'18:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 25 DAY),'18:00:00'), 'Clean.'),
+(7,  'SRT-W01-01', 2, 1, 2, 'A320neo Recurrent OPC Crew Alpha',            'SkyLine Airways',      'OPC-320 Alpha',         'Capt. M. Rossi (TRI)',  'Capt. P. Gallo',  'FO L. Bianchi',  'EHAM → EGLL',       'Fog RVR 125m',              TRUE, 4.00, 4.00, 0,  'CLEAN',                NULL, 'Standard OPC check.',                                                 'COMPLETED',   'MEDIUM',   'BAY-01', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 1 DAY), '07:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 1 DAY), '11:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 1 DAY), '11:00:00'), '100% dispatch reliability.'),
+(8,  'SRT-W01-02', 3, 3, 2, 'A350 Long-Haul ETOPS Diversion LOFT',         'Meridian Global Air',  'LOFT-350 Diversion',    'Capt. A. Dupont (TRI)', 'Capt. R. Keller', 'FO T. Wagner',   'EDDM → CYYZ',       'Icing / Diversion',         TRUE, 4.00, 3.75, 15, 'COMPLETED_WITH_SNAGS', 'Visual Ch.3 peripheral dimmer noticed in night scene; MEL Cat B logged.', 'Completed with minor 15 min pause for visual check.', 'COMPLETED', 'HIGH', 'BAY-03', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 1 DAY), '13:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 1 DAY), '17:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 1 DAY), '17:15:00'), 'DR opened on Visual Ch.3.'),
+(9,  'SRT-W01-03', 1, 2, 2, 'B737 MAX Type Rating — Slot #3',              'EuroJet Express',      'TR-737 Slot 3',         'Capt. H. Weber (TRE)',  'Capt. J. Novak',  'FO C. Byrne',    'EIDW → LEMD',       'Gusty Crosswind 25kt',      TRUE, 4.00, 4.00, 0,  'CLEAN',                NULL, 'Manual flight & raw data ILS approaches.',                            'COMPLETED',   'MEDIUM',   'BAY-02', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 2 DAY), '08:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 2 DAY), '12:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 2 DAY), '12:00:00'), 'Clean sortie.'),
+(10, 'SRT-W01-04', 2, 6, 2, 'B787-9 Recurrent LPC — Crew Charlie',         'TransOceanic Airlines','LPC-787 Charlie',       'Capt. J. Mercer (TRE)', 'Capt. G. Costa',  'FO M. Silva',    'EGKK → KMIA',       'Thunderstorms / Shear',     TRUE, 4.00, 2.50, 90, 'INTERRUPTED_TECH',     'Motion Actuator #4 servo fault tripped platform to park; bay placed in AOG/MAINT.', 'Sortie aborted at 2.5h; crew rescheduled.', 'COMPLETED', 'CRITICAL', 'BAY-06', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 2 DAY), '14:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 2 DAY), '18:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 2 DAY), '16:30:00'), 'WO #1 opened immediately.'),
+(11, 'SRT-W01-05', 5, 4, 2, 'H145 Mountain SAR & High-Alt Hover',          'Coastal SAR Ops',      'SAR-145 Alpine',        'Capt. K. Solberg',      'FO M. Lindqvist', NULL,             'LOWI → High Ridge', 'Snow / Whiteout',           TRUE, 3.00, 3.00, 0,  'CLEAN',                NULL, 'High-altitude rescue procedures and confined area landing.',          'COMPLETED',   'MEDIUM',   'BAY-04', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 3 DAY), '09:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 3 DAY), '12:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 3 DAY), '12:00:00'), 'Clean.'),
+(12, 'SRT-W01-06', 5, 5, 2, 'AJT-50 Air-to-Air Refueling & Radar Ops',     'Allied Flight Academy','TAC-AAR Radar',         'Maj. E. Vance (IP)',    'Lt. R. Hayes',    NULL,             'EGOV → North Range','Scattered 4000ft',          TRUE, 3.50, 3.50, 0,  'CLEAN',                NULL, 'Formation rejoin and embedded tactical radar modes.',                 'COMPLETED',   'HIGH',     'BAY-05', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 4 DAY), '10:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 4 DAY), '13:30:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 4 DAY), '13:30:00'), 'Clean.'),
+(13, 'SRT-W01-07', 6, 1, 3, 'A320neo Q4 Visual & Motion Engineering Fly',  'Internal Engineering', 'QTG-Q4 Validation',     NULL,                    NULL,              NULL,             'EGLL Local',        'Day & Night Calibration',   TRUE, 2.00, 2.00, 0,  'CLEAN',                NULL, 'QTG Q4 validation fly-out by Lead Engineer.',                         'COMPLETED',   'LOW',      'BAY-01', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 5 DAY), '06:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 5 DAY), '08:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 5 DAY), '08:00:00'), 'QTG-4.D.1 passed.'),
+(14, 'SRT-W02-01', 1, 1, 2, 'A320neo Initial Type Rating — Batch 14',      'Nordic Air',           'TR-320 Batch 14',       'Capt. S. Lindgren (TRE)','FO E. Lindholm', 'FO S. Conti',    'EHAM → LSGG',       'Wet Runway / Autobrake',    TRUE, 4.00, 4.00, 0,  'CLEAN',                NULL, 'Rejected takeoff and contaminated runway landings.',                  'COMPLETED',   'MEDIUM',   'BAY-01', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 7 DAY), '08:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 7 DAY), '12:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 7 DAY), '12:00:00'), 'Clean.'),
+(15, 'SRT-W02-02', 2, 2, 2, 'B737 MAX Recurrent LPC — Crew Delta',         'EuroJet Express',      'LPC-737 Delta',         'Capt. H. Weber (TRE)',  'Capt. J. Novak',  'FO N. Kelly',    'EHAM → EBBR',       'Low Vis CAT II',            TRUE, 4.00, 4.00, 0,  'CLEAN',                NULL, 'Engine failure after V1 and single-channel autopilot approach.',      'COMPLETED',   'MEDIUM',   'BAY-02', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 8 DAY), '14:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 8 DAY), '18:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 8 DAY), '18:00:00'), 'Clean.'),
+(16, 'SRT-W02-03', 3, 3, 2, 'A350-900 Cabin Smoke & Rapid Descent LOFT',   'Nordic Air',           'LOFT-350 Smoke',        'Capt. A. Dupont (TRI)', 'Capt. O. Berg',   'FO T. Wagner',   'LFPG → OMDB',       'Night VMC',                 TRUE, 4.00, 4.00, 0,  'CLEAN',                NULL, 'Emergency descent and diversion coordination.',                       'COMPLETED',   'HIGH',     'BAY-03', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 10 DAY),'09:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 10 DAY),'13:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 10 DAY),'13:00:00'), 'Clean.'),
+(17, 'SRT-W02-04', 4, 4, 2, 'H145 Skill Test — Offshore Captain Upgrade',  'NorthSea HEMS',        'HEMS-145 Upgrade',      'Capt. K. Solberg',      'FO A. Morales',   NULL,             'ENZV → Rig A',      'Low Cloud / Drizzle',       TRUE, 3.50, 3.50, 0,  'CLEAN',                NULL, 'Command upgrade examiner flight.',                                    'COMPLETED',   'HIGH',     'BAY-04', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 11 DAY),'13:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 11 DAY),'16:30:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 11 DAY),'16:30:00'), 'Clean.'),
+(18, 'SRT-W02-05', 1, 6, 2, 'B787-9 Transition Course — Module 6',         'TransOceanic Airlines','TR-787 Module 6',       'Capt. J. Mercer (TRE)', 'Capt. G. Costa',  'FO M. Silva',    'EHAM → RJTT',       'Crosswind 30kt',            TRUE, 4.00, 3.85, 10, 'COMPLETED_WITH_SNAGS', 'Brief HUD combiner dimming glitch cleared on reset.',                 'Minor 10 min HUD reset.',                                             'COMPLETED',   'MEDIUM',   'BAY-06', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 12 DAY),'08:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 12 DAY),'12:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 12 DAY),'12:10:00'), 'HUD reset ok.'),
+(19, 'SRT-W03-01', 2, 1, 2, 'A320neo UPRT & High-Altitude Stall Recov.',   'SkyLine Airways',      'UPRT-320 High Alt',     'Capt. M. Rossi (TRI)',  'FO L. Bianchi',   'FO D. Ferraro',  'EGLL → LSZH',       'Severe Turbulence',         TRUE, 4.00, 4.00, 0,  'CLEAN',                NULL, 'UPRT upset prevention and recovery training.',                        'COMPLETED',   'MEDIUM',   'BAY-01', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 15 DAY),'10:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 15 DAY),'14:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 15 DAY),'14:00:00'), 'Clean.'),
+(20, 'SRT-W03-02', 5, 5, 2, 'AJT-50 Night Close Air Support Rehearsal',    'Allied Flight Academy','TAC-CAS Night NVG',     'Maj. E. Vance (IP)',    'Capt. D. Mercer', NULL,             'EGOV → Range',      'Night NVG',                 TRUE, 3.50, 3.50, 0,  'CLEAN',                NULL, 'Night tactical CAS profile.',                                         'COMPLETED',   'HIGH',     'BAY-05', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 17 DAY),'16:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 17 DAY),'19:30:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 17 DAY),'19:30:00'), 'Clean.'),
+(21, 'SRT-W03-03', 1, 2, 2, 'B737 MAX Type Rating — Batch 11',             'EuroJet Express',      'TR-737 Batch 11',       'Capt. H. Weber (TRE)',  'FO C. Byrne',     'FO N. Kelly',    'EIDW → LPPT',       'Gusty Coastal Wind',        TRUE, 4.00, 4.00, 0,  'CLEAN',                NULL, 'Normal procedures & RNAV approaches.',                                'COMPLETED',   'MEDIUM',   'BAY-02', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 19 DAY),'07:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 19 DAY),'11:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 19 DAY),'11:00:00'), 'Clean.'),
+(22, 'SRT-W04-01', 3, 3, 2, 'A350-900 Polar Route Navigation LOFT',        'Meridian Global Air',  'LOFT-350 Polar',        'Capt. A. Dupont (TRI)', 'Capt. R. Keller', 'FO T. Wagner',   'EDDF → RJAA',       'Solar Storm / Polar',       TRUE, 4.00, 4.00, 0,  'CLEAN',                NULL, 'True-north navigation & fuel freeze procedures.',                     'COMPLETED',   'MEDIUM',   'BAY-03', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 21 DAY),'09:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 21 DAY),'13:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 21 DAY),'13:00:00'), 'Clean.'),
+(23, 'SRT-W04-02', 2, 4, 2, 'H145 Annual Instrument Proficiency Check',    'NorthSea HEMS',        'IPC-145 Annual',        'Capt. K. Solberg',      'FO M. Lindqvist', NULL,             'ENBR → ENZV',       'IMC / Freezing Rain',       TRUE, 3.00, 3.00, 0,  'CLEAN',                NULL, 'IFR approaches & AFCS degradation handling.',                         'COMPLETED',   'MEDIUM',   'BAY-04', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 23 DAY),'11:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 23 DAY),'14:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 23 DAY),'14:00:00'), 'Clean.'),
+(24, 'SRT-W04-03', 4, 6, 2, 'B787-9 Authority Checkride — Crew Bravo',     'TransOceanic Airlines','CHK-787 Bravo',         'Capt. J. Mercer (TRE)', 'Capt. G. Costa',  'FO M. Silva',    'EGLL → KJFK',       'Night IMC',                 TRUE, 4.00, 4.00, 0,  'CLEAN',                NULL, 'Regulatory examiner checkride.',                                      'COMPLETED',   'HIGH',     'BAY-06', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 25 DAY),'14:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 25 DAY),'18:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 25 DAY),'18:00:00'), 'Clean.'),
 
 -- ── UPCOMING 3 DAYS (4 planned sorties) ─────────────────────────────────────
-(25, 'SRT-NXT-01', 2, 2, 2, 'B737 MAX Pre-Audit Dry-Run Fly-Out',          'Internal Engineering', 'EDDF Local',        'Full QTG Profile',          TRUE, 3.00, NULL, 0,  'PENDING',              NULL, 'Final engineering readiness verification ahead of annual inspection.', 'PLANNED',     'HIGH',     'BAY-02', TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 1 DAY), '07:00:00'), TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 1 DAY), '10:00:00'), NULL, 'Assigned to David Miller & Claire Bennett.'),
-(26, 'SRT-NXT-02', 1, 1, 2, 'A320neo Type Rating — Batch 15 Day 1',        'SkyLine Airways',      'EGLL → EHAM',       'CAVOK / Crosswind',         TRUE, 4.00, NULL, 0,  'PENDING',              NULL, 'Initial handling and flight law transition.',                         'PLANNED',     'MEDIUM',   'BAY-01', TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 1 DAY), '13:00:00'), TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 1 DAY), '17:00:00'), NULL, 'Confirmed.'),
-(27, 'SRT-NXT-03', 3, 6, 2, 'B787-9 Post-Maintenance RTS Fly-Out',         'TransOceanic Airlines','EGKK Local',        'Standard RTS Profile',      TRUE, 2.00, NULL, 0,  'PENDING',              NULL, 'Return-to-service motion & visual acceptance sortie.',                'PLANNED',     'HIGH',     'BAY-06', TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 2 DAY), '08:00:00'), TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 2 DAY), '10:00:00'), NULL, 'Pending WO #1 sign-off.'),
-(28, 'SRT-NXT-04', 5, 5, 2, 'AJT-50 4-Ship Strike Package LVC',            'Allied Flight Academy','EGOV → Range',      'Dusk / Low Level',          TRUE, 4.00, NULL, 0,  'PENDING',              NULL, 'Four-ship networked tactical mission rehearsal.',                     'PLANNED',     'CRITICAL', 'BAY-05', TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 3 DAY), '14:00:00'), TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 3 DAY), '18:00:00'), NULL, 'LVC gateway reserved.');
+(25, 'SRT-NXT-01', 2, 2, 2, 'B737 MAX Pre-Audit Dry-Run Fly-Out',          'Internal Engineering', 'Pre-Audit QTG Run',     NULL,                    NULL,              NULL,             'EDDF Local',        'Full QTG Profile',          TRUE, 3.00, NULL, 0,  'PENDING',              NULL, 'Final engineering readiness verification ahead of annual inspection.', 'PLANNED',     'HIGH',     'BAY-02', TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 1 DAY), '07:00:00'), TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 1 DAY), '10:00:00'), NULL, 'Assigned to David Miller & Claire Bennett.'),
+(26, 'SRT-NXT-02', 1, 1, 2, 'A320neo Type Rating — Batch 15 Day 1',        'SkyLine Airways',      'TR-320 Batch 15',       'Capt. M. Rossi (TRI)',  'FO S. Conti',     'FO L. Bianchi',  'EGLL → EHAM',       'CAVOK / Crosswind',         TRUE, 4.00, NULL, 0,  'PENDING',              NULL, 'Initial handling and flight law transition.',                         'PLANNED',     'MEDIUM',   'BAY-01', TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 1 DAY), '13:00:00'), TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 1 DAY), '17:00:00'), NULL, 'Confirmed.'),
+(27, 'SRT-NXT-03', 3, 6, 2, 'B787-9 Post-Maintenance RTS Fly-Out',         'TransOceanic Airlines','RTS-787 Acceptance',    'Capt. J. Mercer (TRE)', NULL,              NULL,             'EGKK Local',        'Standard RTS Profile',      TRUE, 2.00, NULL, 0,  'PENDING',              NULL, 'Return-to-service motion & visual acceptance sortie.',                'PLANNED',     'HIGH',     'BAY-06', TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 2 DAY), '08:00:00'), TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 2 DAY), '10:00:00'), NULL, 'Pending WO #1 sign-off.'),
+(28, 'SRT-NXT-04', 5, 5, 2, 'AJT-50 4-Ship Strike Package LVC',            'Allied Flight Academy','LVC-4Ship Strike',      'Maj. E. Vance (IP)',    'Lt. R. Hayes',    NULL,             'EGOV → Range',      'Dusk / Low Level',          TRUE, 4.00, NULL, 0,  'PENDING',              NULL, 'Four-ship networked tactical mission rehearsal.',                     'PLANNED',     'CRITICAL', 'BAY-05', TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 3 DAY), '14:00:00'), TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 3 DAY), '18:00:00'), NULL, 'LVC gateway reserved.');
 
 INSERT INTO operation_members (operation_id, user_id, role_in_op) VALUES
 (1, 3, 'Bay Support Engineer'), (1, 6, 'IOS Coordinator'),
@@ -620,10 +643,10 @@ VALUES
 (14, 6, 4, 'TOL-TRQ-SET',  'STAH-730N-KIT',   'Calibrated Precision Torque Wrench Kit',   'ISO 6789 certified torque wrench set (10-200 Nm) for motion mounts.',  'kit',  'TOOL_CALIBRATED', 'MOTION',          FALSE, 'SN-ST-2025-114',  'SERVICEABLE',   NULL, NULL,            0, NULL,                                 10, '["All FFS Bays"]',                 0, 3, 1, 4, 1, 920.00,   'Stahlwille',          TRUE);
 
 -- =============================================================================
--- 11. MAIN SIMULATOR MAINTENANCE — WORK ORDERS, SNAGS (DR) & MEL (18 records)
+-- 11. MAIN SIMULATOR MAINTENANCE — WORK ORDERS, SNAGS (DR), MEL & S/N SWAPS (18 records)
 -- =============================================================================
 INSERT INTO maintenance_records
-  (id, asset_id, simulator_id, sortie_id, subsystem_code, severity, lost_training_hours, is_snag, performed_by, type, title, description, status, priority, scheduled_date, completed_date, downtime_hours, cost, parts_cost, labor_cost, parts_used, mel_category, mel_expiry_date, wiki_article_id, findings, next_scheduled)
+  (id, asset_id, simulator_id, sortie_id, subsystem_code, severity, lost_training_hours, is_snag, performed_by, type, title, description, status, priority, scheduled_date, completed_date, downtime_hours, cost, parts_cost, labor_cost, parts_used, part_number, broken_serial_number, new_serial_number, mel_category, mel_expiry_date, wiki_article_id, findings, next_scheduled)
 VALUES
 -- ── ACTIVE / OPEN SIMULATOR WORK ORDERS & MEL SNAGS ─────────────────────────
 (1,  NULL, 6, 10, 'MOTION',       'AOG',      4.50, TRUE,  5, 'CORRECTIVE',
@@ -632,8 +655,9 @@ VALUES
  'IN_PROGRESS', 'CRITICAL', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 1 DAY), '17:00:00'), NULL,
  5.50, 14850.00, 14200.00, 650.00,
  '[{"item_id":2,"sku":"MOT-SRV-650","name":"6-DOF Electric Actuator Servo Drive","quantity":1}]',
+ 'MOT-E650-DRV', 'SN-DRV-2023-0918', 'SN-SRV-2025-119',
  'NONE', NULL, 1,
- 'Faulty drive S/N DRV-0918 tagged for RMA-MOT-4102. New drive installed; running final QTG-3.A.2 latency check.',
+ 'Faulty drive S/N SN-DRV-2023-0918 tagged for RMA-MOT-4102. New drive S/N SN-SRV-2025-119 installed; running final QTG-3.A.2 latency check.',
  TIMESTAMP(CURDATE(), '21:00:00')),
 
 (2,  NULL, 3, 8,  'VISUAL',       'DEGRADED', 0.25, TRUE,  4, 'CORRECTIVE',
@@ -642,6 +666,7 @@ VALUES
  'DEFERRED', 'HIGH', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 1 DAY), '18:00:00'), NULL,
  1.00, 320.00, 0.00, 320.00,
  '[]',
+ 'OPT-710-4420-01', 'SN-LSR-2024-019', NULL,
  'CAT_B', DATE_ADD(CURDATE(), INTERVAL 3 DAY), 2,
  'Photometer confirmed 11.4 fL on Ch.3 vs 14.0 fL on Ch.1/2. Expedited PO inbound ETA +4d.',
  TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 3 DAY), '22:00:00')),
@@ -652,6 +677,7 @@ VALUES
  'SCHEDULED', 'MEDIUM', TIMESTAMP(CURDATE(), '14:00:00'), NULL,
  1.00, 2350.00, 2150.00, 200.00,
  '[{"item_id":6,"sku":"IOS-AUD-MTX","name":"IOS Digital Intercom & Audio Matrix Card","quantity":1}]',
+ 'FLX-SND-MTX8', 'SN-AUD-2024-031', 'SN-AUD-2025-074',
  'CAT_C', DATE_ADD(CURDATE(), INTERVAL 8 DAY), 5,
  'Spare audio matrix card staged at BAY-STK; scheduled 14:00 window.',
  NULL),
@@ -662,6 +688,7 @@ VALUES
  'IN_PROGRESS', 'HIGH', TIMESTAMP(CURDATE(), '07:15:00'), NULL,
  3.00, 7120.00, 6800.00, 320.00,
  '[{"item_id":3,"sku":"IG-GPU-6000A","name":"Visual IG Workstation GPU RTX 6000 Ada","quantity":1}]',
+ 'NV-RTX6000-ADA', 'SN-GPU-2024-112', 'SN-GPU-2026-308',
  'NONE', NULL, 4,
  'Thermal throttling detected on original GPU card; swapping from BAY-STK.',
  NULL),
@@ -673,6 +700,7 @@ VALUES
  'SCHEDULED', 'HIGH', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 2 DAY), '09:00:00'), NULL,
  2.00, 480.00, 0.00, 480.00,
  '[]',
+ NULL, NULL, NULL,
  'NONE', NULL, 1,
  'Delayed due to BAY-06 AOG priority; rescheduled to tonight maintenance window.',
  NULL),
@@ -683,6 +711,7 @@ VALUES
  'SCHEDULED', 'HIGH', TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 2 DAY), '22:00:00'), NULL,
  2.50, 585.00, 185.00, 400.00,
  '[{"item_id":9,"sku":"CON-FLT-VIS","name":"OptiDome Projector HEPA Intake Filter Pack","quantity":1}]',
+ 'OPT-FLT-6000-PK', NULL, NULL,
  'NONE', NULL, 2,
  'Konica CS-150 photometer reserved in CAL-LAB.',
  NULL),
@@ -694,6 +723,7 @@ VALUES
  'COMPLETED', 'LOW', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 6 DAY), '22:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 6 DAY), '23:45:00'),
  1.75, 505.00, 185.00, 320.00,
  '[{"item_id":9,"sku":"CON-FLT-VIS","name":"OptiDome Projector HEPA Intake Filter Pack","quantity":1}]',
+ 'OPT-FLT-6000-PK', NULL, NULL,
  'NONE', NULL, 2,
  'All 3 channels balanced at 14.2 fL; QTG-4.D.1 signed off.',
  TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 84 DAY), '22:00:00')),
@@ -704,6 +734,7 @@ VALUES
  'COMPLETED', 'HIGH', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 14 DAY), '06:40:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 14 DAY), '08:15:00'),
  1.50, 3770.00, 3450.00, 320.00,
  '[{"item_id":5,"sku":"AV-ARINC-429","name":"ARINC 429 16-Channel PCIe Interface Card","quantity":1}]',
+ 'AVB-APX429-16', 'SN-A429-2023-204', 'SN-A429-2025-512',
  'NONE', NULL, 3,
  'Swapped ARINC 429 interface board from BAY-STK; 100% clean bus soak test.',
  NULL),
@@ -714,6 +745,7 @@ VALUES
  'COMPLETED', 'MEDIUM', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 15 DAY), '22:30:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 15 DAY), '23:50:00'),
  1.30, 260.00, 0.00, 260.00,
  '[]',
+ NULL, NULL, NULL,
  'NONE', NULL, 3,
  'All 3 axes within ±0.4 daN of MQTG baseline.',
  TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 75 DAY), '22:30:00')),
@@ -724,6 +756,7 @@ VALUES
  'COMPLETED', 'HIGH', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 19 DAY), '06:30:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 19 DAY), '08:45:00'),
  2.25, 1740.00, 1290.00, 450.00,
  '[{"item_id":8,"sku":"MOT-ENC-ABS","name":"Electric Motion Absolute Rotary Encoder","quantity":1}]',
+ 'HEID-EQN1325', 'SN-ENC-2023-189', 'SN-ENC-2025-601',
  'NONE', NULL, 1,
  'Replaced Heidenhain encoder; recalibrated stroke zero point and passed QTG-3.H.1.',
  NULL),
@@ -734,6 +767,7 @@ VALUES
  'COMPLETED', 'MEDIUM', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 12 DAY), '21:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 12 DAY), '23:30:00'),
  2.50, 400.00, 0.00, 400.00,
  '[]',
+ NULL, NULL, NULL,
  'NONE', NULL, 3,
  'Verified 4-ship DIS/HLA packet sync with zero dropouts.',
  NULL),
@@ -744,6 +778,7 @@ VALUES
  'COMPLETED', 'MEDIUM', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 12 DAY), '12:15:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 12 DAY), '13:00:00'),
  0.75, 160.00, 0.00, 160.00,
  '[]',
+ NULL, NULL, NULL,
  'NONE', NULL, 2,
  'Recalibrated ambient light sensor firmware; verified across day/dusk/night scenes.',
  NULL),
@@ -754,14 +789,14 @@ VALUES
  'Preventive calibration of dual instructor touchscreens and nav database checksum verification.',
  'COMPLETED', 'LOW', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 18 DAY), '17:15:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 18 DAY), '18:00:00'),
  0.75, 120.00, 0.00, 120.00,
- '[]', 'NONE', NULL, 4, 'Calibration delta < 1px. AIRAC 2611 verified.', NULL),
+ '[]', NULL, NULL, NULL, 'NONE', NULL, 4, 'Calibration delta < 1px. AIRAC 2611 verified.', NULL),
 
 (14, NULL, 10, NULL, 'CONTROL_LOADING','MINOR',0.00, FALSE, 5, 'PREVENTIVE',
  'TP-04 Rudder Pedals Lubrication & Trim Linkage Inspection',
  'Scheduled mechanical preventive lubrication and friction hysteresis verification.',
  'COMPLETED', 'LOW', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 42 DAY), '17:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 42 DAY), '18:00:00'),
  1.00, 150.00, 0.00, 150.00,
- '[]', 'NONE', NULL, 4, 'All pedal travel and centering springs nominal.', NULL),
+ '[]', NULL, NULL, NULL, 'NONE', NULL, 4, 'All pedal travel and centering springs nominal.', NULL),
 
 (15, NULL, 10, NULL, 'HVAC_POWER','AOG',      2.50, TRUE,  3, 'CORRECTIVE',
  'TP-04 Not Starting — New 28V DC Power Supply Unit Installed',
@@ -769,6 +804,7 @@ VALUES
  'COMPLETED', 'CRITICAL', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 26 DAY), '06:35:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 26 DAY), '09:05:00'),
  2.50, 2080.00, 1680.00, 400.00,
  '[{"item_id":7,"sku":"PWR-PSU-28V","name":"28V DC Flight Deck Avionics Power Supply","quantity":1}]',
+ 'TDK-GEN28-1500', 'SN-PSU-2023-441', 'SN-PSU-2026-019',
  'NONE', NULL, 5, 'Installed new TDK-Lambda 28V PSU from WH-MAIN; 4h burn-in clean.', NULL),
 
 (16, NULL, 10, NULL, 'SOUND',     'MINOR',    0.00, FALSE, 6, 'PREVENTIVE',
@@ -777,6 +813,7 @@ VALUES
  'COMPLETED', 'LOW', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 9 DAY), '17:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 9 DAY), '17:30:00'),
  0.50, 157.00, 77.00, 80.00,
  '[{"item_id":11,"sku":"CON-HD-CUSH","name":"Aviation Headset Ear Cushions & Mic Muffs","quantity":2}]',
+ 'TELEX-AIR-CUSH', NULL, NULL,
  'NONE', NULL, 4, 'Acoustic clarity nominal on both pilot & instructor positions.', NULL),
 
 -- ── FACILITY ASSETS MAINTENANCE RECORDS ─────────────────────────────────────
@@ -786,6 +823,7 @@ VALUES
  'COMPLETED', 'LOW', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 16 DAY), '06:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 16 DAY), '07:30:00'),
  1.50, 385.00, 145.00, 240.00,
  '[{"item_id":10,"sku":"CON-GLY-20L","name":"Inhibited Chiller Glycol Fluid (20L Drum)","quantity":1}]',
+ 'CARR-GLY-30-20L', NULL, NULL,
  'NONE', NULL, NULL, 'Supply/return delta-T stabilized at 5.2C across Bays 1-3.', NULL),
 
 (18, 5,    NULL, NULL, 'HOST_COMPUTE','MINOR',0.00, FALSE, 1, 'INSPECTION',
@@ -793,7 +831,7 @@ VALUES
  'Verified IEEE 1588 PTP grandmaster synchronization and redundant uplink failover.',
  'COMPLETED', 'LOW', TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 22 DAY), '23:00:00'), TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 22 DAY), '23:45:00'),
  0.75, 140.00, 0.00, 140.00,
- '[]', 'NONE', NULL, NULL, 'PTP jitter < 12 microseconds across all 6 FFS host racks.', NULL);
+ '[]', NULL, NULL, NULL, 'NONE', NULL, NULL, 'PTP jitter < 12 microseconds across all 6 FFS host racks.', NULL);
 
 -- =============================================================================
 -- 12. STOCK MOVEMENTS LEDGER (18 movements with Bay & Work Order traceability)

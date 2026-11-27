@@ -16,6 +16,7 @@ const {
   formatDbTableRow,
 } = require('../services/admin-helpers.service');
 const { sanitizeShiftTypePayload } = require('../services/shift-schedule.service');
+const { disconnectUserSockets } = require('../config/socket');
 
 const CUSTOMIZABLE_TABLES = new Set([
   'operations',
@@ -928,6 +929,7 @@ router.patch('/users/bulk', async (req, res, next) => {
     }
 
     await transaction.commit();
+    deactivatedIds.forEach((uid) => disconnectUserSockets(uid));
 
     res.json({
       success: true,
@@ -1078,6 +1080,7 @@ router.put('/users/:id', async (req, res, next) => {
         { is_revoked: true },
         { where: { user_id: user.id, is_revoked: false } }
       );
+      disconnectUserSockets(user.id);
     }
     const updated = await User.findByPk(user.id, {
       attributes: { exclude: ['password_hash'] },
@@ -1143,6 +1146,7 @@ router.patch('/users/:id/toggle', async (req, res, next) => {
         { is_revoked: true },
         { where: { user_id: user.id, is_revoked: false } }
       );
+      disconnectUserSockets(user.id);
     }
     res.json({ success: true, data: { is_active: user.is_active } });
   } catch (err) { next(err); }
@@ -1162,6 +1166,7 @@ router.patch('/users/:id/reset-password', async (req, res, next) => {
       { is_revoked: true },
       { where: { user_id: user.id, is_revoked: false } }
     );
+    disconnectUserSockets(user.id);
     res.json({ success: true, message: 'Password reset successfully' });
   } catch (err) { next(err); }
 });

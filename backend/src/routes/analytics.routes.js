@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const { sequelize } = require('../models');
 const { parseDateFilter } = require('../middleware/error.middleware');
+const { requireSectionAccess } = require('../middleware/section-access.middleware');
 const {
   parseGranularity,
   resolveAnalyticsWindow,
@@ -465,7 +466,7 @@ router.get('/overview', parseDateFilter, async (req, res, next) => {
 });
 
 // ── Detailed Operations Metrics (Used by Operations Deep-Dive) ──────────────
-router.get('/operations-metrics', parseDateFilter, async (req, res, next) => {
+router.get('/operations-metrics', requireSectionAccess('operations_analytics'), parseDateFilter, async (req, res, next) => {
   try {
     const now = new Date();
     const granularity = parseGranularity(req.query.granularity);

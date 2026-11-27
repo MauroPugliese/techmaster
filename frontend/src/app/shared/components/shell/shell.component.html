@@ -30,13 +30,13 @@
         <span class="nav-label">Dashboard</span>
       </a>
 
-      <div class="nav-section-label" *ngIf="showAnyNavSection(['simulators','operations','maintenance','warehouse','shifts'])">Simulator Center</div>
+      <div class="nav-section-label" *ngIf="showAnyNavSection(['simulators','operations','shifts'])">Operations</div>
 
       <a class="nav-item" routerLink="/simulators" routerLinkActive="active" *ngIf="showNavSection('simulators')">
         <span class="nav-icon">flight_takeoff</span>
         <span class="nav-label">Flight Simulators</span>
         <span
-          class="nav-badge nav-badge-warn"
+          class="nav-badge nav-badge-danger"
           *ngIf="simulatorsAlertCount > 0"
           [attr.data-tooltip]="simulatorsAlertCount + (simulatorsAlertCount === 1 ? ' bay degraded or AOG' : ' bays degraded or AOG')"
           [attr.aria-label]="simulatorsAlertCount + (simulatorsAlertCount === 1 ? ' bay degraded or AOG' : ' bays degraded or AOG')">
@@ -48,7 +48,7 @@
         <span class="nav-icon">rocket_launch</span>
         <span class="nav-label">Sorties &amp; Dispatch</span>
         <span
-          class="nav-badge"
+          class="nav-badge nav-badge-subtle"
           *ngIf="activeOpsCount > 0"
           [attr.data-tooltip]="activeOpsCount + (activeOpsCount === 1 ? ' active or planned sortie' : ' active or planned sorties')"
           [attr.aria-label]="activeOpsCount + (activeOpsCount === 1 ? ' active or planned sortie' : ' active or planned sorties')">
@@ -56,11 +56,18 @@
         </span>
       </a>
 
+      <a class="nav-item" routerLink="/shifts" routerLinkActive="active" *ngIf="showNavSection('shifts')">
+        <span class="nav-icon">schedule</span>
+        <span class="nav-label">Shifts</span>
+      </a>
+
+      <div class="nav-section-label" *ngIf="showAnyNavSection(['maintenance','warehouse','tasks'])">Maintenance &amp; Stock</div>
+
       <a class="nav-item" routerLink="/maintenance" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}" *ngIf="showNavSection('maintenance')">
         <span class="nav-icon">build_circle</span>
         <span class="nav-label">Maintenance</span>
         <span
-          class="nav-badge"
+          class="nav-badge nav-badge-subtle"
           *ngIf="pendingMaintCount > 0"
           [attr.data-tooltip]="pendingMaintCount + (pendingMaintCount === 1 ? ' open or scheduled work order' : ' open or scheduled work orders')"
           [attr.aria-label]="pendingMaintCount + (pendingMaintCount === 1 ? ' open or scheduled work order' : ' open or scheduled work orders')">
@@ -72,7 +79,7 @@
         <span class="nav-icon">event_repeat</span>
         <span class="nav-label">Planned Maintenance</span>
         <span
-          class="nav-badge"
+          class="nav-badge nav-badge-warn"
           *ngIf="pendingPlannedMaintCount > 0"
           [attr.data-tooltip]="pendingPlannedMaintCount + (pendingPlannedMaintCount === 1 ? ' scheduled occurrence remaining today' : ' scheduled occurrences remaining today')"
           [attr.aria-label]="pendingPlannedMaintCount + (pendingPlannedMaintCount === 1 ? ' scheduled occurrence remaining today' : ' scheduled occurrences remaining today')">
@@ -92,28 +99,11 @@
         </span>
       </a>
 
-      <a class="nav-item" routerLink="/shifts" routerLinkActive="active" *ngIf="showNavSection('shifts')">
-        <span class="nav-icon">schedule</span>
-        <span class="nav-label">Shifts</span>
-      </a>
-
-      <div class="nav-section-label" *ngIf="showAnyNavSection(['analytics','operations_analytics','tasks'])">Intelligence</div>
-
-      <a class="nav-item" routerLink="/analytics" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}" *ngIf="showNavSection('analytics')">
-        <span class="nav-icon">insights</span>
-        <span class="nav-label">Analytics &amp; Reports</span>
-      </a>
-
-      <a class="nav-item" routerLink="/analytics/operations" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}" *ngIf="showNavSection('operations_analytics')">
-        <span class="nav-icon">analytics</span>
-        <span class="nav-label">Sorties Analytics</span>
-      </a>
-
       <a class="nav-item" routerLink="/tasks" routerLinkActive="active" *ngIf="showNavSection('tasks')">
         <span class="nav-icon">task_alt</span>
-        <span class="nav-label">Task Manager</span>
+        <span class="nav-label">Tasks</span>
         <span
-          class="nav-badge"
+          class="nav-badge nav-badge-subtle"
           *ngIf="openTasksCount > 0"
           [attr.data-tooltip]="openTasksCount + (openTasksCount === 1 ? ' open task' : ' open tasks')"
           [attr.aria-label]="openTasksCount + (openTasksCount === 1 ? ' open task' : ' open tasks')">
@@ -121,14 +111,17 @@
         </span>
       </a>
 
-      <div class="nav-section-label" *ngIf="showNavSection('wiki')">Knowledge</div>
+      <div class="nav-section-label" *ngIf="showAnyNavSection(['analytics','wiki','admin'])">Workspace</div>
+
+      <a class="nav-item" routerLink="/analytics" routerLinkActive="active" *ngIf="showNavSection('analytics')">
+        <span class="nav-icon">insights</span>
+        <span class="nav-label">Analytics &amp; Reports</span>
+      </a>
 
       <a class="nav-item" routerLink="/wiki" routerLinkActive="active" *ngIf="showNavSection('wiki')">
         <span class="nav-icon">menu_book</span>
         <span class="nav-label">Wiki &amp; Docs</span>
       </a>
-
-      <div class="nav-section-label" *ngIf="showNavSection('admin')">Administration</div>
 
       <a class="nav-item" routerLink="/admin" routerLinkActive="active" *ngIf="showNavSection('admin')">
         <span class="nav-icon">admin_panel_settings</span>
@@ -181,22 +174,19 @@
         <span class="cmd-trigger-kbd">{{ isMac ? '⌘K' : 'Ctrl+K' }}</span>
       </button>
 
-      <!-- Global Date Filter (hidden on pages with native date navigation) -->
+      <!-- Unified Compact Global Date Filter (Presets live inside the dialog to keep topbar calm) -->
       <div class="header-date-controls" *ngIf="showGlobalDateFilter">
-        <div class="preset-chips">
-          <button type="button" class="chip" [class.active]="activePreset==='today'"   (click)="setPreset('today')">Today</button>
-          <button type="button" class="chip" [class.active]="activePreset==='week'"    (click)="setPreset('week')">7D</button>
-          <button type="button" class="chip" [class.active]="activePreset==='month'"   (click)="setPreset('month')">30D</button>
-          <button type="button" class="chip" [class.active]="activePreset==='quarter'" (click)="setPreset('quarter')">90D</button>
-        </div>
-
-        <div class="date-filter-bar" (click)="openDatePicker()">
+        <button type="button"
+                class="date-filter-bar"
+                [class.has-filter]="hasDateFilter"
+                (click)="openDatePicker()"
+                title="Filter page data by time period">
           <span class="date-icon">date_range</span>
-          {{ dateLabel }}
+          <span>{{ dateLabel }}</span>
           <span class="date-icon date-arrow-icon">arrow_drop_down</span>
-        </div>
+        </button>
 
-        <button type="button" class="btn btn-ghost btn-icon-only" *ngIf="hasDateFilter" (click)="clearDate()" title="Clear filter">
+        <button type="button" class="btn btn-ghost btn-icon-only date-clear-btn" *ngIf="hasDateFilter" (click)="clearDate()" title="Reset period to All time" aria-label="Reset date filter">
           <span class="btn-icon">close</span>
         </button>
       </div>
@@ -273,16 +263,30 @@
 
 <!-- Date Picker Modal -->
 <div class="modal-overlay" *ngIf="showDatePicker" (click)="closeDatePicker($event)">
-  <div class="modal" role="dialog" aria-modal="true" aria-label="Select Date and Time Range" style="max-width:560px">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Select Time Period" style="max-width:540px">
     <div class="modal-header">
-      <h3>Select Date &amp; Time Range</h3>
-      <button type="button" class="btn btn-ghost btn-icon-only" (click)="showDatePicker=false">
+      <h3>Filter by Time Period</h3>
+      <button type="button" class="btn btn-ghost btn-icon-only" (click)="showDatePicker=false" aria-label="Close">
         <span class="btn-icon">close</span>
       </button>
     </div>
     <div class="modal-body">
+      <div class="date-modal-presets">
+        <span class="date-modal-label">Quick Presets</span>
+        <div class="preset-chips">
+          <button type="button" class="chip" [class.active]="!hasDateFilter" (click)="clearDate()">All time</button>
+          <button type="button" class="chip" [class.active]="activePreset==='today'" (click)="selectQuickPreset('today')">Today</button>
+          <button type="button" class="chip" [class.active]="activePreset==='week'" (click)="selectQuickPreset('week')">Last 7 days</button>
+          <button type="button" class="chip" [class.active]="activePreset==='month'" (click)="selectQuickPreset('month')">Last 30 days</button>
+          <button type="button" class="chip" [class.active]="activePreset==='quarter'" (click)="selectQuickPreset('quarter')">Last 90 days</button>
+          <button type="button" class="chip" [class.active]="activePreset==='year'" (click)="selectQuickPreset('year')">This year</button>
+        </div>
+      </div>
+
+      <div class="date-modal-divider"><span>Or custom range</span></div>
+
       <div class="form-row">
-        <div class="form-group">
+        <div class="form-group" style="margin-bottom:0">
           <label class="form-label">From Date &amp; Time</label>
           <app-datetime-picker
             class="form-control"
@@ -292,7 +296,7 @@
             placeholder="Start date &amp; time">
           </app-datetime-picker>
         </div>
-        <div class="form-group">
+        <div class="form-group" style="margin-bottom:0">
           <label class="form-label">To Date &amp; Time</label>
           <app-datetime-picker
             class="form-control"
@@ -305,8 +309,8 @@
       </div>
     </div>
     <div class="modal-footer">
-      <button type="button" class="btn btn-ghost" (click)="clearDate()">Clear</button>
-      <button type="button" class="btn btn-primary" (click)="applyDatePicker()">Apply Filter</button>
+      <button type="button" class="btn btn-ghost" (click)="clearDate()">Reset to All time</button>
+      <button type="button" class="btn btn-primary" (click)="applyDatePicker()">Apply Custom Range</button>
     </div>
   </div>
 </div>

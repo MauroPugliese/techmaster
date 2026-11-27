@@ -10,7 +10,7 @@ import { CommonModule, DatePipe } from '@angular/common';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import DOMPurify from 'dompurify';
 
-import { ToastService } from '../../../../core/services/services';
+import { AuthService, ToastService } from '../../../../core/services/services';
 import { WikiArticle } from '../../../../core/models/interfaces';
 import { ExportMenuComponent } from '../../../../shared/components/export-menu/export-menu.component';
 import { RenderedMarkdown, TocHeading, WikiMarkdownService } from '../../wiki-markdown.service';
@@ -49,6 +49,7 @@ export class WikiArticleViewerComponent implements OnChanges, AfterViewInit, OnD
   private hydrateTimer: any = null;
 
   constructor(
+    public auth: AuthService,
     private mdSvc: WikiMarkdownService,
     private toast: ToastService,
     private sanitizer: DomSanitizer,

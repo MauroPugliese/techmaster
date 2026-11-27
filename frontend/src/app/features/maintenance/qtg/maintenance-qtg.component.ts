@@ -13,6 +13,7 @@ import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../../../core/services/api.service';
+import { AuthService } from '../../../core/services/auth.service';
 import { ToastService } from '../../../core/services/toast.service';
 import {
   QtgStatus,
@@ -49,6 +50,7 @@ export class MaintenanceQtgComponent implements OnInit, OnChanges {
   updatingId: number | null = null;
 
   constructor(
+    public auth: AuthService,
     private api: ApiService,
     private toast: ToastService,
     private cdr: ChangeDetectorRef

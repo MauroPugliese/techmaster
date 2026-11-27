@@ -6,6 +6,7 @@
 const VALID_SIM_CATEGORIES = new Set(['COMMERCIAL_FIXED_WING', 'ROTORCRAFT', 'DEFENSE_FMS', 'FTD_FNPT']);
 const VALID_SIM_STATUSES = new Set(['READY', 'IN_SORTIE', 'PRE_FLIGHT', 'MAINTENANCE', 'DEGRADED', 'AOG']);
 const VALID_STATION_KINDS = new Set(['FFS_BAY', 'TEST_PLACE', 'IOS_CONSOLE']);
+const VALID_SCHEDULING_MODES = new Set(['SORTIES', 'SHIFTS']);
 const VALID_SHIFT_USAGE_STATUSES = new Set(['READY', 'IN_USE', 'NA']);
 const VALID_SUBSYSTEM_CODES = new Set([
   'VISUAL', 'MOTION', 'CONTROL_LOADING', 'AVIONICS_COCKPIT', 'IOS', 'HOST_COMPUTE', 'SOUND', 'HVAC_POWER'
@@ -55,6 +56,72 @@ function cleanOptionalNumber(val, { min = 0, max = 999999, decimals = 1 } = {}) 
   return { provided: true, value: Math.round(n * factor) / factor };
 }
 
+function defaultSchedulingModeForKind(kind) {
+  return (kind === 'TEST_PLACE' || kind === 'IOS_CONSOLE') ? 'SHIFTS' : 'SORTIES';
+}
+
+function sanitizeScheduleConfig(raw, schedulingMode = 'SORTIES') {
+  if (raw === undefined) return { provided: false, value: undefined };
+  if (raw === null) return { provided: true, value: null };
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    return { error: 'schedule_config must be an object.' };
+  }
+
+  const opStart = normalizeHhMm(raw.operating_start, '06:00');
+  const opEnd = normalizeHhMm(raw.operating_end, '22:00');
+
+  const slotHoursNum = raw.default_slot_hours !== undefined && raw.default_slot_hours !== null && raw.default_slot_hours !== ''
+    ? Number(raw.default_slot_hours)
+    : (schedulingMode === 'SORTIES' ? 4 : 6);
+  if (!Number.isFinite(slotHoursNum) || slotHoursNum < 0.5 || slotHoursNum > 24) {
+    return { error: 'schedule_config.default_slot_hours must be between 0.5 and 24.' };
+  }
+
+  const turnaroundNum = raw.turnaround_minutes !== undefined && raw.turnaround_minutes !== null && raw.turnaround_minutes !== ''
+    ? Number(raw.turnaround_minutes)
+    : 0;
+  if (!Number.isFinite(turnaroundNum) || turnaroundNum < 0 || turnaroundNum > 180) {
+    return { error: 'schedule_config.turnaround_minutes must be between 0 and 180.' };
+  }
+
+  const slotPresets = [];
+  if (Array.isArray(raw.slot_presets)) {
+    for (const p of raw.slot_presets.slice(0, 12)) {
+      if (!p || typeof p !== 'object') continue;
+      const start = normalizeHhMm(p.start, null);
+      const end = normalizeHhMm(p.end, null);
+      if (!start || !end || start === end) continue;
+      const label = String(p.label || `${start}–${end}`).trim().slice(0, 40) || `${start}–${end}`;
+      slotPresets.push({ label, start, end });
+    }
+  }
+
+  const shiftPresets = [];
+  if (Array.isArray(raw.shift_presets)) {
+    for (let i = 0; i < Math.min(6, raw.shift_presets.length); i++) {
+      const sp = raw.shift_presets[i];
+      if (!sp || typeof sp !== 'object') continue;
+      const start = normalizeHhMm(sp.start, null);
+      const end = normalizeHhMm(sp.end, null);
+      if (!start || !end || start === end) continue;
+      const name = String(sp.name || `SHIFT ${i + 1}`).trim().toUpperCase().slice(0, 32) || `SHIFT ${i + 1}`;
+      const preFlight = normalizeHhMm(sp.pre_flight, start);
+      shiftPresets.push({ name, start, end, pre_flight: preFlight });
+    }
+  }
+
+  const config = {
+    operating_start: opStart,
+    operating_end: opEnd,
+    default_slot_hours: Math.round(slotHoursNum * 2) / 2,
+    turnaround_minutes: Math.round(turnaroundNum),
+    slot_presets: slotPresets,
+    shift_presets: shiftPresets
+  };
+
+  return { provided: true, value: config };
+}
+
 function sanitizeSimulatorPayload(body = {}, { isCreate = false } = {}) {
   const payload = {};
 
@@ -99,6 +166,17 @@ function sanitizeSimulatorPayload(body = {}, { isCreate = false } = {}) {
     if (!VALID_STATION_KINDS.has(kind)) return { error: 'Invalid station_kind.' };
     payload.station_kind = kind;
   }
+
+  if (body.scheduling_mode !== undefined || isCreate) {
+    const fallbackMode = defaultSchedulingModeForKind(payload.station_kind || 'FFS_BAY');
+    const mode = String(body.scheduling_mode ?? fallbackMode).trim().toUpperCase();
+    if (!VALID_SCHEDULING_MODES.has(mode)) return { error: 'scheduling_mode must be SORTIES or SHIFTS.' };
+    payload.scheduling_mode = mode;
+  }
+
+  const schedCfgRes = sanitizeScheduleConfig(body.schedule_config, payload.scheduling_mode || 'SORTIES');
+  if (schedCfgRes.error) return { error: schedCfgRes.error };
+  if (schedCfgRes.provided) payload.schedule_config = schedCfgRes.value;
 
   if (body.sort_order !== undefined) {
     const so = Number(body.sort_order);
@@ -406,6 +484,10 @@ function detectSortieBayConflict(
       warnings.push(`${simulator.bay_code} is marked NA (Not Available) on the Daily Station Operations sheet for this date.`);
     }
 
+    if (String(simulator.scheduling_mode || '').toUpperCase() === 'SHIFTS') {
+      warnings.push(`${simulator.bay_code} (${simulator.code}) is configured in Daily Shifts mode rather than Sorties mode.`);
+    }
+
     if (proposed.motion_required !== false) {
       if (simulator.platform_category === 'FTD_FNPT') {
         warnings.push(`${simulator.code} is Fixed-Base (${simulator.qualification_level}); motion cueing is unavailable.`);
@@ -523,13 +605,66 @@ function deriveEntryUsageStatus({ currentStatus = 'READY', requestedStatus, star
 }
 
 /**
- * Projects daily operating sheets (Test Places, IOS Consoles, etc.) into
- * 24-hour timeline bars for Sorties & Dispatch.
+ * Projects daily operating sheets (for all SHIFTS-mode simulators across FFS, TP, IOS)
+ * into 24-hour timeline bars for Sorties & Dispatch — including cross-midnight splits
+ * and optional mission / external crew fields.
  */
-function buildTimelineShiftBlocks(sheets = []) {
+function buildTimelineShiftBlocks(sheets = [], { prevDaySheets = [] } = {}) {
   const blocks = [];
   const statusBySimulator = {};
 
+  const hhMmToMin = (t) => {
+    const [h, m] = normalizeHhMm(t, '00:00').split(':').map(Number);
+    return h * 60 + m;
+  };
+
+  // 1. Cross-midnight carry-in from previous day's IN_USE shifts (e.g. 22:00 -> 02:00)
+  for (const prevSheet of prevDaySheets || []) {
+    if (!prevSheet || !prevSheet.log) continue;
+    const stationKind = prevSheet.log.station_kind || 'TEST_PLACE';
+    for (const shift of prevSheet.shifts || []) {
+      const shiftName = shift.shift_name || `SHIFT ${shift.shift_number || 1}`;
+      for (const entry of shift.entries || []) {
+        const simId = Number(entry.simulator_id);
+        if (!simId || String(entry.usage_status || '').toUpperCase() !== 'IN_USE') continue;
+        const startT = normalizeHhMm(entry.sim_testing_start, '00:00');
+        const endT = normalizeHhMm(entry.sim_testing_end, '00:00');
+        if (startT === '00:00' || endT === '00:00') continue;
+        const startMin = hhMmToMin(startT);
+        const endMin = hhMmToMin(endT);
+        if (endMin > 0 && endMin < startMin) {
+          blocks.push({
+            id: `shift-carry-${entry.id || `${simId}-${shift.id}`}`,
+            entry_id: entry.id || null,
+            shift_id: shift.id || null,
+            shift_number: shift.shift_number || 1,
+            log_date: prevSheet.log.log_date,
+            simulator_id: simId,
+            station_kind: stationKind,
+            block_kind: 'SHIFT_IN_USE',
+            usage_status: 'IN_USE',
+            shift_name: shiftName,
+            start_time: '00:00',
+            end_time: endT,
+            display_start_time: startT,
+            display_end_time: endT,
+            continued_from_prev_day: true,
+            continues_next_day: false,
+            duration_minutes: endMin,
+            mission_name: entry.mission_name || null,
+            instructor_name: entry.instructor_name || null,
+            pilot_name: entry.pilot_name || null,
+            copilot_name: entry.copilot_name || null,
+            weather_profile: entry.weather_profile || null,
+            scenario_code: entry.scenario_code || null,
+            notes: entry.notes || null
+          });
+        }
+      }
+    }
+  }
+
+  // 2. Current day sheets
   for (const sheet of sheets || []) {
     if (!sheet || !sheet.log) continue;
     const log = sheet.log;
@@ -551,11 +686,18 @@ function buildTimelineShiftBlocks(sheets = []) {
         list.push({
           id: entry.id,
           shift_id: shift.id,
+          shift_number: shift.shift_number || 1,
           shift_name: shiftName,
           pre_flight_test_time: preFlight,
           usage_status: String(entry.usage_status || 'READY').toUpperCase(),
           sim_testing_start: normalizeHhMm(entry.sim_testing_start, '00:00'),
           sim_testing_end: normalizeHhMm(entry.sim_testing_end, '00:00'),
+          mission_name: entry.mission_name || null,
+          instructor_name: entry.instructor_name || null,
+          pilot_name: entry.pilot_name || null,
+          copilot_name: entry.copilot_name || null,
+          weather_profile: entry.weather_profile || null,
+          scenario_code: entry.scenario_code || null,
           notes: entry.notes || null
         });
         bySim.set(simId, list);
@@ -573,17 +715,36 @@ function buildTimelineShiftBlocks(sheets = []) {
           const startTime = e.sim_testing_start !== '00:00'
             ? e.sim_testing_start
             : (e.pre_flight_test_time !== '00:00' ? e.pre_flight_test_time : readiness);
-          const endTime = e.sim_testing_end !== '00:00' ? e.sim_testing_end : fallbackEnd;
+          const rawEndTime = e.sim_testing_end !== '00:00' ? e.sim_testing_end : fallbackEnd;
+          const startMin = hhMmToMin(startTime);
+          const rawEndMin = hhMmToMin(rawEndTime);
+          const crossesMidnight = rawEndTime !== '00:00' && rawEndMin < startMin;
+          const clippedEndTime = crossesMidnight ? '24:00' : rawEndTime;
+
           blocks.push({
             id: `shift-in-use-${e.id || `${simId}-${e.shift_id}`}`,
+            entry_id: e.id || null,
+            shift_id: e.shift_id || null,
+            shift_number: e.shift_number || 1,
+            log_date: log.log_date,
             simulator_id: simId,
             station_kind: stationKind,
             block_kind: 'SHIFT_IN_USE',
             usage_status: 'IN_USE',
             shift_name: e.shift_name,
             start_time: startTime,
-            end_time: endTime,
-            duration_minutes: computeTestingDurationMinutes(startTime, endTime),
+            end_time: clippedEndTime,
+            display_start_time: startTime,
+            display_end_time: rawEndTime,
+            continued_from_prev_day: false,
+            continues_next_day: crossesMidnight,
+            duration_minutes: computeTestingDurationMinutes(startTime, rawEndTime),
+            mission_name: e.mission_name,
+            instructor_name: e.instructor_name,
+            pilot_name: e.pilot_name,
+            copilot_name: e.copilot_name,
+            weather_profile: e.weather_profile,
+            scenario_code: e.scenario_code,
             notes: e.notes
           });
         }
@@ -592,6 +753,10 @@ function buildTimelineShiftBlocks(sheets = []) {
         const firstNa = naEntries[0];
         blocks.push({
           id: `shift-na-${simId}-${log.log_date}`,
+          entry_id: firstNa.id || null,
+          shift_id: firstNa.shift_id || null,
+          shift_number: firstNa.shift_number || 1,
+          log_date: log.log_date,
           simulator_id: simId,
           station_kind: stationKind,
           block_kind: 'SHIFT_NA',
@@ -599,22 +764,47 @@ function buildTimelineShiftBlocks(sheets = []) {
           shift_name: naEntries.map(e => e.shift_name).join(' / '),
           start_time: readiness,
           end_time: fallbackEnd,
+          display_start_time: readiness,
+          display_end_time: fallbackEnd,
+          continued_from_prev_day: false,
+          continues_next_day: false,
           duration_minutes: computeTestingDurationMinutes(readiness, fallbackEnd),
+          mission_name: firstNa.mission_name,
+          instructor_name: firstNa.instructor_name,
+          pilot_name: firstNa.pilot_name,
+          copilot_name: firstNa.copilot_name,
+          weather_profile: firstNa.weather_profile,
+          scenario_code: firstNa.scenario_code,
           notes: naEntries.map(e => e.notes).filter(Boolean).join(' · ') || firstNa.notes || null
         });
       } else if (readyEntries.length > 0) {
         statusBySimulator[simId] = 'READY';
+        const firstReady = readyEntries[0];
         const noteText = readyEntries.map(e => e.notes).filter(Boolean).join(' · ') || null;
         blocks.push({
           id: `shift-ready-${simId}-${log.log_date}`,
+          entry_id: firstReady.id || null,
+          shift_id: firstReady.shift_id || null,
+          shift_number: firstReady.shift_number || 1,
+          log_date: log.log_date,
           simulator_id: simId,
           station_kind: stationKind,
           block_kind: 'SHIFT_READY',
           usage_status: 'READY',
-          shift_name: readyEntries[0].shift_name,
+          shift_name: firstReady.shift_name,
           start_time: readiness,
           end_time: fallbackEnd,
+          display_start_time: readiness,
+          display_end_time: fallbackEnd,
+          continued_from_prev_day: false,
+          continues_next_day: false,
           duration_minutes: computeTestingDurationMinutes(readiness, fallbackEnd),
+          mission_name: firstReady.mission_name,
+          instructor_name: firstReady.instructor_name,
+          pilot_name: firstReady.pilot_name,
+          copilot_name: firstReady.copilot_name,
+          weather_profile: firstReady.weather_profile,
+          scenario_code: firstReady.scenario_code,
           notes: noteText
         });
       }
@@ -643,6 +833,8 @@ function buildTimelineMaintenanceBlocks(dateStr, maintRecords = [], plannedOccur
       simulator_id: Number(m.simulator_id),
       source: 'MAINTENANCE_WO',
       title: m.title || 'Maintenance Work Order',
+      start_date: start.toISOString(),
+      end_date: end.toISOString(),
       start_time: toHhMm(start),
       end_time: toHhMm(end),
       status: m.status || 'SCHEDULED',
@@ -673,6 +865,8 @@ function buildTimelineMaintenanceBlocks(dateStr, maintRecords = [], plannedOccur
       simulator_id: matched.id,
       source: 'PLANNED_MAINT',
       title: occ.task || occ.subsystem || 'Planned Maintenance',
+      start_date: start && !Number.isNaN(start.getTime()) ? start.toISOString() : null,
+      end_date: end && !Number.isNaN(end.getTime()) ? end.toISOString() : null,
       start_time: startHhMm,
       end_time: endHhMm,
       status: occ.status || 'TODO',
@@ -688,6 +882,7 @@ module.exports = {
   VALID_SIM_CATEGORIES,
   VALID_SIM_STATUSES,
   VALID_STATION_KINDS,
+  VALID_SCHEDULING_MODES,
   VALID_SHIFT_USAGE_STATUSES,
   VALID_SUBSYSTEM_CODES,
   VALID_SUBSYSTEM_STATUSES,
@@ -696,6 +891,8 @@ module.exports = {
   VALID_QTG_MODES,
   VALID_QTG_STATUSES,
   DEFAULT_SUBSYSTEM_TEMPLATES,
+  defaultSchedulingModeForKind,
+  sanitizeScheduleConfig,
   sanitizeSimulatorPayload,
   sanitizeSubsystemPayload,
   sanitizeQtgPayload,

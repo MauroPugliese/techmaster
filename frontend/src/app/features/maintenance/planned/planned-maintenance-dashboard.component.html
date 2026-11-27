@@ -11,7 +11,7 @@
                        filename="Planned_Maintenance"
                        [params]="exportParams">
       </app-export-menu>
-      <button type="button" class="btn btn-primary" (click)="openModal()">
+      <button *ngIf="auth.canWrite" type="button" class="btn btn-primary" (click)="openModal()">
         <span class="btn-icon">add</span> New Planned Task
       </button>
     </div>
@@ -19,21 +19,13 @@
 
   <!-- ── Compact Monthly KPI Strip ───────────────────────────────────────── -->
   <div class="mnt-kpi-grid mnt-kpi-4">
-    <div class="kpi-card mnt-kpi-card" style="--kpi-color:#1565C0">
-      <div class="kpi-icon-wrap">event_repeat</div>
-      <div class="mnt-kpi-body">
-        <div class="mnt-kpi-value">{{summary?.active_series ?? 0}}</div>
-        <div class="kpi-label mnt-num">Active Series · {{summary?.total_series ?? 0}} total</div>
-      </div>
-    </div>
-
-    <div class="kpi-card mnt-kpi-card" style="--kpi-color:#0288D1">
+    <button type="button" class="kpi-card mnt-kpi-card mnt-kpi-clickable" [class.active]="activeView === 'agenda'" style="--kpi-color:#0288D1" (click)="activeView = 'agenda'">
       <div class="kpi-icon-wrap">today</div>
       <div class="mnt-kpi-body">
         <div class="mnt-kpi-value">{{summary?.due_today_count ?? 0}}</div>
         <div class="kpi-label mnt-num">Due Today · {{summary?.due_today_todo ?? 0}} open</div>
       </div>
-    </div>
+    </button>
 
     <div class="kpi-card mnt-kpi-card" style="--kpi-color:#16A34A">
       <div class="kpi-icon-wrap">task_alt</div>
@@ -42,6 +34,14 @@
         <div class="kpi-label mnt-num">{{summary?.month_done_occurrences ?? 0}} / {{summary?.month_total_occurrences ?? 0}} in month</div>
       </div>
     </div>
+
+    <button type="button" class="kpi-card mnt-kpi-card mnt-kpi-clickable" [class.active]="activeView === 'series'" style="--kpi-color:#1565C0" (click)="activeView = 'series'">
+      <div class="kpi-icon-wrap">event_repeat</div>
+      <div class="mnt-kpi-body">
+        <div class="mnt-kpi-value">{{summary?.active_series ?? 0}}</div>
+        <div class="kpi-label mnt-num">Active Series · {{summary?.total_series ?? 0}} total</div>
+      </div>
+    </button>
 
     <div class="kpi-card mnt-kpi-card" style="--kpi-color:#D97706">
       <div class="kpi-icon-wrap">tune</div>
@@ -52,194 +52,35 @@
     </div>
   </div>
 
-  <!-- ── Single-Row Filter Toolbar ───────────────────────────────────────── -->
-  <div class="mnt-toolbar-card">
-    <div class="mnt-filter-row">
-      <div class="mnt-search-wrap">
-        <div class="search-bar">
-          <span class="search-icon">search</span>
-          <input #searchInput
-                 [ngModel]="searchTerm"
-                 (ngModelChange)="onSearchModelChange($event)"
-                 placeholder="Search system, subsystem, task, reference… ( / )"
-                 aria-label="Search planned tasks">
-          <button *ngIf="searchTerm" type="button" class="mnt-search-clear" (click)="clearSearch()" title="Clear search">
-            <span class="mat-i" style="font-size:16px">close</span>
-          </button>
-        </div>
-      </div>
+  <!-- ── Primary Workspace Switcher (Today's Agenda First vs Series Catalog) ─ -->
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+    <div class="ux-segmented-tabs" role="tablist" aria-label="Planned maintenance views">
+      <button type="button"
+              role="tab"
+              class="ux-seg-tab"
+              [class.active]="activeView === 'agenda'"
+              [attr.aria-selected]="activeView === 'agenda'"
+              (click)="activeView = 'agenda'">
+        <span class="mat-i">calendar_month</span>
+        <span>Today's Agenda &amp; Calendar</span>
+        <span class="ux-seg-count" *ngIf="(summary?.due_today_todo ?? 0) > 0">{{summary?.due_today_todo}} open</span>
+      </button>
 
-      <app-dropdown class="form-control mnt-filter-select" [(ngModel)]="systemFilter" (change)="applyFilters()" placeholder="All Systems">
-        <app-dropdown-option value="">All Systems</app-dropdown-option>
-        <app-dropdown-option *ngFor="let sys of systems" [value]="sys">{{sys}}</app-dropdown-option>
-      </app-dropdown>
-
-      <app-dropdown class="form-control mnt-filter-select" [(ngModel)]="repeatTypeFilter" (change)="applyFilters()" placeholder="All Frequencies">
-        <app-dropdown-option value="">All Frequencies</app-dropdown-option>
-        <app-dropdown-option value="DAY">Daily</app-dropdown-option>
-        <app-dropdown-option value="WEEK">Weekly</app-dropdown-option>
-        <app-dropdown-option value="MONTH">Monthly</app-dropdown-option>
-      </app-dropdown>
-
-      <app-dropdown class="form-control mnt-filter-select" [(ngModel)]="statusFilter" (change)="applyFilters()" placeholder="All Statuses">
-        <app-dropdown-option value="">All Statuses</app-dropdown-option>
-        <app-dropdown-option value="TODO">TODO</app-dropdown-option>
-        <app-dropdown-option value="DONE">DONE</app-dropdown-option>
-      </app-dropdown>
-
-      <button *ngIf="hasActiveFilters" type="button" class="btn btn-ghost btn-sm" (click)="resetFilters()">
-        <span class="btn-icon">filter_alt_off</span> Reset
+      <button type="button"
+              role="tab"
+              class="ux-seg-tab"
+              [class.active]="activeView === 'series'"
+              [attr.aria-selected]="activeView === 'series'"
+              (click)="activeView = 'series'">
+        <span class="mat-i">event_repeat</span>
+        <span>Recurring Schedules (Series)</span>
+        <span class="ux-seg-count">{{summary?.total_series ?? total}}</span>
       </button>
     </div>
   </div>
 
-  <!-- ── Compact Planned Series Table (5 Clean Columns) ──────────────────── -->
-  <div class="table-container mnt-table-wrap">
-    <table class="data-table mnt-table">
-      <thead>
-        <tr>
-          <th *ngIf="showTableField('task') || showTableField('system') || showTableField('subsystem')">
-            <button type="button" class="mnt-sort-btn" [class.active]="sortBy === 'task'" (click)="toggleSort('task')">
-              <span>{{fieldLabel('table','task','Planned Task')}}</span>
-              <span class="mat-i">{{sortIcon('task')}}</span>
-            </button>
-          </th>
-
-          <th *ngIf="showTableField('repeat_type') || showTableField('start_date')">
-            <button type="button" class="mnt-sort-btn" [class.active]="sortBy === 'operation_date_start'" (click)="toggleSort('operation_date_start')">
-              <span>Schedule</span>
-              <span class="mat-i">{{sortIcon('operation_date_start')}}</span>
-            </button>
-          </th>
-
-          <th *ngIf="showTableField('repeat_until')">
-            <button type="button" class="mnt-sort-btn" [class.active]="sortBy === 'recurrence_end_date'" (click)="toggleSort('recurrence_end_date')">
-              <span>{{fieldLabel('table','repeat_until','Repeat Until')}}</span>
-              <span class="mat-i">{{sortIcon('recurrence_end_date')}}</span>
-            </button>
-          </th>
-
-          <th *ngIf="showTableField('status')">
-            <button type="button" class="mnt-sort-btn" [class.active]="sortBy === 'status'" (click)="toggleSort('status')">
-              <span>{{fieldLabel('table','status','Status')}}</span>
-              <span class="mat-i">{{sortIcon('status')}}</span>
-            </button>
-          </th>
-
-          <th class="mnt-col-actions">Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr *ngFor="let t of tasks; let idx = index"
-            class="row-clickable"
-            (click)="openDetailModal(t)">
-          <td *ngIf="showTableField('task') || showTableField('system') || showTableField('subsystem')">
-            <div class="mnt-title-main" *ngIf="showTableField('task')">{{t.task}}</div>
-            <div class="mnt-subtext">
-              <span *ngIf="showTableField('system')">{{t.system}}</span>
-              <span *ngIf="showTableField('system') && showTableField('subsystem')"> &rsaquo; </span>
-              <span *ngIf="showTableField('subsystem')">{{t.subsystem}}</span>
-              <span *ngIf="t.reference"> · Ref {{t.reference}}</span>
-            </div>
-          </td>
-
-          <td *ngIf="showTableField('repeat_type') || showTableField('start_date')">
-            <span class="badge" [ngClass]="getRepeatBadgeClass(t.repeatTaskType)">
-              {{recurrenceLabel(t)}}
-            </span>
-            <div class="mnt-subtext" *ngIf="showTableField('start_date')">
-              Starts {{formatDate(t.operationDateStart)}}
-            </div>
-          </td>
-
-          <td class="text-sm mnt-num" *ngIf="showTableField('repeat_until')">
-            {{formatDate(t.recurrenceEndDate)}}
-          </td>
-
-          <td *ngIf="showTableField('status')">
-            <span class="badge" [ngClass]="getStatusBadgeClass(t.status)">{{t.status}}</span>
-            <div class="mnt-subtext" *ngIf="t.optional">Optional</div>
-          </td>
-
-          <td class="mnt-col-actions" (click)="$event.stopPropagation()">
-            <div class="mnt-row-actions">
-              <button type="button"
-                      class="btn btn-ghost btn-icon-only btn-sm"
-                      (click)="toggleStatus(t)"
-                      [title]="t.status === 'DONE' ? 'Mark TODO' : 'Mark DONE'">
-                <span class="btn-icon" [style.color]="t.status === 'DONE' ? 'var(--text-muted)' : '#16A34A'">
-                  {{t.status === 'DONE' ? 'undo' : 'check_circle'}}
-                </span>
-              </button>
-
-              <button type="button" class="btn btn-ghost btn-icon-only btn-sm" (click)="openModal(t)" title="Edit">
-                <span class="btn-icon">edit</span>
-              </button>
-
-              <div class="mnt-menu-wrap">
-                <button type="button"
-                        class="btn btn-ghost btn-icon-only btn-sm"
-                        [attr.aria-expanded]="openMenuTaskId === t.id"
-                        (click)="toggleRowMenu(t.id, $event)"
-                        title="More actions">
-                  <span class="btn-icon">more_vert</span>
-                </button>
-
-                <div class="mnt-row-menu"
-                     *ngIf="openMenuTaskId === t.id"
-                     [class.open-up]="tasks.length > 2 && idx >= tasks.length - 2"
-                     (click)="$event.stopPropagation()">
-                  <button type="button" class="mnt-menu-item" (click)="closeRowMenu(); openDetailModal(t)">
-                    <span class="mat-i text-muted">visibility</span>
-                    <span>View Details</span>
-                  </button>
-                  <div class="mnt-menu-divider"></div>
-                  <button type="button" class="mnt-menu-item danger" (click)="closeRowMenu(); deleteTask(t)">
-                    <span class="mat-i">delete</span>
-                    <span>Delete Series</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-
-    <div class="empty-state" *ngIf="!tasks.length && !loading">
-      <span class="empty-icon">event_note</span>
-      <h3>No planned maintenance tasks</h3>
-      <p *ngIf="hasActiveFilters">Try clearing one or more filters to view all recurring schedules.</p>
-      <button *ngIf="!hasActiveFilters" type="button" class="btn btn-primary" (click)="openModal()">New Planned Task</button>
-      <button *ngIf="hasActiveFilters" type="button" class="btn btn-secondary" (click)="resetFilters()">Reset Filters</button>
-    </div>
-
-    <div class="mnt-pagination-bar" *ngIf="total > 0">
-      <div class="table-page-size-control">
-        <span class="text-sm text-muted mnt-num">
-          Showing {{(page - 1) * pageSize + 1}}–{{Math.min(page * pageSize, total)}} of {{total}}
-        </span>
-        <app-dropdown class="form-control table-page-size-select"
-                      [(ngModel)]="pageSize"
-                      (change)="onPageSizeChange()"
-                      ariaLabel="Rows per page">
-          <app-dropdown-option *ngFor="let size of pageSizeOptions" [ngValue]="size">{{size}}</app-dropdown-option>
-        </app-dropdown>
-      </div>
-      <div class="flex items-center gap-2">
-        <button type="button" class="btn btn-secondary btn-sm" [disabled]="page <= 1" (click)="changePage(page - 1)">
-          <span class="btn-icon">chevron_left</span>
-        </button>
-        <span class="mnt-page-indicator">{{page}} / {{totalPages}}</span>
-        <button type="button" class="btn btn-secondary btn-sm" [disabled]="page >= totalPages" (click)="changePage(page + 1)">
-          <span class="btn-icon">chevron_right</span>
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ── Calendar & Daily Agenda Grid ────────────────────────────────────── -->
-  <div class="bottom-row">
+  <!-- ── VIEW 1 (DEFAULT): Calendar & Daily Agenda Grid Immediately Visible ─ -->
+  <div class="bottom-row" *ngIf="activeView === 'agenda'">
 
     <!-- Monthly Recurrence Calendar -->
     <div class="card">
@@ -326,7 +167,8 @@
         <div class="event-item" *ngFor="let t of dayTasks" (click)="openDetailModal(t, true)">
           <div class="event-color" [style.background]="getTypeColor(t.repeatTaskType)"></div>
 
-          <button type="button"
+          <button *ngIf="auth.canWrite"
+                  type="button"
                   class="btn btn-ghost btn-icon-only btn-sm"
                   (click)="$event.stopPropagation(); toggleStatus(t, true)"
                   [title]="t.status === 'DONE' ? 'Mark occurrence TODO' : 'Complete occurrence'">
@@ -345,14 +187,15 @@
 
           <span class="badge" [ngClass]="getStatusBadgeClass(t.status)">{{t.status}}</span>
 
-          <div class="mnt-row-actions" (click)="$event.stopPropagation()">
+          <div class="mnt-row-actions" *ngIf="auth.canWrite" (click)="$event.stopPropagation()">
             <button type="button"
                     class="btn btn-ghost btn-icon-only btn-sm"
                     (click)="openOccurrenceModal(t)"
                     title="Edit Occurrence">
               <span class="btn-icon">event_repeat</span>
             </button>
-            <button type="button"
+            <button *ngIf="auth.canManage"
+                    type="button"
                     class="btn btn-ghost btn-icon-only btn-sm"
                     (click)="deleteOccurrence(t)"
                     title="Delete Occurrence">
@@ -369,6 +212,196 @@
     </div>
 
   </div>
+
+  <!-- ── VIEW 2: Recurring Schedules Catalog & Filters ───────────────────── -->
+  <ng-container *ngIf="activeView === 'series'">
+    <div class="mnt-toolbar-card">
+      <div class="mnt-filter-row">
+        <div class="mnt-search-wrap">
+          <div class="search-bar">
+            <span class="search-icon">search</span>
+            <input #searchInput
+                   [ngModel]="searchTerm"
+                   (ngModelChange)="onSearchModelChange($event)"
+                   placeholder="Search system, subsystem, task, reference… ( / )"
+                   aria-label="Search planned tasks">
+            <button *ngIf="searchTerm" type="button" class="mnt-search-clear" (click)="clearSearch()" title="Clear search">
+              <span class="mat-i" style="font-size:16px">close</span>
+            </button>
+          </div>
+        </div>
+
+        <app-dropdown class="form-control mnt-filter-select" [(ngModel)]="systemFilter" (change)="applyFilters()" placeholder="All Systems">
+          <app-dropdown-option value="">All Systems</app-dropdown-option>
+          <app-dropdown-option *ngFor="let sys of systems" [value]="sys">{{sys}}</app-dropdown-option>
+        </app-dropdown>
+
+        <app-dropdown class="form-control mnt-filter-select" [(ngModel)]="repeatTypeFilter" (change)="applyFilters()" placeholder="All Frequencies">
+          <app-dropdown-option value="">All Frequencies</app-dropdown-option>
+          <app-dropdown-option value="DAY">Daily</app-dropdown-option>
+          <app-dropdown-option value="WEEK">Weekly</app-dropdown-option>
+          <app-dropdown-option value="MONTH">Monthly</app-dropdown-option>
+        </app-dropdown>
+
+        <app-dropdown class="form-control mnt-filter-select" [(ngModel)]="statusFilter" (change)="applyFilters()" placeholder="All Statuses">
+          <app-dropdown-option value="">All Statuses</app-dropdown-option>
+          <app-dropdown-option value="TODO">TODO</app-dropdown-option>
+          <app-dropdown-option value="DONE">DONE</app-dropdown-option>
+        </app-dropdown>
+
+        <button *ngIf="hasActiveFilters" type="button" class="btn btn-ghost btn-sm" (click)="resetFilters()">
+          <span class="btn-icon">filter_alt_off</span> Reset
+        </button>
+      </div>
+    </div>
+
+    <div class="table-container mnt-table-wrap">
+      <table class="data-table mnt-table">
+        <thead>
+          <tr>
+            <th *ngIf="showTableField('task') || showTableField('system') || showTableField('subsystem')">
+              <button type="button" class="mnt-sort-btn" [class.active]="sortBy === 'task'" (click)="toggleSort('task')">
+                <span>{{fieldLabel('table','task','Planned Task')}}</span>
+                <span class="mat-i">{{sortIcon('task')}}</span>
+              </button>
+            </th>
+
+            <th *ngIf="showTableField('repeat_type') || showTableField('start_date')">
+              <button type="button" class="mnt-sort-btn" [class.active]="sortBy === 'operation_date_start'" (click)="toggleSort('operation_date_start')">
+                <span>Schedule</span>
+                <span class="mat-i">{{sortIcon('operation_date_start')}}</span>
+              </button>
+            </th>
+
+            <th *ngIf="showTableField('repeat_until')">
+              <button type="button" class="mnt-sort-btn" [class.active]="sortBy === 'recurrence_end_date'" (click)="toggleSort('recurrence_end_date')">
+                <span>{{fieldLabel('table','repeat_until','Repeat Until')}}</span>
+                <span class="mat-i">{{sortIcon('recurrence_end_date')}}</span>
+              </button>
+            </th>
+
+            <th *ngIf="showTableField('status')">
+              <button type="button" class="mnt-sort-btn" [class.active]="sortBy === 'status'" (click)="toggleSort('status')">
+                <span>{{fieldLabel('table','status','Status')}}</span>
+                <span class="mat-i">{{sortIcon('status')}}</span>
+              </button>
+            </th>
+
+            <th class="mnt-col-actions">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let t of tasks; let idx = index"
+              class="row-clickable"
+              (click)="openDetailModal(t)">
+            <td *ngIf="showTableField('task') || showTableField('system') || showTableField('subsystem')">
+              <div class="mnt-title-main" *ngIf="showTableField('task')">{{t.task}}</div>
+              <div class="mnt-subtext">
+                <span *ngIf="showTableField('system')">{{t.system}}</span>
+                <span *ngIf="showTableField('system') && showTableField('subsystem')"> &rsaquo; </span>
+                <span *ngIf="showTableField('subsystem')">{{t.subsystem}}</span>
+                <span *ngIf="t.reference"> · Ref {{t.reference}}</span>
+              </div>
+            </td>
+
+            <td *ngIf="showTableField('repeat_type') || showTableField('start_date')">
+              <span class="badge" [ngClass]="getRepeatBadgeClass(t.repeatTaskType)">
+                {{recurrenceLabel(t)}}
+              </span>
+              <div class="mnt-subtext" *ngIf="showTableField('start_date')">
+                Starts {{formatDate(t.operationDateStart)}}
+              </div>
+            </td>
+
+            <td class="text-sm mnt-num" *ngIf="showTableField('repeat_until')">
+              {{formatDate(t.recurrenceEndDate)}}
+            </td>
+
+            <td *ngIf="showTableField('status')">
+              <span class="badge" [ngClass]="getStatusBadgeClass(t.status)">{{t.status}}</span>
+              <div class="mnt-subtext" *ngIf="t.optional">Optional</div>
+            </td>
+
+            <td class="mnt-col-actions" (click)="$event.stopPropagation()">
+              <div class="mnt-row-actions">
+                <button *ngIf="auth.canWrite"
+                        type="button"
+                        class="btn btn-ghost btn-icon-only btn-sm"
+                        (click)="toggleStatus(t)"
+                        [title]="t.status === 'DONE' ? 'Mark TODO' : 'Mark DONE'">
+                  <span class="btn-icon" [style.color]="t.status === 'DONE' ? 'var(--text-muted)' : '#16A34A'">
+                    {{t.status === 'DONE' ? 'undo' : 'check_circle'}}
+                  </span>
+                </button>
+
+                <button *ngIf="auth.canWrite" type="button" class="btn btn-ghost btn-icon-only btn-sm" (click)="openModal(t)" title="Edit">
+                  <span class="btn-icon">edit</span>
+                </button>
+
+                <div class="mnt-menu-wrap">
+                  <button type="button"
+                          class="btn btn-ghost btn-icon-only btn-sm"
+                          [attr.aria-expanded]="openMenuTaskId === t.id"
+                          (click)="toggleRowMenu(t.id, $event)"
+                          title="More actions">
+                    <span class="btn-icon">more_vert</span>
+                  </button>
+
+                  <div class="mnt-row-menu"
+                       *ngIf="openMenuTaskId === t.id"
+                       [class.open-up]="tasks.length > 2 && idx >= tasks.length - 2"
+                       (click)="$event.stopPropagation()">
+                    <button type="button" class="mnt-menu-item" (click)="closeRowMenu(); openDetailModal(t)">
+                      <span class="mat-i text-muted">visibility</span>
+                      <span>View Details</span>
+                    </button>
+                    <ng-container *ngIf="auth.canManage">
+                      <div class="mnt-menu-divider"></div>
+                      <button type="button" class="mnt-menu-item danger" (click)="closeRowMenu(); deleteTask(t)">
+                        <span class="mat-i">delete</span>
+                        <span>Delete Series</span>
+                      </button>
+                    </ng-container>
+                  </div>
+                </div>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="empty-state" *ngIf="!tasks.length && !loading">
+        <span class="empty-icon">event_note</span>
+        <h3>No planned maintenance tasks</h3>
+        <p *ngIf="hasActiveFilters">Try clearing one or more filters to view all recurring schedules.</p>
+        <button *ngIf="!hasActiveFilters && auth.canWrite" type="button" class="btn btn-primary" (click)="openModal()">New Planned Task</button>
+        <button *ngIf="hasActiveFilters" type="button" class="btn btn-secondary" (click)="resetFilters()">Reset Filters</button>
+      </div>
+
+      <div class="mnt-pagination-bar" *ngIf="total > 0">
+        <div class="table-page-size-control">
+          <span class="text-sm text-muted mnt-num">
+            Showing {{(page - 1) * pageSize + 1}}–{{Math.min(page * pageSize, total)}} of {{total}}
+          </span>
+          <app-dropdown class="form-control table-page-size-select"
+                        [(ngModel)]="pageSize"
+                        (change)="onPageSizeChange()"
+                        ariaLabel="Rows per page">
+            <app-dropdown-option *ngFor="let size of pageSizeOptions" [ngValue]="size">{{size}}</app-dropdown-option>
+          </app-dropdown>
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="button" class="btn btn-secondary btn-sm" [disabled]="page <= 1" (click)="changePage(page - 1)">
+            <span class="btn-icon">chevron_left</span>
+          </button>
+          <span class="mnt-page-indicator">{{page}} / {{totalPages}}</span>
+          <button type="button" class="btn btn-secondary btn-sm" [disabled]="page >= totalPages" (click)="changePage(page + 1)">
+            <span class="btn-icon">chevron_right</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </ng-container>
 </div>
 
 <!-- ── Create / Edit Planned Task Modal ────────────────────────────────────── -->

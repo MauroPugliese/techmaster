@@ -13,11 +13,11 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Subject, of } from 'rxjs';
-import { catchError, takeUntil, switchMap } from 'rxjs/operators';
+import { catchError, debounceTime, takeUntil, switchMap } from 'rxjs/operators';
 import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
 
 import {
-  ApiService, AuthService, ConfirmService, DateFilterService,
+  ApiService, AuthService, ConfirmService, DateFilterService, SocketService,
   ToastService, UiCustomizationService, UiSectionPreferences
 } from '../../core/services/services';
 import {
@@ -149,6 +149,8 @@ export class TasksComponent implements OnInit, OnDestroy {
   laneEstHoursMap: Record<string, number> = {};
   exportParams: Record<string, any> = {};
   activeFilterCount = 0;
+  advancedFilterCount = 0;
+  showAdvancedFilters = false;
 
   readonly sortOptions: Array<{ k: SortKey; l: string }> = [
     { k: 'due',      l: 'Due' },
@@ -159,8 +161,9 @@ export class TasksComponent implements OnInit, OnDestroy {
 
   constructor(
     private api: ApiService,
-    private auth: AuthService,
+    public auth: AuthService,
     private dateFilter: DateFilterService,
+    private socketService: SocketService,
     private uiCustomization: UiCustomizationService,
     private cdr: ChangeDetectorRef,
     private toast: ToastService,
@@ -253,6 +256,12 @@ export class TasksComponent implements OnInit, OnDestroy {
     if (this.searchTerm.trim()) n++;
     this.activeFilterCount = n;
 
+    let adv = 0;
+    if (this.activeInterval) adv++;
+    if (this.assigneeFilter !== '' && !this.isMyTasksActive) adv++;
+    if (this.simulatorFilter !== '') adv++;
+    this.advancedFilterCount = adv;
+
     this.exportParams = {
       status: this.statusFilter,
       priority: this.priorityFilter,
@@ -295,6 +304,14 @@ export class TasksComponent implements OnInit, OnDestroy {
       },
       error: () => { /* ignore if simulators inaccessible */ }
     });
+
+    this.socketService.domainUpdates$
+      .pipe(debounceTime(450), takeUntil(this.destroy$))
+      .subscribe(evt => {
+        if (!evt?.domain || evt.domain === 'tasks') {
+          this.loadTasks();
+        }
+      });
 
     this.dateFilter.range$.pipe(
       takeUntil(this.destroy$),
@@ -822,13 +839,14 @@ export class TasksComponent implements OnInit, OnDestroy {
   @HostListener('document:keydown', ['$event'])
   onGlobalKeydown(event: KeyboardEvent): void {
     if (this.drawerOpen || this.quickAddStatus || event.ctrlKey || event.metaKey || event.altKey) return;
-    const tag = (document.activeElement?.tagName || '').toUpperCase();
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    const activeEl = document.activeElement as HTMLElement | null;
+    const tag = (activeEl?.tagName || '').toUpperCase();
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || activeEl?.isContentEditable) return;
 
     if (event.key === '/') {
       event.preventDefault();
       this.searchInputRef?.nativeElement.focus();
-    } else if (event.key === 'n' || event.key === 'N') {
+    } else if ((event.key === 'n' || event.key === 'N') && this.auth.canWrite) {
       event.preventDefault();
       this.openDrawerForCreate();
     }

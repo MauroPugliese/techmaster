@@ -31,8 +31,9 @@ router.get('/', async (req, res, next) => {
       });
     }
 
-    const hiddenSections = await getHiddenSectionKeysForUser(req.user).catch(() => new Set());
+    const hiddenSections = await getHiddenSectionKeysForUser(req.user);
     const canSee = (key) => !hiddenSections.has(key);
+    const isViewer = req.user?.role?.name === 'viewer';
 
     const pattern = `%${escapeLikePattern(query)}%`;
     const limit = 5;
@@ -44,10 +45,13 @@ router.get('/', async (req, res, next) => {
             { code: { [Op.like]: pattern } },
             { name: { [Op.like]: pattern } },
             { bay_code: { [Op.like]: pattern } },
-            { aircraft_type: { [Op.like]: pattern } }
+            { aircraft_type: { [Op.like]: pattern } },
+            { serial_number: { [Op.like]: pattern } },
+            { certificate_code: { [Op.like]: pattern } },
+            { scheduling_mode: { [Op.like]: pattern } }
           ]
         },
-        attributes: ['id', 'code', 'name', 'bay_code', 'aircraft_type', 'qualification_level', 'status'],
+        attributes: ['id', 'code', 'name', 'bay_code', 'aircraft_type', 'qualification_level', 'scheduling_mode', 'status'],
         order: [['bay_code', 'ASC']],
         limit
       }) : Promise.resolve([]),
@@ -57,11 +61,16 @@ router.get('/', async (req, res, next) => {
             { title: { [Op.like]: pattern } },
             { sortie_code: { [Op.like]: pattern } },
             { customer_operator: { [Op.like]: pattern } },
+            { mission_name: { [Op.like]: pattern } },
+            { instructor_name: { [Op.like]: pattern } },
+            { pilot_name: { [Op.like]: pattern } },
+            { copilot_name: { [Op.like]: pattern } },
+            { scenario_code: { [Op.like]: pattern } },
             { location: { [Op.like]: pattern } },
             { description: { [Op.like]: pattern } }
           ]
         },
-        attributes: ['id', 'sortie_code', 'title', 'customer_operator', 'status', 'priority', 'location'],
+        attributes: ['id', 'sortie_code', 'title', 'customer_operator', 'mission_name', 'instructor_name', 'pilot_name', 'copilot_name', 'scenario_code', 'status', 'priority', 'location'],
         order: [['updated_at', 'DESC']],
         limit
       }) : Promise.resolve([]),
@@ -75,8 +84,11 @@ router.get('/', async (req, res, next) => {
             { new_serial_number: { [Op.like]: pattern } }
           ]
         },
-        include: [{ model: Asset, as: 'asset', attributes: ['id', 'name'], required: false }],
-        attributes: ['id', 'title', 'status', 'priority', 'type'],
+        include: [
+          { model: Asset, as: 'asset', attributes: ['id', 'name'], required: false },
+          { model: Simulator, as: 'simulator', attributes: ['id', 'bay_code', 'code'], required: false }
+        ],
+        attributes: ['id', 'title', 'status', 'priority', 'type', 'part_number', 'broken_serial_number', 'new_serial_number'],
         order: [['updated_at', 'DESC']],
         limit
       }) : Promise.resolve([]),
@@ -98,10 +110,12 @@ router.get('/', async (req, res, next) => {
           [Op.or]: [
             { name: { [Op.like]: pattern } },
             { sku: { [Op.like]: pattern } },
-            { part_number: { [Op.like]: pattern } }
+            { part_number: { [Op.like]: pattern } },
+            { serial_number: { [Op.like]: pattern } },
+            { rma_reference: { [Op.like]: pattern } }
           ]
         },
-        attributes: ['id', 'name', 'sku', 'part_number', 'quantity', 'unit', 'reorder_point'],
+        attributes: ['id', 'name', 'sku', 'part_number', 'serial_number', 'quantity', 'unit', 'reorder_point'],
         order: [['updated_at', 'DESC']],
         limit
       }) : Promise.resolve([]),
@@ -118,6 +132,7 @@ router.get('/', async (req, res, next) => {
       }) : Promise.resolve([]),
       canSee('wiki') ? WikiArticle.findAll({
         where: {
+          ...(isViewer ? { status: 'PUBLISHED' } : {}),
           [Op.or]: [
             { title: { [Op.like]: pattern } },
             { slug: { [Op.like]: pattern } },
@@ -159,26 +174,29 @@ router.get('/nav-badges', async (req, res, next) => {
       ? rawDate
       : new Date().toISOString().slice(0, 10);
 
+    const hiddenSections = await getHiddenSectionKeysForUser(req.user);
+    const canSee = (key) => !hiddenSections.has(key);
+
     const [simulators, operations, maintenance, plannedTodayTasks, warehouse, tasks, notifications] = await Promise.all([
-      Simulator.count({
+      canSee('simulators') ? Simulator.count({
         where: { status: { [Op.in]: ['AOG', 'DEGRADED'] } }
-      }),
-      Operation.count({
+      }) : Promise.resolve(0),
+      canSee('operations') ? Operation.count({
         where: { status: { [Op.in]: ['PLANNED', 'IN_PROGRESS'] } }
-      }),
-      MaintenanceRecord.count({
+      }) : Promise.resolve(0),
+      canSee('maintenance') ? MaintenanceRecord.count({
         where: { status: { [Op.in]: ['SCHEDULED', 'IN_PROGRESS'] } }
-      }),
-      getTasksForDate(todayStr).catch(() => []),
-      InventoryItem.count({
+      }) : Promise.resolve(0),
+      canSee('maintenance') ? getTasksForDate(todayStr).catch(() => []) : Promise.resolve([]),
+      canSee('warehouse') ? InventoryItem.count({
         where: {
           is_active: true,
-          [Op.and]: [where(col('quantity'), '<=', fn('COALESCE', col('reorder_point'), 0))]
+          [Op.and]: [where(col('quantity'), '<=', fn('GREATEST', fn('COALESCE', col('reorder_point'), 0), fn('COALESCE', col('min_stock'), 0)))]
         }
-      }),
-      Task.count({
+      }) : Promise.resolve(0),
+      canSee('tasks') ? Task.count({
         where: { status: { [Op.in]: ['TODO', 'IN_PROGRESS', 'REVIEW', 'OVERDUE'] } }
-      }),
+      }) : Promise.resolve(0),
       Notification.count({
         where: { user_id: req.user.id, is_read: false }
       })

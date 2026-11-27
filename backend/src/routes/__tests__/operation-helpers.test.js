@@ -64,6 +64,22 @@ test('sanitizeOperationPayload validates dates, enums, and auto-sets actual_end_
   assert.equal(valid.data.priority, 'CRITICAL');
   assert.ok(valid.data.actual_end_date instanceof Date);
 
+  const withExternalCrew = sanitizeOperationPayload({
+    title: 'LOFT Session',
+    type_id: 1,
+    start_date: '2026-11-23T08:00:00Z',
+    end_date: '2026-11-23T12:00:00Z',
+    mission_name: '  LOFT-04 CAT IIIB ',
+    instructor_name: ' Capt. Rossi ',
+    pilot_name: ' FO Bianchi ',
+    copilot_name: '   '
+  }, { isCreate: true });
+  assert.equal(withExternalCrew.error, undefined);
+  assert.equal(withExternalCrew.data.mission_name, 'LOFT-04 CAT IIIB');
+  assert.equal(withExternalCrew.data.instructor_name, 'Capt. Rossi');
+  assert.equal(withExternalCrew.data.pilot_name, 'FO Bianchi');
+  assert.equal(withExternalCrew.data.copilot_name, null);
+
   const invertedDates = sanitizeOperationPayload({
     title: 'Bad Window',
     type_id: 1,

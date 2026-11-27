@@ -770,9 +770,121 @@ const MIGRATIONS = [
       await addIndexIfMissing('operations', 'idx_ops_status_start', ['status', 'start_date']);
 
       await addIndexIfMissing('simulators', 'idx_sim_kind_status', ['station_kind', 'status']);
-      await addIndexIfMissing('refresh_tokens', 'idx_rt_user_revoked', ['user_id', 'revoked', 'expires_at']);
+      await addIndexIfMissing('refresh_tokens', 'idx_rt_user_revoked', ['user_id', 'is_revoked', 'expires_at']);
       await addIndexIfMissing('shifts', 'idx_shifts_date_del', ['date', 'deleted_at']);
       await addIndexIfMissing('tasks', 'idx_tasks_status_due', ['status', 'due_date']);
+    }
+  },
+  {
+    name: '010_simulator_scheduling_mode_and_crew',
+    description: 'Add binary scheduling_mode (SORTIES|SHIFTS) and schedule_config on simulators, plus optional mission/instructor/pilot/weather/scenario fields on operations and simulator_shift_entries',
+    up: async (queryInterface) => {
+      const addIfMissing = async (table, col, def) => {
+        const cols = await queryInterface.describeTable(table).catch(() => ({}));
+        if (!cols[col]) {
+          await queryInterface.addColumn(table, col, def);
+        }
+      };
+
+      const addIndexIfMissing = async (table, name, fields) => {
+        const existing = await queryInterface.showIndex(table).catch(() => []);
+        if (existing.some(idx => idx.name === name)) return;
+        await queryInterface.addIndex(table, fields, { name }).catch((err) => {
+          logger.warn(`Skipping index ${name} on ${table}: ${err.message}`);
+        });
+      };
+
+      // 1. simulators: binary scheduling mode (SORTIES vs SHIFTS) & per-simulator hours/presets config
+      const simCols = await queryInterface.describeTable('simulators').catch(() => ({}));
+      const hadSchedMode = Boolean(simCols && simCols.scheduling_mode);
+      if (!hadSchedMode) {
+        await queryInterface.addColumn('simulators', 'scheduling_mode', {
+          type: Sequelize.ENUM('SORTIES', 'SHIFTS'),
+          allowNull: false,
+          defaultValue: 'SORTIES'
+        });
+        await sequelize.query(
+          `UPDATE simulators SET scheduling_mode = 'SHIFTS' WHERE station_kind IN ('TEST_PLACE', 'IOS_CONSOLE');`
+        ).catch(() => {});
+        await sequelize.query(
+          `UPDATE simulators SET scheduling_mode = 'SORTIES' WHERE station_kind = 'FFS_BAY' OR station_kind IS NULL;`
+        ).catch(() => {});
+      }
+      await addIfMissing('simulators', 'schedule_config', { type: Sequelize.JSON, allowNull: true });
+      await addIndexIfMissing('simulators', 'idx_sim_sched_kind', ['scheduling_mode', 'station_kind']);
+
+      // 2. operations (sorties): optional external instructor, pilots & mission name
+      await addIfMissing('operations', 'mission_name', { type: Sequelize.STRING(160), allowNull: true });
+      await addIfMissing('operations', 'instructor_name', { type: Sequelize.STRING(120), allowNull: true });
+      await addIfMissing('operations', 'pilot_name', { type: Sequelize.STRING(120), allowNull: true });
+      await addIfMissing('operations', 'copilot_name', { type: Sequelize.STRING(120), allowNull: true });
+
+      // 3. simulator_shift_entries: optional mission, external instructor, pilots, weather & scenario
+      await addIfMissing('simulator_shift_entries', 'mission_name', { type: Sequelize.STRING(160), allowNull: true });
+      await addIfMissing('simulator_shift_entries', 'instructor_name', { type: Sequelize.STRING(120), allowNull: true });
+      await addIfMissing('simulator_shift_entries', 'pilot_name', { type: Sequelize.STRING(120), allowNull: true });
+      await addIfMissing('simulator_shift_entries', 'copilot_name', { type: Sequelize.STRING(120), allowNull: true });
+      await addIfMissing('simulator_shift_entries', 'weather_profile', { type: Sequelize.STRING(80), allowNull: true });
+      await addIfMissing('simulator_shift_entries', 'scenario_code', { type: Sequelize.STRING(120), allowNull: true });
+    }
+  },
+  {
+    name: '011_repair_missing_indexes_and_fks',
+    description: 'Ensure all 12 migration-009 indexes exist (incl. fixed refresh_tokens.is_revoked index) and add ON DELETE SET NULL FKs for simulator references',
+    up: async (queryInterface) => {
+      const addIndexIfMissing = async (table, name, fields) => {
+        const existing = await queryInterface.showIndex(table).catch(() => []);
+        if (existing.some(idx => idx.name === name)) return;
+        await queryInterface.addIndex(table, fields, { name }).catch((err) => {
+          logger.warn(`Skipping index ${name} on ${table}: ${err.message}`);
+        });
+      };
+
+      const addFkIfMissing = async (table, constraintName, column, refTable, refCol = 'id', onDelete = 'SET NULL') => {
+        const [rows] = await sequelize.query(
+          `SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND CONSTRAINT_NAME = ?`,
+          { replacements: [table, constraintName] }
+        ).catch(() => [[]]);
+        if (Array.isArray(rows) && rows.length > 0) return;
+
+        // Clean any dangling orphan IDs before adding FK
+        await sequelize.query(
+          `UPDATE \`${table}\` t LEFT JOIN \`${refTable}\` r ON t.\`${column}\` = r.\`${refCol}\`
+           SET t.\`${column}\` = NULL
+           WHERE t.\`${column}\` IS NOT NULL AND r.\`${refCol}\` IS NULL;`
+        ).catch(() => {});
+
+        await sequelize.query(
+          `ALTER TABLE \`${table}\` ADD CONSTRAINT \`${constraintName}\`
+           FOREIGN KEY (\`${column}\`) REFERENCES \`${refTable}\`(\`${refCol}\`) ON DELETE ${onDelete};`
+        ).catch((err) => {
+          logger.warn(`Skipping FK ${constraintName} on ${table}.${column}: ${err.message}`);
+        });
+      };
+
+      // 1. Ensure all 12 missing/fixed indexes from 009 exist on fresh & upgraded DBs
+      await addIndexIfMissing('audit_logs', 'idx_audit_created', ['created_at']);
+      await addIndexIfMissing('audit_logs', 'idx_audit_status_created', ['status', 'created_at']);
+      await addIndexIfMissing('audit_logs', 'idx_audit_method_created', ['method', 'created_at']);
+      await addIndexIfMissing('audit_logs', 'idx_audit_user_created', ['user_id', 'created_at']);
+
+      await addIndexIfMissing('inventory_items', 'idx_inv_active_del', ['is_active', 'deleted_at']);
+      await addIndexIfMissing('inventory_items', 'idx_inv_part_number', ['part_number']);
+      await addIndexIfMissing('inventory_items', 'idx_inv_cat_loc', ['category_id', 'location_id']);
+
+      await addIndexIfMissing('stock_movements', 'idx_sm_item_date', ['item_id', 'movement_date']);
+      await addIndexIfMissing('stock_movements', 'idx_sm_type_date', ['type', 'movement_date']);
+
+      await addIndexIfMissing('refresh_tokens', 'idx_rt_user_revoked', ['user_id', 'is_revoked', 'expires_at']);
+      await addIndexIfMissing('shifts', 'idx_shifts_date_del', ['date', 'deleted_at']);
+      await addIndexIfMissing('tasks', 'idx_tasks_status_due', ['status', 'due_date']);
+
+      // 2. Add missing ON DELETE SET NULL foreign keys to prevent dangling simulator orphans
+      await addFkIfMissing('planned_maintenance_tasks', 'fk_pmt_simulator', 'simulator_id', 'simulators');
+      await addFkIfMissing('inventory_items', 'fk_inv_installed_sim', 'installed_simulator_id', 'simulators');
+      await addFkIfMissing('stock_movements', 'fk_sm_simulator', 'simulator_id', 'simulators');
+      await addFkIfMissing('tasks', 'fk_tasks_simulator', 'simulator_id', 'simulators');
     }
   }
 ];

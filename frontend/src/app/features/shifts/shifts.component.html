@@ -8,33 +8,45 @@
     </div>
 
     <div class="sh-head-actions">
-      <button type="button" class="btn btn-secondary btn-sm" (click)="showHandoverModal = true" title="Open engineering shift handover log">
-        <span class="btn-icon">assignment_turned_in</span> Handover Log
-      </button>
-
-      <button type="button" class="btn btn-secondary btn-sm" (click)="openCopyWeekModal()" title="Copy previous week roster">
-        <span class="btn-icon">content_copy</span> Copy Week
-      </button>
-
-      <button *ngIf="canManageShiftTypes"
-              type="button"
-              class="btn btn-secondary btn-sm"
-              (click)="showShiftTypesModal = true"
-              title="Manage shift and leave types">
-        <span class="btn-icon">tune</span> Shift Types
-      </button>
-
       <app-export-menu endpoint="shifts"
                        filename="Shifts"
                        [includeDateRange]="false"
                        [params]="exportParams">
       </app-export-menu>
 
-      <button type="button" class="btn btn-secondary btn-sm" (click)="openModal(undefined, undefined, 'LEAVE')">
-        <span class="btn-icon">beach_access</span> Log Leave
-      </button>
+      <div class="ux-more-wrap">
+        <button type="button"
+                class="btn btn-secondary btn-sm"
+                [attr.aria-expanded]="showMoreMenu"
+                (click)="toggleMoreMenu($event)"
+                title="Roster tools &amp; secondary actions">
+          <span class="btn-icon">more_horiz</span> More
+        </button>
 
-      <button type="button" class="btn btn-primary" (click)="openModal()">
+        <div class="ux-more-menu" *ngIf="showMoreMenu" (click)="$event.stopPropagation()">
+          <button *ngIf="auth.canManage" type="button" class="ux-more-item" (click)="showMoreMenu = false; openModal(undefined, undefined, 'LEAVE')">
+            <span class="mat-i">beach_access</span>
+            <span>Log Leave / Time Off</span>
+          </button>
+          <button type="button" class="ux-more-item" (click)="showMoreMenu = false; showHandoverModal = true">
+            <span class="mat-i">assignment_turned_in</span>
+            <span>Shift Handover Log</span>
+          </button>
+          <button *ngIf="auth.canManage" type="button" class="ux-more-item" (click)="showMoreMenu = false; openCopyWeekModal()">
+            <span class="mat-i">content_copy</span>
+            <span>Copy Previous Week</span>
+          </button>
+          <ng-container *ngIf="canManageShiftTypes">
+            <div class="ux-more-divider"></div>
+            <button type="button" class="ux-more-item" (click)="showMoreMenu = false; showShiftTypesModal = true">
+              <span class="mat-i">tune</span>
+              <span>Manage Shift Types</span>
+            </button>
+          </ng-container>
+        </div>
+      </div>
+
+      <button *ngIf="auth.canManage" type="button" class="btn btn-primary" (click)="openModal()">
         <span class="btn-icon">add</span> Schedule Shift
       </button>
     </div>
@@ -124,6 +136,40 @@
         <app-dropdown-option *ngFor="let dept of departments" [value]="dept">{{dept}}</app-dropdown-option>
       </app-dropdown>
 
+      <button type="button"
+              class="ux-filter-toggle"
+              [class.active]="showAdvancedFilters"
+              [class.has-active]="advancedFilterCount > 0"
+              [attr.aria-expanded]="showAdvancedFilters"
+              (click)="showAdvancedFilters = !showAdvancedFilters">
+        <span class="mat-i">tune</span>
+        <span>Filters</span>
+        <span class="ux-count-pill" *ngIf="advancedFilterCount > 0">{{advancedFilterCount}}</span>
+      </button>
+
+      <button *ngIf="hasActiveFilters" type="button" class="btn btn-ghost btn-sm" (click)="clearFilters()">
+        <span class="btn-icon">filter_alt_off</span> Clear
+      </button>
+
+      <div class="view-toggle" role="group" aria-label="Roster view mode">
+        <button type="button"
+                class="view-toggle-btn"
+                [class.active]="viewMode === 'grid'"
+                (click)="viewMode = 'grid'">
+          <span class="btn-icon">calendar_view_week</span> Grid
+        </button>
+        <button type="button"
+                class="view-toggle-btn"
+                [class.active]="viewMode === 'list'"
+                (click)="viewMode = 'list'">
+          <span class="btn-icon">view_list</span> List
+        </button>
+      </div>
+    </div>
+
+    <div class="ux-advanced-drawer" *ngIf="showAdvancedFilters">
+      <span class="ux-drawer-label">More Filters</span>
+
       <app-dropdown class="form-control filter-dropdown"
                     [(ngModel)]="selectedEntryKind"
                     (ngModelChange)="onFilterChanged()"
@@ -147,25 +193,6 @@
         <app-dropdown-option value="ABSENT">Absent</app-dropdown-option>
         <app-dropdown-option value="SWAPPED">Swapped</app-dropdown-option>
       </app-dropdown>
-
-      <button *ngIf="hasActiveFilters" type="button" class="btn btn-ghost btn-sm" (click)="clearFilters()">
-        <span class="btn-icon">filter_alt_off</span> Clear
-      </button>
-
-      <div class="view-toggle" role="group" aria-label="Roster view mode">
-        <button type="button"
-                class="view-toggle-btn"
-                [class.active]="viewMode === 'grid'"
-                (click)="viewMode = 'grid'">
-          <span class="btn-icon">calendar_view_week</span> Grid
-        </button>
-        <button type="button"
-                class="view-toggle-btn"
-                [class.active]="viewMode === 'list'"
-                (click)="viewMode = 'list'">
-          <span class="btn-icon">view_list</span> List
-        </button>
-      </div>
     </div>
   </div>
 
@@ -272,7 +299,7 @@
           </thead>
 
           <tbody>
-            <tr *ngFor="let emp of pagedEmployees">
+            <tr *ngFor="let emp of pagedEmployees; trackBy: trackByEmpId">
               <td class="sticky-emp-col emp-cell" *ngIf="showTableField('employee')">
                 <div class="emp-cell-inner">
                   <div class="emp-avatar">{{getInitials(emp)}}</div>
@@ -332,7 +359,8 @@
                 </ng-container>
 
                 <ng-template #emptyCell>
-                  <button type="button"
+                  <button *ngIf="auth.canManage"
+                          type="button"
                           class="shift-add-btn"
                           (click)="openModal(emp.id, day)"
                           title="Schedule shift or leave for {{emp.first_name}} {{emp.last_name}}">
@@ -437,7 +465,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr *ngFor="let s of pagedShiftsList"
+          <tr *ngFor="let s of pagedShiftsList; trackBy: trackByShiftId"
               class="row-clickable"
               (click)="openDetailModal(s)">
             <td class="text-sm font-bold sh-num">{{s.date | date:'EEE, MMM d'}}</td>
@@ -479,7 +507,7 @@
             </td>
             <td (click)="$event.stopPropagation()">
               <div class="flex gap-1">
-                <button *ngIf="canCheckIn(s)"
+                <button *ngIf="canCheckIn(s) && (auth.canManage || (auth.canWrite && s.user_id === auth.currentUser?.id))"
                         type="button"
                         class="btn btn-ghost btn-icon-only btn-sm"
                         [disabled]="checkingId === s.id"
@@ -487,7 +515,7 @@
                         title="Check In">
                   <span class="btn-icon sh-action-icon sh-icon-in">login</span>
                 </button>
-                <button *ngIf="canCheckOut(s)"
+                <button *ngIf="canCheckOut(s) && (auth.canManage || (auth.canWrite && s.user_id === auth.currentUser?.id))"
                         type="button"
                         class="btn btn-ghost btn-icon-only btn-sm"
                         [disabled]="checkingId === s.id"
@@ -495,13 +523,15 @@
                         title="Check Out">
                   <span class="btn-icon sh-action-icon sh-icon-out">logout</span>
                 </button>
-                <button type="button"
+                <button *ngIf="auth.canManage"
+                        type="button"
                         class="btn btn-ghost btn-icon-only btn-sm"
                         (click)="editShift(s)"
                         title="Edit">
                   <span class="btn-icon sh-action-icon">edit</span>
                 </button>
-                <button type="button"
+                <button *ngIf="auth.canManage"
+                        type="button"
                         class="btn btn-ghost btn-icon-only btn-sm"
                         (click)="deleteShiftRecord(s)"
                         title="Delete">

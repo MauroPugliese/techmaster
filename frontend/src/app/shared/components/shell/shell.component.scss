@@ -32,10 +32,20 @@
   }
 }
 
-/* ── Sidebar Nav Badge Tooltips ──────────────────────────────────────────── */
+/* ── Sidebar Nav Badge Tooltips & Signal Hierarchy ───────────────────────── */
 .nav-item .nav-badge.nav-badge-warn {
   background: #F59E0B;
   color: #0A1628;
+}
+
+.nav-item .nav-badge.nav-badge-danger {
+  background: #EF4444;
+  color: #FFFFFF;
+}
+
+.nav-item .nav-badge.nav-badge-subtle {
+  background: rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .nav-badge[data-tooltip] {
@@ -185,8 +195,68 @@
 .header-date-controls {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   flex-shrink: 0;
+}
+
+.date-filter-bar {
+  height: 36px;
+  border-radius: var(--radius-md);
+
+  &.has-filter {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #ffffff;
+
+    &:hover {
+      background: var(--primary-hover);
+      border-color: var(--primary-hover);
+    }
+  }
+}
+
+.date-clear-btn {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+
+  .btn-icon {
+    font-size: 16px;
+  }
+}
+
+.date-modal-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.date-modal-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.date-modal-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0 14px;
+  color: var(--text-subtle);
+  font-size: 0.74rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+
+  &::before,
+  &::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
 }
 
 .date-arrow-icon {

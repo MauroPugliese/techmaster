@@ -39,8 +39,11 @@ function addDuration(startDate, durationMs) {
 }
 
 function normalizeMasterTask(task) {
+  const simId = task.simulator_id ?? task.simulatorId ?? null;
   return {
     id: task.id,
+    simulator_id: simId,
+    simulatorId: simId,
     system: task.system,
     subsystem: task.subsystem,
     task: task.task,

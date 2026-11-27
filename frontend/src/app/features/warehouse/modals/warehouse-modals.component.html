@@ -2,7 +2,7 @@
      CREATE / EDIT ITEM MODAL
      ========================================================================== -->
 <div class="modal-overlay" *ngIf="showItemModal" (click)="closeItemModal($event)">
-  <div class="modal wh-modal-wide" (click)="$event.stopPropagation()">
+  <div class="modal wh-modal-wide" role="dialog" aria-modal="true" (click)="$event.stopPropagation()">
     <div class="modal-header">
       <h3>{{editingItem ? 'Edit Item' : 'Add New Item'}}</h3>
       <button type="button" class="btn btn-ghost btn-icon-only" (click)="showItemModal = false">
@@ -16,7 +16,13 @@
         <span>{{itemError}}</span>
       </div>
 
+      <!-- ── TIER 1: Essential Inventory Fields ────────────────────────────── -->
       <div class="form-row">
+        <div class="form-group" *ngIf="showFormField('name')">
+          <label class="form-label">{{fieldLabel('form','name','Item Name')}} *</label>
+          <input class="form-control" [(ngModel)]="itemForm.name" placeholder="e.g. Hex Bolt M8×50">
+        </div>
+
         <div class="form-group" *ngIf="showFormField('category_id')">
           <label class="form-label">{{fieldLabel('form','category_id','Category')}} *</label>
           <app-dropdown class="form-control"
@@ -29,21 +35,6 @@
                         placeholder="— Select category —">
             <app-dropdown-option [ngValue]="null">— Select category —</app-dropdown-option>
             <app-dropdown-option *ngFor="let c of categories" [ngValue]="c.id">{{c.name}}</app-dropdown-option>
-          </app-dropdown>
-        </div>
-
-        <div class="form-group" *ngIf="showFormField('location_id')">
-          <label class="form-label">{{fieldLabel('form','location_id','Location')}}</label>
-          <app-dropdown class="form-control"
-                        [(ngModel)]="itemForm.location_id"
-                        [searchable]="true"
-                        [creatable]="true"
-                        createLabel="Create new location"
-                        createPlaceholder="e.g. Rack B2 — Avionics"
-                        (createOption)="quickCreateLocation($event, 'item')"
-                        placeholder="— Unassigned —">
-            <app-dropdown-option [ngValue]="null">— Unassigned —</app-dropdown-option>
-            <app-dropdown-option *ngFor="let loc of locations" [ngValue]="loc.id">{{loc.code}} — {{loc.name}}</app-dropdown-option>
           </app-dropdown>
         </div>
       </div>
@@ -66,9 +57,19 @@
       </div>
 
       <div class="form-row">
-        <div class="form-group" *ngIf="showFormField('name')">
-          <label class="form-label">{{fieldLabel('form','name','Item Name')}} *</label>
-          <input class="form-control" [(ngModel)]="itemForm.name" placeholder="e.g. Hex Bolt M8×50">
+        <div class="form-group" *ngIf="showFormField('location_id')">
+          <label class="form-label">{{fieldLabel('form','location_id','Location')}}</label>
+          <app-dropdown class="form-control"
+                        [(ngModel)]="itemForm.location_id"
+                        [searchable]="true"
+                        [creatable]="true"
+                        createLabel="Create new location"
+                        createPlaceholder="e.g. Rack B2 — Avionics"
+                        (createOption)="quickCreateLocation($event, 'item')"
+                        placeholder="— Unassigned —">
+            <app-dropdown-option [ngValue]="null">— Unassigned —</app-dropdown-option>
+            <app-dropdown-option *ngFor="let loc of locations" [ngValue]="loc.id">{{loc.code}} — {{loc.name}}</app-dropdown-option>
+          </app-dropdown>
         </div>
 
         <div class="form-group" *ngIf="showFormField('unit')">
@@ -86,157 +87,201 @@
           <input type="number" class="form-control" [(ngModel)]="itemForm.quantity" min="0" [disabled]="!!editingItem">
         </div>
 
-        <div class="form-group" *ngIf="showFormField('unit_cost')">
-          <label class="form-label">
-            {{fieldLabel('form','unit_cost','Unit Cost ($)')}}
-            <span class="wh-field-hint">· Value: {{itemPreviewValue}}</span>
-          </label>
-          <input type="number" class="form-control" [(ngModel)]="itemForm.unit_cost" min="0" step="0.01" placeholder="0.00">
-        </div>
-      </div>
-
-      <div class="form-row">
-        <div class="form-group" *ngIf="showFormField('min_stock')">
-          <label class="form-label">{{fieldLabel('form','min_stock','Min Stock')}}</label>
-          <input type="number" class="form-control" [(ngModel)]="itemForm.min_stock" min="0">
-        </div>
-
         <div class="form-group" *ngIf="showFormField('reorder_point')">
           <label class="form-label">{{fieldLabel('form','reorder_point','Reorder Point')}}</label>
           <input type="number" class="form-control" [(ngModel)]="itemForm.reorder_point" min="0">
         </div>
       </div>
 
-      <div class="form-row">
-        <div class="form-group" *ngIf="showFormField('max_stock')">
-          <label class="form-label">{{fieldLabel('form','max_stock','Max Stock')}}</label>
-          <input type="number" class="form-control" [(ngModel)]="itemForm.max_stock" min="0" placeholder="Optional ceiling">
-          <div class="wh-field-warn" *ngIf="itemThresholdWarning">{{itemThresholdWarning}}</div>
-        </div>
-
-        <div class="form-group" *ngIf="showFormField('supplier')">
-          <label class="form-label">{{fieldLabel('form','supplier','Supplier / OEM')}}</label>
-          <input class="form-control" [(ngModel)]="itemForm.supplier" placeholder="e.g. OEM / Authorized Vendor">
-        </div>
-      </div>
-
-      <!-- Aviation Spares & LRU Metadata -->
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Spare Classification</label>
-          <app-dropdown class="form-control" [(ngModel)]="itemForm.part_classification">
-            <app-dropdown-option value="CONSUMABLE">Consumable</app-dropdown-option>
-            <app-dropdown-option value="ROTATABLE_LRU">Rotatable LRU</app-dropdown-option>
-            <app-dropdown-option value="TOOL_CALIBRATED">Calibrated Tooling</app-dropdown-option>
-          </app-dropdown>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Compatible FSTD Platforms</label>
-          <input class="form-control" [(ngModel)]="itemForm.compatible_models_text" placeholder="e.g. A320neo, B737-8200, A350">
-        </div>
-      </div>
-
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Lead Time (Days)</label>
-          <input type="number" class="form-control" [(ngModel)]="itemForm.lead_time_days" min="0" placeholder="7">
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Unserviceable / Repair Qty (U/S)</label>
-          <input type="number" class="form-control" [(ngModel)]="itemForm.unserviceable_qty" min="0" placeholder="0">
-        </div>
-      </div>
-
-      <!-- Rotable LRU / RMA & Inbound Procurement Tracking -->
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">LRU Status</label>
-          <app-dropdown class="form-control" [(ngModel)]="itemForm.lru_status" ariaLabel="LRU Status">
-            <app-dropdown-option value="SERVICEABLE">Serviceable (Ready)</app-dropdown-option>
-            <app-dropdown-option value="INSTALLED">Installed on Bay</app-dropdown-option>
-            <app-dropdown-option value="IN_REPAIR_RMA">In Repair (RMA)</app-dropdown-option>
-            <app-dropdown-option value="UNSERVICEABLE">Unserviceable (U/S)</app-dropdown-option>
-            <app-dropdown-option value="QUARANTINE">Quarantine</app-dropdown-option>
-          </app-dropdown>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Target Subsystem</label>
-          <app-dropdown class="form-control"
-                        [(ngModel)]="itemForm.subsystem_code"
-                        [searchable]="true"
-                        [creatable]="true"
-                        storageKey="maint_subsystems"
-                        createLabel="Add custom subsystem"
-                        placeholder="— General —">
-            <app-dropdown-option value="">— General —</app-dropdown-option>
-            <app-dropdown-option *ngFor="let sub of subsystemOptions" [value]="sub.code">{{sub.label}}</app-dropdown-option>
-          </app-dropdown>
-        </div>
-      </div>
-
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Serial Number (S/N)</label>
-          <input class="form-control" [(ngModel)]="itemForm.serial_number" placeholder="e.g. SN-2026-0891">
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Installed on Simulator Bay</label>
-          <app-dropdown class="form-control"
-                        [(ngModel)]="itemForm.installed_simulator_id"
-                        [searchable]="true"
-                        [creatable]="true"
-                        createLabel="Create new simulator bay"
-                        (createOption)="quickCreateSimulator($event, 'item')"
-                        placeholder="— In Warehouse —">
-            <app-dropdown-option [ngValue]="null">— In Warehouse —</app-dropdown-option>
-            <app-dropdown-option *ngFor="let s of simulators" [ngValue]="s.id">{{s.bay_code}} · {{s.name}}</app-dropdown-option>
-          </app-dropdown>
-        </div>
-      </div>
-
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">RMA / Repair Reference</label>
-          <input class="form-control" [(ngModel)]="itemForm.rma_reference" placeholder="e.g. RMA-2026-4410">
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">On-Order Qty &amp; Expected Delivery (ETA)</label>
-          <div style="display:flex;gap:8px;align-items:center">
-            <input type="number" class="form-control" style="width:92px" [(ngModel)]="itemForm.on_order_qty" min="0" placeholder="0" title="Units On Order">
-            <app-datetime-picker
-              class="form-control"
-              style="flex:1"
-              mode="date"
-              [(ngModel)]="itemForm.expected_delivery_date"
-              placeholder="ETA date">
-            </app-datetime-picker>
-          </div>
-        </div>
-      </div>
-
-      <div class="form-group" style="margin-bottom:10px">
+      <div class="form-group" style="margin-bottom:14px">
         <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:0.84rem;font-weight:600;color:#b91c1c">
           <input type="checkbox" [(ngModel)]="itemForm.aog_critical">
           <span>AOG Critical Part (Expedited Priority Dispatch Required)</span>
         </label>
       </div>
 
-      <div class="form-group" *ngIf="showFormField('description')">
-        <label class="form-label">{{fieldLabel('form','description','Description')}}</label>
-        <textarea class="form-control wh-textarea-sm" [(ngModel)]="itemForm.description" placeholder="Optional technical specifications or bin notes…"></textarea>
+      <!-- ── TIER 2 ACCORDION 1: Cost, Supplier & Stock Thresholds ─────────── -->
+      <div class="ux-accordion-section" [class.is-open]="showStockDetails">
+        <button type="button"
+                class="ux-accordion-head"
+                [attr.aria-expanded]="showStockDetails"
+                (click)="showStockDetails = !showStockDetails">
+          <span class="ux-acc-left">
+            <span class="ux-acc-icon">payments</span>
+            <span>
+              <span>Cost, Supplier &amp; Stock Thresholds</span>
+              <span class="ux-acc-sub"> — Unit cost, OEM supplier, min/max stock, lead time &amp; notes</span>
+            </span>
+          </span>
+          <span class="ux-acc-right">
+            <span class="ux-acc-badge" *ngIf="stockDetailsBadge">{{stockDetailsBadge}}</span>
+            <span class="ux-acc-chevron">expand_more</span>
+          </span>
+        </button>
+
+        <div class="ux-accordion-body" *ngIf="showStockDetails">
+          <div class="form-row">
+            <div class="form-group" *ngIf="showFormField('unit_cost')">
+              <label class="form-label">
+                {{fieldLabel('form','unit_cost','Unit Cost ($)')}}
+                <span class="wh-field-hint">· Value: {{itemPreviewValue}}</span>
+              </label>
+              <input type="number" class="form-control" [(ngModel)]="itemForm.unit_cost" min="0" step="0.01" placeholder="0.00">
+            </div>
+
+            <div class="form-group" *ngIf="showFormField('supplier')">
+              <label class="form-label">{{fieldLabel('form','supplier','Supplier / OEM')}}</label>
+              <input class="form-control" [(ngModel)]="itemForm.supplier" placeholder="e.g. OEM / Authorized Vendor">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group" *ngIf="showFormField('min_stock')">
+              <label class="form-label">{{fieldLabel('form','min_stock','Min Stock')}}</label>
+              <input type="number" class="form-control" [(ngModel)]="itemForm.min_stock" min="0">
+            </div>
+
+            <div class="form-group" *ngIf="showFormField('max_stock')">
+              <label class="form-label">{{fieldLabel('form','max_stock','Max Stock')}}</label>
+              <input type="number" class="form-control" [(ngModel)]="itemForm.max_stock" min="0" placeholder="Optional ceiling">
+              <div class="wh-field-warn" *ngIf="itemThresholdWarning">{{itemThresholdWarning}}</div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Lead Time (Days)</label>
+              <input type="number" class="form-control" [(ngModel)]="itemForm.lead_time_days" min="0" placeholder="7">
+            </div>
+          </div>
+
+          <div class="form-group" *ngIf="showFormField('description')">
+            <label class="form-label">{{fieldLabel('form','description','Description')}}</label>
+            <textarea class="form-control wh-textarea-sm" [(ngModel)]="itemForm.description" placeholder="Optional technical specifications or bin notes…"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── TIER 2 ACCORDION 2: Aviation LRU, Serial & Procurement ────────── -->
+      <div class="ux-accordion-section" [class.is-open]="showAviationLru">
+        <button type="button"
+                class="ux-accordion-head"
+                [attr.aria-expanded]="showAviationLru"
+                (click)="showAviationLru = !showAviationLru">
+          <span class="ux-acc-left">
+            <span class="ux-acc-icon">precision_manufacturing</span>
+            <span>
+              <span>Aviation LRU, Serial &amp; Inbound Orders</span>
+              <span class="ux-acc-sub"> — Classification, LRU status, subsystem, S/N, bay, RMA &amp; ETA</span>
+            </span>
+          </span>
+          <span class="ux-acc-right">
+            <span class="ux-acc-badge" *ngIf="aviationLruBadge">{{aviationLruBadge}}</span>
+            <span class="ux-acc-chevron">expand_more</span>
+          </span>
+        </button>
+
+        <div class="ux-accordion-body" *ngIf="showAviationLru">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Spare Classification</label>
+              <app-dropdown class="form-control" [(ngModel)]="itemForm.part_classification">
+                <app-dropdown-option value="CONSUMABLE">Consumable</app-dropdown-option>
+                <app-dropdown-option value="ROTATABLE_LRU">Rotatable LRU</app-dropdown-option>
+                <app-dropdown-option value="TOOL_CALIBRATED">Calibrated Tooling</app-dropdown-option>
+              </app-dropdown>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Compatible FSTD Platforms</label>
+              <input class="form-control" [(ngModel)]="itemForm.compatible_models_text" placeholder="e.g. A320neo, B737-8200, A350">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">LRU Status</label>
+              <app-dropdown class="form-control" [(ngModel)]="itemForm.lru_status" ariaLabel="LRU Status">
+                <app-dropdown-option value="SERVICEABLE">Serviceable (Ready)</app-dropdown-option>
+                <app-dropdown-option value="INSTALLED">Installed on Bay</app-dropdown-option>
+                <app-dropdown-option value="IN_REPAIR_RMA">In Repair (RMA)</app-dropdown-option>
+                <app-dropdown-option value="UNSERVICEABLE">Unserviceable (U/S)</app-dropdown-option>
+                <app-dropdown-option value="QUARANTINE">Quarantine</app-dropdown-option>
+              </app-dropdown>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Target Subsystem</label>
+              <app-dropdown class="form-control"
+                            [(ngModel)]="itemForm.subsystem_code"
+                            [searchable]="true"
+                            [creatable]="true"
+                            storageKey="maint_subsystems"
+                            createLabel="Add custom subsystem"
+                            placeholder="— General —">
+                <app-dropdown-option value="">— General —</app-dropdown-option>
+                <app-dropdown-option *ngFor="let sub of subsystemOptions" [value]="sub.code">{{sub.label}}</app-dropdown-option>
+              </app-dropdown>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Serial Number (S/N)</label>
+              <input class="form-control" [(ngModel)]="itemForm.serial_number" placeholder="e.g. SN-2026-0891">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Installed on Simulator Bay</label>
+              <app-dropdown class="form-control"
+                            [(ngModel)]="itemForm.installed_simulator_id"
+                            [searchable]="true"
+                            [creatable]="auth.canManage"
+                            createLabel="Create new simulator bay"
+                            (createOption)="quickCreateSimulator($event, 'item')"
+                            placeholder="— In Warehouse —">
+                <app-dropdown-option [ngValue]="null">— In Warehouse —</app-dropdown-option>
+                <app-dropdown-option *ngFor="let s of simulators" [ngValue]="s.id">{{s.bay_code}} · {{s.name}}</app-dropdown-option>
+              </app-dropdown>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Unserviceable / Repair Qty (U/S)</label>
+              <input type="number" class="form-control" [(ngModel)]="itemForm.unserviceable_qty" min="0" placeholder="0">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">RMA / Repair Reference</label>
+              <input class="form-control" [(ngModel)]="itemForm.rma_reference" placeholder="e.g. RMA-2026-4410">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group" style="grid-column:1 / -1">
+              <label class="form-label">On-Order Qty &amp; Expected Delivery (ETA)</label>
+              <div style="display:flex;gap:8px;align-items:center">
+                <input type="number" class="form-control" style="width:92px" [(ngModel)]="itemForm.on_order_qty" min="0" placeholder="0" title="Units On Order">
+                <app-datetime-picker
+                  class="form-control"
+                  style="flex:1"
+                  mode="date"
+                  [(ngModel)]="itemForm.expected_delivery_date"
+                  placeholder="ETA date">
+                </app-datetime-picker>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
     <div class="modal-footer wh-footer-split">
-      <button *ngIf="editingItem" type="button" class="btn btn-danger btn-sm" (click)="deleteItem(editingItem!)">
+      <button *ngIf="editingItem && auth.canManage" type="button" class="btn btn-danger btn-sm" (click)="deleteItem(editingItem!)">
         <span class="btn-icon">delete</span> Archive
       </button>
-      <span *ngIf="!editingItem"></span>
+      <span *ngIf="!editingItem || !auth.canManage"></span>
       <div class="wh-head-actions">
         <button type="button" class="btn btn-ghost" (click)="showItemModal = false">Cancel</button>
         <button type="button" class="btn btn-primary" (click)="saveItem()" [disabled]="saving">
@@ -582,15 +627,15 @@
     </div>
 
     <div class="modal-footer detail-footer">
-      <button type="button" class="btn btn-ghost detail-delete-btn" (click)="deleteFromDetail()">
+      <button *ngIf="auth.canManage" type="button" class="btn btn-ghost detail-delete-btn" (click)="deleteFromDetail()">
         <span class="btn-icon">delete</span> Archive
       </button>
       <div class="detail-footer-actions">
         <button type="button" class="btn btn-secondary" (click)="detailItem = null">Close</button>
-        <button type="button" class="btn btn-secondary" (click)="movementFromDetail()">
+        <button *ngIf="auth.canWrite" type="button" class="btn btn-secondary" (click)="movementFromDetail()">
           <span class="btn-icon text-primary">swap_horiz</span> Movement
         </button>
-        <button type="button" class="btn btn-primary" (click)="editFromDetail()">
+        <button *ngIf="auth.canWrite" type="button" class="btn btn-primary" (click)="editFromDetail()">
           <span class="btn-icon">edit</span> Edit
         </button>
       </div>

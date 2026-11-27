@@ -59,23 +59,8 @@
     </button>
   </div>
 
-  <!-- ── Compact 6-KPI Command Strip ─────────────────────────────────────── -->
+  <!-- ── BAND 1: 4 Core High-Signal KPI Cards (Miller's Law / 5-Second Rule) ─ -->
   <div class="dash-kpi-grid">
-
-    <a class="kpi-card dash-kpi-card"
-       routerLink="/operations"
-       [queryParams]="{ status: 'IN_PROGRESS' }"
-       style="--kpi-color: #1565C0"
-       title="View active operations">
-      <div class="kpi-icon-wrap">rocket_launch</div>
-      <div class="dash-kpi-body">
-        <div class="dash-kpi-value">{{kpis?.activeOps ?? '—'}}</div>
-        <div class="dash-kpi-title">Active Sorties</div>
-        <div class="dash-kpi-sub" [class.warn]="(kpis?.overdueOps ?? 0) > 0">
-          {{(kpis?.overdueOps ?? 0) > 0 ? ((kpis?.overdueOps ?? 0) + ' overdue · ' + (kpis?.totalOps ?? 0) + ' total') : ((kpis?.totalOps ?? 0) + ' total operations')}}
-        </div>
-      </div>
-    </a>
 
     <a class="kpi-card dash-kpi-card"
        [routerLink]="ffsTotalCount > 0 ? '/simulators' : '/maintenance'"
@@ -93,6 +78,21 @@
           <ng-template #facilityReadinessSub>
             {{kpis?.activeAssets ?? 0}} / {{kpis?.totalAssets ?? 0}} assets active
           </ng-template>
+        </div>
+      </div>
+    </a>
+
+    <a class="kpi-card dash-kpi-card"
+       routerLink="/operations"
+       [queryParams]="{ status: 'IN_PROGRESS' }"
+       style="--kpi-color: #1565C0"
+       title="View active operations">
+      <div class="kpi-icon-wrap">rocket_launch</div>
+      <div class="dash-kpi-body">
+        <div class="dash-kpi-value">{{kpis?.activeOps ?? '—'}}</div>
+        <div class="dash-kpi-title">Active Sorties</div>
+        <div class="dash-kpi-sub" [class.warn]="(kpis?.overdueOps ?? 0) > 0">
+          {{(kpis?.overdueOps ?? 0) > 0 ? ((kpis?.overdueOps ?? 0) + ' overdue · ' + (kpis?.totalOps ?? 0) + ' total') : ((kpis?.totalOps ?? 0) + ' total operations')}}
         </div>
       </div>
     </a>
@@ -132,37 +132,9 @@
       </div>
     </a>
 
-    <a class="kpi-card dash-kpi-card"
-       routerLink="/tasks"
-       style="--kpi-color: #7C3AED"
-       title="Open Task Manager">
-      <div class="kpi-icon-wrap">task_alt</div>
-      <div class="dash-kpi-body">
-        <div class="dash-kpi-value">{{kpis?.openTasks ?? '—'}}</div>
-        <div class="dash-kpi-title">Open Tasks</div>
-        <div class="dash-kpi-sub" [class.warn]="(kpis?.overdueTasks ?? 0) > 0">
-          {{(kpis?.overdueTasks ?? 0) > 0 ? ((kpis?.overdueTasks ?? 0) + ' overdue') : ((kpis?.completedTasks ?? 0) + ' completed')}}
-        </div>
-      </div>
-    </a>
-
-    <a class="kpi-card dash-kpi-card"
-       routerLink="/shifts"
-       style="--kpi-color: #0288D1"
-       title="Open Shift Schedule">
-      <div class="kpi-icon-wrap">badge</div>
-      <div class="dash-kpi-body">
-        <div class="dash-kpi-value">{{kpis?.shiftsToday ?? '—'}}</div>
-        <div class="dash-kpi-title">Today's Shifts</div>
-        <div class="dash-kpi-sub" [class.ok]="(kpis?.shiftsLiveNow ?? 0) > 0">
-          {{kpis?.shiftsLiveNow ?? 0}} live now · {{kpis?.activeUsers ?? 0}} staff
-        </div>
-      </div>
-    </a>
-
   </div>
 
-  <!-- ── Row 2: Urgent Action Triage + Today's Radar ─────────────────────── -->
+  <!-- ── BAND 2: Urgent Action Triage + Today's Radar ─────────────────────── -->
   <div class="dash-grid-2">
     <app-dashboard-urgent-center
       id="urgent-center"
@@ -177,12 +149,12 @@
     </app-dashboard-today-radar>
   </div>
 
-  <!-- ── Row 2.5: Live FSTD Simulator Bays Status Wall (Control Room) ───── -->
+  <!-- ── BAND 3: Live FSTD Simulator Bays Status Wall (Streamlined Header) ── -->
   <div class="card dash-card dash-sim-wall" *ngIf="simulators.length > 0">
     <div class="dash-sim-head">
       <div>
-        <h3>Live FSTD Fleet &amp; Daily Station Readiness</h3>
-        <p>FFS dispatch reliability separated cleanly from Test Places &amp; IOS Consoles daily operations</p>
+        <h3>Live FSTD Fleet Readiness</h3>
+        <p>Click any bay or station to open its technical dossier and live telemetry</p>
       </div>
 
       <div class="dash-sim-kpis">
@@ -192,53 +164,32 @@
         <span class="dash-sim-kpi-pill is-good">
           Dispatch: <strong>{{simSummary?.dispatchReliabilityPct ?? 100}}%</strong>
         </span>
-        <span class="dash-sim-kpi-pill">
-          QTG: <strong>{{simSummary?.qtgCompliancePct ?? 100}}%</strong>
-        </span>
-        <a *ngIf="simSummary?.testPlaces"
-           class="dash-sim-kpi-pill"
-           [class.is-bad]="(simSummary?.testPlaces?.na ?? 0) > 0"
-           routerLink="/simulators"
-           [queryParams]="{ view: 'test-places' }"
-           style="text-decoration:none">
-          TP: <strong>{{simSummary?.testPlaces?.inUse}} In Use · {{simSummary?.testPlaces?.ready}} Ready<ng-container *ngIf="(simSummary?.testPlaces?.na ?? 0) > 0"> · {{simSummary?.testPlaces?.na}} NA</ng-container></strong> ({{simSummary?.testPlaces?.todayShiftHours}}h)
-        </a>
-        <a *ngIf="simSummary?.iosConsoles"
-           class="dash-sim-kpi-pill"
-           [class.is-bad]="(simSummary?.iosConsoles?.na ?? 0) > 0"
-           routerLink="/simulators"
-           [queryParams]="{ view: 'ios-consoles' }"
-           style="text-decoration:none">
-          IOS: <strong>{{simSummary?.iosConsoles?.inUse}} In Use · {{simSummary?.iosConsoles?.ready}} Ready<ng-container *ngIf="(simSummary?.iosConsoles?.na ?? 0) > 0"> · {{simSummary?.iosConsoles?.na}} NA</ng-container></strong> ({{simSummary?.iosConsoles?.todayShiftHours}}h)
-        </a>
-        <span class="dash-sim-kpi-pill" *ngIf="(simSummary?.melActiveCount ?? 0) > 0" [class.is-bad]="(simSummary?.melExpiringCount ?? 0) > 0">
-          MEL: <strong>{{simSummary?.melActiveCount}}</strong>
-        </span>
-        <span class="dash-sim-kpi-pill is-bad" *ngIf="(simSummary?.aogSparesLowCount ?? 0) > 0">
-          AOG Spares Low: <strong>{{simSummary?.aogSparesLowCount}}</strong>
-        </span>
         <span class="dash-sim-kpi-pill" [class.is-bad]="(simSummary?.openSnagsCount ?? 0) > 0">
           Open DRs: <strong>{{simSummary?.openSnagsCount ?? 0}}</strong>
         </span>
         <a class="btn btn-secondary btn-sm" routerLink="/simulators">Manage Simulators</a>
-        <a class="btn btn-primary btn-sm" routerLink="/operations">Bay Timeline</a>
       </div>
     </div>
 
-    <!-- Clean Station Class Tabs so 22 stations never clutter the Command Center -->
-    <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px;flex-wrap:wrap" *ngIf="simKindCounts.TEST_PLACE > 0 || simKindCounts.IOS_CONSOLE > 0">
-      <button type="button" class="btn btn-sm" [ngClass]="wallKindFilter === 'FFS_BAY' ? 'btn-primary' : 'btn-ghost'" (click)="setWallKindFilter('FFS_BAY')">
-        FFS Bays ({{simKindCounts.FFS_BAY}})
-      </button>
-      <button type="button" class="btn btn-sm" [ngClass]="wallKindFilter === 'TEST_PLACE' ? 'btn-primary' : 'btn-ghost'" (click)="setWallKindFilter('TEST_PLACE')">
-        Test Places ({{simKindCounts.TEST_PLACE}})
-      </button>
-      <button type="button" class="btn btn-sm" [ngClass]="wallKindFilter === 'IOS_CONSOLE' ? 'btn-primary' : 'btn-ghost'" (click)="setWallKindFilter('IOS_CONSOLE')">
-        IOS Consoles ({{simKindCounts.IOS_CONSOLE}})
-      </button>
+    <!-- Clean Station Class Tabs -->
+    <div style="margin-bottom:12px" *ngIf="simKindCounts.TEST_PLACE > 0 || simKindCounts.IOS_CONSOLE > 0">
+      <div class="ux-segmented-tabs" role="tablist" aria-label="Station class">
+        <button type="button" class="ux-seg-tab" [class.active]="wallKindFilter === 'FFS_BAY'" (click)="setWallKindFilter('FFS_BAY')">
+          <span>FFS Bays</span>
+          <span class="ux-seg-count">{{simKindCounts.FFS_BAY}}</span>
+        </button>
+        <button type="button" class="ux-seg-tab" [class.active]="wallKindFilter === 'TEST_PLACE'" (click)="setWallKindFilter('TEST_PLACE')">
+          <span>Test Places</span>
+          <span class="ux-seg-count">{{simKindCounts.TEST_PLACE}}</span>
+        </button>
+        <button type="button" class="ux-seg-tab" [class.active]="wallKindFilter === 'IOS_CONSOLE'" (click)="setWallKindFilter('IOS_CONSOLE')">
+          <span>IOS Consoles</span>
+          <span class="ux-seg-count">{{simKindCounts.IOS_CONSOLE}}</span>
+        </button>
+      </div>
     </div>
 
-    <div class="dash-sim-grid">
+    <div class="dash-sim-grid" *ngIf="wallSimulators.length > 0; else emptySimWallTpl">
       <a
         class="dash-sim-card"
         *ngFor="let sim of wallSimulators; trackBy: trackById"
@@ -248,6 +199,12 @@
         [queryParams]="{ id: sim.id }">
         <div class="dash-sim-top">
           <span class="dash-bay-tag">{{sim.bay_code}}</span>
+          <span
+            class="dash-sim-st"
+            *ngIf="sim.scheduling_mode"
+            style="background:#f1f5f9;color:#334155">
+            {{sim.scheduling_mode === 'SHIFTS' ? 'Shifts' : 'Sorties'}}
+          </span>
           <span
             class="dash-sim-st"
             [style.background]="simStatusMeta(sim.status).bg"
@@ -263,7 +220,10 @@
 
         <div class="dash-sim-sortie" *ngIf="sim.telemetry?.activeSortie || sim.telemetry?.nextSortie; else idleBayTpl">
           <strong>{{sim.telemetry?.activeSortie ? 'LIVE:' : 'NEXT:'}}</strong>
-          {{(sim.telemetry?.activeSortie || sim.telemetry?.nextSortie)?.customer_operator || (sim.telemetry?.activeSortie || sim.telemetry?.nextSortie)?.title}}
+          {{(sim.telemetry?.activeSortie || sim.telemetry?.nextSortie)?.mission_name || (sim.telemetry?.activeSortie || sim.telemetry?.nextSortie)?.customer_operator || (sim.telemetry?.activeSortie || sim.telemetry?.nextSortie)?.title}}
+          <ng-container *ngIf="(sim.telemetry?.activeSortie || sim.telemetry?.nextSortie)?.instructor_name || (sim.telemetry?.activeSortie || sim.telemetry?.nextSortie)?.pilot_name">
+            · {{(sim.telemetry?.activeSortie || sim.telemetry?.nextSortie)?.instructor_name || (sim.telemetry?.activeSortie || sim.telemetry?.nextSortie)?.pilot_name}}
+          </ng-container>
         </div>
         <ng-template #idleBayTpl>
           <div class="dash-sim-sortie is-idle">Standby / Available for dispatch</div>
@@ -277,234 +237,265 @@
         </div>
       </a>
     </div>
+    <ng-template #emptySimWallTpl>
+      <div class="text-sm text-muted" style="padding:18px 8px;text-align:center">
+        No stations registered in this class.
+      </div>
+    </ng-template>
   </div>
 
-  <!-- ── Row 3: Charts (Continuous Velocity + Workload Breakdown) ────────── -->
-  <app-dashboard-charts
-    [trends]="overview?.trends ?? null"
-    [breakdowns]="overview?.breakdowns ?? null"
-    [trendDays]="trendDays"
-    [dateFilterLabel]="dateFilterLabel"
-    (trendDaysChange)="onTrendDaysChange($event)">
-  </app-dashboard-charts>
+  <!-- ── Compact 1-Row Quick Actions Bar ─────────────────────────────────── -->
+  <div class="dash-quick-strip" *ngIf="auth.canWrite && hasAnyQuickCreate" aria-label="Quick creation shortcuts">
+    <span class="dash-quick-label">Quick Create</span>
+    <a class="dash-quick-pill" *ngIf="canShowSection('operations')" routerLink="/operations" [queryParams]="{ action: 'new' }">
+      <span class="mat-i" style="color:var(--primary)">rocket_launch</span> New Sortie
+    </a>
+    <a class="dash-quick-pill" *ngIf="canShowSection('maintenance')" routerLink="/maintenance" [queryParams]="{ action: 'new' }">
+      <span class="mat-i" style="color:#D97706">build_circle</span> Work Order
+    </a>
+    <a class="dash-quick-pill" *ngIf="canShowSection('tasks')" routerLink="/tasks" [queryParams]="{ action: 'new' }">
+      <span class="mat-i" style="color:#7C3AED">task_alt</span> New Task
+    </a>
+    <a class="dash-quick-pill" *ngIf="canShowSection('warehouse')" routerLink="/warehouse" [queryParams]="{ action: 'movement' }">
+      <span class="mat-i" style="color:#059669">swap_horiz</span> Stock Move
+    </a>
+    <a class="dash-quick-pill" *ngIf="auth.canManage && canShowSection('shifts')" routerLink="/shifts" [queryParams]="{ action: 'new' }">
+      <span class="mat-i" style="color:#E65100">schedule</span> Plan Shift
+    </a>
+    <a class="dash-quick-pill" *ngIf="canShowSection('wiki')" routerLink="/wiki" [queryParams]="{ action: 'new' }">
+      <span class="mat-i" style="color:#0288D1">menu_book</span> Write Doc
+    </a>
+  </div>
 
-  <!-- ── Row 4: Fleet Health + Real Warehouse Replenishment Snapshot ───────── -->
-  <div class="dash-grid-2">
-
-    <!-- Fleet & Equipment Readiness -->
-    <div class="card dash-card">
-      <div class="dash-card-head">
-        <div>
-          <h3>Fleet &amp; Equipment Readiness</h3>
-          <p>Live availability across non-retired facility assets</p>
-        </div>
-        <a class="btn btn-secondary btn-sm" routerLink="/maintenance" [queryParams]="{ tab: 'assets' }">
-          Assets Registry
-        </a>
+  <!-- ── BAND 4: Unified Tabbed Insights Hub (Progressive Disclosure) ─────── -->
+  <section class="dash-insights-hub" aria-label="Operational insights and rosters">
+    <div class="dash-insights-head">
+      <div class="dash-insights-title">
+        <h3>Operational Insights</h3>
+        <p>Switch views without scrolling across crowded walls of panels</p>
       </div>
 
-      <div class="dash-fleet-hero">
-        <div class="dash-fleet-score">
-          <span class="dash-fleet-pct dash-num"
-                [style.color]="fleetStatus === 'OPTIMAL' ? '#059669' : (fleetStatus === 'ATTENTION' ? '#D97706' : '#DC2626')">
-            {{fleetReadinessPct}}%
-          </span>
-          <span class="dash-fleet-caption">Operational Availability</span>
-        </div>
-        <span class="badge"
-              [ngClass]="fleetStatus === 'OPTIMAL' ? 'badge-completed' : (fleetStatus === 'ATTENTION' ? 'badge-in-progress' : 'badge-cancelled')">
-          {{fleetStatus}}
-        </span>
-      </div>
+      <div class="ux-segmented-tabs" role="tablist" aria-label="Insights panels">
+        <button type="button"
+                role="tab"
+                class="ux-seg-tab"
+                [class.active]="activeInsightsTab === 'trends'"
+                [attr.aria-selected]="activeInsightsTab === 'trends'"
+                (click)="setInsightsTab('trends')">
+          <span class="mat-i">show_chart</span>
+          <span>Trends &amp; Velocity</span>
+        </button>
 
-      <div class="dash-readiness-track" role="img" aria-label="Asset status distribution">
-        <div class="dash-readiness-seg" [style.width.%]="fleetActiveWidth" style="background:#10B981" title="In Service"></div>
-        <div class="dash-readiness-seg" [style.width.%]="fleetMaintWidth" style="background:#F59E0B" title="Under Maintenance"></div>
-        <div class="dash-readiness-seg" [style.width.%]="fleetInactiveWidth" style="background:#CBD5E1" title="Standby / Inactive"></div>
-      </div>
+        <button type="button"
+                role="tab"
+                class="ux-seg-tab"
+                [class.active]="activeInsightsTab === 'assets'"
+                [attr.aria-selected]="activeInsightsTab === 'assets'"
+                (click)="setInsightsTab('assets')">
+          <span class="mat-i">inventory_2</span>
+          <span>Warehouse &amp; Assets</span>
+          <span class="ux-seg-count" *ngIf="(warehouse?.lowStockCount ?? 0) > 0">{{warehouse?.lowStockCount}}</span>
+        </button>
 
-      <div class="dash-asset-boxes">
-        <div class="dash-asset-box">
-          <div class="dash-asset-val dash-num">{{fleet?.totalAssets ?? 0}}</div>
-          <div class="dash-asset-lbl">Total Monitored</div>
-        </div>
-        <div class="dash-asset-box is-ok">
-          <div class="dash-asset-val dash-num">{{fleet?.activeAssets ?? 0}}</div>
-          <div class="dash-asset-lbl">In Service</div>
-        </div>
-        <div class="dash-asset-box is-warn">
-          <div class="dash-asset-val dash-num">{{fleet?.maintenanceAssets ?? 0}}</div>
-          <div class="dash-asset-lbl">In Maintenance</div>
-        </div>
-      </div>
+        <button type="button"
+                role="tab"
+                class="ux-seg-tab"
+                [class.active]="activeInsightsTab === 'roster'"
+                [attr.aria-selected]="activeInsightsTab === 'roster'"
+                (click)="setInsightsTab('roster')">
+          <span class="mat-i">badge</span>
+          <span>Today's Roster</span>
+          <span class="ux-seg-count">{{overview?.shiftSummary?.liveNow ?? 0}} live</span>
+        </button>
 
-      <div class="dash-fleet-sublist" *ngIf="fleet?.assetsInMaintenance?.length">
-        <div class="dash-sublist-title">Currently Under Maintenance</div>
-        <a *ngFor="let asset of fleet?.assetsInMaintenance?.slice(0, 3)"
-           class="dash-row-item dash-fleet-item"
-           routerLink="/maintenance"
-           [queryParams]="{ tab: 'assets' }">
-          <div class="dash-row-main">
-            <div class="dash-row-title">{{asset.name}}</div>
-            <div class="dash-row-sub">
-              {{asset.category?.name || 'Asset'}}
-              <ng-container *ngIf="asset.serial_number"> · S/N {{asset.serial_number}}</ng-container>
-              <ng-container *ngIf="asset.location"> · {{asset.location}}</ng-container>
-            </div>
-          </div>
-          <span class="badge badge-on-hold">Maintenance</span>
-        </a>
+        <button type="button"
+                role="tab"
+                class="ux-seg-tab"
+                [class.active]="activeInsightsTab === 'activity'"
+                [attr.aria-selected]="activeInsightsTab === 'activity'"
+                (click)="setInsightsTab('activity')">
+          <span class="mat-i">history</span>
+          <span>Activity Stream</span>
+        </button>
       </div>
     </div>
 
-    <!-- Warehouse & Replenishment Pulse -->
-    <div class="card dash-card">
-      <div class="dash-card-head">
-        <div>
-          <h3>Warehouse &amp; Replenishment</h3>
-          <p>Real-time stock metrics and urgent reorder queue</p>
-        </div>
-        <a class="btn btn-secondary btn-sm" routerLink="/warehouse" [queryParams]="{ tab: 'reorder' }">
-          Reorder Planner
-        </a>
-      </div>
+    <!-- Tab 1: Trends & Velocity Charts -->
+    <app-dashboard-charts
+      *ngIf="activeInsightsTab === 'trends'"
+      [trends]="overview?.trends ?? null"
+      [breakdowns]="overview?.breakdowns ?? null"
+      [trendDays]="trendDays"
+      [dateFilterLabel]="dateFilterLabel"
+      (trendDaysChange)="onTrendDaysChange($event)">
+    </app-dashboard-charts>
 
-      <div class="dash-wh-metrics dash-num">
-        <div class="dash-wh-stat">
-          <span class="dash-wh-lbl">Active SKUs</span>
-          <strong>{{warehouse?.totalSkus ?? 0}}</strong>
-        </div>
-        <div class="dash-wh-stat">
-          <span class="dash-wh-lbl">Inventory Value</span>
-          <strong>{{money(warehouse?.totalValue)}}</strong>
-        </div>
-        <div class="dash-wh-stat">
-          <span class="dash-wh-lbl">Below Reorder</span>
-          <strong [class.text-danger]="(warehouse?.lowStockCount ?? 0) > 0">{{warehouse?.lowStockCount ?? 0}}</strong>
-        </div>
-        <div class="dash-wh-stat">
-          <span class="dash-wh-lbl">Depleted</span>
-          <strong [class.text-danger]="(warehouse?.outOfStockCount ?? 0) > 0">{{warehouse?.outOfStockCount ?? 0}}</strong>
-        </div>
-        <div class="dash-wh-stat">
-          <span class="dash-wh-lbl">7d Moves</span>
-          <strong>{{warehouse?.movements7d ?? 0}}</strong>
-        </div>
-      </div>
-
-      <div class="dash-wh-table-wrap" *ngIf="warehouse?.criticalItems?.length">
-        <table class="data-table dash-compact-table">
-          <thead>
-            <tr>
-              <th *ngIf="showTableField('item')">{{fieldLabel('table', 'item', 'Item')}}</th>
-              <th *ngIf="showTableField('sku')">{{fieldLabel('table', 'sku', 'SKU')}}</th>
-              <th *ngIf="showTableField('current_stock')">{{fieldLabel('table', 'current_stock', 'Stock')}}</th>
-              <th *ngIf="showTableField('reorder_point')">{{fieldLabel('table', 'reorder_point', 'Reorder')}}</th>
-              <th *ngIf="showTableField('status')">{{fieldLabel('table', 'status', 'Level')}}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr *ngFor="let item of warehouse?.criticalItems?.slice(0, 5)">
-              <td *ngIf="showTableField('item')" class="dash-td-item">
-                <a class="dash-table-link"
-                   routerLink="/warehouse"
-                   [queryParams]="{ tab: 'inventory', search: item.sku }">
-                  {{item.name}}
-                </a>
-                <div class="dash-row-sub" *ngIf="item.location">{{item.location.code}} · {{item.location.name}}</div>
-              </td>
-              <td *ngIf="showTableField('sku')">
-                <span class="dash-sku-pill">{{item.sku}}</span>
-              </td>
-              <td *ngIf="showTableField('current_stock')" class="dash-num">
-                <span class="dash-qty-warn">{{item.quantity}}</span>
-                <span class="text-muted"> {{item.unit}}</span>
-              </td>
-              <td *ngIf="showTableField('reorder_point')" class="dash-num">
-                {{item.reorder_point}} {{item.unit}}
-              </td>
-              <td *ngIf="showTableField('status')">
-                <div class="progress-bar dash-wh-bar">
-                  <div class="progress-fill"
-                       [style.width.%]="item.stockRatioPct"
-                       [style.background]="item.quantity <= 0 ? '#DC2626' : '#D97706'">
-                  </div>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="dash-empty-box ok" *ngIf="!loading && !(warehouse?.criticalItems?.length)">
-        <span class="mat-i">verified</span>
-        <h4>Inventory Levels Healthy</h4>
-        <p>All active SKUs are currently above their reorder threshold.</p>
-      </div>
-    </div>
-
-  </div>
-
-  <!-- ── Row 5: Activity Stream + Quick Dispatch & On-Duty Roster ────────── -->
-  <div class="dash-main-grid">
-
-    <app-dashboard-activity-panel
-      [recentOps]="overview?.recentActivity?.operations ?? emptyArr"
-      [recentMaintenance]="overview?.recentActivity?.maintenance ?? emptyArr"
-      [recentTasks]="overview?.recentActivity?.tasks ?? emptyArr"
-      [recentMovements]="overview?.recentActivity?.movements ?? emptyArr"
-      [loading]="loading">
-    </app-dashboard-activity-panel>
-
-    <div class="dash-side-stack">
-
-      <!-- Quick Dispatch -->
+    <!-- Tab 2: Fleet & Warehouse Replenishment -->
+    <div class="dash-grid-2" *ngIf="activeInsightsTab === 'assets'">
+      <!-- Fleet & Equipment Readiness -->
       <div class="card dash-card">
         <div class="dash-card-head">
           <div>
-            <h3>Quick Dispatch</h3>
-            <p>Jump straight into creation flows</p>
+            <h3>Fleet &amp; Equipment Readiness</h3>
+            <p>Live availability across non-retired facility assets</p>
+          </div>
+          <a class="btn btn-secondary btn-sm" routerLink="/maintenance" [queryParams]="{ tab: 'assets' }">
+            Assets Registry
+          </a>
+        </div>
+
+        <div class="dash-fleet-hero">
+          <div class="dash-fleet-score">
+            <span class="dash-fleet-pct dash-num"
+                  [style.color]="fleetStatus === 'OPTIMAL' ? '#059669' : (fleetStatus === 'ATTENTION' ? '#D97706' : '#DC2626')">
+              {{fleetReadinessPct}}%
+            </span>
+            <span class="dash-fleet-caption">Operational Availability</span>
+          </div>
+          <span class="badge"
+                [ngClass]="fleetStatus === 'OPTIMAL' ? 'badge-completed' : (fleetStatus === 'ATTENTION' ? 'badge-in-progress' : 'badge-cancelled')">
+            {{fleetStatus}}
+          </span>
+        </div>
+
+        <div class="dash-readiness-track" role="img" aria-label="Asset status distribution">
+          <div class="dash-readiness-seg" [style.width.%]="fleetActiveWidth" style="background:#10B981" title="In Service"></div>
+          <div class="dash-readiness-seg" [style.width.%]="fleetMaintWidth" style="background:#F59E0B" title="Under Maintenance"></div>
+          <div class="dash-readiness-seg" [style.width.%]="fleetInactiveWidth" style="background:#CBD5E1" title="Standby / Inactive"></div>
+        </div>
+
+        <div class="dash-asset-boxes">
+          <div class="dash-asset-box">
+            <div class="dash-asset-val dash-num">{{fleet?.totalAssets ?? 0}}</div>
+            <div class="dash-asset-lbl">Total Monitored</div>
+          </div>
+          <div class="dash-asset-box is-ok">
+            <div class="dash-asset-val dash-num">{{fleet?.activeAssets ?? 0}}</div>
+            <div class="dash-asset-lbl">In Service</div>
+          </div>
+          <div class="dash-asset-box is-warn">
+            <div class="dash-asset-val dash-num">{{fleet?.maintenanceAssets ?? 0}}</div>
+            <div class="dash-asset-lbl">In Maintenance</div>
           </div>
         </div>
 
-        <div class="dash-quick-grid">
-          <a class="dash-quick-btn" routerLink="/operations" [queryParams]="{ action: 'new' }">
-            <span class="mat-i" style="color:var(--primary)">rocket_launch</span>
-            <span>New Sortie</span>
-          </a>
-          <a class="dash-quick-btn" routerLink="/maintenance" [queryParams]="{ action: 'new' }">
-            <span class="mat-i" style="color:#D97706">build_circle</span>
-            <span>Work Order</span>
-          </a>
-          <a class="dash-quick-btn" routerLink="/tasks" [queryParams]="{ action: 'new' }">
-            <span class="mat-i" style="color:#7C3AED">task_alt</span>
-            <span>New Task</span>
-          </a>
-          <a class="dash-quick-btn" routerLink="/warehouse" [queryParams]="{ action: 'movement' }">
-            <span class="mat-i" style="color:#059669">swap_horiz</span>
-            <span>Stock Ledger</span>
-          </a>
-          <a class="dash-quick-btn" routerLink="/shifts" [queryParams]="{ action: 'new' }">
-            <span class="mat-i" style="color:#E65100">schedule</span>
-            <span>Plan Shift</span>
-          </a>
-          <a class="dash-quick-btn" routerLink="/wiki" [queryParams]="{ action: 'new' }">
-            <span class="mat-i" style="color:#0288D1">menu_book</span>
-            <span>Write Doc</span>
+        <div class="dash-fleet-sublist" *ngIf="fleet?.assetsInMaintenance?.length">
+          <div class="dash-sublist-title">Currently Under Maintenance</div>
+          <a *ngFor="let asset of fleet?.assetsInMaintenance?.slice(0, 3)"
+             class="dash-row-item dash-fleet-item"
+             routerLink="/maintenance"
+             [queryParams]="{ tab: 'assets' }">
+            <div class="dash-row-main">
+              <div class="dash-row-title">{{asset.name}}</div>
+              <div class="dash-row-sub">
+                {{asset.category?.name || 'Asset'}}
+                <ng-container *ngIf="asset.serial_number"> · S/N {{asset.serial_number}}</ng-container>
+                <ng-container *ngIf="asset.location"> · {{asset.location}}</ng-container>
+              </div>
+            </div>
+            <span class="badge badge-on-hold">Maintenance</span>
           </a>
         </div>
       </div>
 
-      <!-- Today's On-Duty Roster -->
+      <!-- Warehouse & Replenishment Pulse -->
+      <div class="card dash-card">
+        <div class="dash-card-head">
+          <div>
+            <h3>Warehouse &amp; Replenishment</h3>
+            <p>Real-time stock metrics and urgent reorder queue</p>
+          </div>
+          <a class="btn btn-secondary btn-sm" routerLink="/warehouse" [queryParams]="{ tab: 'reorder' }">
+            Reorder Planner
+          </a>
+        </div>
+
+        <div class="dash-wh-metrics dash-num">
+          <div class="dash-wh-stat">
+            <span class="dash-wh-lbl">Active SKUs</span>
+            <strong>{{warehouse?.totalSkus ?? 0}}</strong>
+          </div>
+          <div class="dash-wh-stat">
+            <span class="dash-wh-lbl">Inventory Value</span>
+            <strong>{{money(warehouse?.totalValue)}}</strong>
+          </div>
+          <div class="dash-wh-stat">
+            <span class="dash-wh-lbl">Below Reorder</span>
+            <strong [class.text-danger]="(warehouse?.lowStockCount ?? 0) > 0">{{warehouse?.lowStockCount ?? 0}}</strong>
+          </div>
+          <div class="dash-wh-stat">
+            <span class="dash-wh-lbl">Depleted</span>
+            <strong [class.text-danger]="(warehouse?.outOfStockCount ?? 0) > 0">{{warehouse?.outOfStockCount ?? 0}}</strong>
+          </div>
+          <div class="dash-wh-stat">
+            <span class="dash-wh-lbl">7d Moves</span>
+            <strong>{{warehouse?.movements7d ?? 0}}</strong>
+          </div>
+        </div>
+
+        <div class="dash-wh-table-wrap" *ngIf="warehouse?.criticalItems?.length">
+          <table class="data-table dash-compact-table">
+            <thead>
+              <tr>
+                <th *ngIf="showTableField('item')">{{fieldLabel('table', 'item', 'Item')}}</th>
+                <th *ngIf="showTableField('sku')">{{fieldLabel('table', 'sku', 'SKU')}}</th>
+                <th *ngIf="showTableField('current_stock')">{{fieldLabel('table', 'current_stock', 'Stock')}}</th>
+                <th *ngIf="showTableField('reorder_point')">{{fieldLabel('table', 'reorder_point', 'Reorder')}}</th>
+                <th *ngIf="showTableField('status')">{{fieldLabel('table', 'status', 'Level')}}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let item of warehouse?.criticalItems?.slice(0, 5)">
+                <td *ngIf="showTableField('item')" class="dash-td-item">
+                  <a class="dash-table-link"
+                     routerLink="/warehouse"
+                     [queryParams]="{ tab: 'inventory', search: item.sku }">
+                    {{item.name}}
+                  </a>
+                  <div class="dash-row-sub" *ngIf="item.location">{{item.location.code}} · {{item.location.name}}</div>
+                </td>
+                <td *ngIf="showTableField('sku')">
+                  <span class="dash-sku-pill">{{item.sku}}</span>
+                </td>
+                <td *ngIf="showTableField('current_stock')" class="dash-num">
+                  <span class="dash-qty-warn">{{item.quantity}}</span>
+                  <span class="text-muted"> {{item.unit}}</span>
+                </td>
+                <td *ngIf="showTableField('reorder_point')" class="dash-num">
+                  {{item.reorder_point}} {{item.unit}}
+                </td>
+                <td *ngIf="showTableField('status')">
+                  <div class="progress-bar dash-wh-bar">
+                    <div class="progress-fill"
+                         [style.width.%]="item.stockRatioPct"
+                         [style.background]="item.quantity <= 0 ? '#DC2626' : '#D97706'">
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="dash-empty-box ok" *ngIf="!loading && !(warehouse?.criticalItems?.length)">
+          <span class="mat-i">verified</span>
+          <h4>Inventory Levels Healthy</h4>
+          <p>All active SKUs are currently above their reorder threshold.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 3: Today's On-Duty Roster & Tasks Snapshot -->
+    <div class="dash-grid-2" *ngIf="activeInsightsTab === 'roster'">
       <div class="card dash-card">
         <div class="dash-card-head">
           <div>
             <h3>Today's On-Duty Roster</h3>
             <p class="dash-num">
-              {{overview?.shiftSummary?.liveNow ?? 0}} live now · {{overview?.shiftSummary?.totalToday ?? 0}} scheduled
+              {{overview?.shiftSummary?.liveNow ?? 0}} live now · {{overview?.shiftSummary?.totalToday ?? 0}} scheduled · {{kpis?.activeUsers ?? 0}} staff
             </p>
           </div>
-          <a class="btn btn-secondary btn-sm" routerLink="/shifts">Shifts</a>
+          <a class="btn btn-secondary btn-sm" routerLink="/shifts">Open Shifts</a>
         </div>
 
         <div class="dash-shift-summary-pills" *ngIf="overview?.shiftSummary?.byType?.length">
@@ -549,8 +540,60 @@
         </div>
       </div>
 
+      <!-- Team Tasks & Station Snapshot -->
+      <div class="card dash-card">
+        <div class="dash-card-head">
+          <div>
+            <h3>Tasks &amp; Station Summary</h3>
+            <p>Open engineering queues and daily Test Place / IOS totals</p>
+          </div>
+          <a class="btn btn-secondary btn-sm" routerLink="/tasks">Task Manager</a>
+        </div>
+
+        <div class="dash-asset-boxes">
+          <a class="dash-asset-box" routerLink="/tasks" style="text-decoration:none">
+            <div class="dash-asset-val dash-num">{{kpis?.openTasks ?? 0}}</div>
+            <div class="dash-asset-lbl">Open Tasks</div>
+          </a>
+          <a class="dash-asset-box" [class.is-warn]="(kpis?.overdueTasks ?? 0) > 0" routerLink="/tasks" style="text-decoration:none">
+            <div class="dash-asset-val dash-num">{{kpis?.overdueTasks ?? 0}}</div>
+            <div class="dash-asset-lbl">Overdue Tasks</div>
+          </a>
+          <a class="dash-asset-box is-ok" routerLink="/tasks" style="text-decoration:none">
+            <div class="dash-asset-val dash-num">{{kpis?.completedTasks ?? 0}}</div>
+            <div class="dash-asset-lbl">Completed</div>
+          </a>
+        </div>
+
+        <div class="dash-fleet-sublist" *ngIf="simSummary?.testPlaces || simSummary?.iosConsoles">
+          <div class="dash-sublist-title">Daily Station Usage</div>
+          <a *ngIf="simSummary?.testPlaces" class="dash-row-item dash-fleet-item" routerLink="/simulators" [queryParams]="{ view: 'test-places' }">
+            <div class="dash-row-main">
+              <div class="dash-row-title">Test Places</div>
+              <div class="dash-row-sub">{{simSummary?.testPlaces?.inUse}} In Use · {{simSummary?.testPlaces?.ready}} Ready · {{simSummary?.testPlaces?.na}} NA</div>
+            </div>
+            <span class="badge badge-in-progress dash-num">{{simSummary?.testPlaces?.todayShiftHours}}h</span>
+          </a>
+          <a *ngIf="simSummary?.iosConsoles" class="dash-row-item dash-fleet-item" routerLink="/simulators" [queryParams]="{ view: 'ios-consoles' }">
+            <div class="dash-row-main">
+              <div class="dash-row-title">IOS Consoles</div>
+              <div class="dash-row-sub">{{simSummary?.iosConsoles?.inUse}} In Use · {{simSummary?.iosConsoles?.ready}} Ready · {{simSummary?.iosConsoles?.na}} NA</div>
+            </div>
+            <span class="badge badge-in-progress dash-num">{{simSummary?.iosConsoles?.todayShiftHours}}h</span>
+          </a>
+        </div>
+      </div>
     </div>
 
-  </div>
+    <!-- Tab 4: Activity Stream -->
+    <app-dashboard-activity-panel
+      *ngIf="activeInsightsTab === 'activity'"
+      [recentOps]="overview?.recentActivity?.operations ?? emptyArr"
+      [recentMaintenance]="overview?.recentActivity?.maintenance ?? emptyArr"
+      [recentTasks]="overview?.recentActivity?.tasks ?? emptyArr"
+      [recentMovements]="overview?.recentActivity?.movements ?? emptyArr"
+      [loading]="loading">
+    </app-dashboard-activity-panel>
+  </section>
 
 </div>

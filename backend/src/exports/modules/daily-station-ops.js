@@ -49,7 +49,7 @@ function kindTitle(kind) {
 async function loadKindSnapshot(dateStr, stationKind) {
   const [stations, dailyLog] = await Promise.all([
     Simulator.findAll({
-      where: { station_kind: stationKind },
+      where: { station_kind: stationKind, scheduling_mode: 'SHIFTS' },
       order: [['sort_order', 'ASC'], ['bay_code', 'ASC'], ['id', 'ASC']]
     }),
     SimulatorDailyLog.findOne({
@@ -156,6 +156,9 @@ async function loadKindSnapshot(dateStr, stationKind) {
         start: statusKey === 'NA' ? '—' : (entry.sim_testing_start || '00:00'),
         end: statusKey === 'NA' ? '—' : (entry.sim_testing_end || '00:00'),
         hours: Number((durMin / 60).toFixed(2)),
+        mission: entry.mission_name ? cleanText(entry.mission_name, 80) : '—',
+        instructor: entry.instructor_name ? cleanText(entry.instructor_name, 60) : '—',
+        pilot: [entry.pilot_name, entry.copilot_name].filter(Boolean).map(v => cleanText(v, 45)).join(' / ') || '—',
         notes: entry.notes ? cleanText(entry.notes, 240) : '—',
         _flag: statusKey === 'NA' ? 'danger' : (statusKey === 'IN_USE' ? 'info' : undefined)
       };
@@ -578,12 +581,15 @@ module.exports = {
                 name: `${snap.label} ${sh.shift_name} (${dateStr})`,
                 note: 'Station operational status, testing window and handover notes.',
                 columns: [
-                  { header: 'Station', key: 'station', width: 96, type: 'mono' },
+                  { header: 'Station', key: 'station', width: 92, type: 'mono' },
                   { header: 'Platform', key: 'aircraft', width: 78, printHidden: true },
-                  { header: 'Status', key: 'status', width: 62, type: 'badge', align: 'center' },
-                  { header: 'Start', key: 'start', width: 46, type: 'mono', align: 'center' },
-                  { header: 'End', key: 'end', width: 46, type: 'mono', align: 'center' },
-                  { header: 'Hours', key: 'hours', width: 48, type: 'number', decimals: 1, align: 'right', total: 'sum', dataBar: true },
+                  { header: 'Status', key: 'status', width: 58, type: 'badge', align: 'center' },
+                  { header: 'Start', key: 'start', width: 44, type: 'mono', align: 'center' },
+                  { header: 'End', key: 'end', width: 44, type: 'mono', align: 'center' },
+                  { header: 'Hours', key: 'hours', width: 46, type: 'number', decimals: 1, align: 'right', total: 'sum', dataBar: true },
+                  { header: 'Mission', key: 'mission', width: 74, printHidden: true },
+                  { header: 'Instructor', key: 'instructor', width: 74, printHidden: true },
+                  { header: 'Pilot(s)', key: 'pilot', width: 82, printHidden: true },
                   { header: 'Handover Notes', key: 'notes', width: 175 }
                 ],
                 rows: sh.rows

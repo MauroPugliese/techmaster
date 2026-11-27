@@ -11,10 +11,11 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { Subject, forkJoin, of } from 'rxjs';
 import { catchError, takeUntil } from 'rxjs/operators';
-import { ApiService, ConfirmService, ToastService } from '../../core/services/services';
+import { ApiService, AuthService, ConfirmService, ToastService } from '../../core/services/services';
 import {
   Simulator,
   SimulatorPlatformCategory,
+  SimulatorSchedulingMode,
   SimulatorStationKind,
   SimulatorStatus
 } from '../../core/models/interfaces';
@@ -25,10 +26,12 @@ import { StationMntRecordsModalComponent } from './modals/station-mnt-records-mo
 import { StationDailyOpsComponent } from './daily-ops/station-daily-ops.component';
 import { SimulatorWorkspaceComponent, SimulatorWorkspaceTab } from './workspace/simulator-workspace.component';
 import {
+  SCHEDULING_MODE_META,
   SIM_CATEGORY_LABELS,
   SIM_STATUS_META,
   STATION_KIND_LABELS,
-  formatCertExpiryBadge
+  formatCertExpiryBadge,
+  resolveSimulatorSchedulingMode
 } from './simulator-helpers';
 
 export interface FleetApiSummary {
@@ -44,10 +47,10 @@ export interface FleetApiSummary {
   open_snags_count: number;
 }
 
-export type SimulatorTopView = 'test-places' | 'ios-consoles' | 'fleet';
+export type SimulatorTopView = 'test-places' | 'ios-consoles' | 'ffs-shifts' | 'fleet';
 
 const VALID_TABS: SimulatorWorkspaceTab[] = ['overview', 'subsystems', 'qtg', 'maintenance', 'sorties'];
-const VALID_TOP_VIEWS: SimulatorTopView[] = ['test-places', 'ios-consoles', 'fleet'];
+const VALID_TOP_VIEWS: SimulatorTopView[] = ['test-places', 'ios-consoles', 'ffs-shifts', 'fleet'];
 
 @Component({
   selector: 'app-simulators',
@@ -71,6 +74,7 @@ const VALID_TOP_VIEWS: SimulatorTopView[] = ['test-places', 'ios-consoles', 'fle
 export class SimulatorsComponent implements OnInit, OnDestroy {
   @ViewChild('formModal') formModal?: SimulatorFormModalComponent;
   @ViewChild('mntRecordsModal') mntRecordsModal?: StationMntRecordsModalComponent;
+  @ViewChild(SimulatorWorkspaceComponent) workspaceComp?: SimulatorWorkspaceComponent;
 
   private destroy$ = new Subject<void>();
   private loadSeq = 0;
@@ -84,6 +88,7 @@ export class SimulatorsComponent implements OnInit, OnDestroy {
   testPlaceCount = 0;
   iosConsoleCount = 0;
   ffsBayCount = 0;
+  ffsShiftCount = 0;
   fleetExportParams: Record<string, string> = {};
   loadError = false;
   summary: FleetApiSummary = {
@@ -103,6 +108,7 @@ export class SimulatorsComponent implements OnInit, OnDestroy {
   viewMode: 'cards' | 'table' = 'cards';
   searchQuery = '';
   stationKindFilter: 'ALL' | SimulatorStationKind = 'ALL';
+  schedulingModeFilter: 'ALL' | SimulatorSchedulingMode = 'ALL';
   categoryFilter: 'ALL' | SimulatorPlatformCategory = 'ALL';
   statusFilter: 'ALL' | 'READY_GROUP' | 'ATTENTION_GROUP' | SimulatorStatus = 'ALL';
 
@@ -133,6 +139,7 @@ export class SimulatorsComponent implements OnInit, OnDestroy {
   ];
 
   constructor(
+    public auth: AuthService,
     private api: ApiService,
     private toast: ToastService,
     private confirm: ConfirmService,
@@ -187,18 +194,22 @@ export class SimulatorsComponent implements OnInit, OnDestroy {
 
   get activeViewDescription(): string {
     if (this.activeView === 'test-places') {
-      return 'Monitor daily shift status across all Test Places, bulk-set session hours, record handover notes and inspect MNT history.';
+      return 'Monitor daily shift status across Test Places in Shifts mode, set session hours, optional mission/crew and MNT history.';
     }
     if (this.activeView === 'ios-consoles') {
-      return 'Monitor daily shift status across all IOS Consoles, bulk-set session hours, record handover notes and inspect MNT history.';
+      return 'Monitor daily shift status across IOS Consoles in Shifts mode, set session hours, optional mission/crew and MNT history.';
     }
-    return 'Manage simulator bays, Test Places and IOS Consoles configuration, readiness telemetry and technical dossiers.';
+    if (this.activeView === 'ffs-shifts') {
+      return 'Monitor daily shift status across Full Flight Simulator bays configured in Shifts mode.';
+    }
+    return 'Manage simulator bays, Test Places and IOS Consoles scheduling mode (Sorties vs Shifts), operating hours and dossiers.';
   }
 
   get hasActiveFleetFilters(): boolean {
     return (
       this.searchQuery.trim() !== '' ||
       this.stationKindFilter !== 'ALL' ||
+      this.schedulingModeFilter !== 'ALL' ||
       this.categoryFilter !== 'ALL' ||
       this.statusFilter !== 'ALL'
     );
@@ -208,20 +219,32 @@ export class SimulatorsComponent implements OnInit, OnDestroy {
     let tp = 0;
     let ios = 0;
     let ffs = 0;
+    let ffsShifts = 0;
     for (const s of this.simulators) {
       const k = s.station_kind || 'FFS_BAY';
-      if (k === 'TEST_PLACE') tp += 1;
-      else if (k === 'IOS_CONSOLE') ios += 1;
-      else ffs += 1;
+      const mode = resolveSimulatorSchedulingMode(s);
+      if (k === 'TEST_PLACE') {
+        if (mode === 'SHIFTS') tp += 1;
+      } else if (k === 'IOS_CONSOLE') {
+        if (mode === 'SHIFTS') ios += 1;
+      } else {
+        ffs += 1;
+        if (mode === 'SHIFTS') ffsShifts += 1;
+      }
     }
     this.testPlaceCount = tp;
     this.iosConsoleCount = ios;
     this.ffsBayCount = ffs;
+    this.ffsShiftCount = ffsShifts;
+    if (this.activeView === 'ffs-shifts' && ffsShifts === 0) {
+      this.activeView = 'fleet';
+    }
   }
 
   private syncFleetExportParams(): void {
     const p: Record<string, string> = {};
     if (this.stationKindFilter !== 'ALL') p['station_kind'] = this.stationKindFilter;
+    if (this.schedulingModeFilter !== 'ALL') p['scheduling_mode'] = this.schedulingModeFilter;
     if (this.categoryFilter !== 'ALL') p['platform_category'] = this.categoryFilter;
     if (this.statusFilter !== 'ALL') p['status'] = this.statusFilter;
     if (this.searchQuery.trim()) p['search'] = this.searchQuery.trim();
@@ -298,6 +321,11 @@ export class SimulatorsComponent implements OnInit, OnDestroy {
         return false;
       }
 
+      const mode = resolveSimulatorSchedulingMode(sim);
+      if (this.schedulingModeFilter !== 'ALL' && mode !== this.schedulingModeFilter) {
+        return false;
+      }
+
       if (this.categoryFilter !== 'ALL' && sim.platform_category !== this.categoryFilter) {
         return false;
       }
@@ -340,12 +368,38 @@ export class SimulatorsComponent implements OnInit, OnDestroy {
   resetFilters(): void {
     this.searchQuery = '';
     this.stationKindFilter = 'ALL';
+    this.schedulingModeFilter = 'ALL';
     this.categoryFilter = 'ALL';
     this.statusFilter = 'ALL';
     this.applyFilters();
   }
 
+  schedulingModeOf(sim: Simulator): SimulatorSchedulingMode {
+    return resolveSimulatorSchedulingMode(sim);
+  }
+
+  schedulingModeMeta(sim: Simulator) {
+    return SCHEDULING_MODE_META[resolveSimulatorSchedulingMode(sim)];
+  }
+
+  operatingWindowLabel(sim: Simulator): string {
+    const cfg = sim.schedule_config;
+    if (cfg?.operating_start && cfg?.operating_end) {
+      return `${cfg.operating_start}–${cfg.operating_end}`;
+    }
+    return resolveSimulatorSchedulingMode(sim) === 'SHIFTS' ? '06:30–18:00' : '06:00–22:00';
+  }
+
+  openStationDailyShifts(sim: Simulator, event?: Event): void {
+    event?.stopPropagation();
+    const k = sim.station_kind || 'FFS_BAY';
+    if (k === 'IOS_CONSOLE') this.setTopView('ios-consoles');
+    else if (k === 'FFS_BAY') this.setTopView('ffs-shifts');
+    else this.setTopView('test-places');
+  }
+
   openCreateModal(kind?: SimulatorStationKind): void {
+    if (!this.auth.canManage) return;
     const resolved: SimulatorStationKind =
       kind ||
       (this.activeView === 'test-places'
@@ -358,6 +412,7 @@ export class SimulatorsComponent implements OnInit, OnDestroy {
 
   openEditModal(sim: Simulator, event?: Event): void {
     event?.stopPropagation();
+    if (!this.auth.canManage) return;
     this.formModal?.open(sim, sim.station_kind || 'FFS_BAY', this.simulators);
   }
 
@@ -366,13 +421,7 @@ export class SimulatorsComponent implements OnInit, OnDestroy {
     this.loadData();
     this.dailyRefreshTick += 1;
     if (this.selectedSimId && saved?.id === this.selectedSimId) {
-      const current = this.selectedSimId;
-      this.selectedSimId = null;
-      this.cdr.markForCheck();
-      setTimeout(() => {
-        this.selectedSimId = current;
-        this.cdr.markForCheck();
-      }, 0);
+      this.workspaceComp?.loadDossier(saved.id);
     }
   }
 

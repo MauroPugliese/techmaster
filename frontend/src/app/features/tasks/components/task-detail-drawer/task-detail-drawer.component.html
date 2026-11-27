@@ -20,7 +20,7 @@
       </div>
 
       <div class="header-actions">
-        <button *ngIf="task"
+        <button *ngIf="task && auth.canManage"
                 type="button"
                 class="btn btn-ghost btn-sm danger-btn"
                 (click)="deleteTask.emit(task)"
@@ -121,8 +121,9 @@
             <label class="form-label">{{fieldLabel('form','parent_id','Parent Task')}}</label>
             <app-dropdown class="form-control"
                           [(ngModel)]="form.parent_id"
+                          [disabled]="!auth.canWrite"
                           [searchable]="true"
-                          [creatable]="true"
+                          [creatable]="auth.canWrite"
                           createLabel="Create new parent task"
                           createPlaceholder="e.g. Monthly Bay Overhaul"
                           (createOption)="quickCreateParentTask($event)"
@@ -137,8 +138,9 @@
           <label class="form-label">Simulator Bay (Optional)</label>
           <app-dropdown class="form-control"
                         [(ngModel)]="form.simulator_id"
+                        [disabled]="!auth.canWrite"
                         [searchable]="true"
-                        [creatable]="true"
+                        [creatable]="auth.canManage"
                         createLabel="Create new simulator bay"
                         (createOption)="quickCreateSimulator($event)"
                         placeholder="— General Center Task —">
@@ -225,7 +227,8 @@
                  [class.done]="sub.status === 'DONE'">
               <button type="button"
                       class="sub-check-btn"
-                      (click)="toggleSubtask(sub)"
+                      [disabled]="!auth.canWrite"
+                      (click)="auth.canWrite && toggleSubtask(sub)"
                       [title]="sub.status === 'DONE' ? 'Mark as To Do' : 'Mark as Done'">
                 <span class="mat-i">
                   {{sub.status === 'DONE' ? 'check_box' : 'check_box_outline_blank'}}
@@ -233,7 +236,8 @@
               </button>
               <span class="sub-title">{{sub.title}}</span>
               <span class="badge" [ngClass]="priorityBadge(sub.priority)">{{sub.priority}}</span>
-              <button type="button"
+              <button *ngIf="auth.canWrite"
+                      type="button"
                       class="sub-del-btn"
                       (click)="deleteSubtask(sub)"
                       title="Delete subtask">
@@ -242,7 +246,7 @@
             </div>
           </div>
 
-          <div class="subtask-add-row">
+          <div class="subtask-add-row" *ngIf="auth.canWrite">
             <input type="text"
                    class="form-control"
                    [(ngModel)]="newSubtaskTitle"
@@ -287,7 +291,7 @@
                   <span class="comment-author">{{userName(c.author)}}</span>
                   <span class="comment-handle" *ngIf="c.author?.username">{{'@'}}{{c.author!.username}}</span>
                   <span class="comment-time">{{relativeTime(c.created_at)}}</span>
-                  <button *ngIf="canDeleteComment(c)"
+                  <button *ngIf="auth.canWrite && canDeleteComment(c)"
                           type="button"
                           class="comment-del"
                           (click)="removeComment(c)"
@@ -306,7 +310,7 @@
           </div>
 
           <!-- Composer with @mention autocomplete popup -->
-          <div class="composer">
+          <div class="composer" *ngIf="auth.canWrite">
             <div class="mention-menu" *ngIf="mentionCandidates.length">
               <button *ngFor="let u of mentionCandidates; let idx = index"
                       type="button"
@@ -350,8 +354,9 @@
 
     <!-- ── Footer ─────────────────────────────────────────────────────────── -->
     <footer class="drawer-footer">
-      <button type="button" class="btn btn-ghost" (click)="close.emit()">Cancel</button>
-      <button type="button"
+      <button type="button" class="btn btn-ghost" (click)="close.emit()">{{auth.canWrite ? 'Cancel' : 'Close'}}</button>
+      <button *ngIf="auth.canWrite"
+              type="button"
               class="btn btn-primary"
               (click)="submitForm()"
               [disabled]="saving || (showFormField('title') && !form.title?.trim())">

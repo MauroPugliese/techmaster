@@ -8,6 +8,7 @@ import {
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Priority, Task, TaskAssignee, TaskStatus } from '../../../../core/models/interfaces';
+import { AuthService } from '../../../../core/services/auth.service';
 import { DropdownComponent, DropdownOptionComponent } from '../../../../shared/components/dropdown/dropdown.component';
 import {
   SortKey,
@@ -57,6 +58,8 @@ export class TaskListViewComponent implements OnChanges {
   bulkStatusVal = '';
   bulkPriorityVal = '';
   bulkAssignVal = '';
+
+  constructor(public auth: AuthService) {}
 
   readonly statusOptions: Array<{ value: TaskStatus; label: string }> = [
     { value: 'TODO',        label: 'To Do' },

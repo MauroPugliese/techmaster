@@ -37,7 +37,8 @@
         </div>
 
         <div class="toolbar-controls">
-          <app-dropdown class="form-control ctrl-sm"
+          <app-dropdown *ngIf="!auth.isViewer"
+                        class="form-control ctrl-sm"
                         [ngModel]="statusFilter"
                         (ngModelChange)="onStatusChange($event)">
             <app-dropdown-option value="ALL">All Status</app-dropdown-option>
@@ -69,7 +70,7 @@
                            [params]="{ status: statusFilter==='ALL' ? '' : statusFilter, category_id: selectedCategory, tag: selectedTag, search: searchQuery }">
           </app-export-menu>
 
-          <button type="button" class="btn btn-primary" (click)="openEditor(null)">
+          <button *ngIf="auth.canWrite" type="button" class="btn btn-primary" (click)="openEditor(null)">
             <span class="btn-icon">add</span> New Article
           </button>
         </div>
@@ -225,14 +226,14 @@
               <span class="foot-views"><span class="mat-i">visibility</span> {{a.view_count}}</span>
             </div>
 
-            <div class="hover-actions" (click)="$event.stopPropagation()">
+            <div class="hover-actions" *ngIf="auth.canWrite" (click)="$event.stopPropagation()">
               <button type="button" class="act-btn" (click)="openEditor(a)" title="Edit">
                 <span class="mat-i">edit</span>
               </button>
-              <button type="button" class="act-btn pin" (click)="togglePin(a, $event)" [title]="a.is_pinned ? 'Unpin' : 'Pin'">
+              <button *ngIf="auth.canManage" type="button" class="act-btn pin" (click)="togglePin(a, $event)" [title]="a.is_pinned ? 'Unpin' : 'Pin'">
                 <span class="mat-i">{{a.is_pinned ? 'bookmark' : 'bookmark_border'}}</span>
               </button>
-              <button type="button" class="act-btn danger" (click)="deleteArticle(a, $event)" title="Delete">
+              <button *ngIf="auth.canManage" type="button" class="act-btn danger" (click)="deleteArticle(a, $event)" title="Delete">
                 <span class="mat-i">delete</span>
               </button>
             </div>
@@ -253,7 +254,7 @@
             <th *ngIf="showTableField('author')">{{fieldLabel('table','author','Author')}}</th>
             <th *ngIf="showTableField('views')">{{fieldLabel('table','views','Views')}}</th>
             <th *ngIf="showTableField('updated_at')">{{fieldLabel('table','updated_at','Last Updated')}}</th>
-            <th>Actions</th>
+            <th *ngIf="auth.canWrite">Actions</th>
           </tr></thead>
           <tbody>
             <tr *ngFor="let a of articles; trackBy: trackById" class="row-clickable" (click)="viewArticle(a)">
@@ -275,15 +276,15 @@
                 <span class="views-cell"><span class="mat-i">visibility</span> {{a.view_count}}</span>
               </td>
               <td class="text-sm text-muted" *ngIf="showTableField('updated_at')">{{a.updated_at | date:'MMM d, y'}}</td>
-              <td (click)="$event.stopPropagation()">
+              <td *ngIf="auth.canWrite" (click)="$event.stopPropagation()">
                 <div class="tbl-actions">
                   <button type="button" class="btn btn-ghost btn-icon-only btn-sm" (click)="openEditor(a)" title="Edit">
                     <span class="btn-icon">edit</span>
                   </button>
-                  <button type="button" class="btn btn-ghost btn-icon-only btn-sm" (click)="togglePin(a, $event)" [title]="a.is_pinned ? 'Unpin' : 'Pin'">
+                  <button *ngIf="auth.canManage" type="button" class="btn btn-ghost btn-icon-only btn-sm" (click)="togglePin(a, $event)" [title]="a.is_pinned ? 'Unpin' : 'Pin'">
                     <span class="btn-icon pin-amber">{{a.is_pinned ? 'bookmark' : 'bookmark_border'}}</span>
                   </button>
-                  <button type="button" class="btn btn-ghost btn-icon-only btn-sm" (click)="deleteArticle(a, $event)" title="Delete">
+                  <button *ngIf="auth.canManage" type="button" class="btn btn-ghost btn-icon-only btn-sm" (click)="deleteArticle(a, $event)" title="Delete">
                     <span class="btn-icon del-red">delete</span>
                   </button>
                 </div>

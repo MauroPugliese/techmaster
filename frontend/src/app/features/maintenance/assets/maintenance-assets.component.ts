@@ -16,6 +16,7 @@ import { FormsModule } from '@angular/forms';
 import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../../core/services/api.service';
+import { AuthService } from '../../../core/services/auth.service';
 import { ConfirmService } from '../../../core/services/confirm.service';
 import { ToastService } from '../../../core/services/toast.service';
 import { Asset, AssetCategory, AssetStatus } from '../../../core/models/interfaces';
@@ -52,6 +53,7 @@ export class MaintenanceAssetsComponent implements OnInit, OnChanges, OnDestroy 
   openMenuAssetId: number | null = null;
 
   constructor(
+    public auth: AuthService,
     private api: ApiService,
     private toast: ToastService,
     private confirm: ConfirmService,

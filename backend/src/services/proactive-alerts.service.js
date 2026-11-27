@@ -6,6 +6,7 @@
 
 const { Op } = require('sequelize');
 const { Notification, User, Role } = require('../models');
+const logger = require('../config/logger');
 
 /**
  * Notify active admins & managers (and optionally a specific user) with DB + Socket.IO push.
@@ -36,31 +37,41 @@ async function broadcastOperationalAlert({
       attributes: ['id']
     });
 
-    const targetIds = recipients
-      .map(u => Number(u.id))
-      .filter(id => id > 0 && id !== Number(excludeUserId || 0));
+    const targetIds = [...new Set(
+      recipients
+        .map(u => Number(u.id))
+        .filter(id => id > 0 && id !== Number(excludeUserId || 0))
+    )];
 
     if (!targetIds.length) return 0;
 
-    const io = req?.app?.get ? req.app.get('io') : null;
-    let sent = 0;
+    const cleanType = String(type).slice(0, 80);
+    const cleanTitle = String(title).slice(0, 200);
+    const cleanBody = body ? String(body).slice(0, 1000) : null;
+    const cleanLink = link ? String(link).slice(0, 500) : null;
 
-    for (const userId of targetIds) {
-      const notif = await Notification.create({
+    const created = await Notification.bulkCreate(
+      targetIds.map(userId => ({
         user_id: userId,
-        type: String(type).slice(0, 80),
-        title: String(title).slice(0, 200),
-        body: body ? String(body).slice(0, 1000) : null,
-        link: link ? String(link).slice(0, 500) : null
-      });
-      if (io) {
-        io.to(`user_${userId}`).emit('notification', notif);
+        type: cleanType,
+        title: cleanTitle,
+        body: cleanBody,
+        link: cleanLink
+      })),
+      { returning: true }
+    );
+
+    const io = req?.app?.get ? req.app.get('io') : null;
+    if (io) {
+      for (const notif of created) {
+        const plain = typeof notif.get === 'function' ? notif.get({ plain: true }) : notif;
+        io.to(`user_${plain.user_id}`).emit('notification', plain);
       }
-      sent += 1;
     }
 
-    return sent;
-  } catch {
+    return created.length;
+  } catch (err) {
+    logger.warn(`[ProactiveAlerts] Failed to broadcast alert "${title}": ${err?.message || err}`);
     return 0;
   }
 }

@@ -241,7 +241,7 @@ function sanitizeInventoryPayload(body = {}, { isCreate = false } = {}) {
   }
 
   if (body.serial_number !== undefined) {
-    const sn = String(body.serial_number ?? '').trim().slice(0, 120);
+    const sn = String(body.serial_number ?? '').trim().slice(0, 100);
     payload.serial_number = sn || null;
   }
 
@@ -258,7 +258,7 @@ function sanitizeInventoryPayload(body = {}, { isCreate = false } = {}) {
   }
 
   if (body.rma_reference !== undefined) {
-    const rma = String(body.rma_reference ?? '').trim().slice(0, 120);
+    const rma = String(body.rma_reference ?? '').trim().slice(0, 100);
     payload.rma_reference = rma || null;
   }
 

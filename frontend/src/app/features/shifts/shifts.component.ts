@@ -114,6 +114,8 @@ export class ShiftsComponent implements OnInit, OnDestroy {
   selectedStatus = '';
   selectedEntryKind = '';
   selectedShiftTypeId: number | null = null;
+  showMoreMenu = false;
+  showAdvancedFilters = false;
 
   employeePage = 1;
   employeeLimit = 20;
@@ -148,7 +150,7 @@ export class ShiftsComponent implements OnInit, OnDestroy {
 
   constructor(
     private readonly api: ApiService,
-    private readonly auth: AuthService,
+    public readonly auth: AuthService,
     private readonly uiCustomization: UiCustomizationService,
     private readonly toast: ToastService,
     private readonly confirm: ConfirmService,
@@ -160,7 +162,7 @@ export class ShiftsComponent implements OnInit, OnDestroy {
   }
 
   get canManageShiftTypes(): boolean {
-    return this.auth.hasRole('admin', 'manager');
+    return this.auth.canManage;
   }
 
   get workShiftTypes(): ShiftType[] {
@@ -169,6 +171,13 @@ export class ShiftsComponent implements OnInit, OnDestroy {
 
   get leaveShiftTypes(): ShiftType[] {
     return this.shiftTypes.filter(st => st.category === 'LEAVE');
+  }
+
+  get advancedFilterCount(): number {
+    let count = 0;
+    if (this.selectedEntryKind) count++;
+    if (this.selectedStatus) count++;
+    return count;
   }
 
   get hasActiveFilters(): boolean {
@@ -216,7 +225,7 @@ export class ShiftsComponent implements OnInit, OnDestroy {
         if (qp['action'] !== 'new') {
           this.actionHandled = false;
         }
-        if (qp['action'] === 'new' && !this.actionHandled) {
+        if (qp['action'] === 'new' && !this.actionHandled && this.auth.canManage) {
           this.actionHandled = true;
           setTimeout(() => {
             this.openModal();
@@ -259,9 +268,28 @@ export class ShiftsComponent implements OnInit, OnDestroy {
     }
   }
 
+  @HostListener('document:click')
+  onDocumentClick(): void {
+    if (this.showMoreMenu) {
+      this.showMoreMenu = false;
+      this.cdr.markForCheck();
+    }
+  }
+
+  toggleMoreMenu(event: Event): void {
+    event.stopPropagation();
+    this.showMoreMenu = !this.showMoreMenu;
+    this.cdr.markForCheck();
+  }
+
   @HostListener('document:keydown.escape')
   onEsc(): void {
-    if (this.showHandoverModal) {
+    if (typeof document !== 'undefined' && document.querySelector('.confirm-overlay, .cdk-overlay-pane')) {
+      return;
+    }
+    if (this.showMoreMenu) {
+      this.showMoreMenu = false;
+    } else if (this.showHandoverModal) {
       this.showHandoverModal = false;
     } else if (this.showShiftTypesModal) {
       this.showShiftTypesModal = false;
@@ -274,6 +302,9 @@ export class ShiftsComponent implements OnInit, OnDestroy {
     }
     this.cdr.markForCheck();
   }
+
+  trackByEmpId(_: number, emp: ShiftEmployee): number { return emp.id; }
+  trackByShiftId(_: number, s: Shift): number { return s.id; }
 
   // ── Data Loading ──────────────────────────────────────────────────────────
   loadShiftTypes(): void {

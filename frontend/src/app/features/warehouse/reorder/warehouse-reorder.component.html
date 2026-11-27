@@ -55,7 +55,7 @@
         <th>Stock</th>
         <th>To Order</th>
         <th class="wh-col-num">Est. Cost</th>
-        <th class="wh-col-actions" style="width:170px">Actions</th>
+        <th *ngIf="auth.canWrite" class="wh-col-actions" style="width:170px">Actions</th>
       </tr>
     </thead>
     <tbody>
@@ -90,7 +90,7 @@
           +{{item.reorder_metrics.deficit}} {{item.unit}}
         </td>
         <td class="wh-col-num wh-primary-val">{{money(item.reorder_metrics.estimated_cost)}}</td>
-        <td class="wh-col-actions" (click)="$event.stopPropagation()">
+        <td *ngIf="auth.canWrite" class="wh-col-actions" (click)="$event.stopPropagation()">
           <div class="wh-row-actions">
             <button *ngIf="item.on_order_qty && item.on_order_qty > 0"
                     type="button"
@@ -151,7 +151,7 @@
             <th>Stock</th>
             <th>To Order</th>
             <th class="wh-col-num">Est. Cost</th>
-            <th class="wh-col-actions" style="width:170px">Actions</th>
+            <th *ngIf="auth.canWrite" class="wh-col-actions" style="width:170px">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -185,7 +185,7 @@
               +{{item.reorder_metrics.deficit}} {{item.unit}}
             </td>
             <td class="wh-col-num wh-primary-val">{{money(item.reorder_metrics.estimated_cost)}}</td>
-            <td class="wh-col-actions" (click)="$event.stopPropagation()">
+            <td *ngIf="auth.canWrite" class="wh-col-actions" (click)="$event.stopPropagation()">
               <div class="wh-row-actions">
                 <button *ngIf="item.on_order_qty && item.on_order_qty > 0"
                         type="button"

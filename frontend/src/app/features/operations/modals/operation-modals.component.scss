@@ -27,3 +27,71 @@
 .ops-crew-role {
   flex: 1 1 160px;
 }
+
+.ops-opt-tag {
+  font-weight: 500;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.ops-ext-crew-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-raised, #f8fafc);
+  border: 1px solid var(--border);
+
+  .form-group {
+    margin-bottom: 0;
+  }
+}
+
+.qs-status-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.qs-status-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  font-family: var(--font-sans);
+  font-size: 0.76rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: var(--transition);
+
+  .qs-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+
+  &.active {
+    box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.08);
+  }
+}
+
+.qs-footer-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 680px) {
+  .ops-ext-crew-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -236,6 +236,95 @@ test('buildTimelineMaintenanceBlocks projects scheduled WOs and matched Planned 
   assert.equal(blocks.length, 2);
   assert.equal(blocks[0].source, 'MAINTENANCE_WO');
   assert.equal(blocks[0].simulator_id, 2);
+  assert.ok(blocks[0].start_date && blocks[0].end_date);
   assert.equal(blocks[1].source, 'PLANNED_MAINT');
   assert.equal(blocks[1].simulator_id, 2);
+});
+
+test('sanitizeSimulatorPayload enforces binary scheduling_mode and normalizes schedule_config', () => {
+  const sortiesSim = sanitizeSimulatorPayload({
+    code: 'FFS-07',
+    name: 'A320 FFS #7',
+    bay_code: 'BAY-07',
+    aircraft_type: 'Airbus A320',
+    station_kind: 'FFS_BAY',
+    scheduling_mode: 'shifts',
+    schedule_config: {
+      operating_start: '6:00',
+      operating_end: '22:00',
+      default_slot_hours: 3.5,
+      turnaround_minutes: 15,
+      shift_presets: [{ name: 'morning', start: '7:00', end: '13:00', pre_flight: '6:40' }]
+    }
+  }, { isCreate: true });
+  assert.equal(sortiesSim.error, undefined);
+  assert.equal(sortiesSim.data.scheduling_mode, 'SHIFTS');
+  assert.equal(sortiesSim.data.schedule_config.operating_start, '06:00');
+  assert.equal(sortiesSim.data.schedule_config.shift_presets[0].name, 'MORNING');
+
+  const badMode = sanitizeSimulatorPayload({
+    code: 'SIM-BAD',
+    name: 'Bad Mode',
+    bay_code: 'B-BAD',
+    aircraft_type: 'A320',
+    scheduling_mode: 'BOTH'
+  }, { isCreate: true });
+  assert.match(badMode.error, /SORTIES or SHIFTS/i);
+});
+
+test('buildTimelineShiftBlocks splits cross-midnight shifts and carries previous-day overnight slices', () => {
+  const { blocks } = buildTimelineShiftBlocks(
+    [{
+      log: { log_date: '2026-11-26', station_kind: 'TEST_PLACE', system_readiness_time: '06:30', post_testing_time: '17:00', logout_time: '18:00' },
+      shifts: [{
+        id: 2,
+        shift_number: 2,
+        shift_name: 'NIGHT SHIFT',
+        pre_flight_test_time: '21:30',
+        entries: [{
+          id: 201,
+          simulator_id: 10,
+          usage_status: 'IN_USE',
+          sim_testing_start: '22:00',
+          sim_testing_end: '02:00',
+          mission_name: 'NVG Night Check',
+          instructor_name: 'Capt. Rossi',
+          pilot_name: 'FO Bianchi'
+        }]
+      }]
+    }],
+    {
+      prevDaySheets: [{
+        log: { log_date: '2026-11-25', station_kind: 'TEST_PLACE' },
+        shifts: [{
+          id: 1,
+          shift_number: 2,
+          shift_name: 'NIGHT SHIFT',
+          entries: [{
+            id: 199,
+            simulator_id: 10,
+            usage_status: 'IN_USE',
+            sim_testing_start: '22:00',
+            sim_testing_end: '01:30',
+            mission_name: 'Prev Night',
+            instructor_name: 'Capt. Verdi'
+          }]
+        }]
+      }]
+    }
+  );
+
+  const carry = blocks.find(b => b.continued_from_prev_day);
+  const tonight = blocks.find(b => b.continues_next_day);
+  assert.ok(carry);
+  assert.equal(carry.start_time, '00:00');
+  assert.equal(carry.end_time, '01:30');
+  assert.equal(carry.instructor_name, 'Capt. Verdi');
+
+  assert.ok(tonight);
+  assert.equal(tonight.start_time, '22:00');
+  assert.equal(tonight.end_time, '24:00');
+  assert.equal(tonight.display_end_time, '02:00');
+  assert.equal(tonight.mission_name, 'NVG Night Check');
+  assert.equal(tonight.pilot_name, 'FO Bianchi');
 });

@@ -135,6 +135,7 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
     is_revoked BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_rt_user_revoked (user_id, is_revoked, expires_at),
     CONSTRAINT fk_tokens_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -147,6 +148,8 @@ CREATE TABLE IF NOT EXISTS simulators (
     name                  VARCHAR(200) NOT NULL,
     bay_code              VARCHAR(40)  NOT NULL,
     station_kind          ENUM('FFS_BAY','TEST_PLACE','IOS_CONSOLE') NOT NULL DEFAULT 'FFS_BAY',
+    scheduling_mode       ENUM('SORTIES','SHIFTS') NOT NULL DEFAULT 'SORTIES',
+    schedule_config       JSON NULL,
     sort_order            INT          NOT NULL DEFAULT 0,
     platform_category     ENUM('COMMERCIAL_FIXED_WING','ROTORCRAFT','DEFENSE_FMS','FTD_FNPT') NOT NULL DEFAULT 'COMMERCIAL_FIXED_WING',
     aircraft_type         VARCHAR(120) NOT NULL,
@@ -175,7 +178,9 @@ CREATE TABLE IF NOT EXISTS simulators (
     created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_sim_status (status),
-    INDEX idx_sim_bay (bay_code)
+    INDEX idx_sim_bay (bay_code),
+    INDEX idx_sim_kind_status (station_kind, status),
+    INDEX idx_sim_sched_kind (scheduling_mode, station_kind)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS simulator_subsystems (
@@ -190,6 +195,8 @@ CREATE TABLE IF NOT EXISTS simulator_subsystems (
     operating_hours      DECIMAL(10,1) DEFAULT 0.0,
     last_calibrated_at   DATE,
     next_calibration_due DATE,
+    last_checked_at      DATETIME NULL,
+    updated_by           INT UNSIGNED NULL,
     notes                TEXT,
     created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -257,6 +264,12 @@ CREATE TABLE IF NOT EXISTS simulator_shift_entries (
     usage_status      ENUM('READY','IN_USE','NA') NOT NULL DEFAULT 'READY',
     sim_testing_start VARCHAR(8) NOT NULL DEFAULT '00:00',
     sim_testing_end   VARCHAR(8) NOT NULL DEFAULT '00:00',
+    mission_name      VARCHAR(160) NULL,
+    instructor_name   VARCHAR(120) NULL,
+    pilot_name        VARCHAR(120) NULL,
+    copilot_name      VARCHAR(120) NULL,
+    weather_profile   VARCHAR(80)  NULL,
+    scenario_code     VARCHAR(120) NULL,
     notes             TEXT NULL,
     updated_by        INT UNSIGNED NULL,
     created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -286,6 +299,10 @@ CREATE TABLE IF NOT EXISTS operations (
     created_by            INT UNSIGNED NOT NULL,
     title                 VARCHAR(200) NOT NULL,
     customer_operator     VARCHAR(120),
+    mission_name          VARCHAR(160) NULL,
+    instructor_name       VARCHAR(120) NULL,
+    pilot_name            VARCHAR(120) NULL,
+    copilot_name          VARCHAR(120) NULL,
     scenario_code         VARCHAR(120),
     weather_profile       VARCHAR(80),
     motion_required       BOOLEAN DEFAULT TRUE,
@@ -308,6 +325,8 @@ CREATE TABLE IF NOT EXISTS operations (
     INDEX idx_operations_status     (status),
     INDEX idx_operations_start_date (start_date),
     INDEX idx_operations_simulator  (simulator_id),
+    INDEX idx_ops_sim_status_start  (simulator_id, status, start_date),
+    INDEX idx_ops_status_start      (status, start_date),
     CONSTRAINT fk_ops_type    FOREIGN KEY (type_id)      REFERENCES operation_types(id),
     CONSTRAINT fk_ops_sim     FOREIGN KEY (simulator_id) REFERENCES simulators(id) ON DELETE SET NULL,
     CONSTRAINT fk_ops_creator FOREIGN KEY (created_by)   REFERENCES users(id)
@@ -389,6 +408,9 @@ CREATE TABLE IF NOT EXISTS maintenance_records (
     parts_cost          DECIMAL(10,2),
     labor_cost          DECIMAL(10,2),
     parts_used          JSON,
+    part_number         VARCHAR(100) NULL,
+    broken_serial_number VARCHAR(100) NULL,
+    new_serial_number   VARCHAR(100) NULL,
     stock_deducted_snapshot JSON,
     mel_category        ENUM('NONE','CAT_A','CAT_B','CAT_C','CAT_D') NOT NULL DEFAULT 'NONE',
     mel_expiry_date     DATE NULL,
@@ -402,6 +424,10 @@ CREATE TABLE IF NOT EXISTS maintenance_records (
     INDEX idx_maint_simulator (simulator_id),
     INDEX idx_maint_scheduled (scheduled_date),
     INDEX idx_maint_status    (status),
+    INDEX idx_mr_sim_status_sev (simulator_id, status, severity),
+    INDEX idx_mr_status_sched   (status, scheduled_date),
+    INDEX idx_mr_part_number    (part_number),
+    INDEX idx_mr_deleted        (deleted_at),
     CONSTRAINT fk_maint_asset FOREIGN KEY (asset_id)     REFERENCES assets(id),
     CONSTRAINT fk_maint_sim   FOREIGN KEY (simulator_id) REFERENCES simulators(id) ON DELETE SET NULL,
     CONSTRAINT fk_maint_user  FOREIGN KEY (performed_by) REFERENCES users(id)
@@ -521,6 +547,9 @@ CREATE TABLE IF NOT EXISTS inventory_items (
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_inventory_qty (quantity),
+    INDEX idx_inv_active_del (is_active, deleted_at),
+    INDEX idx_inv_part_number (part_number),
+    INDEX idx_inv_cat_loc (category_id, location_id),
     CONSTRAINT fk_inv_cat      FOREIGN KEY (category_id) REFERENCES item_categories(id),
     CONSTRAINT fk_inv_location FOREIGN KEY (location_id) REFERENCES warehouse_locations(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -541,6 +570,8 @@ CREATE TABLE IF NOT EXISTS stock_movements (
     movement_date   TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_stock_date (movement_date),
     INDEX idx_stock_type (type),
+    INDEX idx_sm_item_date (item_id, movement_date),
+    INDEX idx_sm_type_date (type, movement_date),
     CONSTRAINT fk_stock_item FOREIGN KEY (item_id) REFERENCES inventory_items(id),
     CONSTRAINT fk_stock_user FOREIGN KEY (user_id) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -580,6 +611,7 @@ CREATE TABLE IF NOT EXISTS shifts (
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_shift_user_date (user_id, date),
     INDEX idx_shifts_date (date),
+    INDEX idx_shifts_date_del (date, deleted_at),
     CONSTRAINT fk_shift_type  FOREIGN KEY (shift_type_id) REFERENCES shift_types(id),
     CONSTRAINT fk_shift_user  FOREIGN KEY (user_id)       REFERENCES users(id),
     CONSTRAINT fk_shift_super FOREIGN KEY (supervisor_id) REFERENCES users(id) ON DELETE SET NULL
@@ -655,6 +687,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     INDEX idx_tasks_interval (interval_type),
     INDEX idx_tasks_due      (due_date),
     INDEX idx_tasks_status   (status),
+    INDEX idx_tasks_status_due (status, due_date),
     INDEX idx_tasks_parent   (parent_id),
     CONSTRAINT fk_task_parent   FOREIGN KEY (parent_id)   REFERENCES tasks(id) ON DELETE CASCADE,
     CONSTRAINT fk_task_cat      FOREIGN KEY (category_id) REFERENCES task_categories(id) ON DELETE SET NULL,
@@ -751,6 +784,10 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     status      INT,
     details     JSON,
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_audit_created (created_at),
+    INDEX idx_audit_status_created (status, created_at),
+    INDEX idx_audit_method_created (method, created_at),
+    INDEX idx_audit_user_created (user_id, created_at),
     CONSTRAINT fk_audit_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -812,7 +849,7 @@ CREATE TABLE IF NOT EXISTS ui_table_column_preferences (
 -- SEED DATA - Minimal System Lookups & Default Admin Account ONLY (Zero Demo Data)
 -- =============================================================================
 
--- Schema migrations tracking baseline (all 8 migrations marked applied so
+-- Schema migrations tracking baseline (all 10 migrations marked applied so
 -- backend/src/config/migrate.js will NOT auto-seed demo simulators/sorties)
 INSERT IGNORE INTO schema_migrations (id, name) VALUES
 (1, '001_baseline_schema'),
@@ -822,7 +859,10 @@ INSERT IGNORE INTO schema_migrations (id, name) VALUES
 (5, '005_enhance_shifts_custom_and_leave'),
 (6, '006_flight_simulator_domain'),
 (7, '007_station_daily_ops'),
-(8, '008_cae_enterprise_ops');
+(8, '008_cae_enterprise_ops'),
+(9, '009_maintenance_serials_subsystems_and_indexes'),
+(10, '010_simulator_scheduling_mode_and_crew'),
+(11, '011_repair_missing_indexes_and_fks');
 
 -- Roles
 INSERT IGNORE INTO roles (id, name, description, permissions) VALUES

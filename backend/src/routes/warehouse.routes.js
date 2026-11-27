@@ -9,6 +9,7 @@ const {
   ItemCategory,
   WarehouseLocation,
   Simulator,
+  MaintenanceRecord,
   User,
   Role,
   sequelize,
@@ -16,9 +17,11 @@ const {
   Task
 } = require('../models');
 const { broadcastOperationalAlert } = require('../services/proactive-alerts.service');
+const { emitDomainUpdate } = require('../config/socket');
 const { parseDateFilter } = require('../middleware/error.middleware');
 const {
   validateInventoryItem,
+  validateInventoryItemUpdate,
   validateStockMovement,
   validateIdParam
 } = require('../middleware/validation.middleware');

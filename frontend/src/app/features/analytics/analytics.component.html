@@ -12,29 +12,13 @@
     </div>
 
     <div class="an-head-actions">
-      <div class="an-seg-group" role="group" aria-label="Quick time window">
-        <button *ngFor="let opt of periodOptions"
-                type="button"
-                class="an-seg-btn"
-                [class.active]="period === opt.value"
-                (click)="selectPeriod(opt.value)">
-          {{opt.label}}
-        </button>
-      </div>
-
       <app-export-menu endpoint="analytics"
                        filename="Analytics_Intelligence"
                        label="Export Report"
+                       [showJsonOption]="true"
+                       (jsonExportRequested)="exportJson()"
                        [params]="exportMenuParams">
       </app-export-menu>
-
-      <button type="button"
-              class="btn btn-secondary btn-sm"
-              [disabled]="!overview"
-              (click)="exportJson()"
-              title="Download raw JSON analytics snapshot">
-        <span class="btn-icon">download</span> JSON
-      </button>
     </div>
   </div>
 

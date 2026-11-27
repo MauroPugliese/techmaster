@@ -2,8 +2,9 @@
 // routes/planned-maintenance.routes.js — Planned Maintenance CRUD + Calendar
 // =============================================================================
 const router = require('express').Router();
-const { body, param, query } = require('express-validator');
+const { body } = require('express-validator');
 const { authorize } = require('../middleware/auth.middleware');
+const { validateIdParam } = require('../middleware/validation.middleware');
 const ctrl = require('../controllers/planned-maintenance.controller');
 
 // ── Validation middleware ────────────────────────────────────────────────────

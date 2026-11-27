@@ -15,13 +15,16 @@ import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, skip, takeUntil } from 'rxjs/operators';
 import {
   ApiService,
+  AuthService,
   ConfirmService,
   DateFilterService,
+  SocketService,
   ToastService,
   UiCustomizationService,
   UiSectionPreferences
 } from '../../core/services/services';
 import {
+  ExternalCrewSuggestions,
   Operation,
   OperationStatus,
   OperationSummary,
@@ -29,6 +32,7 @@ import {
   ShiftUsageStatus,
   Simulator,
   SimulatorDailyLog,
+  SimulatorSchedulingMode,
   SimulatorStationKind,
   SimulatorStatus,
   SortieOutcome,
@@ -41,7 +45,12 @@ import { DropdownComponent, DropdownOptionComponent } from '../../shared/compone
 import { OperationModalsComponent } from './modals/operation-modals.component';
 import { SortieBayTimelineComponent } from './bay-timeline/sortie-bay-timeline.component';
 import { StationMntRecordsModalComponent } from '../simulators/modals/station-mnt-records-modal.component';
-import { SHIFT_USAGE_STATUS_META, SIM_STATUS_META } from '../simulators/simulator-helpers';
+import {
+  SCHEDULING_MODE_META,
+  SHIFT_USAGE_STATUS_META,
+  SIM_STATUS_META,
+  resolveSimulatorSchedulingMode
+} from '../simulators/simulator-helpers';
 import {
   SORTIE_OUTCOME_META,
   formatDurationMinutes,
@@ -93,9 +102,11 @@ export class OperationsComponent implements OnInit, OnDestroy {
   timelineShiftBlocks: TimelineShiftBlock[] = [];
   timelineMaintenanceBlocks: TimelineMaintenanceBlock[] = [];
   timelineShiftStatuses: Record<number, ShiftUsageStatus> = {};
+  timelineShiftsByKind: Record<string, Array<{ id: number; shift_number: number; shift_name: string }>> = {};
   simulators: Simulator[] = [];
   opTypes: OperationType[] = [];
   staffUsers: Partial<User>[] = [];
+  crewSuggestions: ExternalCrewSuggestions = { instructors: [], pilots: [], missions: [], scenarios: [], customers: [] };
   summary: OperationSummary | null = null;
   uiPrefs: UiSectionPreferences | null = null;
 
@@ -108,10 +119,13 @@ export class OperationsComponent implements OnInit, OnDestroy {
   timelineDate = SortieBayTimelineComponent.todayIso();
   showFleetDeck = false;
   deckKindFilter: 'FFS_BAY' | 'TEST_PLACE' | 'IOS_CONSOLE' | 'ALL' = 'ALL';
+  deckModeFilter: 'ALL' | SimulatorSchedulingMode = 'ALL';
   deckSimulators: Simulator[] = [];
   ffsBayCount = 0;
   testPlaceCount = 0;
   iosConsoleCount = 0;
+  sortiesModeCount = 0;
+  shiftsModeCount = 0;
   exportParams: Record<string, any> = {};
   todayPlantLog: SimulatorDailyLog | null = null;
 
@@ -121,6 +135,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
   typeFilter: number | '' = '';
   simulatorFilter: number | '' = '';
   outcomeFilter: '' | SortieOutcome = '';
+  showAdvancedFilters = false;
   sortBy = 'start_date';
   sortDir: 'ASC' | 'DESC' = 'DESC';
 
@@ -147,8 +162,10 @@ export class OperationsComponent implements OnInit, OnDestroy {
   ];
 
   constructor(
+    public auth: AuthService,
     private api: ApiService,
     private dateFilter: DateFilterService,
+    private socketService: SocketService,
     private uiCustomization: UiCustomizationService,
     private toast: ToastService,
     private confirm: ConfirmService,
@@ -179,6 +196,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
 
     this.loadSimulators();
     this.loadTimelineShiftBlocks();
+    this.loadCrewSuggestions();
 
     this.search$
       .pipe(debounceTime(280), distinctUntilChanged(), takeUntil(this.destroy$))
@@ -197,6 +215,19 @@ export class OperationsComponent implements OnInit, OnDestroy {
         this.loadOperations();
         this.loadTimelineOps();
       });
+
+    this.socketService.domainUpdates$
+      .pipe(debounceTime(450), takeUntil(this.destroy$))
+      .subscribe(evt => {
+        const d = evt?.domain;
+        if (!d || d === 'operations' || d === 'daily-ops' || d === 'simulators' || d === 'maintenance') {
+          this.loadSummary();
+          this.loadOperations();
+          this.loadTimelineOps();
+          this.loadTimelineShiftBlocks();
+          this.loadSimulators();
+        }
+      });
   }
 
   ngOnDestroy(): void {
@@ -214,6 +245,20 @@ export class OperationsComponent implements OnInit, OnDestroy {
     });
   }
 
+  loadCrewSuggestions(): void {
+    this.api.get<{ data: ExternalCrewSuggestions }>('/simulators/crew-suggestions')
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: res => {
+          if (res?.data) {
+            this.crewSuggestions = res.data;
+            this.cdr.markForCheck();
+          }
+        },
+        error: () => {}
+      });
+  }
+
   loadTimelineShiftBlocks(): void {
     this.api
       .get<any>('/simulators/daily-sheet/timeline', { date: this.timelineDate })
@@ -224,8 +269,13 @@ export class OperationsComponent implements OnInit, OnDestroy {
           this.timelineShiftBlocks = data?.blocks || [];
           this.timelineMaintenanceBlocks = data?.maintenanceBlocks || [];
           this.timelineShiftStatuses = data?.statusBySimulator || {};
+          this.timelineShiftsByKind = data?.shiftsByKind || {};
           if (data?.operatingHours?.TEST_PLACE) {
             this.todayPlantLog = data.operatingHours.TEST_PLACE;
+          } else if (data?.operatingHours?.IOS_CONSOLE) {
+            this.todayPlantLog = data.operatingHours.IOS_CONSOLE;
+          } else if (data?.operatingHours?.FFS_BAY) {
+            this.todayPlantLog = data.operatingHours.FFS_BAY;
           }
           this.cdr.markForCheck();
         }
@@ -233,9 +283,26 @@ export class OperationsComponent implements OnInit, OnDestroy {
   }
 
   openShiftBlockInSimulators(block: TimelineShiftBlock): void {
-    const view = block.station_kind === 'IOS_CONSOLE' ? 'ios-consoles' : 'test-places';
+    const sim = this.simulators.find(s => Number(s.id) === Number(block.simulator_id));
+    if (this.auth.canWrite && sim && this.modals) {
+      const kind = sim.station_kind || block.station_kind || 'TEST_PLACE';
+      this.modals.openQuickShiftModal({
+        simulator: sim,
+        dateIso: this.timelineDate,
+        block,
+        availableShifts: this.timelineShiftsByKind[kind] || []
+      });
+      return;
+    }
+    this.navigateToDailySheet({ stationKind: block.station_kind, dateIso: this.timelineDate });
+  }
+
+  navigateToDailySheet(ev: { stationKind: string; dateIso: string }): void {
+    const view = ev.stationKind === 'IOS_CONSOLE'
+      ? 'ios-consoles'
+      : (ev.stationKind === 'FFS_BAY' ? 'ffs-shifts' : 'test-places');
     this.router.navigate(['/simulators'], {
-      queryParams: { view, date: this.timelineDate }
+      queryParams: { view, date: ev.dateIso || this.timelineDate }
     });
   }
 
@@ -270,23 +337,47 @@ export class OperationsComponent implements OnInit, OnDestroy {
     this.cdr.markForCheck();
   }
 
+  setDeckModeFilter(mode: 'ALL' | SimulatorSchedulingMode): void {
+    if (this.deckModeFilter === mode) return;
+    this.deckModeFilter = mode;
+    this.recomputeDeckSimulators();
+    this.cdr.markForCheck();
+  }
+
+  simModeMeta(sim: Simulator) {
+    return SCHEDULING_MODE_META[resolveSimulatorSchedulingMode(sim)];
+  }
+
   private recomputeDeckSimulators(): void {
     let ffs = 0;
     let tp = 0;
     let ios = 0;
+    let sortiesCnt = 0;
+    let shiftsCnt = 0;
     for (const s of this.simulators) {
       const k = s.station_kind || 'FFS_BAY';
       if (k === 'TEST_PLACE') tp += 1;
       else if (k === 'IOS_CONSOLE') ios += 1;
       else ffs += 1;
+
+      if (resolveSimulatorSchedulingMode(s) === 'SHIFTS') shiftsCnt += 1;
+      else sortiesCnt += 1;
     }
     this.ffsBayCount = ffs;
     this.testPlaceCount = tp;
     this.iosConsoleCount = ios;
+    this.sortiesModeCount = sortiesCnt;
+    this.shiftsModeCount = shiftsCnt;
 
-    this.deckSimulators = this.deckKindFilter === 'ALL'
-      ? [...this.simulators]
-      : this.simulators.filter(s => (s.station_kind || 'FFS_BAY') === this.deckKindFilter);
+    this.deckSimulators = this.simulators.filter(s => {
+      if (this.deckKindFilter !== 'ALL' && (s.station_kind || 'FFS_BAY') !== this.deckKindFilter) {
+        return false;
+      }
+      if (this.deckModeFilter !== 'ALL' && resolveSimulatorSchedulingMode(s) !== this.deckModeFilter) {
+        return false;
+      }
+      return true;
+    });
   }
 
   private syncExportParams(): void {
@@ -304,12 +395,20 @@ export class OperationsComponent implements OnInit, OnDestroy {
     return sim.id;
   }
 
+  trackByOpId(_: number, op: Operation): number {
+    return op.id;
+  }
+
   loadTimelineOps(): void {
     const seq = ++this.timelineReqSeq;
     this.api.get<any>('/operations', {
       date: this.timelineDate,
       simulator_id: this.simulatorFilter || '',
       outcome: this.outcomeFilter || '',
+      status: this.statusFilter || '',
+      priority: this.priorityFilter || '',
+      type_id: this.typeFilter || '',
+      search: this.searchQuery.trim(),
       limit: 200
     }).pipe(takeUntil(this.destroy$)).subscribe({
       next: res => {
@@ -481,6 +580,14 @@ export class OperationsComponent implements OnInit, OnDestroy {
     this.applyFilters();
   }
 
+  get advancedFilterCount(): number {
+    let count = 0;
+    if (this.outcomeFilter !== '') count++;
+    if (this.typeFilter !== '') count++;
+    if (this.priorityFilter !== '') count++;
+    return count;
+  }
+
   get hasActiveFilters(): boolean {
     return Boolean(
       this.searchQuery.trim() ||
@@ -513,10 +620,24 @@ export class OperationsComponent implements OnInit, OnDestroy {
     this.loadTimelineShiftBlocks();
   }
 
-  onTimelineScheduleSlot(evt: { simulatorId: number; hour: number }): void {
+  onTimelineScheduleSlot(evt: { simulatorId: number; simulator?: Simulator; hour: number }): void {
+    if (!this.auth.canWrite) return;
+    const sim = evt.simulator || this.simulators.find(s => Number(s.id) === Number(evt.simulatorId));
+    if (sim && resolveSimulatorSchedulingMode(sim) === 'SHIFTS') {
+      const kind = sim.station_kind || 'TEST_PLACE';
+      this.modals?.openQuickShiftModal({
+        simulator: sim,
+        dateIso: this.timelineDate,
+        startHour: evt.hour,
+        availableShifts: this.timelineShiftsByKind[kind] || []
+      });
+      return;
+    }
+
     const parts = this.timelineDate.split('-').map(Number);
     const start = new Date(parts[0], parts[1] - 1, parts[2], evt.hour, 0, 0, 0);
-    const end = new Date(start.getTime() + 2 * 3600 * 1000);
+    const defaultHrs = Number(sim?.schedule_config?.default_slot_hours) || 4;
+    const end = new Date(start.getTime() + defaultHrs * 3600 * 1000);
     this.modals?.openFormWithSlot(evt.simulatorId, start, end);
   }
 
@@ -679,6 +800,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
     this.loadTimelineOps();
     this.loadTimelineShiftBlocks();
     this.loadSimulators();
+    this.loadCrewSuggestions();
   }
 
   // ── UI Customization & Row Formatters ──────────────────────────────────────
@@ -692,11 +814,19 @@ export class OperationsComponent implements OnInit, OnDestroy {
 
   opSubline(op: Operation): string {
     const parts: string[] = [];
+    if (op.mission_name && op.mission_name !== op.title) parts.push(op.mission_name);
     if (op.customer_operator) parts.push(op.customer_operator);
     if (op.scenario_code) parts.push(op.scenario_code);
+    if (op.weather_profile) parts.push(op.weather_profile);
     if (this.showTableField('location') && op.location && !op.simulator) parts.push(op.location);
-    const crewCount = op.members?.length || 0;
-    if (crewCount > 0) parts.push(`${crewCount} crew`);
+    return parts.join(' · ');
+  }
+
+  opCrewLine(op: Operation): string {
+    const parts: string[] = [];
+    if (op.instructor_name) parts.push(`Instr: ${op.instructor_name}`);
+    const pilots = [op.pilot_name, op.copilot_name].filter(Boolean).join(' / ');
+    if (pilots) parts.push(`Pilot: ${pilots}`);
     return parts.join(' · ');
   }
 

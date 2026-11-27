@@ -175,7 +175,16 @@ function sanitizeOperationPayload(body = {}, { isCreate = false, existing = null
     payload.sortie_code = sc || null;
   }
 
-  for (const [k, len] of [['customer_operator', 120], ['scenario_code', 120], ['weather_profile', 80], ['snag_summary', 2000]]) {
+  for (const [k, len] of [
+    ['mission_name', 160],
+    ['instructor_name', 120],
+    ['pilot_name', 120],
+    ['copilot_name', 120],
+    ['customer_operator', 120],
+    ['scenario_code', 120],
+    ['weather_profile', 80],
+    ['snag_summary', 2000]
+  ]) {
     if (body[k] !== undefined) {
       const val = String(body[k] ?? '').trim();
       if (val.length > len) return { error: `${k} max ${len} characters.` };

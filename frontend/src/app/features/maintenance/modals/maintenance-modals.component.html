@@ -2,7 +2,7 @@
      WORK ORDER CREATE / EDIT MODAL
      ========================================================================== -->
 <div class="modal-overlay" *ngIf="showRecordModal" (click)="closeRecordModal($event)">
-  <div class="modal mnt-modal-wide" (click)="$event.stopPropagation()">
+  <div class="modal mnt-modal-wide" role="dialog" aria-modal="true" (click)="$event.stopPropagation()">
     <div class="modal-header">
       <h3>{{editingRecord ? 'Edit Work Order' : 'Log Work Order'}}</h3>
       <button type="button" class="btn btn-ghost btn-icon-only" (click)="showRecordModal = false">
@@ -23,6 +23,7 @@
         </button>
       </div>
 
+      <!-- ── TIER 1: Essential Work Order Fields ───────────────────────────── -->
       <div class="form-row">
         <div class="form-group" style="grid-column:1 / -1" *ngIf="showFormField('title')">
           <label class="form-label">{{fieldLabel('form','title','Work Order / Discrepancy Title')}} *</label>
@@ -34,7 +35,7 @@
           <app-dropdown class="form-control"
                         [(ngModel)]="recordForm.simulator_id"
                         [searchable]="true"
-                        [creatable]="true"
+                        [creatable]="auth.canManage"
                         searchPlaceholder="Search bay code, name, or aircraft…"
                         createLabel="Create new simulator bay"
                         createPlaceholder="e.g. BAY-09 · A320 FFS"
@@ -70,43 +71,6 @@
           </app-dropdown>
         </div>
 
-        <div class="form-group" *ngIf="recordForm.simulator_id">
-          <label class="form-label">Affected Subsystem</label>
-          <app-dropdown class="form-control"
-                        [(ngModel)]="recordForm.subsystem_code"
-                        [searchable]="true"
-                        [creatable]="true"
-                        storageKey="maint_subsystems"
-                        createLabel="Add custom subsystem"
-                        createPlaceholder="e.g. RADAR_SIM"
-                        placeholder="— Select subsystem —">
-            <app-dropdown-option value="">— General Bay —</app-dropdown-option>
-            <app-dropdown-option *ngFor="let sub of subsystemOptions" [value]="sub.code">{{sub.label}}</app-dropdown-option>
-          </app-dropdown>
-        </div>
-
-        <div class="form-group" *ngIf="recordForm.simulator_id">
-          <label class="form-label">Operational Severity</label>
-          <app-dropdown class="form-control" [(ngModel)]="recordForm.severity">
-            <app-dropdown-option value="MINOR">Minor (No Impact)</app-dropdown-option>
-            <app-dropdown-option value="DEGRADED">Degraded (MEL Training)</app-dropdown-option>
-            <app-dropdown-option value="AOG">AOG (Bay Grounded)</app-dropdown-option>
-          </app-dropdown>
-        </div>
-
-        <div class="form-group" *ngIf="recordForm.simulator_id">
-          <label class="form-label">Lost Training Hours</label>
-          <input type="number" step="0.5" min="0" class="form-control mnt-num" [(ngModel)]="recordForm.lost_training_hours" placeholder="0.0">
-        </div>
-
-        <div class="form-group" *ngIf="recordForm.simulator_id">
-          <label class="form-label">Discrepancy Report (DR)</label>
-          <label class="mnt-check-label" style="padding:8px 0">
-            <input type="checkbox" class="mnt-checkbox" [(ngModel)]="recordForm.is_snag">
-            <span>Mark as Crew/Tech Snag (DR)</span>
-          </label>
-        </div>
-
         <div class="form-group" *ngIf="showFormField('type')">
           <label class="form-label">{{fieldLabel('form','type','Type')}} *</label>
           <app-dropdown class="form-control" [(ngModel)]="recordForm.type">
@@ -128,17 +92,6 @@
           </app-dropdown>
         </div>
 
-        <div class="form-group" *ngIf="showFormField('status')">
-          <label class="form-label">{{fieldLabel('form','status','Status')}}</label>
-          <app-dropdown class="form-control" [(ngModel)]="recordForm.status">
-            <app-dropdown-option value="SCHEDULED">Scheduled</app-dropdown-option>
-            <app-dropdown-option value="IN_PROGRESS">In Progress</app-dropdown-option>
-            <app-dropdown-option value="COMPLETED">Completed</app-dropdown-option>
-            <app-dropdown-option value="FAILED">Failed</app-dropdown-option>
-            <app-dropdown-option value="DEFERRED">Deferred</app-dropdown-option>
-          </app-dropdown>
-        </div>
-
         <div class="form-group" *ngIf="showFormField('scheduled_date')">
           <label class="form-label">{{fieldLabel('form','scheduled_date','Scheduled Date')}} *</label>
           <app-datetime-picker class="form-control"
@@ -148,182 +101,27 @@
           </app-datetime-picker>
         </div>
 
-        <div class="form-group" *ngIf="showFormField('next_scheduled')">
-          <label class="form-label">{{fieldLabel('form','next_scheduled','Next Scheduled Cycle')}}</label>
-          <app-datetime-picker class="form-control"
-                               mode="datetime"
-                               [(ngModel)]="recordForm.next_scheduled"
-                               placeholder="Optional recurring next date">
-          </app-datetime-picker>
-          <div class="mnt-quick-presets">
-            <button *ngFor="let p of nextCyclePresets"
-                    type="button"
-                    class="mnt-preset-btn"
-                    (click)="applyNextCyclePreset(p.days)">
-              {{p.label}}
-            </button>
-            <button *ngIf="recordForm.next_scheduled"
-                    type="button"
-                    class="mnt-preset-btn"
-                    (click)="clearNextCycle()">
-              Clear
-            </button>
-          </div>
-        </div>
-
-        <div class="form-group" *ngIf="showFormField('downtime_hours')">
-          <label class="form-label">{{fieldLabel('form','downtime_hours','Downtime Duration')}}</label>
-          <div class="mnt-downtime-inputs">
-            <div class="mnt-unit-input">
-              <input type="number" class="form-control" [(ngModel)]="downtimeHoursPart" min="0" placeholder="0">
-              <span>hrs</span>
-            </div>
-            <div class="mnt-unit-input">
-              <input type="number" class="form-control" [(ngModel)]="downtimeMinutesPart" min="0" max="59" placeholder="0">
-              <span>min</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="form-group" *ngIf="showFormField('cost')">
-          <label class="form-label">
-            {{fieldLabel('form','cost','Total Cost ($)')}}
-            <span class="text-muted mnt-num" *ngIf="estimatedPartsCost > 0" style="font-weight:600;margin-left:6px">
-              (Parts: {{money(estimatedPartsCost)}})
-            </span>
-          </label>
-          <input type="number" class="form-control mnt-num" [(ngModel)]="recordForm.cost" min="0" step="0.01" placeholder="Auto = Parts + Labor">
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Labor Cost ($)</label>
-          <input type="number" class="form-control mnt-num" [(ngModel)]="recordForm.labor_cost" min="0" step="0.01" placeholder="0.00">
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">MEL / Deferred Defect Category</label>
-          <app-dropdown class="form-control" [(ngModel)]="recordForm.mel_category" ariaLabel="MEL Category">
-            <app-dropdown-option value="NONE">None (Standard WO)</app-dropdown-option>
-            <app-dropdown-option value="CAT_A">MEL Cat A (Specified Interval)</app-dropdown-option>
-            <app-dropdown-option value="CAT_B">MEL Cat B (3 Calendar Days)</app-dropdown-option>
-            <app-dropdown-option value="CAT_C">MEL Cat C (10 Calendar Days)</app-dropdown-option>
-            <app-dropdown-option value="CAT_D">MEL Cat D (120 Calendar Days)</app-dropdown-option>
+        <div class="form-group" *ngIf="recordForm.simulator_id; else woStatusPrimary">
+          <label class="form-label">Operational Severity</label>
+          <app-dropdown class="form-control" [(ngModel)]="recordForm.severity">
+            <app-dropdown-option value="MINOR">Minor (No Impact)</app-dropdown-option>
+            <app-dropdown-option value="DEGRADED">Degraded (MEL Training)</app-dropdown-option>
+            <app-dropdown-option value="AOG">AOG (Bay Grounded)</app-dropdown-option>
           </app-dropdown>
         </div>
 
-        <div class="form-group" *ngIf="recordForm.mel_category && recordForm.mel_category !== 'NONE'">
-          <label class="form-label">MEL Rectification Expiry Date</label>
-          <app-datetime-picker
-            class="form-control"
-            mode="date"
-            [(ngModel)]="recordForm.mel_expiry_date"
-            placeholder="Select MEL expiry date">
-          </app-datetime-picker>
-        </div>
-
-        <div class="form-group" [style.grid-column]="(!recordForm.mel_category || recordForm.mel_category === 'NONE') ? 'span 1' : '1 / -1'">
-          <label class="form-label">Linked Wiki SOP / Runbook</label>
-          <app-dropdown class="form-control"
-                        [(ngModel)]="recordForm.wiki_article_id"
-                        [searchable]="true"
-                        [creatable]="true"
-                        searchPlaceholder="Search SOP or runbook title…"
-                        createLabel="Create draft SOP"
-                        createPlaceholder="e.g. Visual Alignment Runbook"
-                        (createOption)="quickCreateWikiSop($event)"
-                        placeholder="— Optional Engineering SOP —">
-            <app-dropdown-option [ngValue]="null">— None —</app-dropdown-option>
-            <app-dropdown-option *ngFor="let art of wikiArticles" [ngValue]="art.id">{{art.title}}</app-dropdown-option>
-          </app-dropdown>
-        </div>
-
-        <!-- Spare Parts Used (Warehouse Search by Name / Part Number + Auto Serial Population) -->
-        <div class="form-group" style="grid-column:1 / -1" *ngIf="showFormField('parts_used')">
-          <label class="form-label">{{fieldLabel('form','parts_used','Spare Parts (Search by Name or Part Number)')}}</label>
-          <div class="mnt-parts-picker">
-            <app-dropdown class="form-control mnt-part-select"
-                          [(ngModel)]="selectedWarehouseItemId"
-                          (ngModelChange)="onWarehousePartSelected($event)"
-                          [searchable]="true"
-                          [creatable]="true"
-                          searchPlaceholder="Type spare part name, Part Number, SKU, or S/N…"
-                          createLabel="Create new spare part in Warehouse"
-                          createPlaceholder="e.g. Servo Actuator | PN-4420"
-                          (createOption)="quickCreateWarehousePart($event)"
-                          placeholder="— Search & select spare part by Name or Part Number —">
-              <app-dropdown-option [ngValue]="null">— Select spare part from Warehouse —</app-dropdown-option>
-              <app-dropdown-option *ngFor="let w of warehouseItems"
-                                   [ngValue]="w.id"
-                                   [searchText]="(w.name || '') + ' ' + (w.part_number || '') + ' ' + (w.sku || '') + ' ' + (w.serial_number || '') + ' ' + (w.supplier || '')">
-                {{w.name}} · P/N: {{w.part_number || w.sku}}{{w.serial_number ? (' · S/N: ' + w.serial_number) : ''}} ({{w.quantity}} {{w.unit || 'pcs'}} avail)
-              </app-dropdown-option>
+        <ng-template #woStatusPrimary>
+          <div class="form-group" *ngIf="showFormField('status')">
+            <label class="form-label">{{fieldLabel('form','status','Status')}}</label>
+            <app-dropdown class="form-control" [(ngModel)]="recordForm.status">
+              <app-dropdown-option value="SCHEDULED">Scheduled</app-dropdown-option>
+              <app-dropdown-option value="IN_PROGRESS">In Progress</app-dropdown-option>
+              <app-dropdown-option value="COMPLETED">Completed</app-dropdown-option>
+              <app-dropdown-option value="FAILED">Failed</app-dropdown-option>
+              <app-dropdown-option value="DEFERRED">Deferred</app-dropdown-option>
             </app-dropdown>
-            <input type="number"
-                   class="form-control mnt-part-qty"
-                   [(ngModel)]="selectedPartQty"
-                   min="1"
-                   placeholder="Qty">
-            <button type="button"
-                    class="btn btn-secondary btn-sm"
-                    [disabled]="!selectedWarehouseItemId"
-                    (click)="addWarehousePart()">
-              <span class="btn-icon">add</span> Add
-            </button>
           </div>
-
-          <!-- Auto-populated Part Number, Broken Serial Number & New Serial Number -->
-          <div class="mnt-serial-grid">
-            <div class="form-group">
-              <label class="form-label">Part Number (P/N)</label>
-              <input class="form-control mnt-num"
-                     [(ngModel)]="recordForm.part_number"
-                     placeholder="Auto-filled from spare part or enter P/N">
-            </div>
-            <div class="form-group">
-              <label class="form-label">Broken Serial Number (Removed S/N)</label>
-              <input class="form-control mnt-num"
-                     [(ngModel)]="recordForm.broken_serial_number"
-                     placeholder="Auto-filled from installed LRU / Asset or scan">
-            </div>
-            <div class="form-group">
-              <label class="form-label">New Serial Number (Installed S/N)</label>
-              <input class="form-control mnt-num"
-                     [(ngModel)]="recordForm.new_serial_number"
-                     placeholder="Auto-filled from Warehouse spare or scan">
-            </div>
-          </div>
-          <div class="mnt-serial-hint" *ngIf="selectedWarehouseItemId">
-            <span class="mat-i">auto_awesome</span>
-            <span>Part Number &amp; Serial Numbers auto-populated from selected Warehouse spare. Edit if needed before clicking <strong>Add</strong> or saving.</span>
-          </div>
-
-          <div class="mnt-parts-list" *ngIf="partsList.length > 0">
-            <div class="mnt-part-chip" *ngFor="let part of partsList; let idx = index">
-              <div>
-                <div>
-                  <strong>{{part.name}}</strong>
-                  <span class="text-muted" *ngIf="part.sku"> · {{part.sku}}</span>
-                </div>
-                <div class="mnt-part-meta" *ngIf="part.part_number || part.broken_serial_number || part.new_serial_number">
-                  <span class="mnt-serial-tag" *ngIf="part.part_number">P/N: {{part.part_number}}</span>
-                  <span class="mnt-serial-tag is-broken" *ngIf="part.broken_serial_number">Broken S/N: {{part.broken_serial_number}}</span>
-                  <span class="mnt-serial-tag is-new" *ngIf="part.new_serial_number">New S/N: {{part.new_serial_number}}</span>
-                </div>
-              </div>
-              <div class="mnt-head-actions">
-                <span class="mnt-num font-bold">{{part.quantity}} {{part.unit || 'pcs'}}</span>
-                <button type="button" class="btn btn-ghost btn-icon-only btn-sm" (click)="removePart(idx)" title="Remove part">
-                  <span class="btn-icon" style="font-size:16px">close</span>
-                </button>
-              </div>
-            </div>
-
-            <label class="mnt-check-label" style="margin-top:4px;align-self:flex-start">
-              <input type="checkbox" class="mnt-checkbox" [(ngModel)]="deductStock">
-              <span>Sync part quantities with Warehouse stock automatically (delta-safe, auto-returns reductions)</span>
-            </label>
-          </div>
-        </div>
+        </ng-template>
 
         <div class="form-group" style="grid-column:1 / -1" *ngIf="showFormField('description')">
           <label class="form-label">{{fieldLabel('form','description','Description')}} *</label>
@@ -332,11 +130,271 @@
                     placeholder="Describe scope of work and procedures…"></textarea>
         </div>
 
-        <div class="form-group" style="grid-column:1 / -1" *ngIf="showFormField('findings')">
-          <label class="form-label">{{fieldLabel('form','findings','Findings / Resolution')}}</label>
-          <textarea class="form-control mnt-textarea-sm"
-                    [(ngModel)]="recordForm.findings"
-                    placeholder="Post-maintenance notes or root cause (optional)…"></textarea>
+        <!-- ── TIER 2 ACCORDION 1: Spare Parts & Serial Numbers ────────────── -->
+        <div class="ux-accordion-section" [class.is-open]="showPartsSection" *ngIf="showFormField('parts_used')">
+          <button type="button"
+                  class="ux-accordion-head"
+                  [attr.aria-expanded]="showPartsSection"
+                  (click)="showPartsSection = !showPartsSection">
+            <span class="ux-acc-left">
+              <span class="ux-acc-icon">inventory_2</span>
+              <span>
+                <span>{{fieldLabel('form','parts_used','Spare Parts & Serial Numbers')}}</span>
+                <span class="ux-acc-sub"> — Search Warehouse by name or P/N, track removed/installed S/N</span>
+              </span>
+            </span>
+            <span class="ux-acc-right">
+              <span class="ux-acc-badge" *ngIf="partsSectionBadge">{{partsSectionBadge}}</span>
+              <span class="ux-acc-chevron">expand_more</span>
+            </span>
+          </button>
+
+          <div class="ux-accordion-body" *ngIf="showPartsSection">
+            <div class="form-group">
+              <div class="mnt-parts-picker">
+                <app-dropdown class="form-control mnt-part-select"
+                              [(ngModel)]="selectedWarehouseItemId"
+                              (ngModelChange)="onWarehousePartSelected($event)"
+                              [searchable]="true"
+                              [creatable]="true"
+                              searchPlaceholder="Type spare part name, Part Number, SKU, or S/N…"
+                              createLabel="Create new spare part in Warehouse"
+                              createPlaceholder="e.g. Servo Actuator | PN-4420"
+                              (createOption)="quickCreateWarehousePart($event)"
+                              placeholder="— Search & select spare part by Name or Part Number —">
+                  <app-dropdown-option [ngValue]="null">— Select spare part from Warehouse —</app-dropdown-option>
+                  <app-dropdown-option *ngFor="let w of warehouseItems"
+                                       [ngValue]="w.id"
+                                       [searchText]="(w.name || '') + ' ' + (w.part_number || '') + ' ' + (w.sku || '') + ' ' + (w.serial_number || '') + ' ' + (w.supplier || '')">
+                    {{w.name}} · P/N: {{w.part_number || w.sku}}{{w.serial_number ? (' · S/N: ' + w.serial_number) : ''}} ({{w.quantity}} {{w.unit || 'pcs'}} avail)
+                  </app-dropdown-option>
+                </app-dropdown>
+                <input type="number"
+                       class="form-control mnt-part-qty"
+                       [(ngModel)]="selectedPartQty"
+                       min="1"
+                       placeholder="Qty">
+                <button type="button"
+                        class="btn btn-secondary btn-sm"
+                        [disabled]="!selectedWarehouseItemId"
+                        (click)="addWarehousePart()">
+                  <span class="btn-icon">add</span> Add
+                </button>
+              </div>
+
+              <!-- Auto-populated Part Number, Broken Serial Number & New Serial Number -->
+              <div class="mnt-serial-grid">
+                <div class="form-group">
+                  <label class="form-label">Part Number (P/N)</label>
+                  <input class="form-control mnt-num"
+                         [(ngModel)]="recordForm.part_number"
+                         placeholder="Auto-filled from spare part or enter P/N">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Broken Serial Number (Removed S/N)</label>
+                  <input class="form-control mnt-num"
+                         [(ngModel)]="recordForm.broken_serial_number"
+                         placeholder="Auto-filled from installed LRU / Asset or scan">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">New Serial Number (Installed S/N)</label>
+                  <input class="form-control mnt-num"
+                         [(ngModel)]="recordForm.new_serial_number"
+                         placeholder="Auto-filled from Warehouse spare or scan">
+                </div>
+              </div>
+              <div class="mnt-serial-hint" *ngIf="selectedWarehouseItemId">
+                <span class="mat-i">auto_awesome</span>
+                <span>Part Number &amp; Serial Numbers auto-populated from selected Warehouse spare. Edit if needed before clicking <strong>Add</strong> or saving.</span>
+              </div>
+
+              <div class="mnt-parts-list" *ngIf="partsList.length > 0">
+                <div class="mnt-part-chip" *ngFor="let part of partsList; let idx = index">
+                  <div>
+                    <div>
+                      <strong>{{part.name}}</strong>
+                      <span class="text-muted" *ngIf="part.sku"> · {{part.sku}}</span>
+                    </div>
+                    <div class="mnt-part-meta" *ngIf="part.part_number || part.broken_serial_number || part.new_serial_number">
+                      <span class="mnt-serial-tag" *ngIf="part.part_number">P/N: {{part.part_number}}</span>
+                      <span class="mnt-serial-tag is-broken" *ngIf="part.broken_serial_number">Broken S/N: {{part.broken_serial_number}}</span>
+                      <span class="mnt-serial-tag is-new" *ngIf="part.new_serial_number">New S/N: {{part.new_serial_number}}</span>
+                    </div>
+                  </div>
+                  <div class="mnt-head-actions">
+                    <span class="mnt-num font-bold">{{part.quantity}} {{part.unit || 'pcs'}}</span>
+                    <button type="button" class="btn btn-ghost btn-icon-only btn-sm" (click)="removePart(idx)" title="Remove part">
+                      <span class="btn-icon" style="font-size:16px">close</span>
+                    </button>
+                  </div>
+                </div>
+
+                <label class="mnt-check-label" style="margin-top:4px;align-self:flex-start">
+                  <input type="checkbox" class="mnt-checkbox" [(ngModel)]="deductStock">
+                  <span>Sync part quantities with Warehouse stock automatically (delta-safe, auto-returns reductions)</span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── TIER 2 ACCORDION 2: Technical Details, MEL, Costs & Follow-up ─ -->
+        <div class="ux-accordion-section" [class.is-open]="showAdvancedSection">
+          <button type="button"
+                  class="ux-accordion-head"
+                  [attr.aria-expanded]="showAdvancedSection"
+                  (click)="showAdvancedSection = !showAdvancedSection">
+            <span class="ux-acc-left">
+              <span class="ux-acc-icon">tune</span>
+              <span>
+                <span>Technical Details, MEL, Costs &amp; Follow-up</span>
+                <span class="ux-acc-sub"> — Subsystem, status, DR snag, downtime, MEL, costs, Wiki SOP &amp; findings</span>
+              </span>
+            </span>
+            <span class="ux-acc-right">
+              <span class="ux-acc-badge" *ngIf="advancedSectionBadge">{{advancedSectionBadge}}</span>
+              <span class="ux-acc-chevron">expand_more</span>
+            </span>
+          </button>
+
+          <div class="ux-accordion-body" *ngIf="showAdvancedSection">
+            <div class="form-row">
+              <div class="form-group" *ngIf="recordForm.simulator_id && showFormField('status')">
+                <label class="form-label">{{fieldLabel('form','status','Workflow Status')}}</label>
+                <app-dropdown class="form-control" [(ngModel)]="recordForm.status">
+                  <app-dropdown-option value="SCHEDULED">Scheduled</app-dropdown-option>
+                  <app-dropdown-option value="IN_PROGRESS">In Progress</app-dropdown-option>
+                  <app-dropdown-option value="COMPLETED">Completed</app-dropdown-option>
+                  <app-dropdown-option value="FAILED">Failed</app-dropdown-option>
+                  <app-dropdown-option value="DEFERRED">Deferred</app-dropdown-option>
+                </app-dropdown>
+              </div>
+
+              <div class="form-group" *ngIf="recordForm.simulator_id">
+                <label class="form-label">Affected Subsystem</label>
+                <app-dropdown class="form-control"
+                              [(ngModel)]="recordForm.subsystem_code"
+                              [searchable]="true"
+                              [creatable]="true"
+                              storageKey="maint_subsystems"
+                              createLabel="Add custom subsystem"
+                              createPlaceholder="e.g. RADAR_SIM"
+                              placeholder="— Select subsystem —">
+                  <app-dropdown-option value="">— General Bay —</app-dropdown-option>
+                  <app-dropdown-option *ngFor="let sub of subsystemOptions" [value]="sub.code">{{sub.label}}</app-dropdown-option>
+                </app-dropdown>
+              </div>
+
+              <div class="form-group" *ngIf="recordForm.simulator_id">
+                <label class="form-label">Lost Training Hours</label>
+                <input type="number" step="0.5" min="0" class="form-control mnt-num" [(ngModel)]="recordForm.lost_training_hours" placeholder="0.0">
+              </div>
+
+              <div class="form-group" *ngIf="recordForm.simulator_id">
+                <label class="form-label">Discrepancy Report (DR)</label>
+                <label class="mnt-check-label" style="padding:8px 0">
+                  <input type="checkbox" class="mnt-checkbox" [(ngModel)]="recordForm.is_snag">
+                  <span>Mark as Crew/Tech Snag (DR)</span>
+                </label>
+              </div>
+
+              <div class="form-group" *ngIf="showFormField('downtime_hours')">
+                <label class="form-label">{{fieldLabel('form','downtime_hours','Downtime Duration')}}</label>
+                <div class="mnt-downtime-inputs">
+                  <div class="mnt-unit-input">
+                    <input type="number" class="form-control" [(ngModel)]="downtimeHoursPart" min="0" placeholder="0">
+                    <span>hrs</span>
+                  </div>
+                  <div class="mnt-unit-input">
+                    <input type="number" class="form-control" [(ngModel)]="downtimeMinutesPart" min="0" max="59" placeholder="0">
+                    <span>min</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-group" *ngIf="showFormField('next_scheduled')">
+                <label class="form-label">{{fieldLabel('form','next_scheduled','Next Scheduled Cycle')}}</label>
+                <app-datetime-picker class="form-control"
+                                     mode="datetime"
+                                     [(ngModel)]="recordForm.next_scheduled"
+                                     placeholder="Optional recurring next date">
+                </app-datetime-picker>
+                <div class="mnt-quick-presets">
+                  <button *ngFor="let p of nextCyclePresets"
+                          type="button"
+                          class="mnt-preset-btn"
+                          (click)="applyNextCyclePreset(p.days)">
+                    {{p.label}}
+                  </button>
+                  <button *ngIf="recordForm.next_scheduled"
+                          type="button"
+                          class="mnt-preset-btn"
+                          (click)="clearNextCycle()">
+                    Clear
+                  </button>
+                </div>
+              </div>
+
+              <div class="form-group" *ngIf="showFormField('cost')">
+                <label class="form-label">
+                  {{fieldLabel('form','cost','Total Cost ($)')}}
+                  <span class="text-muted mnt-num" *ngIf="estimatedPartsCost > 0" style="font-weight:600;margin-left:6px">
+                    (Parts: {{money(estimatedPartsCost)}})
+                  </span>
+                </label>
+                <input type="number" class="form-control mnt-num" [(ngModel)]="recordForm.cost" min="0" step="0.01" placeholder="Auto = Parts + Labor">
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Labor Cost ($)</label>
+                <input type="number" class="form-control mnt-num" [(ngModel)]="recordForm.labor_cost" min="0" step="0.01" placeholder="0.00">
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">MEL / Deferred Defect Category</label>
+                <app-dropdown class="form-control" [(ngModel)]="recordForm.mel_category" ariaLabel="MEL Category">
+                  <app-dropdown-option value="NONE">None (Standard WO)</app-dropdown-option>
+                  <app-dropdown-option value="CAT_A">MEL Cat A (Specified Interval)</app-dropdown-option>
+                  <app-dropdown-option value="CAT_B">MEL Cat B (3 Calendar Days)</app-dropdown-option>
+                  <app-dropdown-option value="CAT_C">MEL Cat C (10 Calendar Days)</app-dropdown-option>
+                  <app-dropdown-option value="CAT_D">MEL Cat D (120 Calendar Days)</app-dropdown-option>
+                </app-dropdown>
+              </div>
+
+              <div class="form-group" *ngIf="recordForm.mel_category && recordForm.mel_category !== 'NONE'">
+                <label class="form-label">MEL Rectification Expiry Date</label>
+                <app-datetime-picker
+                  class="form-control"
+                  mode="date"
+                  [(ngModel)]="recordForm.mel_expiry_date"
+                  placeholder="Select MEL expiry date">
+                </app-datetime-picker>
+              </div>
+
+              <div class="form-group" [style.grid-column]="(!recordForm.mel_category || recordForm.mel_category === 'NONE') ? 'span 1' : '1 / -1'">
+                <label class="form-label">Linked Wiki SOP / Runbook</label>
+                <app-dropdown class="form-control"
+                              [(ngModel)]="recordForm.wiki_article_id"
+                              [searchable]="true"
+                              [creatable]="true"
+                              searchPlaceholder="Search SOP or runbook title…"
+                              createLabel="Create draft SOP"
+                              createPlaceholder="e.g. Visual Alignment Runbook"
+                              (createOption)="quickCreateWikiSop($event)"
+                              placeholder="— Optional Engineering SOP —">
+                  <app-dropdown-option [ngValue]="null">— None —</app-dropdown-option>
+                  <app-dropdown-option *ngFor="let art of wikiArticles" [ngValue]="art.id">{{art.title}}</app-dropdown-option>
+                </app-dropdown>
+              </div>
+
+              <div class="form-group" style="grid-column:1 / -1" *ngIf="showFormField('findings')">
+                <label class="form-label">{{fieldLabel('form','findings','Findings / Resolution')}}</label>
+                <textarea class="form-control mnt-textarea-sm"
+                          [(ngModel)]="recordForm.findings"
+                          placeholder="Post-maintenance notes or root cause (optional)…"></textarea>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -488,26 +546,28 @@
     </div>
 
     <div class="modal-footer detail-footer">
-      <button type="button" class="btn btn-ghost detail-delete-btn" (click)="deleteRecord(detailRecord)">
+      <button *ngIf="auth.canManage" type="button" class="btn btn-ghost detail-delete-btn" (click)="deleteRecord(detailRecord)">
         <span class="btn-icon">delete</span> Delete
       </button>
       <div class="detail-footer-actions">
         <button type="button" class="btn btn-secondary" (click)="detailRecord = null">Close</button>
-        <button type="button"
-                class="btn btn-secondary"
-                *ngIf="detailRecord.status === 'SCHEDULED' || detailRecord.status === 'DEFERRED'"
-                (click)="updateRecordStatus(detailRecord, 'IN_PROGRESS')">
-          <span class="btn-icon text-primary">play_circle</span> Start
-        </button>
-        <button type="button"
-                class="btn btn-secondary"
-                *ngIf="detailRecord.status !== 'COMPLETED' && detailRecord.status !== 'FAILED'"
-                (click)="updateRecordStatus(detailRecord, 'COMPLETED')">
-          <span class="btn-icon" style="color:#16A34A">check_circle</span> Complete
-        </button>
-        <button type="button" class="btn btn-primary" (click)="editFromDetail()">
-          <span class="btn-icon">edit</span> Edit
-        </button>
+        <ng-container *ngIf="auth.canWrite">
+          <button type="button"
+                  class="btn btn-secondary"
+                  *ngIf="detailRecord.status === 'SCHEDULED' || detailRecord.status === 'DEFERRED'"
+                  (click)="updateRecordStatus(detailRecord, 'IN_PROGRESS')">
+            <span class="btn-icon text-primary">play_circle</span> Start
+          </button>
+          <button type="button"
+                  class="btn btn-secondary"
+                  *ngIf="detailRecord.status !== 'COMPLETED' && detailRecord.status !== 'FAILED'"
+                  (click)="updateRecordStatus(detailRecord, 'COMPLETED')">
+            <span class="btn-icon" style="color:#16A34A">check_circle</span> Complete
+          </button>
+          <button type="button" class="btn btn-primary" (click)="editFromDetail()">
+            <span class="btn-icon">edit</span> Edit
+          </button>
+        </ng-container>
       </div>
     </div>
   </div>

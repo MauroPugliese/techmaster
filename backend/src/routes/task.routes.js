@@ -12,6 +12,7 @@ const {
   sanitizeBulkAction,
   extractMentionUsernames
 } = require('../services/task-payload.service');
+const { emitDomainUpdate } = require('../config/socket');
 
 const TASK_INCLUDES = [
   { model: Task, as: 'subtasks' },

@@ -9,7 +9,7 @@ import {
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { ApiService, ToastService } from '../../../core/services/services';
+import { ApiService, AuthService, ToastService } from '../../../core/services/services';
 import { SimulatorMntRecord, SimulatorMntRecordsResponse } from '../../../core/models/interfaces';
 import { DropdownComponent, DropdownOptionComponent } from '../../../shared/components/dropdown/dropdown.component';
 import { DateTimePickerComponent } from '../../../shared/components/datetime-picker/datetime-picker.component';
@@ -75,7 +75,7 @@ import { ExportMenuComponent } from '../../../shared/components/export-menu/expo
                 <span class="mr-pill is-corr">Corrective / Fault: {{ data.counts.corrective }}</span>
                 <span class="mr-pill is-tot">Downtime: {{ data.counts.total_downtime_hours }}h</span>
               </div>
-              <button type="button" class="btn btn-primary btn-sm" (click)="showQuickForm = !showQuickForm">
+              <button *ngIf="auth.canWrite" type="button" class="btn btn-primary btn-sm" (click)="showQuickForm = !showQuickForm">
                 <span class="btn-icon">{{ showQuickForm ? 'expand_less' : 'add' }}</span>
                 {{ showQuickForm ? 'Hide Form' : 'Quick Log MNT' }}
               </button>
@@ -83,7 +83,7 @@ import { ExportMenuComponent } from '../../../shared/components/export-menu/expo
           </div>
 
           <!-- Inline Quick MNT Form -->
-          <div class="mr-quick-form" *ngIf="showQuickForm">
+          <div class="mr-quick-form" *ngIf="auth.canWrite && showQuickForm">
             <div class="form-row">
               <div class="form-group">
                 <label class="form-label">Record Classification</label>
@@ -163,6 +163,13 @@ import { ExportMenuComponent } from '../../../shared/components/export-menu/expo
               </div>
 
               <div class="mr-row-title">{{ rec.title }}</div>
+              <div class="mr-row-findings mr-num" *ngIf="$any(rec).part_number || $any(rec).broken_serial_number || $any(rec).new_serial_number">
+                <ng-container *ngIf="$any(rec).part_number"><strong>P/N:</strong> {{ $any(rec).part_number }}</ng-container>
+                <ng-container *ngIf="$any(rec).part_number && ($any(rec).broken_serial_number || $any(rec).new_serial_number)"> · </ng-container>
+                <ng-container *ngIf="$any(rec).broken_serial_number || $any(rec).new_serial_number">
+                  <strong>S/N:</strong> {{ $any(rec).broken_serial_number || '—' }} &rarr; {{ $any(rec).new_serial_number || '—' }}
+                </ng-container>
+              </div>
               <div class="mr-row-desc" *ngIf="rec.description">{{ rec.description }}</div>
               <div class="mr-row-findings" *ngIf="rec.findings">
                 <strong>Resolution:</strong> {{ rec.findings }}
@@ -310,6 +317,7 @@ export class StationMntRecordsModalComponent {
   quickForm = this.emptyQuickForm();
 
   constructor(
+    public auth: AuthService,
     private api: ApiService,
     private toast: ToastService,
     private cdr: ChangeDetectorRef
@@ -317,6 +325,9 @@ export class StationMntRecordsModalComponent {
 
   @HostListener('document:keydown.escape')
   onEsc(): void {
+    if (typeof document !== 'undefined' && document.querySelector('.confirm-overlay, .cdk-overlay-pane')) {
+      return;
+    }
     if (this.visible) this.close();
   }
 

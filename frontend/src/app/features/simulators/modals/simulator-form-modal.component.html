@@ -89,6 +89,133 @@
         </div>
       </div>
 
+      <!-- ══ BINARY SCHEDULING MODE (SORTIES vs SHIFTS) & HOURS SETTINGS ════ -->
+      <div class="sched-mode-card">
+        <div class="essential-head">
+          <span class="ess-tag">Scheduling Mode &amp; Operating Hours</span>
+          <span class="sched-window-badge sim-num">
+            {{ form.operating_start }}–{{ form.operating_end }} · {{ computedOperatingHours }}h / day
+          </span>
+        </div>
+
+        <!-- Binary Choice: Sorties OR Shifts -->
+        <div class="mode-picker-grid" role="radiogroup" aria-label="Scheduling mode">
+          <button
+            type="button"
+            class="mode-card-btn"
+            [class.active]="form.scheduling_mode === 'SORTIES'"
+            (click)="selectSchedulingMode('SORTIES')">
+            <span class="mat-i">flight_takeoff</span>
+            <div class="mode-txt">
+              <strong>Sorties (Mission Slots)</strong>
+              <span>Bookable 24h time slots with optional mission, instructor &amp; pilot</span>
+            </div>
+            <span class="mode-radio-dot"></span>
+          </button>
+
+          <button
+            type="button"
+            class="mode-card-btn mode-shifts"
+            [class.active]="form.scheduling_mode === 'SHIFTS'"
+            (click)="selectSchedulingMode('SHIFTS')">
+            <span class="mat-i">schedule</span>
+            <div class="mode-txt">
+              <strong>Daily Shifts</strong>
+              <span>Shift-based daily sheet (SHIFT 1 / 2 / 3) with status, hours &amp; notes</span>
+            </div>
+            <span class="mode-radio-dot"></span>
+          </button>
+        </div>
+
+        <!-- Operating Hours Row -->
+        <div class="sched-hours-row">
+          <div class="form-group">
+            <label class="form-label">Operating Start</label>
+            <app-time-picker
+              [compact]="true"
+              [allowReset]="false"
+              [(ngModel)]="form.operating_start"
+              (valueChange)="onOperatingHoursChange()"
+              ariaLabel="Operating start time">
+            </app-time-picker>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Operating End</label>
+            <app-time-picker
+              [compact]="true"
+              [allowReset]="false"
+              [(ngModel)]="form.operating_end"
+              (valueChange)="onOperatingHoursChange()"
+              ariaLabel="Operating end time">
+            </app-time-picker>
+          </div>
+          <div class="form-group" *ngIf="form.scheduling_mode === 'SORTIES'">
+            <label class="form-label">Default Slot (h)</label>
+            <input type="number" class="form-control sim-num" [(ngModel)]="form.default_slot_hours" min="0.5" max="24" step="0.5">
+          </div>
+          <div class="form-group" *ngIf="form.scheduling_mode === 'SORTIES'">
+            <label class="form-label">Turnaround (min)</label>
+            <input type="number" class="form-control sim-num" [(ngModel)]="form.turnaround_minutes" min="0" max="180" step="5">
+          </div>
+        </div>
+
+        <!-- Sorties Slot Presets -->
+        <div class="presets-block" *ngIf="form.scheduling_mode === 'SORTIES'">
+          <div class="presets-head">
+            <span class="presets-lbl">Quick Slot Presets (shown when scheduling a sortie on this bay)</span>
+            <button type="button" class="opt-link-btn" (click)="addSlotPreset()">+ Add Slot</button>
+          </div>
+          <div class="preset-rows" *ngIf="form.slot_presets.length > 0">
+            <div class="preset-row" *ngFor="let slot of form.slot_presets; let i = index">
+              <app-time-picker
+                [compact]="true"
+                [allowReset]="false"
+                [ngModel]="slot.start"
+                (valueChange)="updateSlotPresetTime(i, 'start', $event)">
+              </app-time-picker>
+              <span class="preset-sep">→</span>
+              <app-time-picker
+                [compact]="true"
+                [allowReset]="false"
+                [ngModel]="slot.end"
+                (valueChange)="updateSlotPresetTime(i, 'end', $event)">
+              </app-time-picker>
+              <input class="form-control preset-label-inp" [(ngModel)]="slot.label" placeholder="Label">
+              <button type="button" class="preset-del-btn" (click)="removeSlotPreset(i)" title="Remove slot">
+                <span class="mat-i">close</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Shifts Presets -->
+        <div class="presets-block" *ngIf="form.scheduling_mode === 'SHIFTS'">
+          <div class="presets-head">
+            <span class="presets-lbl">Default Shift Windows (auto-applied on Daily Shifts &amp; 24h quick edit)</span>
+            <button type="button" class="opt-link-btn" (click)="addShiftPreset()">+ Add Shift</button>
+          </div>
+          <div class="preset-rows" *ngIf="form.shift_presets.length > 0">
+            <div class="preset-row shift-preset-row" *ngFor="let sh of form.shift_presets; let i = index">
+              <input class="form-control preset-name-inp" [(ngModel)]="sh.name" placeholder="SHIFT 1">
+              <app-time-picker
+                [compact]="true"
+                [allowReset]="false"
+                [(ngModel)]="sh.start">
+              </app-time-picker>
+              <span class="preset-sep">→</span>
+              <app-time-picker
+                [compact]="true"
+                [allowReset]="false"
+                [(ngModel)]="sh.end">
+              </app-time-picker>
+              <button type="button" class="preset-del-btn" (click)="removeShiftPreset(i)" title="Remove shift preset">
+                <span class="mat-i">close</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- ══ OPTIONAL MODULAR SUBSECTIONS (CHECK TO ENABLE / UNCHECK TO DISABLE) ══ -->
       <div class="opt-sections-bar">
         <span class="opt-bar-lbl">

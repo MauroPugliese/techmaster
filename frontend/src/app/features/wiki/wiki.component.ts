@@ -93,8 +93,8 @@ export class WikiComponent implements OnInit, OnDestroy {
   uiPrefs: UiSectionPreferences | null = null;
 
   constructor(
+    public auth: AuthService,
     private api: ApiService,
-    private auth: AuthService,
     private uiCustomization: UiCustomizationService,
     private cdr: ChangeDetectorRef,
     private toast: ToastService,
@@ -104,7 +104,7 @@ export class WikiComponent implements OnInit, OnDestroy {
   ) {}
 
   get canManageCategories(): boolean {
-    return this.auth.hasRole('admin', 'manager');
+    return this.auth.canManage;
   }
 
   get hasActiveFilters(): boolean {
@@ -162,7 +162,7 @@ export class WikiComponent implements OnInit, OnDestroy {
         this.cdr.markForCheck();
       }
 
-      if (params.get('action') === 'new') {
+      if (params.get('action') === 'new' && this.auth.canWrite) {
         setTimeout(() => {
           this.openEditor(null);
           this.router.navigate([], {
@@ -214,7 +214,9 @@ export class WikiComponent implements OnInit, OnDestroy {
     }).pipe(takeUntil(this.destroy$)).subscribe({
       next: res => {
         this.articles       = res.data.items || [];
-        this.pinnedArticles = this.articles.filter(a => a.is_pinned);
+        if (this.page === 1 || this.pinnedArticles.length === 0) {
+          this.pinnedArticles = this.articles.filter(a => a.is_pinned);
+        }
         this.total          = res.data.total || 0;
         if (this.selectedCategory === null && !this.selectedTag && !this.searchQuery.trim()) {
           this.unfilteredTotal = this.total;
@@ -357,10 +359,10 @@ export class WikiComponent implements OnInit, OnDestroy {
 
   closeArticleView(): void {
     this.viewingArticle = null;
-    if (this.route.snapshot.queryParamMap.has('article')) {
+    if (this.route.snapshot.queryParamMap.has('article') || this.route.snapshot.queryParamMap.has('slug')) {
       this.router.navigate([], {
         relativeTo: this.route,
-        queryParams: { article: null },
+        queryParams: { article: null, slug: null },
         queryParamsHandling: 'merge',
         replaceUrl: true
       });
@@ -369,6 +371,7 @@ export class WikiComponent implements OnInit, OnDestroy {
 
   // ── Editor CRUD ────────────────────────────────────────────────────────────
   openEditor(article: WikiArticle | null = null): void {
+    if (!this.auth.canWrite) return;
     this.editingArticle = article;
     this.showEditor     = true;
   }

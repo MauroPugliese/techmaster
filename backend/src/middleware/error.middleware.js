@@ -4,11 +4,18 @@ const errorHandler = (err, req, res, next) => {
   logger.error(`${req.method} ${req.path} — ${err.message}`, err);
 
   if (err.name === 'SequelizeValidationError' || err.name === 'SequelizeUniqueConstraintError') {
-    const errors = err.errors.map(e => ({ field: e.path, message: e.message }));
+    const errors = (err.errors || []).map(e => ({ field: e.path, message: e.message }));
     return res.status(422).json({ success: false, message: 'Validation failed', errors });
   }
 
-  const status  = err.status || 500;
+  if (err.name === 'SequelizeForeignKeyConstraintError' || err?.parent?.errno === 1451 || err?.parent?.errno === 1452) {
+    return res.status(409).json({
+      success: false,
+      message: 'Operation conflicts with referenced records.'
+    });
+  }
+
+  const status  = err.status || err.statusCode || 500;
   const message = process.env.NODE_ENV === 'production' && status === 500
     ? 'Internal server error'
     : err.message;

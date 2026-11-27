@@ -237,8 +237,39 @@ export interface TrendPoint { date: string; count: number; status: string; }
 // ── Flight Simulators Fleet, Subsystems & QTG ────────────────────────────────
 export type SimulatorPlatformCategory = 'COMMERCIAL_FIXED_WING' | 'ROTORCRAFT' | 'DEFENSE_FMS' | 'FTD_FNPT';
 export type SimulatorStationKind = 'FFS_BAY' | 'TEST_PLACE' | 'IOS_CONSOLE';
+export type SimulatorSchedulingMode = 'SORTIES' | 'SHIFTS';
 export type ShiftUsageStatus = 'READY' | 'IN_USE' | 'NA';
 export type SimulatorStatus = 'READY' | 'IN_SORTIE' | 'PRE_FLIGHT' | 'MAINTENANCE' | 'DEGRADED' | 'AOG';
+
+export interface SimulatorSlotPreset {
+  label: string;
+  start: string;
+  end: string;
+}
+
+export interface SimulatorShiftPreset {
+  name: string;
+  start: string;
+  end: string;
+  pre_flight?: string;
+}
+
+export interface SimulatorScheduleConfig {
+  operating_start: string;
+  operating_end: string;
+  default_slot_hours: number;
+  turnaround_minutes: number;
+  slot_presets?: SimulatorSlotPreset[];
+  shift_presets?: SimulatorShiftPreset[];
+}
+
+export interface ExternalCrewSuggestions {
+  instructors: string[];
+  pilots: string[];
+  missions: string[];
+  scenarios: string[];
+  customers: string[];
+}
 export type SimulatorSubsystemCode = 'VISUAL' | 'MOTION' | 'CONTROL_LOADING' | 'AVIONICS_COCKPIT' | 'IOS' | 'HOST_COMPUTE' | 'SOUND' | 'HVAC_POWER';
 export type SimulatorSubsystemStatus = 'NOMINAL' | 'DEGRADED' | 'FAULT' | 'MAINTENANCE';
 export type QtgCategory = 'PERFORMANCE' | 'HANDLING' | 'MOTION_CUEING' | 'VISUAL_SYSTEM' | 'SOUND' | 'IOS_NAV';
@@ -312,6 +343,8 @@ export interface Simulator {
   name: string;
   bay_code: string;
   station_kind?: SimulatorStationKind;
+  scheduling_mode?: SimulatorSchedulingMode;
+  schedule_config?: SimulatorScheduleConfig | null;
   sort_order?: number;
   platform_category: SimulatorPlatformCategory;
   aircraft_type: string;
@@ -361,6 +394,12 @@ export interface SimulatorShiftEntry {
   usage_status: ShiftUsageStatus;
   sim_testing_start: string;
   sim_testing_end: string;
+  mission_name?: string | null;
+  instructor_name?: string | null;
+  pilot_name?: string | null;
+  copilot_name?: string | null;
+  weather_profile?: string | null;
+  scenario_code?: string | null;
   notes?: string | null;
   duration_minutes?: number;
   station?: Partial<Simulator> | null;
@@ -395,6 +434,10 @@ export interface SimulatorDailySheetResponse {
 
 export interface TimelineShiftBlock {
   id: string;
+  entry_id?: number | null;
+  shift_id?: number | null;
+  shift_number?: number;
+  log_date?: string;
   simulator_id: number;
   station_kind: SimulatorStationKind;
   block_kind: 'SHIFT_IN_USE' | 'SHIFT_READY' | 'SHIFT_NA';
@@ -402,7 +445,17 @@ export interface TimelineShiftBlock {
   shift_name: string;
   start_time: string;
   end_time: string;
+  display_start_time?: string;
+  display_end_time?: string;
+  continued_from_prev_day?: boolean;
+  continues_next_day?: boolean;
   duration_minutes: number;
+  mission_name?: string | null;
+  instructor_name?: string | null;
+  pilot_name?: string | null;
+  copilot_name?: string | null;
+  weather_profile?: string | null;
+  scenario_code?: string | null;
   notes?: string | null;
 }
 
@@ -413,6 +466,8 @@ export interface TimelineMaintenanceBlock {
   record_id?: number | null;
   title: string;
   subsystem?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
   start_time: string;
   end_time: string;
   status: string;
@@ -475,6 +530,10 @@ export interface Operation {
   simulator_id?: number | null;
   created_by: number;
   title: string;
+  mission_name?: string | null;
+  instructor_name?: string | null;
+  pilot_name?: string | null;
+  copilot_name?: string | null;
   customer_operator?: string | null;
   scenario_code?: string | null;
   weather_profile?: string | null;

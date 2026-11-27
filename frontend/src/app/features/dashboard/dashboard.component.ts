@@ -11,7 +11,11 @@ import { Subject, interval, of } from 'rxjs';
 import { catchError, debounceTime, switchMap, takeUntil, timeout } from 'rxjs/operators';
 import {
   ApiService,
+  AuthService,
   DateFilterService,
+  NavSectionAccess,
+  SectionAccessService,
+  SocketService,
   UiCustomizationService,
   UiSectionPreferences
 } from '../../core/services/services';
@@ -69,6 +73,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
   uiPrefs: UiSectionPreferences | null = null;
   readonly emptyArr: any[] = [];
   wallSimulators: Simulator[] = [];
+  private navSections: NavSectionAccess[] = [];
   simKindCounts: Record<'FFS_BAY' | 'TEST_PLACE' | 'IOS_CONSOLE', number> = {
     FFS_BAY: 0,
     TEST_PLACE: 0,
@@ -76,13 +81,21 @@ export class DashboardComponent implements OnInit, OnDestroy {
   };
 
   constructor(
+    public auth: AuthService,
     private api: ApiService,
     private dateFilter: DateFilterService,
+    private sectionAccess: SectionAccessService,
+    private socketService: SocketService,
     private uiCustomization: UiCustomizationService,
     private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
+    this.sectionAccess.sections$.pipe(takeUntil(this.destroy$)).subscribe(sections => {
+      this.navSections = sections || [];
+      this.cdr.markForCheck();
+    });
+
     this.uiCustomization.load('dashboard').pipe(takeUntil(this.destroy$)).subscribe(p => {
       this.uiPrefs = p;
       this.cdr.markForCheck();
@@ -128,6 +141,15 @@ export class DashboardComponent implements OnInit, OnDestroy {
       .pipe(debounceTime(120), takeUntil(this.destroy$))
       .subscribe(() => this.triggerLoad(false));
 
+    // Real-time Socket.IO live refresh on operational mutations
+    this.socketService.domainUpdates$
+      .pipe(debounceTime(450), takeUntil(this.destroy$))
+      .subscribe(() => {
+        if (this.autoRefreshEnabled && typeof document !== 'undefined' && !document.hidden) {
+          this.triggerLoad(true);
+        }
+      });
+
     // Silent background live refresh every 30s while tab is visible
     interval(30000)
       .pipe(takeUntil(this.destroy$))
@@ -136,6 +158,23 @@ export class DashboardComponent implements OnInit, OnDestroy {
           this.triggerLoad(true);
         }
       });
+  }
+
+  canShowSection(sectionKey: string): boolean {
+    if (!this.navSections.length) return true;
+    const match = this.navSections.find(s => s.section_key === sectionKey);
+    return match ? this.sectionAccess.isVisible(match) : false;
+  }
+
+  get hasAnyQuickCreate(): boolean {
+    return (
+      this.canShowSection('operations') ||
+      this.canShowSection('maintenance') ||
+      this.canShowSection('tasks') ||
+      this.canShowSection('warehouse') ||
+      (this.auth.canManage && this.canShowSection('shifts')) ||
+      this.canShowSection('wiki')
+    );
   }
 
   ngOnDestroy(): void {
@@ -180,6 +219,13 @@ export class DashboardComponent implements OnInit, OnDestroy {
   }
 
   wallKindFilter: 'FFS_BAY' | 'TEST_PLACE' | 'IOS_CONSOLE' = 'FFS_BAY';
+  activeInsightsTab: 'trends' | 'assets' | 'roster' | 'activity' = 'trends';
+
+  setInsightsTab(tab: 'trends' | 'assets' | 'roster' | 'activity'): void {
+    if (this.activeInsightsTab === tab) return;
+    this.activeInsightsTab = tab;
+    this.cdr.markForCheck();
+  }
 
   setWallKindFilter(kind: 'FFS_BAY' | 'TEST_PLACE' | 'IOS_CONSOLE'): void {
     if (this.wallKindFilter === kind) return;
@@ -200,8 +246,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
       else ffs += 1;
     }
     this.simKindCounts = { FFS_BAY: ffs, TEST_PLACE: tp, IOS_CONSOLE: ios };
-    const filtered = sims.filter(s => (s.station_kind || 'FFS_BAY') === this.wallKindFilter);
-    this.wallSimulators = filtered.length > 0 ? filtered : sims;
+    this.wallSimulators = sims.filter(s => (s.station_kind || 'FFS_BAY') === this.wallKindFilter);
   }
 
   countSimKind(kind: 'FFS_BAY' | 'TEST_PLACE' | 'IOS_CONSOLE'): number {

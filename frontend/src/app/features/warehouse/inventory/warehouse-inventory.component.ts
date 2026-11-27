@@ -18,6 +18,7 @@ import { FormsModule } from '@angular/forms';
 import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../../core/services/api.service';
+import { AuthService } from '../../../core/services/auth.service';
 import { ConfirmService } from '../../../core/services/confirm.service';
 import { ToastService } from '../../../core/services/toast.service';
 import { UiCustomizationService, UiSectionPreferences } from '../../../core/services/ui-customization.service';
@@ -90,6 +91,7 @@ export class WarehouseInventoryComponent implements OnInit, OnChanges, OnDestroy
   lruStatusFilter = '';
   subsystemFilter = '';
   aogOnly = false;
+  showAdvancedFilters = false;
 
   readonly subsystemOptions = Object.entries(SUBSYSTEM_META).map(([code, meta]) => ({
     code,
@@ -106,12 +108,17 @@ export class WarehouseInventoryComponent implements OnInit, OnChanges, OnDestroy
   bulkBusy = false;
 
   constructor(
+    public auth: AuthService,
     private api: ApiService,
     private uiCustomization: UiCustomizationService,
     private toast: ToastService,
     private confirm: ConfirmService,
     private cdr: ChangeDetectorRef
   ) {}
+
+  trackByItemId(_: number, item: InventoryItem): number {
+    return item.id;
+  }
 
   ngOnInit(): void {
     this.search = this.externalSearch || '';
@@ -259,6 +266,17 @@ export class WarehouseInventoryComponent implements OnInit, OnChanges, OnDestroy
   onStatusSelectChange(): void {
     this.statusFilterChanged.emit(this.stockStatusFilter);
     this.applyFilters();
+  }
+
+  get advancedFilterCount(): number {
+    let count = 0;
+    if (this.categoryFilter !== '') count++;
+    if (this.locationFilter !== '') count++;
+    if (this.supplierFilter !== '') count++;
+    if (this.partClassificationFilter !== '') count++;
+    if (this.lruStatusFilter !== '') count++;
+    if (this.subsystemFilter !== '') count++;
+    return count;
   }
 
   get hasActiveFilters(): boolean {

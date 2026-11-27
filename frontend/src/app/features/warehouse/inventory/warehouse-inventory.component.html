@@ -1,4 +1,4 @@
-<!-- ── Single-Row Filter & Search Toolbar ──────────────────────────────── -->
+<!-- ── Clean Progressive Filter & Search Toolbar ─────────────────────────── -->
 <div class="wh-toolbar-card">
   <div class="wh-filter-row">
     <div class="wh-search-wrap">
@@ -18,6 +18,50 @@
         </button>
       </div>
     </div>
+
+    <app-dropdown class="form-control wh-filter-select"
+                  [(ngModel)]="stockStatusFilter"
+                  (change)="onStatusSelectChange()"
+                  placeholder="All Status">
+      <app-dropdown-option [ngValue]="'all'">All Status</app-dropdown-option>
+      <app-dropdown-option [ngValue]="'healthy'">Healthy</app-dropdown-option>
+      <app-dropdown-option [ngValue]="'low'">Low Stock</app-dropdown-option>
+      <app-dropdown-option [ngValue]="'out'">Out of Stock</app-dropdown-option>
+      <app-dropdown-option [ngValue]="'overstock'">Overstock</app-dropdown-option>
+    </app-dropdown>
+
+    <button type="button"
+            class="btn btn-sm wh-aog-toggle"
+            [class.active]="aogOnly"
+            (click)="toggleAogFilter()"
+            title="Show only AOG-critical aviation spares">
+      <span class="mat-i" style="font-size:16px">priority_high</span>
+      AOG Critical
+    </button>
+
+    <button type="button"
+            class="ux-filter-toggle"
+            [class.active]="showAdvancedFilters"
+            [class.has-active]="advancedFilterCount > 0"
+            [attr.aria-expanded]="showAdvancedFilters"
+            (click)="showAdvancedFilters = !showAdvancedFilters">
+      <span class="mat-i">tune</span>
+      <span>Filters</span>
+      <span class="ux-count-pill" *ngIf="advancedFilterCount > 0">{{advancedFilterCount}}</span>
+    </button>
+
+    <button *ngIf="hasActiveFilters"
+            type="button"
+            class="btn btn-ghost btn-sm"
+            (click)="resetFilters()"
+            title="Reset all filters">
+      <span class="btn-icon">filter_alt_off</span> Reset
+    </button>
+  </div>
+
+  <!-- Collapsible Secondary Filters Drawer -->
+  <div class="ux-advanced-drawer" *ngIf="showAdvancedFilters">
+    <span class="ux-drawer-label">More Filters</span>
 
     <app-dropdown class="form-control wh-filter-select"
                   [(ngModel)]="categoryFilter"
@@ -43,17 +87,6 @@
       <app-dropdown-option [ngValue]="''">All Suppliers</app-dropdown-option>
       <app-dropdown-option [ngValue]="'__unassigned__'">No Supplier</app-dropdown-option>
       <app-dropdown-option *ngFor="let s of suppliers" [ngValue]="s">{{s}}</app-dropdown-option>
-    </app-dropdown>
-
-    <app-dropdown class="form-control wh-filter-select"
-                  [(ngModel)]="stockStatusFilter"
-                  (change)="onStatusSelectChange()"
-                  placeholder="All Status">
-      <app-dropdown-option [ngValue]="'all'">All Status</app-dropdown-option>
-      <app-dropdown-option [ngValue]="'healthy'">Healthy</app-dropdown-option>
-      <app-dropdown-option [ngValue]="'low'">Low Stock</app-dropdown-option>
-      <app-dropdown-option [ngValue]="'out'">Out of Stock</app-dropdown-option>
-      <app-dropdown-option [ngValue]="'overstock'">Overstock</app-dropdown-option>
     </app-dropdown>
 
     <app-dropdown class="form-control wh-filter-select"
@@ -85,28 +118,11 @@
       <app-dropdown-option [ngValue]="''">All Subsystems</app-dropdown-option>
       <app-dropdown-option *ngFor="let sub of subsystemOptions" [ngValue]="sub.code">{{sub.label}}</app-dropdown-option>
     </app-dropdown>
-
-    <button type="button"
-            class="btn btn-sm wh-aog-toggle"
-            [class.active]="aogOnly"
-            (click)="toggleAogFilter()"
-            title="Show only AOG-critical aviation spares">
-      <span class="mat-i" style="font-size:16px">priority_high</span>
-      AOG Critical
-    </button>
-
-    <button *ngIf="hasActiveFilters"
-            type="button"
-            class="btn btn-ghost btn-sm"
-            (click)="resetFilters()"
-            title="Reset all filters">
-      <span class="btn-icon">filter_alt_off</span> Reset
-    </button>
   </div>
 </div>
 
 <!-- ── Contextual Bulk Action Bar ──────────────────────────────────────── -->
-<div class="wh-bulk-bar" *ngIf="selectedIds.size > 0">
+<div class="wh-bulk-bar" *ngIf="auth.canManage && selectedIds.size > 0">
   <div class="wh-head-actions">
     <span class="mat-i">checklist</span>
     <strong>{{selectedIds.size}} item{{selectedIds.size > 1 ? 's' : ''}} selected</strong>
@@ -158,7 +174,7 @@
   <table class="data-table wh-table">
     <thead>
       <tr>
-        <th style="width:36px">
+        <th style="width:36px" *ngIf="auth.canManage">
           <input type="checkbox"
                  class="wh-checkbox"
                  [checked]="allVisibleSelected"
@@ -207,10 +223,10 @@
       </tr>
     </thead>
     <tbody>
-      <tr *ngFor="let item of items; let idx = index"
+      <tr *ngFor="let item of items; let idx = index; trackBy: trackByItemId"
           class="row-clickable"
           (click)="detailRequested.emit(item)">
-        <td (click)="$event.stopPropagation()">
+        <td *ngIf="auth.canManage" (click)="$event.stopPropagation()">
           <input type="checkbox"
                  class="wh-checkbox"
                  [checked]="selectedIds.has(item.id)"
@@ -292,13 +308,15 @@
 
         <td class="wh-col-actions" (click)="$event.stopPropagation()">
           <div class="wh-row-actions">
-            <button type="button"
+            <button *ngIf="auth.canWrite"
+                    type="button"
                     class="btn btn-ghost btn-icon-only btn-sm"
                     (click)="movementRequested.emit({ item })"
                     title="Stock Movement / Transfer">
               <span class="btn-icon text-primary">swap_horiz</span>
             </button>
-            <button type="button"
+            <button *ngIf="auth.canWrite"
+                    type="button"
                     class="btn btn-ghost btn-icon-only btn-sm"
                     (click)="editItemRequested.emit(item)"
                     title="Edit">
@@ -318,11 +336,11 @@
                    *ngIf="openMenuItemId === item.id"
                    [class.open-up]="items.length > 2 && idx >= items.length - 2"
                    (click)="$event.stopPropagation()">
-                <button type="button" class="wh-menu-item" (click)="quickIn(item)">
+                <button *ngIf="auth.canWrite" type="button" class="wh-menu-item" (click)="quickIn(item)">
                   <span class="mat-i" style="color:#16A34A">add_circle_outline</span>
                   <span>Quick Stock In</span>
                 </button>
-                <button type="button" class="wh-menu-item" [disabled]="item.quantity <= 0" (click)="quickOut(item)">
+                <button *ngIf="auth.canWrite" type="button" class="wh-menu-item" [disabled]="item.quantity <= 0" (click)="quickOut(item)">
                   <span class="mat-i" style="color:#D97706">remove_circle_outline</span>
                   <span>Quick Stock Out</span>
                 </button>
@@ -334,11 +352,13 @@
                   <span class="mat-i text-muted">print</span>
                   <span>Print Bin Label</span>
                 </button>
-                <div class="wh-menu-divider"></div>
-                <button type="button" class="wh-menu-item danger" (click)="closeRowMenu(); deleteRequested.emit(item)">
-                  <span class="mat-i">delete</span>
-                  <span>Archive Item</span>
-                </button>
+                <ng-container *ngIf="auth.canManage">
+                  <div class="wh-menu-divider"></div>
+                  <button type="button" class="wh-menu-item danger" (click)="closeRowMenu(); deleteRequested.emit(item)">
+                    <span class="mat-i">delete</span>
+                    <span>Archive Item</span>
+                  </button>
+                </ng-container>
               </div>
             </div>
           </div>
@@ -351,7 +371,7 @@
     <span class="empty-icon">inventory_2</span>
     <h3>No matching inventory items</h3>
     <p *ngIf="hasActiveFilters">Try clearing one or more filters to view your stock catalog.</p>
-    <button *ngIf="!hasActiveFilters" type="button" class="btn btn-primary" (click)="addItemRequested.emit()">
+    <button *ngIf="!hasActiveFilters && auth.canWrite" type="button" class="btn btn-primary" (click)="addItemRequested.emit()">
       Add First Item
     </button>
     <button *ngIf="hasActiveFilters" type="button" class="btn btn-secondary" (click)="resetFilters()">

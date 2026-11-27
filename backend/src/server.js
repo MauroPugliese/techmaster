@@ -12,6 +12,8 @@ const { detectLibreOfficeBinary } = require('./exports/core/planned-daily-templa
 
 const PORT = process.env.PORT || 3000;
 
+const PLACEHOLDER_SECRET_RE = /change_me|changeme|dev_secret|replace-with|your_super_secret|change_in_production|example|placeholder/i;
+
 function assertSecuritySecrets() {
   const jwtSecret = String(process.env.JWT_SECRET || '').trim();
   const refreshSecret = String(process.env.JWT_REFRESH_SECRET || '').trim();
@@ -21,11 +23,11 @@ function assertSecuritySecrets() {
     throw new Error('JWT_SECRET environment variable is required.');
   }
   if (isProd) {
-    if (jwtSecret.length < 16 || /CHANGE_ME|changeme|dev_secret/i.test(jwtSecret)) {
-      throw new Error('Production JWT_SECRET must be a strong, non-placeholder secret (min 16 chars).');
+    if (jwtSecret.length < 32 || PLACEHOLDER_SECRET_RE.test(jwtSecret)) {
+      throw new Error('Production JWT_SECRET must be a strong, non-placeholder secret (min 32 chars).');
     }
-    if (!refreshSecret || refreshSecret.length < 16 || /CHANGE_ME|changeme/i.test(refreshSecret)) {
-      throw new Error('Production JWT_REFRESH_SECRET must be a strong, non-placeholder secret (min 16 chars).');
+    if (!refreshSecret || refreshSecret.length < 32 || PLACEHOLDER_SECRET_RE.test(refreshSecret)) {
+      throw new Error('Production JWT_REFRESH_SECRET must be a strong, non-placeholder secret (min 32 chars).');
     }
     if (jwtSecret === refreshSecret) {
       throw new Error('JWT_SECRET and JWT_REFRESH_SECRET must be distinct values in production.');
@@ -36,6 +38,45 @@ function assertSecuritySecrets() {
 }
 
 async function bootstrap() {
+  let server = null;
+  let io = null;
+  let shuttingDown = false;
+
+  const gracefulShutdown = (signal) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    logger.info(`Received ${signal}. Starting graceful shutdown...`);
+
+    const forceTimer = setTimeout(() => {
+      logger.error('Graceful shutdown timed out after 10s. Forcing exit.');
+      process.exit(1);
+    }, 10000);
+    if (typeof forceTimer.unref === 'function') forceTimer.unref();
+
+    const finish = async () => {
+      try {
+        if (io) {
+          await new Promise((resolve) => io.close(resolve));
+        }
+        await sequelize.close();
+        logger.info('Graceful shutdown completed.');
+        process.exit(0);
+      } catch (err) {
+        logger.error('Error during graceful shutdown:', err);
+        process.exit(1);
+      }
+    };
+
+    if (server) {
+      server.close(() => { void finish(); });
+    } else {
+      void finish();
+    }
+  };
+
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
   try {
     assertSecuritySecrets();
 
@@ -52,8 +93,8 @@ async function bootstrap() {
     // Ensure all migrations are applied cleanly (migrations are the single schema authority)
     await runMigrations();
 
-    const server = http.createServer(app);
-    const io = initSocket(server);
+    server = http.createServer(app);
+    io = initSocket(server);
     app.set('io', io);
 
     server.listen(PORT, () => {

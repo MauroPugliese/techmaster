@@ -11,6 +11,7 @@ import {
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../../core/services/api.service';
+import { AuthService } from '../../../core/services/auth.service';
 import { ToastService } from '../../../core/services/toast.service';
 import { ShiftHandover } from '../../../core/models/interfaces';
 import { DateTimePickerComponent } from '../../../shared/components/datetime-picker/datetime-picker.component';
@@ -36,7 +37,7 @@ import { formatLocalYmd } from '../../../shared/components/datetime-picker/datet
         </div>
 
         <div class="modal-body">
-          <div class="ho-form-card">
+          <div class="ho-form-card" *ngIf="auth.canWrite">
             <div class="ho-form-head">
               <strong>Log Outgoing Shift Handover</strong>
               <button type="button" class="btn btn-ghost btn-sm" (click)="showForm = !showForm">
@@ -126,7 +127,8 @@ import { formatLocalYmd } from '../../../shared/components/datetime-picker/datet
                   </span>
                 </ng-container>
                 <ng-template #ackBtnTpl>
-                  <button type="button"
+                  <button *ngIf="auth.canWrite && h.created_by !== auth.currentUser?.id"
+                          type="button"
                           class="btn btn-secondary btn-sm"
                           [disabled]="ackingId === h.id"
                           (click)="acknowledge(h)">
@@ -196,6 +198,7 @@ export class ShiftHandoverModalComponent implements OnChanges {
   form = this.emptyForm();
 
   constructor(
+    public auth: AuthService,
     private api: ApiService,
     private toast: ToastService,
     private cdr: ChangeDetectorRef

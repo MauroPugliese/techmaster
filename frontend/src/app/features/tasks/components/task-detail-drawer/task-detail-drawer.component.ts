@@ -9,7 +9,7 @@ import { FormsModule } from '@angular/forms';
 import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 
-import { ApiService, ToastService, UiCustomizationService, UiSectionPreferences } from '../../../../core/services/services';
+import { ApiService, AuthService, ToastService, UiCustomizationService, UiSectionPreferences } from '../../../../core/services/services';
 import {
   IntervalType, Priority, Simulator, Task, TaskAssignee, TaskComment, TaskStatus, User
 } from '../../../../core/models/interfaces';
@@ -84,6 +84,7 @@ export class TaskDetailDrawerComponent implements OnChanges, OnDestroy {
   mentionIndex = 0;
 
   constructor(
+    public auth: AuthService,
     private api: ApiService,
     private toast: ToastService,
     private uiCustomization: UiCustomizationService,
@@ -104,6 +105,9 @@ export class TaskDetailDrawerComponent implements OnChanges, OnDestroy {
   @HostListener('document:keydown.escape', ['$event'])
   onEsc(event: KeyboardEvent): void {
     if (!this.open) return;
+    if (typeof document !== 'undefined' && document.querySelector('.confirm-overlay, .cdk-overlay-pane')) {
+      return;
+    }
     if (this.mentionCandidates.length) {
       event.stopPropagation();
       this.clearMentions();

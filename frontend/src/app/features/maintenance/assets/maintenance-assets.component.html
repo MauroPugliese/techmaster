@@ -49,11 +49,11 @@
         <th>Location</th>
         <th>Status</th>
         <th>Warranty &amp; Open Work</th>
-        <th class="mnt-col-actions">Actions</th>
+        <th *ngIf="auth.canWrite" class="mnt-col-actions">Actions</th>
       </tr>
     </thead>
     <tbody>
-      <tr *ngFor="let a of assets; let idx = index" class="row-clickable" (click)="editAssetRequested.emit(a)">
+      <tr *ngFor="let a of assets; let idx = index" [class.row-clickable]="auth.canWrite" (click)="auth.canWrite && editAssetRequested.emit(a)">
         <td>
           <div class="mnt-title-main">{{a.name}}</div>
           <div class="mnt-subtext" *ngIf="assetSubline(a)">{{assetSubline(a)}}</div>
@@ -84,7 +84,7 @@
             {{a.open_maintenance_count ? (a.open_maintenance_count + ' open work order' + (a.open_maintenance_count > 1 ? 's' : '')) : 'No open maintenance'}}
           </div>
         </td>
-        <td class="mnt-col-actions" (click)="$event.stopPropagation()">
+        <td *ngIf="auth.canWrite" class="mnt-col-actions" (click)="$event.stopPropagation()">
           <div class="mnt-row-actions">
             <button type="button"
                     class="btn btn-ghost btn-icon-only btn-sm"
@@ -124,11 +124,13 @@
                   <span class="mat-i text-muted">pause_circle</span>
                   <span>Set Inactive</span>
                 </button>
-                <div class="mnt-menu-divider"></div>
-                <button type="button" class="mnt-menu-item danger" (click)="deleteOrRetireAsset(a)">
-                  <span class="mat-i">delete</span>
-                  <span>Retire / Delete</span>
-                </button>
+                <ng-container *ngIf="auth.canManage">
+                  <div class="mnt-menu-divider"></div>
+                  <button type="button" class="mnt-menu-item danger" (click)="deleteOrRetireAsset(a)">
+                    <span class="mat-i">delete</span>
+                    <span>Retire / Delete</span>
+                  </button>
+                </ng-container>
               </div>
             </div>
           </div>
@@ -141,7 +143,7 @@
     <span class="empty-icon">devices</span>
     <h3>No matching assets</h3>
     <p *ngIf="hasActiveFilters">Try clearing filters or enabling Show Retired.</p>
-    <button *ngIf="!hasActiveFilters" type="button" class="btn btn-primary" (click)="addAssetRequested.emit()">
+    <button *ngIf="!hasActiveFilters && auth.canWrite" type="button" class="btn btn-primary" (click)="addAssetRequested.emit()">
       Add First Asset
     </button>
     <button *ngIf="hasActiveFilters" type="button" class="btn btn-secondary" (click)="resetFilters()">

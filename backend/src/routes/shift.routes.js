@@ -17,6 +17,7 @@ const {
   sanitizeShiftTypePayload,
   expandDateSelection,
 } = require('../services/shift-schedule.service');
+const { emitDomainUpdate } = require('../config/socket');
 
 const EMPLOYEE_ATTRS = ['id', 'first_name', 'last_name', 'department', 'job_title', 'avatar_url', 'certifications'];
 const SUPERVISOR_ATTRS = ['id', 'first_name', 'last_name'];
@@ -45,7 +46,7 @@ async function clearSoftDeletedTombstone(userId, date, transaction = null) {
   }
 }
 
-async function validateLaborLawForUser(userId, shiftType, dateStr, proposedData, excludeShiftId = null) {
+async function validateLaborLawForUser(userId, shiftType, dateStr, proposedData, excludeShiftId = null, transaction = null) {
   const timing = resolveEffectiveTiming(proposedData, shiftType);
   if (timing.isLeave) {
     return { valid: true };
@@ -66,6 +67,7 @@ async function validateLaborLawForUser(userId, shiftType, dateStr, proposedData,
   const nearbyShifts = await Shift.findAll({
     where: whereClause,
     include: [{ model: ShiftType, as: 'shiftType' }],
+    ...(transaction ? { transaction } : {})
   });
 
   return checkLaborLawCompliance(
@@ -112,7 +114,8 @@ async function upsertSingleShift({ body, shiftType, overwrite = false }) {
       shiftType,
       data.date,
       data,
-      existingActive ? existingActive.id : null
+      existingActive ? existingActive.id : null,
+      transaction
     );
     if (!lawCheck.valid) {
       await transaction.rollback();
@@ -291,7 +294,7 @@ router.get('/', parseDateFilter, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/', authorize('admin', 'manager', 'tech'), async (req, res, next) => {
+router.post('/', authorize('admin', 'manager'), async (req, res, next) => {
   try {
     const shiftType = req.body.shift_type_id ? await ShiftType.findByPk(req.body.shift_type_id) : null;
     if (!shiftType) {
@@ -573,7 +576,7 @@ router.patch('/handovers/:id/acknowledge', authorize('admin', 'manager', 'tech')
   } catch (err) { next(err); }
 });
 
-router.put('/:id', authorize('admin', 'manager', 'tech'), validateIdParam, async (req, res, next) => {
+router.put('/:id', authorize('admin', 'manager'), validateIdParam, async (req, res, next) => {
   const transaction = await sequelize.transaction();
   try {
     const shift = await Shift.findByPk(req.params.id, { transaction, lock: transaction.LOCK.UPDATE });

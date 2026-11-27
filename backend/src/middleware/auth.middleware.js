@@ -87,7 +87,7 @@ const authenticate = async (req, res, next) => {
 
     const token   = header.split(' ')[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    if (decoded?.type && decoded.type !== 'access') {
+    if (decoded?.type !== 'access') {
       return res.status(401).json({ success: false, message: 'Invalid token type' });
     }
 
@@ -111,7 +111,8 @@ const authenticate = async (req, res, next) => {
 };
 
 const authorize = (...roles) => (req, res, next) => {
-  if (!roles.includes(req.user.role.name) && req.user.role.name !== 'admin') {
+  const roleName = req.user?.role?.name;
+  if (!roleName || (!roles.includes(roleName) && roleName !== 'admin')) {
     return res.status(403).json({ success: false, message: 'Insufficient permissions' });
   }
   next();

@@ -18,7 +18,7 @@
           [params]="fleetExportParams"
           [includeDateRange]="false">
         </app-export-menu>
-        <button type="button" class="btn btn-primary" (click)="openCreateModal()">
+        <button *ngIf="auth.canManage" type="button" class="btn btn-primary" (click)="openCreateModal()">
           <span class="btn-icon">add</span>
           {{ activeView === 'test-places' ? 'Add Test Place' : (activeView === 'ios-consoles' ? 'Add IOS Console' : 'Add Simulator') }}
         </button>
@@ -50,6 +50,17 @@
       <button
         type="button"
         class="sim-top-tab"
+        *ngIf="ffsShiftCount > 0"
+        [class.active]="activeView === 'ffs-shifts'"
+        (click)="setTopView('ffs-shifts')">
+        <span class="mat-i">schedule</span>
+        <span>FFS Shifts</span>
+        <span class="tab-count">{{ ffsShiftCount }}</span>
+      </button>
+
+      <button
+        type="button"
+        class="sim-top-tab"
         [class.active]="activeView === 'fleet'"
         (click)="setTopView('fleet')">
         <span class="mat-i">flight_takeoff</span>
@@ -74,6 +85,18 @@
     <app-station-daily-ops
       *ngIf="activeView === 'ios-consoles'"
       stationKind="IOS_CONSOLE"
+      [initialDate]="dailyInitialDate"
+      [refreshTick]="dailyRefreshTick"
+      (openMntRecords)="onOpenMntRecords($event)"
+      (openWorkspace)="openWorkspace($event)"
+      (addStationRequested)="openCreateModal($event)"
+      (sheetUpdated)="onDailySheetUpdated()">
+    </app-station-daily-ops>
+
+    <!-- TAB 2B: FFS SHIFTS DAILY OVERVIEW (only when FFS bays use Shifts mode) -->
+    <app-station-daily-ops
+      *ngIf="activeView === 'ffs-shifts'"
+      stationKind="FFS_BAY"
       [initialDate]="dailyInitialDate"
       [refreshTick]="dailyRefreshTick"
       (openMntRecords)="onOpenMntRecords($event)"
@@ -115,6 +138,15 @@
             <app-dropdown-option *ngFor="let opt of stationKindOptions" [value]="opt.value">
               {{ opt.label }}
             </app-dropdown-option>
+          </app-dropdown>
+
+          <app-dropdown
+            class="form-control sim-filter-select"
+            [(ngModel)]="schedulingModeFilter"
+            (ngModelChange)="applyFilters()">
+            <app-dropdown-option value="ALL">All Modes</app-dropdown-option>
+            <app-dropdown-option value="SORTIES">Sorties Mode</app-dropdown-option>
+            <app-dropdown-option value="SHIFTS">Shifts Mode</app-dropdown-option>
           </app-dropdown>
 
           <app-dropdown
@@ -213,7 +245,7 @@
           <button type="button" class="btn btn-secondary btn-sm" *ngIf="hasActiveFleetFilters" (click)="resetFilters()">
             Reset Filters
           </button>
-          <button type="button" class="btn btn-primary btn-sm" (click)="openCreateModal('FFS_BAY')">
+          <button *ngIf="auth.canManage" type="button" class="btn btn-primary btn-sm" (click)="openCreateModal('FFS_BAY')">
             <span class="btn-icon">add</span>
             Add Simulator
           </button>
@@ -237,6 +269,13 @@
                 <div class="sim-code-line">
                   <strong class="sim-code sim-num">{{ sim.code }}</strong>
                   <span class="cat-chip">{{ stationKindLabel(sim.station_kind) }}</span>
+                  <span
+                    class="cat-chip"
+                    [style.background]="schedulingModeMeta(sim).bg"
+                    [style.color]="schedulingModeMeta(sim).color"
+                    [style.border]="'1px solid ' + schedulingModeMeta(sim).border">
+                    {{ schedulingModeMeta(sim).label }}
+                  </span>
                 </div>
                 <div class="sim-name">{{ sim.name }}</div>
               </div>
@@ -258,9 +297,9 @@
               <strong class="lean-val">{{ sim.aircraft_type }}</strong>
             </div>
             <div class="lean-metric">
-              <span class="tel-lbl">Today · Rel</span>
+              <span class="tel-lbl">Hours · Window</span>
               <strong class="lean-val sim-num">
-                {{ sim.telemetry?.todayFlightHours ?? 0 }}h · {{ sim.telemetry?.dispatchReliabilityPct ?? 100 }}%
+                {{ operatingWindowLabel(sim) }}
               </strong>
             </div>
             <div class="lean-metric align-end">
@@ -288,6 +327,7 @@
           <!-- 4. Clean Action Footer -->
           <div class="sim-card-footer" (click)="$event.stopPropagation()">
             <app-dropdown
+              *ngIf="auth.canWrite"
               class="form-control sim-card-status-dd"
               [ngModel]="sim.status"
               (ngModelChange)="quickChangeStatus(sim, $event)"
@@ -306,13 +346,22 @@
                 MNT
               </button>
               <button
+                *ngIf="auth.canWrite && schedulingModeOf(sim) === 'SORTIES'"
                 type="button"
                 class="btn btn-secondary btn-sm"
                 (click)="scheduleSortie(sim, $event)"
                 title="Schedule Sortie">
                 Sortie
               </button>
-              <span class="sim-card-hover-icons">
+              <button
+                *ngIf="schedulingModeOf(sim) === 'SHIFTS'"
+                type="button"
+                class="btn btn-secondary btn-sm"
+                (click)="openStationDailyShifts(sim, $event)"
+                title="Open Daily Shifts">
+                Shifts
+              </button>
+              <span class="sim-card-hover-icons" *ngIf="auth.canManage">
                 <button
                   type="button"
                   class="btn btn-ghost btn-sm"
@@ -341,9 +390,9 @@
               <th>Bay</th>
               <th>Station</th>
               <th>Kind</th>
-              <th>Type</th>
+              <th>Mode</th>
+              <th>Window</th>
               <th>Status</th>
-              <th>Dispatch</th>
               <th>Open DR</th>
               <th class="text-right">Actions</th>
             </tr>
@@ -358,7 +407,16 @@
                 </button>
               </td>
               <td><span class="cat-chip">{{ stationKindLabel(sim.station_kind) }}</span></td>
-              <td>{{ sim.aircraft_type }}</td>
+              <td>
+                <span
+                  class="cat-chip"
+                  [style.background]="schedulingModeMeta(sim).bg"
+                  [style.color]="schedulingModeMeta(sim).color"
+                  [style.border]="'1px solid ' + schedulingModeMeta(sim).border">
+                  {{ schedulingModeMeta(sim).label }}
+                </span>
+              </td>
+              <td class="sim-num">{{ operatingWindowLabel(sim) }}</td>
               <td>
                 <span
                   class="status-pill"
@@ -368,7 +426,6 @@
                   {{ statusMeta(sim.status).label }}
                 </span>
               </td>
-              <td class="sim-num">{{ sim.telemetry?.dispatchReliabilityPct ?? 100 }}%</td>
               <td>
                 <span class="dr-count sim-num" [class.has-dr]="(sim.telemetry?.openSnagsCount ?? 0) > 0">
                   {{ sim.telemetry?.openSnagsCount ?? 0 }}
@@ -390,6 +447,7 @@
                     <span class="btn-icon">open_in_new</span>
                   </button>
                   <button
+                    *ngIf="auth.canManage"
                     type="button"
                     class="btn btn-ghost btn-sm"
                     (click)="openEditModal(sim, $event)"
@@ -397,6 +455,7 @@
                     <span class="btn-icon">edit</span>
                   </button>
                   <button
+                    *ngIf="auth.canManage"
                     type="button"
                     class="btn btn-ghost btn-sm danger-btn"
                     (click)="deleteSimulator(sim, $event)"

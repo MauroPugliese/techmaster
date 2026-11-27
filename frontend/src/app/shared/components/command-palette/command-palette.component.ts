@@ -18,6 +18,7 @@ import { Router } from '@angular/router';
 import { Subject, of } from 'rxjs';
 import { debounceTime, distinctUntilChanged, switchMap, catchError, takeUntil } from 'rxjs/operators';
 import { ApiService, SectionAccessService, NavSectionAccess } from '../../../core/services/services';
+import { AuthService } from '../../../core/services/auth.service';
 
 export interface PaletteItem {
   key: string;
@@ -29,16 +30,17 @@ export interface PaletteItem {
   route: string;
   queryParams?: Record<string, any>;
   sectionKey?: string;
+  roles?: string[];
   groupLabel: string;
 }
 
 const STATIC_ACTIONS: PaletteItem[] = [
-  { key: 'act-sim', title: 'Add Flight Simulator', subtitle: 'Register a new FSTD bay & scaffold subsystems', icon: 'flight_takeoff', route: '/simulators', queryParams: { action: 'new' }, sectionKey: 'simulators', groupLabel: 'Quick Actions' },
-  { key: 'act-op', title: 'Schedule Flight Sortie', subtitle: 'Book a simulator slot or training sortie', icon: 'add_circle_outline', route: '/operations', queryParams: { action: 'new' }, sectionKey: 'operations', groupLabel: 'Quick Actions' },
-  { key: 'act-wo', title: 'Log Work Order', subtitle: 'Create a maintenance intervention or DR', icon: 'build', route: '/maintenance', queryParams: { action: 'new' }, sectionKey: 'maintenance', groupLabel: 'Quick Actions' },
-  { key: 'act-sku', title: 'Add Inventory Item', subtitle: 'Register spare part or LRU SKU', icon: 'add_box', route: '/warehouse', queryParams: { action: 'new' }, sectionKey: 'warehouse', groupLabel: 'Quick Actions' },
-  { key: 'act-task', title: 'New Task', subtitle: 'Assign or schedule a recurring engineering task', icon: 'add_task', route: '/tasks', queryParams: { action: 'new' }, sectionKey: 'tasks', groupLabel: 'Quick Actions' },
-  { key: 'act-wiki', title: 'New Wiki Article', subtitle: 'Author SOP or technical documentation', icon: 'note_add', route: '/wiki', queryParams: { action: 'new' }, sectionKey: 'wiki', groupLabel: 'Quick Actions' }
+  { key: 'act-sim', title: 'Add Flight Simulator', subtitle: 'Register a new FSTD bay & scaffold subsystems', icon: 'flight_takeoff', route: '/simulators', queryParams: { action: 'new' }, sectionKey: 'simulators', roles: ['admin', 'manager'], groupLabel: 'Quick Actions' },
+  { key: 'act-op', title: 'Schedule Flight Sortie', subtitle: 'Book a simulator slot or training sortie', icon: 'add_circle_outline', route: '/operations', queryParams: { action: 'new' }, sectionKey: 'operations', roles: ['admin', 'manager', 'tech'], groupLabel: 'Quick Actions' },
+  { key: 'act-wo', title: 'Log Work Order', subtitle: 'Create a maintenance intervention or DR', icon: 'build', route: '/maintenance', queryParams: { action: 'new' }, sectionKey: 'maintenance', roles: ['admin', 'manager', 'tech'], groupLabel: 'Quick Actions' },
+  { key: 'act-sku', title: 'Add Inventory Item', subtitle: 'Register spare part or LRU SKU', icon: 'add_box', route: '/warehouse', queryParams: { action: 'new' }, sectionKey: 'warehouse', roles: ['admin', 'manager', 'tech'], groupLabel: 'Quick Actions' },
+  { key: 'act-task', title: 'New Task', subtitle: 'Assign or schedule a recurring engineering task', icon: 'add_task', route: '/tasks', queryParams: { action: 'new' }, sectionKey: 'tasks', roles: ['admin', 'manager', 'tech'], groupLabel: 'Quick Actions' },
+  { key: 'act-wiki', title: 'New Wiki Article', subtitle: 'Author SOP or technical documentation', icon: 'note_add', route: '/wiki', queryParams: { action: 'new' }, sectionKey: 'wiki', roles: ['admin', 'manager', 'tech'], groupLabel: 'Quick Actions' }
 ];
 
 const STATIC_ROUTES: PaletteItem[] = [
@@ -97,6 +99,7 @@ export class CommandPaletteComponent implements OnInit, OnChanges, OnDestroy {
     private api: ApiService,
     private router: Router,
     private sectionAccess: SectionAccessService,
+    private auth: AuthService,
     private cdr: ChangeDetectorRef
   ) {}
 
@@ -255,6 +258,7 @@ export class CommandPaletteComponent implements OnInit, OnChanges, OnDestroy {
 
     const matchingActions = STATIC_ACTIONS.filter((a) =>
       this.isSectionVisible(a.sectionKey) &&
+      (!a.roles || this.auth.hasRole(...a.roles)) &&
       (!q || a.title.toLowerCase().includes(q) || (a.subtitle || '').toLowerCase().includes(q))
     );
 

@@ -31,12 +31,13 @@ const {
 } = require('../services/operation-helpers.service');
 const { detectSortieBayConflict } = require('../services/simulator-helpers.service');
 const { broadcastOperationalAlert } = require('../services/proactive-alerts.service');
+const { emitDomainUpdate } = require('../config/socket');
 
 /**
  * Auto-syncs Simulator live status (READY <-> IN_SORTIE) and accumulates hub
- * power_on_hours / motion_hours when a sortie starts or completes.
+ * power_on_hours / motion_hours when a sortie starts, completes, or exits IN_PROGRESS.
  */
-async function syncSimulatorOnSortieTransition({ op, previousStatus = null, transaction }) {
+async function syncSimulatorOnSortieTransition({ op, previousStatus = null, alreadyAccrued = false, transaction }) {
   if (!op?.simulator_id) return;
   const sim = await Simulator.findByPk(op.simulator_id, { transaction, lock: transaction ? transaction.LOCK.UPDATE : undefined });
   if (!sim) return;
@@ -45,7 +46,14 @@ async function syncSimulatorOnSortieTransition({ op, previousStatus = null, tran
     if (sim.status === 'READY' || sim.status === 'PRE_FLIGHT') {
       await sim.update({ status: 'IN_SORTIE' }, { transaction });
     }
-  } else if (op.status === 'COMPLETED' && previousStatus !== 'COMPLETED') {
+    return;
+  }
+
+  const updates = {};
+  const transitionedToCompleted = op.status === 'COMPLETED' && previousStatus !== 'COMPLETED';
+  const exitedInProgress = previousStatus === 'IN_PROGRESS' && op.status !== 'IN_PROGRESS';
+
+  if (transitionedToCompleted && !alreadyAccrued) {
     let flownHours = Number(op.actual_flight_hours);
     if (!Number.isFinite(flownHours) || flownHours <= 0) {
       flownHours = Number(op.scheduled_hours);
@@ -58,37 +66,36 @@ async function syncSimulatorOnSortieTransition({ op, previousStatus = null, tran
     }
     flownHours = Number.isFinite(flownHours) && flownHours > 0 ? flownHours : 0;
 
-    const updates = {};
     if (flownHours > 0) {
       updates.power_on_hours = Number(((Number(sim.power_on_hours) || 0) + flownHours).toFixed(1));
       if (op.motion_required !== false) {
         updates.motion_hours = Number(((Number(sim.motion_hours) || 0) + flownHours).toFixed(1));
       }
     }
+  }
 
-    if (sim.status === 'IN_SORTIE') {
-      const otherLive = await Operation.count({
-        where: { simulator_id: sim.id, status: 'IN_PROGRESS', id: { [Op.ne]: op.id } },
-        transaction
-      });
-      const openAog = await MaintenanceRecord.count({
-        where: { simulator_id: sim.id, severity: 'AOG', status: { [Op.in]: ['SCHEDULED', 'IN_PROGRESS', 'DEFERRED'] } },
-        transaction
-      });
-      if (otherLive === 0 && openAog === 0) {
-        updates.status = 'READY';
-      }
+  if ((transitionedToCompleted || exitedInProgress) && sim.status === 'IN_SORTIE') {
+    const otherLive = await Operation.count({
+      where: { simulator_id: sim.id, status: 'IN_PROGRESS', id: { [Op.ne]: op.id } },
+      transaction
+    });
+    const openAog = await MaintenanceRecord.count({
+      where: { simulator_id: sim.id, severity: 'AOG', status: { [Op.in]: ['SCHEDULED', 'IN_PROGRESS', 'DEFERRED'] } },
+      transaction
+    });
+    if (otherLive === 0 && openAog === 0) {
+      updates.status = 'READY';
     }
+  }
 
-    if (Object.keys(updates).length > 0) {
-      await sim.update(updates, { transaction });
-    }
+  if (Object.keys(updates).length > 0) {
+    await sim.update(updates, { transaction });
   }
 }
 
 const LIST_INCLUDES = [
   { model: OperationType, as: 'type' },
-  { model: Simulator, as: 'simulator', attributes: ['id', 'code', 'name', 'bay_code', 'aircraft_type', 'qualification_level', 'status', 'limitations_mel'] },
+  { model: Simulator, as: 'simulator', attributes: ['id', 'code', 'name', 'bay_code', 'station_kind', 'scheduling_mode', 'schedule_config', 'aircraft_type', 'qualification_level', 'status', 'limitations_mel'] },
   { model: User, as: 'creator', attributes: ['id', 'first_name', 'last_name', 'username', 'avatar_url'] },
   {
     model: OperationMember,
@@ -356,8 +363,12 @@ router.get('/', parseDateFilter, async (req, res, next) => {
     const andConditions = [];
 
     if (date && /^\d{4}-\d{2}-\d{2}$/.test(String(date).trim())) {
-      const dayStart = new Date(`${String(date).trim()}T00:00:00.000Z`);
-      const dayEnd = new Date(`${String(date).trim()}T23:59:59.999Z`);
+      // Buffer ±14h around UTC date boundaries so any client local timezone (UTC-12..UTC+14)
+      // receives every sortie touching that local calendar day without dropping near-midnight slots
+      const baseStart = new Date(`${String(date).trim()}T00:00:00.000Z`).getTime();
+      const baseEnd = new Date(`${String(date).trim()}T23:59:59.999Z`).getTime();
+      const dayStart = new Date(baseStart - 14 * 3600000);
+      const dayEnd = new Date(baseEnd + 14 * 3600000);
       andConditions.push({
         start_date: { [Op.lte]: dayEnd },
         [Op.or]: [
@@ -396,6 +407,10 @@ router.get('/', parseDateFilter, async (req, res, next) => {
         [Op.or]: [
           { title: { [Op.like]: searchTerm } },
           { sortie_code: { [Op.like]: searchTerm } },
+          { mission_name: { [Op.like]: searchTerm } },
+          { instructor_name: { [Op.like]: searchTerm } },
+          { pilot_name: { [Op.like]: searchTerm } },
+          { copilot_name: { [Op.like]: searchTerm } },
           { customer_operator: { [Op.like]: searchTerm } },
           { scenario_code: { [Op.like]: searchTerm } },
           { description: { [Op.like]: searchTerm } },
@@ -430,7 +445,17 @@ router.get('/', parseDateFilter, async (req, res, next) => {
 router.post('/', authorize('admin', 'manager', 'tech'), async (req, res, next) => {
   const transaction = await sequelize.transaction();
   try {
-    const { data, error } = sanitizeOperationPayload(req.body, { isCreate: true });
+    const incoming = { ...(req.body || {}) };
+    if (!incoming.type_id) {
+      const defaultType = await OperationType.findOne({ order: [['id', 'ASC']], transaction });
+      if (defaultType) incoming.type_id = defaultType.id;
+    }
+    if (!String(incoming.title || '').trim()) {
+      const fallbackMission = String(incoming.mission_name || '').trim();
+      incoming.title = fallbackMission || 'Simulator Sortie';
+    }
+
+    const { data, error } = sanitizeOperationPayload(incoming, { isCreate: true });
     if (error) {
       await transaction.rollback();
       return res.status(400).json({ success: false, message: error });
@@ -610,6 +635,10 @@ router.post('/:id/duplicate', authorize('admin', 'manager', 'tech'), validateIdP
       simulator_id: source.simulator_id,
       created_by: req.user.id,
       title: `${source.title} (Copy)`.slice(0, 200),
+      mission_name: source.mission_name,
+      instructor_name: source.instructor_name,
+      pilot_name: source.pilot_name,
+      copilot_name: source.copilot_name,
       customer_operator: source.customer_operator,
       scenario_code: source.scenario_code,
       weather_profile: source.weather_profile,

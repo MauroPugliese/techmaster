@@ -17,19 +17,22 @@
     </div>
 
     <div class="tl-controls">
-      <div class="tl-legend">
-        <span class="leg-item"><span class="leg-dot planned"></span>Planned</span>
-        <span class="leg-item"><span class="leg-dot live"></span>In Use / Bay</span>
-        <span class="leg-item"><span class="leg-dot ready"></span>Ready</span>
-        <span class="leg-item"><span class="leg-dot clean"></span>Clean</span>
-        <span class="leg-item"><span class="leg-dot snag"></span>Snag / DR</span>
-        <span class="leg-item"><span class="leg-dot maint"></span>Maint.</span>
-        <span class="leg-item"><span class="leg-dot abort"></span>NA / Abort</span>
-        <span
-          class="leg-item leg-now"
-          title="Red vertical line indicating the current local time on today's 24-hour schedule">
-          <span class="leg-now-mark"></span>Current Time<ng-container *ngIf="nowTimeLabel"> ({{ nowTimeLabel }})</ng-container>
-        </span>
+      <!-- Scale Window Toggle (Full 24h vs Prime 06–22) + Jump to NOW -->
+      <div class="tl-scale-group" role="group" aria-label="Time scale">
+        <button type="button" class="tl-scale-btn" [class.active]="viewWindow === '24h'" (click)="setViewWindow('24h')">
+          24h
+        </button>
+        <button type="button" class="tl-scale-btn" [class.active]="viewWindow === 'prime'" (click)="setViewWindow('prime')" title="Focus prime operating hours 06:00–22:00">
+          06–22
+        </button>
+        <button
+          *ngIf="isTodaySelected && nowLinePct !== null"
+          type="button"
+          class="tl-scale-btn tl-now-jump"
+          (click)="jumpToNow()"
+          title="Scroll directly to the current local time marker">
+          <span class="leg-now-dot"></span>NOW
+        </button>
       </div>
 
       <div class="tl-day-nav">
@@ -54,19 +57,38 @@
     </div>
   </div>
 
+  <!-- Compact Legend Strip -->
+  <div class="tl-legend-bar">
+    <div class="tl-legend">
+      <span class="leg-item"><span class="leg-dot planned"></span>Planned Sortie</span>
+      <span class="leg-item"><span class="leg-dot live"></span>In Use / Active</span>
+      <span class="leg-item"><span class="leg-dot ready"></span>Shift Ready</span>
+      <span class="leg-item"><span class="leg-dot clean"></span>Clean</span>
+      <span class="leg-item"><span class="leg-dot snag"></span>Snag / DR</span>
+      <span class="leg-item"><span class="leg-dot maint"></span>Maintenance</span>
+      <span class="leg-item"><span class="leg-dot abort"></span>NA / Abort</span>
+      <span class="leg-item"><span class="leg-dot off"></span>Off-Hours</span>
+      <span
+        class="leg-item leg-now"
+        title="Red vertical line indicating the current local time on today's 24-hour schedule">
+        <span class="leg-now-mark"></span>Current Time<ng-container *ngIf="nowTimeLabel"> ({{ nowTimeLabel }})</ng-container>
+      </span>
+    </div>
+  </div>
+
   <!-- Empty Simulator Notice -->
   <div class="tl-empty" *ngIf="sortedSimulators.length === 0">
-    No Flight Simulators registered yet. Add a simulator in Flight Simulators to unlock Bay Gantt scheduling.
+    No Flight Simulators match the current filter. Adjust the filter or register a simulator in Flight Simulators.
   </div>
 
   <!-- Gantt Scroll Container -->
-  <div class="tl-scroll" *ngIf="sortedSimulators.length > 0">
-    <div class="tl-canvas">
+  <div class="tl-scroll" #tlScroll *ngIf="sortedSimulators.length > 0" (scroll)="clearHover()">
+    <div class="tl-canvas" [class.is-prime]="viewWindow === 'prime'">
 
       <!-- Hour Axis Row -->
       <div class="tl-axis-row">
-        <div class="tl-bay-col tl-axis-corner">Simulator Bay</div>
-        <div class="tl-hours-track">
+        <div class="tl-bay-col tl-axis-corner">Simulator / Mode</div>
+        <div class="tl-hours-track" [style.grid-template-columns]="'repeat(' + hours.length + ', minmax(46px, 1fr))'">
           <div class="tl-hour-head tl-num" *ngFor="let h of hours">
             {{ hourLabel(h) }}
           </div>
@@ -74,7 +96,7 @@
             class="tl-now-axis-pill tl-num"
             *ngIf="nowPillPct !== null && nowTimeLabel"
             [style.left.%]="nowPillPct"
-            [title]="'Current local time (' + nowTimeLabel + ') — live 24h schedule marker'">
+            [title]="'Current local time (' + nowTimeLabel + ') — live schedule marker'">
             NOW {{ nowTimeLabel }}
           </div>
         </div>
@@ -82,9 +104,16 @@
 
       <!-- Simulator Bay Lanes -->
       <div class="tl-lane-row" *ngFor="let sim of sortedSimulators; trackBy: trackBySimId">
-        <div class="tl-bay-col tl-bay-cell" (click)="openSimulator.emit(sim.id)" title="Open Simulator Workspace">
+        <div class="tl-bay-col tl-bay-cell" (click)="openSimulator.emit(sim.id)" title="Open Simulator Technical Dossier">
           <div class="bay-top-line">
             <span class="bay-tag tl-num">{{ sim.bay_code }}</span>
+            <span
+              class="bay-mode-pill"
+              [style.background]="modeMeta(sim).bg"
+              [style.color]="modeMeta(sim).color"
+              [style.border-color]="modeMeta(sim).border">
+              {{ modeMeta(sim).short }}
+            </span>
             <span
               class="bay-st-pill"
               [style.background]="laneStatusBadge(sim).bg"
@@ -93,20 +122,42 @@
             </span>
           </div>
           <div class="bay-sim-code tl-num">{{ sim.code }}</div>
-          <div class="bay-aircraft">{{ sim.aircraft_type }}</div>
+          <div class="bay-util-row tl-num">
+            <div class="bay-util-bar">
+              <div
+                class="bay-util-fill"
+                [class.is-shifts]="laneMeta(sim.id).mode === 'SHIFTS'"
+                [style.width.%]="laneMeta(sim.id).utilPct">
+              </div>
+            </div>
+            <span class="bay-util-txt">{{ laneMeta(sim.id).bookedHours }}h / {{ laneMeta(sim.id).availHours }}h</span>
+          </div>
         </div>
 
-        <div class="tl-lane-track">
+        <div class="tl-lane-track" [style.min-height.px]="laneMeta(sim.id).heightPx">
+          <!-- Off-Hours Operating Window Shading -->
+          <div
+            class="tl-off-window"
+            *ngFor="let band of laneMeta(sim.id).offBands"
+            [style.left.%]="band.leftPct"
+            [style.width.%]="band.widthPct">
+          </div>
+
           <!-- Clickable Hour Cells -->
-          <div class="tl-cells-grid">
-            <button
-              type="button"
-              class="tl-slot-cell"
-              *ngFor="let h of hours"
-              (click)="scheduleSlot.emit({ simulatorId: sim.id, hour: h })"
-              [title]="'Schedule sortie on ' + sim.bay_code + ' at ' + hourLabel(h)">
-              <span class="slot-plus">+</span>
-            </button>
+          <div class="tl-cells-grid" [style.grid-template-columns]="'repeat(' + hours.length + ', minmax(46px, 1fr))'">
+            <ng-container *ngIf="canWrite; else readonlySlotCellsTpl">
+              <button
+                type="button"
+                class="tl-slot-cell"
+                *ngFor="let h of hours"
+                (click)="scheduleSlot.emit({ simulatorId: sim.id, simulator: sim, hour: h })"
+                [title]="slotCellTitle(sim, h)">
+                <span class="slot-plus">+</span>
+              </button>
+            </ng-container>
+            <ng-template #readonlySlotCellsTpl>
+              <div class="tl-slot-cell static-cell" *ngFor="let h of hours"></div>
+            </ng-template>
           </div>
 
           <!-- Current Time Marker -->
@@ -114,23 +165,28 @@
             <span class="now-dot"></span>
           </div>
 
-          <!-- Daily Station Shift Usage Bars (Synced from Flight Simulators) -->
+          <!-- Daily Station Shift Usage Bars -->
           <button
             type="button"
             class="tl-shift-bar"
             *ngFor="let sb of shiftBarsForSim(sim.id); trackBy: trackByShiftBlockId"
             [ngClass]="sb.toneClass"
+            [class.is-bg-ready]="sb.isBackground"
             [style.left.%]="sb.leftPct"
             [style.width.%]="sb.widthPct"
-            (click)="selectShiftBlock.emit(sb.block)"
-            [title]="sb.block.shift_name + ' · ' + sb.block.usage_status + ' (' + sb.timeRangeLabel + ')' + (sb.block.notes ? ' — ' + sb.block.notes : '') + ' · Click to edit in Flight Simulators'">
+            [style.top.px]="sb.isBackground ? 5 : sb.topPx"
+            [style.bottom.px]="sb.isBackground ? 5 : null"
+            [style.height.px]="sb.isBackground ? null : 44"
+            (mouseenter)="showShiftHover(sb, $event)"
+            (mouseleave)="clearHover()"
+            (click)="selectShiftBlock.emit(sb.block)">
             <div class="bar-top">
-              <span class="bar-code tl-num">
-                {{ sb.block.block_kind === 'SHIFT_READY' ? 'READY' : (sb.block.block_kind === 'SHIFT_NA' ? 'NA' : (sb.block.shift_name + ' · IN USE')) }}
-              </span>
+              <span class="bar-cont-tag" *ngIf="sb.continuedFromPrev">←</span>
+              <span class="bar-code tl-num">{{ sb.primaryLabel }}</span>
               <span class="bar-time tl-num">{{ sb.timeRangeLabel }}</span>
+              <span class="bar-cont-tag" *ngIf="sb.continuesNextDay">+1d</span>
             </div>
-            <div class="bar-title">{{ sb.titleLabel }}</div>
+            <div class="bar-title">{{ sb.secondaryLabel }}</div>
           </button>
 
           <!-- Scheduled & Planned Maintenance Windows -->
@@ -141,8 +197,10 @@
             [class.is-aog]="mb.block.severity === 'AOG'"
             [style.left.%]="mb.leftPct"
             [style.width.%]="mb.widthPct"
-            (click)="selectMaintenance.emit(mb.block)"
-            [title]="'MAINTENANCE (' + mb.timeRangeLabel + '): ' + mb.block.title + ' · Click to view in Maintenance'">
+            [style.top.px]="mb.topPx"
+            (mouseenter)="showMaintHover(mb, $event)"
+            (mouseleave)="clearHover()"
+            (click)="selectMaintenance.emit(mb.block)">
             <div class="bar-top">
               <span class="bar-code tl-num">MAINT</span>
               <span class="bar-time tl-num">{{ mb.timeRangeLabel }}</span>
@@ -158,16 +216,18 @@
             [ngClass]="bar.toneClass"
             [style.left.%]="bar.leftPct"
             [style.width.%]="bar.widthPct"
-            (click)="selectSortie.emit(bar.op)"
-            [title]="(bar.op.sortie_code || bar.op.title) + ' (' + bar.timeRangeLabel + ')'">
+            [style.top.px]="bar.topPx"
+            (mouseenter)="showSortieHover(bar, $event)"
+            (mouseleave)="clearHover()"
+            (click)="selectSortie.emit(bar.op)">
             <div class="bar-top">
-              <span class="bar-code tl-num">{{ bar.op.sortie_code || bar.op.type?.name || 'SORTIE' }}</span>
+              <span class="bar-cont-tag" *ngIf="bar.continuedFromPrev">←</span>
+              <span class="bar-code tl-num">{{ bar.primaryLabel }}</span>
               <span class="bar-time tl-num">{{ bar.timeRangeLabel }}</span>
+              <span class="bar-cont-tag" *ngIf="bar.continuesNextDay">+1d</span>
               <span class="bar-snag-ico" *ngIf="bar.hasSnag" title="Technical Snag Recorded">warning</span>
             </div>
-            <div class="bar-title">
-              {{ bar.op.customer_operator ? (bar.op.customer_operator + ' · ') : '' }}{{ bar.op.title }}
-            </div>
+            <div class="bar-title">{{ bar.secondaryLabel }}</div>
           </button>
         </div>
       </div>
@@ -181,8 +241,8 @@
           <div class="bay-aircraft">No Simulator Linked</div>
         </div>
 
-        <div class="tl-lane-track">
-          <div class="tl-cells-grid">
+        <div class="tl-lane-track" [style.min-height.px]="unassignedHeightPx">
+          <div class="tl-cells-grid" [style.grid-template-columns]="'repeat(' + hours.length + ', minmax(46px, 1fr))'">
             <div class="tl-slot-cell static-cell" *ngFor="let h of hours"></div>
           </div>
           <div class="tl-now-line" *ngIf="nowLinePct !== null" [style.left.%]="nowLinePct"></div>
@@ -193,12 +253,15 @@
             [ngClass]="bar.toneClass"
             [style.left.%]="bar.leftPct"
             [style.width.%]="bar.widthPct"
+            [style.top.px]="bar.topPx"
+            (mouseenter)="showSortieHover(bar, $event)"
+            (mouseleave)="clearHover()"
             (click)="selectSortie.emit(bar.op)">
             <div class="bar-top">
-              <span class="bar-code tl-num">{{ bar.op.sortie_code || 'SORTIE' }}</span>
+              <span class="bar-code tl-num">{{ bar.primaryLabel }}</span>
               <span class="bar-time tl-num">{{ bar.timeRangeLabel }}</span>
             </div>
-            <div class="bar-title">{{ bar.op.title }}</div>
+            <div class="bar-title">{{ bar.secondaryLabel }}</div>
           </button>
         </div>
       </div>
@@ -206,4 +269,28 @@
     </div>
   </div>
 
+</div>
+
+<!-- Rich Floating Hover Inspector Card (Readable even for narrow 1h slots) -->
+<div
+  class="tl-hover-popover"
+  *ngIf="hoverCard"
+  [class.above]="hoverCard.placeAbove"
+  [style.left.px]="hoverCard.x"
+  [style.top.px]="hoverCard.y">
+  <div class="hp-head">
+    <span class="hp-badge" [ngClass]="'hp-' + hoverCard.kind.toLowerCase()">{{ hoverCard.badge }}</span>
+    <span class="hp-time tl-num">{{ hoverCard.timeRange }} · {{ hoverCard.duration }}</span>
+  </div>
+  <div class="hp-title">{{ hoverCard.title }}</div>
+  <div class="hp-grid">
+    <div class="hp-row" *ngIf="hoverCard.mission"><span>Title:</span><strong>{{ hoverCard.mission }}</strong></div>
+    <div class="hp-row" *ngIf="hoverCard.instructor"><span>Instructor:</span><strong>{{ hoverCard.instructor }}</strong></div>
+    <div class="hp-row" *ngIf="hoverCard.pilots"><span>Pilot(s):</span><strong>{{ hoverCard.pilots }}</strong></div>
+    <div class="hp-row" *ngIf="hoverCard.customer"><span>Customer:</span><strong>{{ hoverCard.customer }}</strong></div>
+    <div class="hp-row" *ngIf="hoverCard.scenario"><span>Scenario:</span><strong>{{ hoverCard.scenario }}</strong></div>
+    <div class="hp-row" *ngIf="hoverCard.weather"><span>Weather:</span><strong>{{ hoverCard.weather }}</strong></div>
+  </div>
+  <div class="hp-notes" *ngIf="hoverCard.notes">{{ hoverCard.notes }}</div>
+  <div class="hp-foot">Click to open details / edit</div>
 </div>

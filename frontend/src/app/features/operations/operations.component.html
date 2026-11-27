@@ -12,7 +12,7 @@
                        filename="Sorties-Dispatch"
                        [params]="exportParams">
       </app-export-menu>
-      <button type="button" class="btn btn-primary" (click)="openModal()">
+      <button *ngIf="auth.canWrite" type="button" class="btn btn-primary" (click)="openModal()">
         <span class="btn-icon">add</span> Schedule Sortie
       </button>
     </div>
@@ -95,27 +95,32 @@
         </button>
       </div>
 
-      <!-- Compact Live Status Chips (Click to filter timeline & sorties) -->
-      <div class="ops-bay-chip-strip" role="group" aria-label="Filter by simulator bay">
-        <button
-          type="button"
-          class="ops-bay-chip"
-          *ngFor="let sim of deckSimulators; trackBy: trackBySimId"
-          [class.active]="simulatorFilter === sim.id"
-          [class.is-aog]="sim.status === 'AOG' || timelineShiftStatuses[sim.id] === 'NA'"
-          [class.is-warn]="sim.status === 'DEGRADED' || sim.status === 'MAINTENANCE'"
-          (click)="selectDeckSimulator(sim.id)"
-          [title]="sim.name + ' · ' + deckChipStatusLabel(sim) + ' · Click to filter'">
-          <span class="ops-chip-dot" [style.background]="deckChipDotColor(sim)"></span>
-          <span class="ops-num">{{sim.bay_code}}</span>
+      <div class="ops-deck-kind-pills" role="group" aria-label="Filter by scheduling mode">
+        <button type="button" class="ops-kind-pill" [class.active]="deckModeFilter === 'ALL'" (click)="setDeckModeFilter('ALL')">
+          All Modes
         </button>
+        <button type="button" class="ops-kind-pill" [class.active]="deckModeFilter === 'SORTIES'" (click)="setDeckModeFilter('SORTIES')">
+          Sorties {{sortiesModeCount}}
+        </button>
+        <button type="button" class="ops-kind-pill" [class.active]="deckModeFilter === 'SHIFTS'" (click)="setDeckModeFilter('SHIFTS')">
+          Shifts {{shiftsModeCount}}
+        </button>
+      </div>
+
+      <!-- Compact Station Scope Summary (Bay cards expand on demand) -->
+      <div class="ops-bay-chip-strip" role="group" aria-label="Active station filter">
+        <span class="text-sm text-muted ops-num" *ngIf="simulatorFilter === ''">
+          Showing {{deckSimulators.length}} station{{deckSimulators.length === 1 ? '' : 's'}}
+        </span>
 
         <button *ngIf="simulatorFilter !== ''"
                 type="button"
                 class="ops-bay-clear-btn"
                 (click)="simulatorFilter = ''; applyFilters()"
-                title="Clear bay filter">
+                title="Clear bay filter"
+                style="width:auto;padding:0 10px;gap:4px">
           <span class="mat-i">close</span>
+          <span class="text-xs font-bold">Clear bay filter</span>
         </button>
       </div>
 
@@ -131,7 +136,7 @@
 
         <button type="button" class="btn btn-ghost btn-sm" (click)="showFleetDeck = !showFleetDeck">
           <span class="btn-icon">{{showFleetDeck ? 'expand_less' : 'expand_more'}}</span>
-          {{showFleetDeck ? 'Hide Cards' : 'Details'}}
+          {{showFleetDeck ? 'Hide Bay Cards' : 'Bay Cards'}}
         </button>
       </div>
     </div>
@@ -146,6 +151,12 @@
         (click)="selectDeckSimulator(sim.id)">
         <div class="deck-card-top">
           <span class="ops-bay-pill">{{sim.bay_code}}</span>
+          <span
+            class="ops-sim-st-pill"
+            [style.background]="simModeMeta(sim).bg"
+            [style.color]="simModeMeta(sim).color">
+            {{simModeMeta(sim).label}}
+          </span>
           <span
             class="ops-sim-st-pill"
             [style.background]="simStatusMeta(sim.status).bg"
@@ -206,15 +217,16 @@
         <app-dropdown-option value="CANCELLED">Cancelled</app-dropdown-option>
       </app-dropdown>
 
-      <app-dropdown class="form-control ops-filter-select" [(ngModel)]="outcomeFilter" (change)="applyFilters()" placeholder="All Outcomes">
-        <app-dropdown-option value="">All Outcomes</app-dropdown-option>
-        <app-dropdown-option *ngFor="let o of outcomeOptions" [value]="o.value">{{o.label}}</app-dropdown-option>
-      </app-dropdown>
-
-      <app-dropdown class="form-control ops-filter-select" [(ngModel)]="typeFilter" (change)="applyFilters()" placeholder="All Sortie Types">
-        <app-dropdown-option [ngValue]="''">All Profiles</app-dropdown-option>
-        <app-dropdown-option *ngFor="let t of opTypes" [ngValue]="t.id">{{t.name}}</app-dropdown-option>
-      </app-dropdown>
+      <button type="button"
+              class="ux-filter-toggle"
+              [class.active]="showAdvancedFilters"
+              [class.has-active]="advancedFilterCount > 0"
+              [attr.aria-expanded]="showAdvancedFilters"
+              (click)="showAdvancedFilters = !showAdvancedFilters">
+        <span class="mat-i">tune</span>
+        <span>Filters</span>
+        <span class="ux-count-pill" *ngIf="advancedFilterCount > 0">{{advancedFilterCount}}</span>
+      </button>
 
       <button *ngIf="hasActiveFilters" type="button" class="btn btn-ghost btn-sm" (click)="resetFilters()">
         <span class="btn-icon">filter_alt_off</span> Reset
@@ -235,10 +247,32 @@
         </button>
       </div>
     </div>
+
+    <div class="ux-advanced-drawer" *ngIf="showAdvancedFilters">
+      <span class="ux-drawer-label">More Filters</span>
+
+      <app-dropdown class="form-control ops-filter-select" [(ngModel)]="outcomeFilter" (change)="applyFilters()" placeholder="All Outcomes">
+        <app-dropdown-option value="">All Outcomes</app-dropdown-option>
+        <app-dropdown-option *ngFor="let o of outcomeOptions" [value]="o.value">{{o.label}}</app-dropdown-option>
+      </app-dropdown>
+
+      <app-dropdown class="form-control ops-filter-select" [(ngModel)]="typeFilter" (change)="applyFilters()" placeholder="All Sortie Types">
+        <app-dropdown-option [ngValue]="''">All Profiles</app-dropdown-option>
+        <app-dropdown-option *ngFor="let t of opTypes" [ngValue]="t.id">{{t.name}}</app-dropdown-option>
+      </app-dropdown>
+
+      <app-dropdown class="form-control ops-filter-select" [(ngModel)]="priorityFilter" (change)="applyFilters()" placeholder="All Priorities">
+        <app-dropdown-option value="">All Priorities</app-dropdown-option>
+        <app-dropdown-option value="CRITICAL">Critical</app-dropdown-option>
+        <app-dropdown-option value="HIGH">High</app-dropdown-option>
+        <app-dropdown-option value="MEDIUM">Medium</app-dropdown-option>
+        <app-dropdown-option value="LOW">Low</app-dropdown-option>
+      </app-dropdown>
+    </div>
   </div>
 
   <!-- ── Contextual Bulk Action Bar ──────────────────────────────────────── -->
-  <div class="ops-bulk-bar" *ngIf="selectedIds.size > 0 && viewMode === 'table'">
+  <div class="ops-bulk-bar" *ngIf="auth.canManage && selectedIds.size > 0 && viewMode === 'table'">
     <div class="ops-head-actions">
       <span class="mat-i">checklist</span>
       <strong>{{selectedIds.size}} operation{{selectedIds.size > 1 ? 's' : ''}} selected</strong>
@@ -287,6 +321,7 @@
     [maintenanceBlocks]="timelineMaintenanceBlocks"
     [shiftStatusBySimulator]="timelineShiftStatuses"
     [selectedDate]="timelineDate"
+    [canWrite]="auth.canWrite"
     (dateChange)="onTimelineDateChange($event)"
     (selectSortie)="openDetail($event)"
     (selectShiftBlock)="openShiftBlockInSimulators($event)"
@@ -306,7 +341,7 @@
     <table class="data-table ops-table" *ngIf="!loading && viewMode === 'table' && operations.length > 0">
       <thead>
         <tr>
-          <th style="width:36px">
+          <th style="width:36px" *ngIf="auth.canManage">
             <input type="checkbox"
                    class="ops-checkbox"
                    [checked]="allVisibleSelected"
@@ -353,8 +388,8 @@
         </tr>
       </thead>
       <tbody>
-        <tr *ngFor="let op of operations; let idx = index" class="row-clickable" (click)="openDetail(op)">
-          <td (click)="$event.stopPropagation()">
+        <tr *ngFor="let op of operations; let idx = index; trackBy: trackByOpId" class="row-clickable" (click)="openDetail(op)">
+          <td *ngIf="auth.canManage" (click)="$event.stopPropagation()">
             <input type="checkbox"
                    class="ops-checkbox"
                    [checked]="selectedIds.has(op.id)"
@@ -407,27 +442,37 @@
           </td>
 
           <td *ngIf="showTableField('creator')">
-            <div class="ops-owner-cell">
-              <span class="ops-avatar">{{creatorInitials(op)}}</span>
+            <div class="ops-owner-cell" *ngIf="opCrewLine(op); else fallbackCreatorTbl">
               <div>
-                <div class="text-sm font-bold">{{creatorName(op)}}</div>
-                <div class="ops-subtext" *ngIf="(op.members?.length ?? 0) > 0">
-                  +{{op.members?.length}} crew assigned
+                <div class="text-sm font-bold" *ngIf="op.instructor_name">Instr: {{op.instructor_name}}</div>
+                <div class="ops-subtext" *ngIf="op.pilot_name || op.copilot_name">
+                  Pilot: {{op.pilot_name || ''}}{{op.pilot_name && op.copilot_name ? ' / ' : ''}}{{op.copilot_name || ''}}
                 </div>
               </div>
             </div>
+            <ng-template #fallbackCreatorTbl>
+              <div class="ops-owner-cell">
+                <span class="ops-avatar">{{creatorInitials(op)}}</span>
+                <div>
+                  <div class="text-sm font-bold">{{creatorName(op)}}</div>
+                  <div class="ops-subtext" *ngIf="(op.members?.length ?? 0) > 0">
+                    +{{op.members?.length}} crew assigned
+                  </div>
+                </div>
+              </div>
+            </ng-template>
           </td>
 
           <td class="ops-col-actions" (click)="$event.stopPropagation()">
             <div class="ops-row-actions">
-              <button *ngIf="op.status === 'PLANNED' || op.status === 'ON_HOLD'"
+              <button *ngIf="auth.canWrite && (op.status === 'PLANNED' || op.status === 'ON_HOLD')"
                       type="button"
                       class="btn btn-ghost btn-icon-only btn-sm"
                       (click)="setStatus(op, 'IN_PROGRESS')"
                       title="Start Operation">
                 <span class="btn-icon text-primary">play_circle</span>
               </button>
-              <button *ngIf="op.status === 'IN_PROGRESS'"
+              <button *ngIf="auth.canWrite && op.status === 'IN_PROGRESS'"
                       type="button"
                       class="btn btn-ghost btn-icon-only btn-sm"
                       (click)="setStatus(op, 'COMPLETED')"
@@ -435,7 +480,8 @@
                 <span class="btn-icon" style="color:#16A34A">check_circle</span>
               </button>
 
-              <button type="button"
+              <button *ngIf="auth.canWrite"
+                      type="button"
                       class="btn btn-ghost btn-icon-only btn-sm"
                       (click)="openModal(op)"
                       title="Edit">
@@ -459,29 +505,31 @@
                     <span class="mat-i text-muted">assignment</span>
                     <span>Mission Brief &amp; Log</span>
                   </button>
-                  <button *ngIf="op.status === 'IN_PROGRESS'"
+                  <button *ngIf="auth.canWrite && op.status === 'IN_PROGRESS'"
                           type="button"
                           class="ops-menu-item"
                           (click)="setStatus(op, 'ON_HOLD')">
                     <span class="mat-i" style="color:#D97706">pause_circle</span>
                     <span>Put On Hold</span>
                   </button>
-                  <button *ngIf="op.status !== 'COMPLETED' && op.status !== 'CANCELLED'"
+                  <button *ngIf="auth.canWrite && op.status !== 'COMPLETED' && op.status !== 'CANCELLED'"
                           type="button"
                           class="ops-menu-item"
                           (click)="setStatus(op, 'COMPLETED')">
                     <span class="mat-i" style="color:#16A34A">check_circle</span>
                     <span>Mark Completed</span>
                   </button>
-                  <button type="button" class="ops-menu-item" (click)="duplicate(op)">
+                  <button *ngIf="auth.canWrite" type="button" class="ops-menu-item" (click)="duplicate(op)">
                     <span class="mat-i text-primary">content_copy</span>
                     <span>Duplicate Operation</span>
                   </button>
-                  <div class="ops-menu-divider"></div>
-                  <button type="button" class="ops-menu-item danger" (click)="deleteOp(op)">
-                    <span class="mat-i">delete</span>
-                    <span>Delete</span>
-                  </button>
+                  <ng-container *ngIf="auth.canManage">
+                    <div class="ops-menu-divider"></div>
+                    <button type="button" class="ops-menu-item danger" (click)="deleteOp(op)">
+                      <span class="mat-i">delete</span>
+                      <span>Delete</span>
+                    </button>
+                  </ng-container>
                 </div>
               </div>
             </div>
@@ -493,7 +541,7 @@
     <!-- VIEW 2: Clean Cards View -->
     <div class="ops-cards-grid" *ngIf="!loading && viewMode === 'cards' && operations.length > 0">
       <div class="ops-card"
-           *ngFor="let op of operations"
+           *ngFor="let op of operations; trackBy: trackByOpId"
            [style.border-left-color]="op.type?.color || 'var(--primary)'"
            (click)="openDetail(op)">
         <div class="ops-card-top">
@@ -513,7 +561,7 @@
         </div>
 
         <h4 class="ops-card-title">{{op.sortie_code ? (op.sortie_code + ' · ') : ''}}{{op.title}}</h4>
-        <p class="ops-card-desc">{{op.customer_operator ? (op.customer_operator + (op.scenario_code ? ' · ' + op.scenario_code : '')) : (op.description || 'No brief notes provided.')}}</p>
+        <p class="ops-card-desc">{{opSubline(op) || op.description || 'No brief notes provided.'}}</p>
 
         <div class="ops-card-meta">
           <div class="ops-card-meta-row" *ngIf="op.type">
@@ -532,9 +580,9 @@
 
         <div class="ops-card-foot" (click)="$event.stopPropagation()">
           <span class="ops-subtext">
-            {{creatorName(op)}} · {{op.members?.length ?? 0}} crew
+            {{opCrewLine(op) || creatorName(op)}}
           </span>
-          <div class="ops-row-actions">
+          <div class="ops-row-actions" *ngIf="auth.canWrite">
             <button *ngIf="op.status === 'PLANNED' || op.status === 'ON_HOLD'"
                     type="button"
                     class="btn btn-ghost btn-icon-only btn-sm"
@@ -569,7 +617,7 @@
         </div>
 
         <div class="ops-board-card"
-             *ngFor="let op of operationsByStatus(col.status)"
+             *ngFor="let op of operationsByStatus(col.status); trackBy: trackByOpId"
              [style.border-left-color]="op.type?.color || col.color"
              (click)="openDetail(op)">
           <div class="ops-card-top">
@@ -579,12 +627,12 @@
           </div>
           <div class="ops-title-main">{{op.title}}</div>
           <div class="ops-subtext">
-            {{op.customer_operator || op.type?.name || 'Sortie'}} · {{op.simulator?.code || op.location || 'No bay'}}
+            {{op.mission_name || op.customer_operator || op.type?.name || 'Sortie'}} · {{op.simulator?.code || op.location || 'No bay'}}
           </div>
           <div class="ops-subtext">
-            {{op.start_date | date:'MMM d, HH:mm'}} · {{op.members?.length ?? 0}} crew
+            {{op.start_date | date:'MMM d, HH:mm'}}<ng-container *ngIf="opCrewLine(op)"> · {{opCrewLine(op)}}</ng-container>
           </div>
-          <div class="ops-row-actions" style="justify-content:flex-start;margin-top:4px" (click)="$event.stopPropagation()">
+          <div class="ops-row-actions" *ngIf="auth.canWrite" style="justify-content:flex-start;margin-top:4px" (click)="$event.stopPropagation()">
             <button *ngIf="op.status === 'PLANNED' || op.status === 'ON_HOLD'"
                     type="button"
                     class="btn btn-secondary btn-sm"
@@ -617,7 +665,7 @@
       <span class="empty-icon">flight_takeoff</span>
       <h3>No flight sorties found</h3>
       <p *ngIf="hasActiveFilters">Try clearing one or more filters to view all simulator sorties.</p>
-      <button *ngIf="!hasActiveFilters" type="button" class="btn btn-primary" (click)="openModal()">
+      <button *ngIf="!hasActiveFilters && auth.canWrite" type="button" class="btn btn-primary" (click)="openModal()">
         <span class="btn-icon">add</span> Schedule Sortie
       </button>
       <button *ngIf="hasActiveFilters" type="button" class="btn btn-secondary" (click)="resetFilters()">
@@ -658,7 +706,9 @@
   [opTypes]="opTypes"
   [simulators]="simulators"
   [staffUsers]="staffUsers"
+  [crewSuggestions]="crewSuggestions"
   [uiPrefs]="uiPrefs"
+  (openFullDailySheet)="navigateToDailySheet($event)"
   (mutated)="onMutated()">
 </app-operation-modals>
 

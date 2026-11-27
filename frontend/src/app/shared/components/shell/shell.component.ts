@@ -14,7 +14,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject, interval } from 'rxjs';
 import { takeUntil, filter } from 'rxjs/operators';
-import { AuthService, ApiService, DateFilterService, SocketService, SectionAccessService, NavSectionAccess } from '../../../core/services/services';
+import { AuthService, ApiService, DateFilterService, SocketService, SectionAccessService, NavSectionAccess, ToastService } from '../../../core/services/services';
 import { User, Notification, ApiResponse } from '../../../core/models/interfaces';
 import { ToastComponent } from '../toast/toast.component';
 import { ConfirmComponent } from '../confirm/confirm.component';
@@ -97,6 +97,7 @@ export class ShellComponent implements OnInit, OnDestroy {
   navSections: NavSectionAccess[] = [];
 
   readonly isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/i.test(navigator.platform || '');
+  private lastUserInitKey = '';
 
   constructor(
     private auth: AuthService,
@@ -104,6 +105,7 @@ export class ShellComponent implements OnInit, OnDestroy {
     private socketService: SocketService,
     private dateFilter: DateFilterService,
     private sectionAccess: SectionAccessService,
+    private toast: ToastService,
     private router: Router,
     private cdr: ChangeDetectorRef
   ) {}
@@ -123,24 +125,43 @@ export class ShellComponent implements OnInit, OnDestroy {
     });
 
     this.auth.currentUser$.pipe(takeUntil(this.destroy$)).subscribe(user => {
-      if (!user) return;
+      if (!user) {
+        this.lastUserInitKey = '';
+        return;
+      }
 
       this.currentUser = user;
-      this.loadNotifications();
-      this.loadNavBadges();
-      this.sectionAccess.load(true).pipe(takeUntil(this.destroy$)).subscribe();
+      const userKey = `${user.id}:${user.role?.name || user.role?.id || ''}`;
+      if (userKey !== this.lastUserInitKey) {
+        this.lastUserInitKey = userKey;
+        this.loadNotifications();
+        this.loadNavBadges();
+        this.sectionAccess.load(true).pipe(takeUntil(this.destroy$)).subscribe();
 
-      const token = this.auth.getAccessToken();
-      if (token) {
-        this.socketService.connect(token);
+        const token = this.auth.getAccessToken();
+        if (token) {
+          this.socketService.connect(token);
+        }
       }
 
       this.cdr.markForCheck();
     });
 
     this.socketService.notifications$.pipe(takeUntil(this.destroy$)).subscribe((notif) => {
+      if (notif?.id && this.notifications.some(n => n.id === notif.id)) {
+        return;
+      }
       this.notifications = [{ ...notif, is_read: false }, ...this.notifications].slice(0, 50);
       this.unreadNotifications = Math.max(this.unreadNotifications + 1, this.notifications.filter(n => !n.is_read).length);
+      const alertType = String((notif as any)?.type || '').toUpperCase();
+      if (alertType === 'SIMULATOR_AOG' || alertType === 'STATION_NA' || alertType === 'SORTIE_INTERRUPTED') {
+        const msg = notif?.title || notif?.body || 'Critical simulator alert';
+        if (alertType === 'SIMULATOR_AOG' || alertType === 'STATION_NA') {
+          this.toast.error(msg);
+        } else {
+          this.toast.warning(msg);
+        }
+      }
       this.loadNavBadges();
       this.cdr.markForCheck();
     });
@@ -281,6 +302,11 @@ export class ShellComponent implements OnInit, OnDestroy {
   setPreset(preset: 'today' | 'week' | 'month' | 'quarter' | 'year'): void {
     this.activePreset = preset;
     this.dateFilter.setPreset(preset);
+  }
+
+  selectQuickPreset(preset: 'today' | 'week' | 'month' | 'quarter' | 'year'): void {
+    this.setPreset(preset);
+    this.showDatePicker = false;
   }
 
   openDatePicker(): void {

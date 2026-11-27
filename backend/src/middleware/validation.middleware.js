@@ -39,8 +39,8 @@ const validateRegister = [
     .isEmail()
     .withMessage('Invalid email format'),
   body('password')
-    .isLength({ min: 8 })
-    .withMessage('Password must be at least 8 characters')
+    .isLength({ min: 8, max: 128 })
+    .withMessage('Password must be 8-128 characters')
     .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
     .withMessage('Password must contain uppercase, lowercase, and number'),
   body('first_name')
@@ -85,15 +85,19 @@ const validateUpdateProfile = [
   body('department').trim().isLength({ max: 100 }).optional(),
   body('job_title').trim().isLength({ max: 100 }).optional(),
   body('phone').trim().isLength({ max: 30 }).optional(),
-  body('avatar_url').trim().isURL().optional({ checkFalsy: true }),
+  body('avatar_url')
+    .trim()
+    .isURL({ protocols: ['http', 'https'], require_protocol: true })
+    .withMessage('Avatar URL must use http or https')
+    .optional({ checkFalsy: true }),
   body('current_password')
     .if((value, { req }) => Boolean(req.body?.new_password))
     .notEmpty()
     .withMessage('Current password required for password change'),
   body('new_password')
     .if((value, { req }) => Boolean(req.body?.current_password))
-    .isLength({ min: 8 })
-    .withMessage('New password must be at least 8 characters')
+    .isLength({ min: 8, max: 128 })
+    .withMessage('New password must be 8-128 characters')
     .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
     .withMessage('Password must contain uppercase, lowercase, and number'),
   handleValidationErrors
@@ -124,6 +128,60 @@ const validateInventoryItem = [
   body('description').trim().isLength({ max: 1000 }).optional({ nullable: true }),
   body('unit').trim().isLength({ min: 1, max: 30 }).optional({ nullable: true, checkFalsy: true }),
   body('quantity')
+    .isInt({ min: 0 })
+    .withMessage('Quantity must be non-negative integer'),
+  body('min_stock')
+    .isInt({ min: 0 })
+    .optional({ nullable: true, checkFalsy: true })
+    .withMessage('Min stock must be non-negative integer'),
+  body('reorder_point')
+    .isInt({ min: 0 })
+    .optional({ nullable: true, checkFalsy: true })
+    .withMessage('Reorder point must be non-negative integer'),
+  body('max_stock')
+    .isInt({ min: 0 })
+    .optional({ nullable: true, checkFalsy: true })
+    .withMessage('Max stock must be non-negative integer'),
+  body('unit_cost')
+    .isFloat({ min: 0 })
+    .optional({ nullable: true, checkFalsy: true })
+    .withMessage('Unit cost must be a non-negative number'),
+  body('supplier')
+    .trim()
+    .isLength({ max: 200 })
+    .optional({ nullable: true, checkFalsy: true })
+    .withMessage('Supplier max 200 chars'),
+  handleValidationErrors
+];
+
+const validateInventoryItemUpdate = [
+  body('category_id')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('Valid category_id required'),
+  body('location_id')
+    .optional({ nullable: true, checkFalsy: true })
+    .isInt({ min: 1 })
+    .withMessage('location_id must be positive integer'),
+  body('sku')
+    .optional()
+    .trim()
+    .isLength({ min: 1, max: 80 })
+    .withMessage('SKU required (max 80 chars)'),
+  body('part_number')
+    .trim()
+    .isLength({ max: 120 })
+    .optional({ nullable: true, checkFalsy: true })
+    .withMessage('Part number max 120 chars'),
+  body('name')
+    .optional()
+    .trim()
+    .isLength({ min: 1, max: 200 })
+    .withMessage('Name required (max 200 chars)'),
+  body('description').trim().isLength({ max: 1000 }).optional({ nullable: true }),
+  body('unit').trim().isLength({ min: 1, max: 30 }).optional({ nullable: true, checkFalsy: true }),
+  body('quantity')
+    .optional()
     .isInt({ min: 0 })
     .withMessage('Quantity must be non-negative integer'),
   body('min_stock')
@@ -260,6 +318,7 @@ module.exports = {
   validateRefresh,
   validateUpdateProfile,
   validateInventoryItem,
+  validateInventoryItemUpdate,
   validateStockMovement,
   validateTask,
   validateShift,

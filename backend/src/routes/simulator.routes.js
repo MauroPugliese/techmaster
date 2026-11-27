@@ -23,11 +23,14 @@ const {
 } = require('../models');
 const { validateIdParam } = require('../middleware/validation.middleware');
 const { authorize } = require('../middleware/auth.middleware');
+const { getHiddenSectionKeysForUser } = require('../middleware/section-access.middleware');
 const { broadcastOperationalAlert } = require('../services/proactive-alerts.service');
+const { emitDomainUpdate } = require('../config/socket');
 const {
   DEFAULT_SUBSYSTEM_TEMPLATES,
   VALID_SIM_STATUSES,
   VALID_STATION_KINDS,
+  VALID_SCHEDULING_MODES,
   VALID_SHIFT_USAGE_STATUSES,
   VALID_QTG_STATUSES,
   sanitizeSimulatorPayload,
@@ -98,10 +101,33 @@ function groupBySimulatorId(rows) {
   return map;
 }
 
-async function ensureDailySheetData(dateStr, stationKind, userId = null) {
+function prevDateIso(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d - 1));
+  return dt.toISOString().slice(0, 10);
+}
+
+function cleanEntryText(val, maxLen) {
+  if (val === undefined) return undefined;
+  if (val === null) return null;
+  const s = String(val).trim();
+  return s ? s.slice(0, maxLen) : null;
+}
+
+function resolveShiftPreset(stations, shiftIndexZeroBased) {
+  for (const st of stations || []) {
+    const presets = st?.schedule_config?.shift_presets;
+    if (Array.isArray(presets) && presets[shiftIndexZeroBased]) {
+      return presets[shiftIndexZeroBased];
+    }
+  }
+  return null;
+}
+
+async function ensureDailySheetData(dateStr, stationKind, userId = null, { readOnly = false } = {}) {
   const [stations, activeStaff] = await Promise.all([
     Simulator.findAll({
-      where: { station_kind: stationKind },
+      where: { station_kind: stationKind, scheduling_mode: 'SHIFTS' },
       order: [['sort_order', 'ASC'], ['bay_code', 'ASC'], ['id', 'ASC']]
     }),
     User.findAll({
@@ -111,28 +137,113 @@ async function ensureDailySheetData(dateStr, stationKind, userId = null) {
     })
   ]);
 
-  let dailyLog;
-  try {
-    [dailyLog] = await SimulatorDailyLog.findOrCreate({
-      where: { log_date: dateStr, station_kind: stationKind },
-      defaults: {
-        log_date: dateStr,
-        station_kind: stationKind,
-        system_readiness_time: '06:30',
-        post_testing_time: '17:00',
-        logout_time: '18:00',
-        updated_by: userId || null
-      }
-    });
-  } catch (err) {
-    if (err.name !== 'SequelizeUniqueConstraintError') throw err;
-    dailyLog = await SimulatorDailyLog.findOne({ where: { log_date: dateStr, station_kind: stationKind } });
-  }
+  const firstCfg = stations.find(s => s.schedule_config)?.schedule_config || null;
+  const defaultReadiness = normalizeHhMm(firstCfg?.operating_start, '06:30');
+  const defaultLogout = normalizeHhMm(firstCfg?.operating_end, '18:00');
+  const defaultPostTest = defaultLogout;
 
   const SHIFT_USER_INCLUDES = [
     { model: User, as: 'lead', attributes: ['id', 'first_name', 'last_name', 'username'], required: false },
     { model: User, as: 'signer', attributes: ['id', 'first_name', 'last_name', 'username'], required: false }
   ];
+
+  const stationIds = stations.map(s => Number(s.id));
+  const stationMap = new Map(stations.map(s => [Number(s.id), s.get({ plain: true })]));
+  const toStationSummary = (station) => (station ? {
+    id: station.id,
+    code: station.code,
+    name: station.name,
+    bay_code: station.bay_code,
+    station_kind: station.station_kind,
+    scheduling_mode: station.scheduling_mode,
+    schedule_config: station.schedule_config || null,
+    status: station.status,
+    aircraft_type: station.aircraft_type,
+    limitations_mel: station.limitations_mel,
+    sort_order: station.sort_order
+  } : null);
+
+  let dailyLog = await SimulatorDailyLog.findOne({ where: { log_date: dateStr, station_kind: stationKind } });
+  if (!dailyLog && !readOnly) {
+    try {
+      [dailyLog] = await SimulatorDailyLog.findOrCreate({
+        where: { log_date: dateStr, station_kind: stationKind },
+        defaults: {
+          log_date: dateStr,
+          station_kind: stationKind,
+          system_readiness_time: defaultReadiness,
+          post_testing_time: defaultPostTest,
+          logout_time: defaultLogout,
+          updated_by: userId || null
+        }
+      });
+    } catch (err) {
+      if (err.name !== 'SequelizeUniqueConstraintError') throw err;
+      dailyLog = await SimulatorDailyLog.findOne({ where: { log_date: dateStr, station_kind: stationKind } });
+    }
+  }
+
+  // Read-only virtual sheet when no log exists yet (prevents GET requests from polluting DB)
+  if (!dailyLog) {
+    const preset1 = resolveShiftPreset(stations, 0);
+    const virtualLog = {
+      id: null,
+      log_date: dateStr,
+      station_kind: stationKind,
+      system_readiness_time: defaultReadiness,
+      post_testing_time: defaultPostTest,
+      logout_time: defaultLogout,
+      general_notes: null,
+      updated_by: null
+    };
+    const virtualEntries = stations.map((st, idx) => {
+      const plainSt = st.get({ plain: true });
+      return {
+        id: -(idx + 1),
+        shift_id: -1,
+        simulator_id: plainSt.id,
+        usage_status: plainSt.status === 'AOG' ? 'NA' : 'READY',
+        sim_testing_start: '00:00',
+        sim_testing_end: '00:00',
+        mission_name: null,
+        instructor_name: null,
+        pilot_name: null,
+        copilot_name: null,
+        weather_profile: null,
+        scenario_code: null,
+        notes: null,
+        duration_minutes: 0,
+        station: toStationSummary(plainSt)
+      };
+    });
+    const virtualShifts = [{
+      id: -1,
+      daily_log_id: null,
+      shift_number: 1,
+      shift_name: preset1?.name || 'SHIFT 1',
+      pre_flight_test_time: normalizeHhMm(preset1?.pre_flight, '06:40'),
+      lead_user_id: null,
+      signed_off_at: null,
+      signed_off_by: null,
+      lead: null,
+      signer: null,
+      entries: virtualEntries
+    }];
+    const { inUseCount, readyCount, naCount } = summarizeEffectiveStationStatuses(virtualShifts, stationIds);
+    return {
+      log: virtualLog,
+      shifts: virtualShifts,
+      stations: stations.map(s => s.get({ plain: true })),
+      staff: activeStaff.map(u => u.get({ plain: true })),
+      summary: {
+        total_stations: stations.length,
+        in_use_count: inUseCount,
+        ready_count: readyCount,
+        na_count: naCount,
+        total_session_minutes: 0
+      }
+    };
+  }
 
   let shifts = await SimulatorDailyShift.findAll({
     where: { daily_log_id: dailyLog.id },
@@ -140,15 +251,16 @@ async function ensureDailySheetData(dateStr, stationKind, userId = null) {
     order: [['shift_number', 'ASC'], ['id', 'ASC']]
   });
 
-  if (shifts.length === 0) {
+  if (shifts.length === 0 && !readOnly) {
+    const preset1 = resolveShiftPreset(stations, 0);
     try {
       const [s1] = await SimulatorDailyShift.findOrCreate({
         where: { daily_log_id: dailyLog.id, shift_number: 1 },
         defaults: {
           daily_log_id: dailyLog.id,
           shift_number: 1,
-          shift_name: 'SHIFT 1',
-          pre_flight_test_time: '06:40',
+          shift_name: preset1?.name || 'SHIFT 1',
+          pre_flight_test_time: normalizeHhMm(preset1?.pre_flight, '06:40'),
           lead_user_id: userId || null
         }
       });
@@ -164,21 +276,28 @@ async function ensureDailySheetData(dateStr, stationKind, userId = null) {
     }
   }
 
-  const stationIds = stations.map(s => Number(s.id));
-  const stationMap = new Map(stations.map(s => [Number(s.id), s.get({ plain: true })]));
+  // Batch-load all shift entries in one query (eliminates N+1)
+  const shiftIds = shifts.map(s => Number(s.id));
+  const allEntries = shiftIds.length
+    ? await SimulatorShiftEntry.findAll({ where: { shift_id: { [Op.in]: shiftIds } } })
+    : [];
+  const entriesByShift = new Map();
+  for (const e of allEntries) {
+    const sid = Number(e.shift_id);
+    if (!entriesByShift.has(sid)) entriesByShift.set(sid, []);
+    entriesByShift.get(sid).push(e);
+  }
 
   const hydratedShifts = [];
   let totalSessionMinutes = 0;
 
   for (let idx = 0; idx < shifts.length; idx++) {
     const shiftPlain = shifts[idx].get({ plain: true });
-    let entries = await SimulatorShiftEntry.findAll({
-      where: { shift_id: shiftPlain.id }
-    });
+    let entries = entriesByShift.get(Number(shiftPlain.id)) || [];
 
     const existingSimIds = new Set(entries.map(e => Number(e.simulator_id)));
     const missingStations = stations.filter(st => !existingSimIds.has(Number(st.id)));
-    if (missingStations.length > 0) {
+    if (missingStations.length > 0 && !readOnly) {
       await SimulatorShiftEntry.bulkCreate(
         missingStations.map(st => ({
           shift_id: shiftPlain.id,
@@ -194,26 +313,37 @@ async function ensureDailySheetData(dateStr, stationKind, userId = null) {
       entries = await SimulatorShiftEntry.findAll({ where: { shift_id: shiftPlain.id } });
     }
 
-    const enrichedEntries = entries
+    const plainEntries = entries.map(e => e.get({ plain: true }));
+    if (missingStations.length > 0 && readOnly) {
+      missingStations.forEach((st, mIdx) => {
+        plainEntries.push({
+          id: -(shiftPlain.id * 1000 + mIdx + 1),
+          shift_id: shiftPlain.id,
+          simulator_id: st.id,
+          usage_status: st.status === 'AOG' ? 'NA' : 'READY',
+          sim_testing_start: '00:00',
+          sim_testing_end: '00:00',
+          mission_name: null,
+          instructor_name: null,
+          pilot_name: null,
+          copilot_name: null,
+          weather_profile: null,
+          scenario_code: null,
+          notes: null
+        });
+      });
+    }
+
+    const enrichedEntries = plainEntries
       .filter(e => stationIds.includes(Number(e.simulator_id)))
-      .map(e => {
-        const plain = e.get({ plain: true });
+      .map(plain => {
         const station = stationMap.get(Number(plain.simulator_id)) || null;
         const durMin = computeTestingDurationMinutes(plain.sim_testing_start, plain.sim_testing_end);
         totalSessionMinutes += durMin;
         return {
           ...plain,
           duration_minutes: durMin,
-          station: station ? {
-            id: station.id,
-            code: station.code,
-            name: station.name,
-            bay_code: station.bay_code,
-            status: station.status,
-            aircraft_type: station.aircraft_type,
-            limitations_mel: station.limitations_mel,
-            sort_order: station.sort_order
-          } : null
+          station: toStationSummary(station)
         };
       })
       .sort((a, b) => {
@@ -248,12 +378,64 @@ async function ensureDailySheetData(dateStr, stationKind, userId = null) {
 
 // ── Static routes MUST stay before /:id ──────────────────────────────────────
 
-// GET /simulators/daily-sheet — unified Test Place / IOS Console daily shifts & usage sheet
+// GET /simulators/crew-suggestions — distinct recent external instructor/pilot/mission/scenario/customer names
+router.get('/crew-suggestions', async (req, res, next) => {
+  try {
+    const hiddenSections = await getHiddenSectionKeysForUser(req.user);
+    const canReadOps = !hiddenSections.has('operations');
+    const [recentOps, recentShifts] = await Promise.all([
+      canReadOps ? Operation.findAll({
+        attributes: ['mission_name', 'instructor_name', 'pilot_name', 'copilot_name', 'scenario_code', 'customer_operator', 'weather_profile'],
+        order: [['id', 'DESC']],
+        limit: 250
+      }) : Promise.resolve([]),
+      SimulatorShiftEntry.findAll({
+        attributes: ['mission_name', 'instructor_name', 'pilot_name', 'copilot_name', 'scenario_code', 'weather_profile'],
+        order: [['id', 'DESC']],
+        limit: 250
+      })
+    ]);
+
+    const addUnique = (set, val) => {
+      const s = String(val || '').trim();
+      if (s && set.size < 40) set.add(s);
+    };
+
+    const instructors = new Set();
+    const pilots = new Set();
+    const missions = new Set();
+    const scenarios = new Set();
+    const customers = new Set();
+
+    for (const row of [...recentOps, ...recentShifts]) {
+      addUnique(instructors, row.instructor_name);
+      addUnique(pilots, row.pilot_name);
+      addUnique(pilots, row.copilot_name);
+      addUnique(missions, row.mission_name);
+      addUnique(scenarios, row.scenario_code);
+      if (row.customer_operator) addUnique(customers, row.customer_operator);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        instructors: [...instructors],
+        pilots: [...pilots],
+        missions: [...missions],
+        scenarios: [...scenarios],
+        customers: [...customers]
+      }
+    });
+  } catch (err) { next(err); }
+});
+
+// GET /simulators/daily-sheet — unified daily shifts & usage sheet for SHIFTS-mode stations
 router.get('/daily-sheet', async (req, res, next) => {
   try {
     const dateStr = resolveSheetDate(req.query.date);
     const stationKind = resolveStationKind(req.query.station_kind, 'TEST_PLACE');
-    const data = await ensureDailySheetData(dateStr, stationKind, req.user?.id || null);
+    const isViewer = req.user?.role?.name === 'viewer';
+    const data = await ensureDailySheetData(dateStr, stationKind, req.user?.id || null, { readOnly: isViewer });
     res.json({ success: true, data });
   } catch (err) { next(err); }
 });
@@ -262,32 +444,75 @@ router.get('/daily-sheet', async (req, res, next) => {
 router.get('/daily-sheet/timeline', async (req, res, next) => {
   try {
     const dateStr = resolveSheetDate(req.query.date);
-    const dayStart = new Date(`${dateStr}T00:00:00.000Z`);
-    const dayEnd = new Date(`${dateStr}T23:59:59.999Z`);
+    const prevDateStr = prevDateIso(dateStr);
+    // Widen maintenance window by ±14h so local-time client days never clip near midnight
+    const dayStartBuffered = new Date(new Date(`${dateStr}T00:00:00.000Z`).getTime() - 14 * 3600000);
+    const dayEndBuffered = new Date(new Date(`${dateStr}T23:59:59.999Z`).getTime() + 14 * 3600000);
 
-    const [tpSheet, iosSheet, dayMaint, plannedOccs, allSims] = await Promise.all([
-      ensureDailySheetData(dateStr, 'TEST_PLACE', req.user?.id || null),
-      ensureDailySheetData(dateStr, 'IOS_CONSOLE', req.user?.id || null),
+    const [allSims, dayMaint, plannedOccs, prevLogs] = await Promise.all([
+      Simulator.findAll({ attributes: ['id', 'bay_code', 'code', 'name', 'station_kind', 'scheduling_mode'] }),
       MaintenanceRecord.findAll({
         where: {
           simulator_id: { [Op.ne]: null },
           status: { [Op.in]: ['SCHEDULED', 'IN_PROGRESS', 'DEFERRED'] },
-          scheduled_date: { [Op.between]: [dayStart, dayEnd] }
+          scheduled_date: { [Op.between]: [dayStartBuffered, dayEndBuffered] }
         },
         attributes: ['id', 'simulator_id', 'title', 'scheduled_date', 'downtime_hours', 'status', 'severity']
       }),
       expandOccurrencesInRange(dateStr, dateStr, 1).catch(() => []),
-      Simulator.findAll({ attributes: ['id', 'bay_code', 'code', 'name'] })
+      SimulatorDailyLog.findAll({
+        where: { log_date: prevDateStr },
+        include: [{
+          model: SimulatorDailyShift,
+          as: 'shifts',
+          include: [{ model: SimulatorShiftEntry, as: 'entries' }]
+        }]
+      }).catch(() => [])
     ]);
 
-    const sheets = [tpSheet, iosSheet];
-    const { blocks, statusBySimulator } = buildTimelineShiftBlocks(sheets);
+    const plainSims = allSims.map(s => s.get({ plain: true }));
+    const shiftSimIds = new Set(plainSims.filter(s => s.scheduling_mode === 'SHIFTS').map(s => Number(s.id)));
+    const activeShiftKinds = [...new Set(
+      plainSims
+        .filter(s => s.scheduling_mode === 'SHIFTS')
+        .map(s => s.station_kind || 'TEST_PLACE')
+    )];
+
+    const sheets = await Promise.all(
+      activeShiftKinds.map(kind => ensureDailySheetData(dateStr, kind, req.user?.id || null, { readOnly: true }))
+    );
+
+    const prevDaySheets = prevLogs.map(l => {
+      const plain = l.get({ plain: true });
+      return {
+        log: plain,
+        shifts: (plain.shifts || []).map(sh => ({
+          ...sh,
+          entries: (sh.entries || []).filter(e => shiftSimIds.has(Number(e.simulator_id)))
+        }))
+      };
+    });
+
+    const { blocks, statusBySimulator } = buildTimelineShiftBlocks(sheets, { prevDaySheets });
     const maintenanceBlocks = buildTimelineMaintenanceBlocks(
       dateStr,
       dayMaint.map(m => m.get({ plain: true })),
       plannedOccs,
-      allSims.map(s => s.get({ plain: true }))
+      plainSims
     );
+
+    const operatingHours = {};
+    const shiftsByKind = {};
+    for (const sh of sheets) {
+      const k = sh.log?.station_kind || 'TEST_PLACE';
+      operatingHours[k] = sh.log;
+      shiftsByKind[k] = (sh.shifts || []).map(s => ({
+        id: s.id,
+        shift_number: s.shift_number,
+        shift_name: s.shift_name,
+        pre_flight_test_time: s.pre_flight_test_time
+      }));
+    }
 
     res.json({
       success: true,
@@ -296,10 +521,176 @@ router.get('/daily-sheet/timeline', async (req, res, next) => {
         blocks,
         maintenanceBlocks,
         statusBySimulator,
-        operatingHours: {
-          TEST_PLACE: tpSheet.log,
-          IOS_CONSOLE: iosSheet.log
-        }
+        operatingHours,
+        shiftsByKind
+      }
+    });
+  } catch (err) { next(err); }
+});
+
+// POST /simulators/daily-sheet/quick-entry — direct shift entry create/update from 24h Timeline
+router.post('/daily-sheet/quick-entry', authorize('admin', 'manager', 'tech'), async (req, res, next) => {
+  try {
+    const simId = Number(req.body?.simulator_id);
+    if (!Number.isInteger(simId) || simId < 1) {
+      return res.status(400).json({ success: false, message: 'Valid simulator_id is required.' });
+    }
+    const sim = await Simulator.findByPk(simId);
+    if (!sim) return res.status(404).json({ success: false, message: 'Simulator not found.' });
+    if (String(sim.scheduling_mode || '').toUpperCase() !== 'SHIFTS') {
+      return res.status(400).json({
+        success: false,
+        message: 'Quick shift entries can only be recorded on stations configured in SHIFTS scheduling mode.'
+      });
+    }
+
+    const dateStr = resolveSheetDate(req.body?.date);
+    const stationKind = sim.station_kind || 'TEST_PLACE';
+    const sheet = await ensureDailySheetData(dateStr, stationKind, req.user?.id || null);
+
+    let targetShift = null;
+    if (req.body?.create_new_shift) {
+      const existingNums = sheet.shifts.map(s => Number(s.shift_number) || 0);
+      const nextNum = (existingNums.length ? Math.max(...existingNums) : 0) + 1;
+      const preset = resolveShiftPreset([sim], nextNum - 1);
+      const shiftName = String(req.body?.shift_name || preset?.name || `SHIFT ${nextNum}`).trim().toUpperCase().slice(0, 40);
+      const preFlight = normalizeHhMm(req.body?.pre_flight_test_time || preset?.pre_flight, nextNum === 2 ? '13:00' : '06:40');
+      const created = await SimulatorDailyShift.create({
+        daily_log_id: sheet.log.id,
+        shift_number: nextNum,
+        shift_name: shiftName,
+        pre_flight_test_time: preFlight,
+        lead_user_id: req.user?.id || null
+      });
+      if (sheet.stations.length > 0) {
+        await SimulatorShiftEntry.bulkCreate(
+          sheet.stations.map(st => ({
+            shift_id: created.id,
+            simulator_id: st.id,
+            usage_status: st.status === 'AOG' ? 'NA' : 'READY',
+            sim_testing_start: '00:00',
+            sim_testing_end: '00:00',
+            notes: null,
+            updated_by: req.user?.id || null
+          })),
+          { ignoreDuplicates: true }
+        );
+      }
+      targetShift = created;
+    } else if (req.body?.shift_id) {
+      targetShift = await SimulatorDailyShift.findOne({
+        where: { id: Number(req.body.shift_id), daily_log_id: sheet.log.id }
+      });
+      if (!targetShift) {
+        return res.status(400).json({ success: false, message: 'Selected shift does not belong to this daily log.' });
+      }
+    } else if (req.body?.shift_number) {
+      const num = Number(req.body.shift_number);
+      targetShift = await SimulatorDailyShift.findOne({ where: { daily_log_id: sheet.log.id, shift_number: num } });
+    }
+    if (!targetShift && sheet.shifts.length > 0) {
+      targetShift = await SimulatorDailyShift.findByPk(sheet.shifts[0].id);
+    }
+    if (!targetShift) {
+      return res.status(400).json({ success: false, message: 'Unable to resolve target daily shift.' });
+    }
+    if (targetShift.signed_off_at) {
+      return res.status(409).json({
+        success: false,
+        message: `${targetShift.shift_name} has already been signed off and is locked. Ask a manager or admin to unlock it first.`
+      });
+    }
+
+    let [entry] = await SimulatorShiftEntry.findOrCreate({
+      where: { shift_id: targetShift.id, simulator_id: sim.id },
+      defaults: {
+        shift_id: targetShift.id,
+        simulator_id: sim.id,
+        usage_status: 'READY',
+        sim_testing_start: '00:00',
+        sim_testing_end: '00:00',
+        updated_by: req.user?.id || null
+      }
+    });
+
+    const targetStart = req.body?.sim_testing_start !== undefined
+      ? normalizeHhMm(req.body.sim_testing_start, '00:00')
+      : entry.sim_testing_start;
+    const targetEnd = req.body?.sim_testing_end !== undefined
+      ? normalizeHhMm(req.body.sim_testing_end, '00:00')
+      : entry.sim_testing_end;
+
+    const requestedStatus = req.body?.usage_status !== undefined
+      ? String(req.body.usage_status).trim().toUpperCase()
+      : undefined;
+
+    if (requestedStatus !== undefined && !VALID_SHIFT_USAGE_STATUSES.has(requestedStatus)) {
+      return res.status(400).json({ success: false, message: 'usage_status must be READY, IN_USE, or NA.' });
+    }
+
+    const nextStatus = deriveEntryUsageStatus({
+      currentStatus: entry.usage_status,
+      requestedStatus,
+      startHhMm: targetStart,
+      endHhMm: targetEnd
+    });
+
+    const updates = {
+      sim_testing_start: nextStatus === 'NA' || nextStatus === 'READY' ? '00:00' : targetStart,
+      sim_testing_end: nextStatus === 'NA' || nextStatus === 'READY' ? '00:00' : targetEnd,
+      usage_status: nextStatus,
+      updated_by: req.user?.id || null
+    };
+
+    const optionalFields = [
+      ['mission_name', 160],
+      ['instructor_name', 120],
+      ['pilot_name', 120],
+      ['copilot_name', 120],
+      ['weather_profile', 80],
+      ['scenario_code', 120],
+      ['notes', 2000]
+    ];
+    for (const [k, len] of optionalFields) {
+      if (req.body?.[k] !== undefined) {
+        updates[k] = cleanEntryText(req.body[k], len);
+      }
+    }
+
+    const prevStatus = entry.usage_status;
+    await entry.update(updates);
+
+    if (nextStatus !== prevStatus) {
+      if (nextStatus === 'NA') {
+        if (sim.status !== 'AOG') await sim.update({ status: 'AOG' });
+        await broadcastOperationalAlert({
+          req,
+          type: 'STATION_NA',
+          title: `Station Marked NA: ${sim.bay_code} (${sim.name})`,
+          body: updates.notes || entry.notes || `${sim.name} was marked Not Available (NA) on the daily shift sheet.`,
+          link: `/simulators?simulatorId=${sim.id}`,
+          excludeUserId: req.user?.id || null
+        });
+      } else if (prevStatus === 'NA' && sim.status === 'AOG') {
+        const openAogCount = await MaintenanceRecord.count({
+          where: {
+            simulator_id: sim.id,
+            severity: 'AOG',
+            status: { [Op.in]: ['SCHEDULED', 'IN_PROGRESS', 'DEFERRED'] }
+          }
+        });
+        if (openAogCount === 0) await sim.update({ status: 'READY' });
+      }
+    }
+
+    const plain = entry.get({ plain: true });
+    emitDomainUpdate({ domain: 'daily-ops', action: 'quick-entry', simulatorId: sim.id, date: dateStr, stationKind, actorId: req.user?.id || null });
+    res.json({
+      success: true,
+      data: {
+        ...plain,
+        shift_name: targetShift.shift_name,
+        duration_minutes: computeTestingDurationMinutes(plain.sim_testing_start, plain.sim_testing_end)
       }
     });
   } catch (err) { next(err); }
@@ -350,9 +741,10 @@ router.post('/daily-sheet/shifts', authorize('admin', 'manager', 'tech'), async 
 
     const existingNums = sheet.shifts.map(s => Number(s.shift_number) || 0);
     const nextNum = (existingNums.length ? Math.max(...existingNums) : 0) + 1;
-    const defaultPreFlight = nextNum === 2 ? '13:00' : (nextNum === 3 ? '21:00' : '06:40');
+    const preset = resolveShiftPreset(sheet.stations, nextNum - 1);
+    const defaultPreFlight = preset?.pre_flight || (nextNum === 2 ? '13:00' : (nextNum === 3 ? '21:00' : '06:40'));
     const preFlight = normalizeHhMm(req.body?.pre_flight_test_time, defaultPreFlight);
-    const shiftName = String(req.body?.shift_name || `SHIFT ${nextNum}`).trim().toUpperCase().slice(0, 40);
+    const shiftName = String(req.body?.shift_name || preset?.name || `SHIFT ${nextNum}`).trim().toUpperCase().slice(0, 40);
 
     const createdShift = await SimulatorDailyShift.create({
       daily_log_id: sheet.log.id,
@@ -448,7 +840,7 @@ router.post('/daily-sheet/copy-previous', authorize('admin', 'manager', 'tech'),
     }
 
     const stations = await Simulator.findAll({
-      where: { station_kind: stationKind },
+      where: { station_kind: stationKind, scheduling_mode: 'SHIFTS' },
       order: [['sort_order', 'ASC'], ['bay_code', 'ASC'], ['id', 'ASC']],
       transaction
     });
@@ -540,6 +932,9 @@ router.put('/daily-sheet/shifts/:shiftId', authorize('admin', 'manager', 'tech')
 
     const shift = await SimulatorDailyShift.findByPk(shiftId);
     if (!shift) return res.status(404).json({ success: false, message: 'Shift not found' });
+    if (shift.signed_off_at) {
+      return res.status(409).json({ success: false, message: 'This shift is signed off and locked. Unlock it first to make changes.' });
+    }
 
     const updates = {};
     if (req.body?.pre_flight_test_time !== undefined) {
@@ -584,7 +979,29 @@ router.post('/daily-sheet/shifts/:shiftId/sign-off', authorize('admin', 'manager
       signed_off_at: new Date(),
       signed_off_by: req.user?.id || null
     });
+    emitDomainUpdate({ domain: 'daily-ops', action: 'sign-off', shiftId: shift.id, actorId: req.user?.id || null });
 
+    const full = await SimulatorDailyShift.findByPk(shift.id, {
+      include: [
+        { model: User, as: 'lead', attributes: ['id', 'first_name', 'last_name', 'username'], required: false },
+        { model: User, as: 'signer', attributes: ['id', 'first_name', 'last_name', 'username'], required: false }
+      ]
+    });
+    res.json({ success: true, data: full || shift });
+  } catch (err) { next(err); }
+});
+
+// POST /simulators/daily-sheet/shifts/:shiftId/unlock — reopen a signed-off shift (admin/manager only)
+router.post('/daily-sheet/shifts/:shiftId/unlock', authorize('admin', 'manager'), async (req, res, next) => {
+  try {
+    const shiftId = parseInt(req.params.shiftId, 10);
+    if (Number.isNaN(shiftId)) return res.status(400).json({ success: false, message: 'Invalid shiftId' });
+
+    const shift = await SimulatorDailyShift.findByPk(shiftId);
+    if (!shift) return res.status(404).json({ success: false, message: 'Shift not found' });
+
+    await shift.update({ signed_off_at: null, signed_off_by: null });
+    emitDomainUpdate({ domain: 'daily-ops', action: 'unlock', shiftId: shift.id, actorId: req.user?.id || null });
     const full = await SimulatorDailyShift.findByPk(shift.id, {
       include: [
         { model: User, as: 'lead', attributes: ['id', 'first_name', 'last_name', 'username'], required: false },
@@ -603,6 +1020,9 @@ router.delete('/daily-sheet/shifts/:shiftId', authorize('admin', 'manager'), asy
 
     const shift = await SimulatorDailyShift.findByPk(shiftId);
     if (!shift) return res.status(404).json({ success: false, message: 'Shift not found' });
+    if (shift.signed_off_at) {
+      return res.status(409).json({ success: false, message: 'Cannot delete a signed-off shift. Unlock it first.' });
+    }
 
     const count = await SimulatorDailyShift.count({ where: { daily_log_id: shift.daily_log_id } });
     if (count <= 1) {
@@ -626,8 +1046,12 @@ router.post('/daily-sheet/shifts/:shiftId/bulk-time', authorize('admin', 'manage
 
     const shift = await SimulatorDailyShift.findByPk(shiftId, { transaction });
     if (!shift) {
-      await transaction.rollback();
+      await transaction.rollback().catch(() => {});
       return res.status(404).json({ success: false, message: 'Shift not found' });
+    }
+    if (shift.signed_off_at) {
+      await transaction.rollback().catch(() => {});
+      return res.status(409).json({ success: false, message: 'This shift is signed off and locked. Unlock it first to update times.' });
     }
 
     const mode = String(req.body?.mode || 'start').toLowerCase();
@@ -675,9 +1099,10 @@ router.post('/daily-sheet/shifts/:shiftId/bulk-time', authorize('admin', 'manage
     }
 
     await transaction.commit();
+    emitDomainUpdate({ domain: 'daily-ops', action: 'bulk-time', shiftId: shift.id, actorId: req.user?.id || null });
     res.json({ success: true, data: { updatedCount: entries.length } });
   } catch (err) {
-    await transaction.rollback();
+    await transaction.rollback().catch(() => {});
     next(err);
   }
 });
@@ -690,6 +1115,10 @@ router.patch('/daily-sheet/entries/:entryId', authorize('admin', 'manager', 'tec
 
     const entry = await SimulatorShiftEntry.findByPk(entryId);
     if (!entry) return res.status(404).json({ success: false, message: 'Shift entry not found' });
+    const parentShift = await SimulatorDailyShift.findByPk(entry.shift_id);
+    if (parentShift?.signed_off_at) {
+      return res.status(409).json({ success: false, message: 'This shift is signed off and locked. Unlock it first to modify entries.' });
+    }
 
     const targetStart = req.body?.sim_testing_start !== undefined
       ? normalizeHhMm(req.body.sim_testing_start, '00:00')
@@ -722,6 +1151,18 @@ router.patch('/daily-sheet/entries/:entryId', authorize('admin', 'manager', 'tec
 
     if (req.body?.notes !== undefined) {
       updates.notes = String(req.body.notes || '').trim() || null;
+    }
+    for (const [k, len] of [
+      ['mission_name', 160],
+      ['instructor_name', 120],
+      ['pilot_name', 120],
+      ['copilot_name', 120],
+      ['weather_profile', 80],
+      ['scenario_code', 120]
+    ]) {
+      if (req.body?.[k] !== undefined) {
+        updates[k] = cleanEntryText(req.body[k], len);
+      }
     }
 
     const prevStatus = entry.usage_status;
@@ -759,6 +1200,7 @@ router.patch('/daily-sheet/entries/:entryId', authorize('admin', 'manager', 'tec
     }
 
     const plain = entry.get({ plain: true });
+    emitDomainUpdate({ domain: 'daily-ops', action: 'entry-updated', simulatorId: entry.simulator_id, entryId: entry.id, actorId: req.user?.id || null });
     res.json({
       success: true,
       data: {
@@ -972,11 +1414,14 @@ router.get('/qtg/all', async (req, res, next) => {
 // GET /simulators — full fleet list enriched with live bay telemetry
 router.get('/', async (req, res, next) => {
   try {
-    const { search, platform_category, status, station_kind } = req.query;
+    const { search, platform_category, status, station_kind, scheduling_mode } = req.query;
     const where = {};
 
     if (station_kind && VALID_STATION_KINDS.has(String(station_kind).trim().toUpperCase())) {
       where.station_kind = String(station_kind).trim().toUpperCase();
+    }
+    if (scheduling_mode && VALID_SCHEDULING_MODES.has(String(scheduling_mode).trim().toUpperCase())) {
+      where.scheduling_mode = String(scheduling_mode).trim().toUpperCase();
     }
     if (platform_category && String(platform_category).trim()) {
       where.platform_category = String(platform_category).trim().toUpperCase();

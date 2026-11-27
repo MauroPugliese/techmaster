@@ -9,8 +9,8 @@ import {
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Subject } from 'rxjs';
-import { takeUntil } from 'rxjs/operators';
-import { ApiService, UiCustomizationService, UiSectionPreferences } from '../../core/services/services';
+import { debounceTime, takeUntil } from 'rxjs/operators';
+import { ApiService, AuthService, SocketService, UiCustomizationService, UiSectionPreferences } from '../../core/services/services';
 import {
   Asset,
   AssetCategory,
@@ -65,7 +65,9 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
   private actionHandled = false;
 
   constructor(
+    public auth: AuthService,
     private api: ApiService,
+    private socketService: SocketService,
     private uiCustomization: UiCustomizationService,
     private route: ActivatedRoute,
     private router: Router,
@@ -107,7 +109,7 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
       if (qp['action'] !== 'new') {
         this.actionHandled = false;
       }
-      if (qp['action'] === 'new' && !this.actionHandled) {
+      if (qp['action'] === 'new' && !this.actionHandled && this.auth.canWrite) {
         this.actionHandled = true;
         setTimeout(() => {
           this.openAddWorkOrder();
@@ -127,6 +129,19 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
       this.cdr.markForCheck();
     });
 
+    this.socketService.domainUpdates$
+      .pipe(debounceTime(450), takeUntil(this.destroy$))
+      .subscribe(evt => {
+        const d = evt?.domain;
+        if (!d || d === 'maintenance' || d === 'simulators') {
+          this.refreshTick += 1;
+          this.api.get<any>('/maintenance/summary').pipe(takeUntil(this.destroy$)).subscribe({
+            next: r => { this.maintSummary = r?.data || null; this.cdr.markForCheck(); }
+          });
+          this.cdr.markForCheck();
+        }
+      });
+
     this.loadReferenceData();
   }
 
@@ -136,13 +151,13 @@ export class MaintenanceComponent implements OnInit, OnDestroy {
   }
 
   loadReferenceData(): void {
-    this.api.get<any>('/simulators').subscribe({
+    this.api.get<any>('/simulators').pipe(takeUntil(this.destroy$)).subscribe({
       next: r => { this.simulators = r?.data || []; this.cdr.markForCheck(); }
     });
-    this.api.get<any>('/maintenance/assets').subscribe({
+    this.api.get<any>('/maintenance/assets').pipe(takeUntil(this.destroy$)).subscribe({
       next: r => { this.assets = r?.data || []; this.cdr.markForCheck(); }
     });
-    this.api.get<any>('/maintenance/asset-categories').subscribe({
+    this.api.get<any>('/maintenance/asset-categories').pipe(takeUntil(this.destroy$)).subscribe({
       next: r => { this.assetCategories = r?.data || []; this.cdr.markForCheck(); }
     });
     this.api.get<any>('/warehouse', { limit: 500, page: 1 }).pipe(takeUntil(this.destroy$)).subscribe({

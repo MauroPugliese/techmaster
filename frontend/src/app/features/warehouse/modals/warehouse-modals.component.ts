@@ -10,6 +10,7 @@ import {
 import { CommonModule, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../../core/services/api.service';
+import { AuthService } from '../../../core/services/auth.service';
 import { ConfirmService } from '../../../core/services/confirm.service';
 import { ToastService } from '../../../core/services/toast.service';
 import { UiCustomizationService, UiSectionPreferences } from '../../../core/services/ui-customization.service';
@@ -72,6 +73,8 @@ export class WarehouseModalsComponent {
   itemForm: any = this.emptyItemForm();
   itemError = '';
   saving = false;
+  showStockDetails = false;
+  showAviationLru = false;
 
   // Stock Movement modal state
   showMovementModal = false;
@@ -104,6 +107,7 @@ export class WarehouseModalsComponent {
   copiedKey: string | null = null;
 
   constructor(
+    public auth: AuthService,
     private api: ApiService,
     private uiCustomization: UiCustomizationService,
     private toast: ToastService,
@@ -123,6 +127,9 @@ export class WarehouseModalsComponent {
   // ── Keyboard Escape closes topmost modal ───────────────────────────────────
   @HostListener('document:keydown.escape')
   onEsc(): void {
+    if (typeof document !== 'undefined' && document.querySelector('.confirm-overlay, .cdk-overlay-pane')) {
+      return;
+    }
     if (this.showMovementModal) {
       this.showMovementModal = false;
       this.cdr.markForCheck();
@@ -204,8 +211,31 @@ export class WarehouseModalsComponent {
       this.editingItem = null;
       this.itemForm = this.emptyItemForm();
     }
+    this.showStockDetails = false;
+    this.showAviationLru = false;
     this.showItemModal = true;
     this.cdr.markForCheck();
+  }
+
+  get stockDetailsBadge(): string {
+    let count = 0;
+    if (this.itemForm.unit_cost !== null && this.itemForm.unit_cost !== '' && this.itemForm.unit_cost !== undefined) count++;
+    if (String(this.itemForm.supplier || '').trim()) count++;
+    if (Number(this.itemForm.min_stock) > 0) count++;
+    if (this.itemForm.max_stock !== null && this.itemForm.max_stock !== '') count++;
+    if (String(this.itemForm.description || '').trim()) count++;
+    return count > 0 ? `${count} set` : '';
+  }
+
+  get aviationLruBadge(): string {
+    const bits: string[] = [];
+    if (this.itemForm.part_classification && this.itemForm.part_classification !== 'CONSUMABLE') {
+      bits.push(this.itemForm.part_classification === 'ROTATABLE_LRU' ? 'LRU' : 'Cal Tool');
+    }
+    if (String(this.itemForm.serial_number || '').trim()) bits.push('S/N');
+    if (Number(this.itemForm.on_order_qty) > 0) bits.push(`+${this.itemForm.on_order_qty} ETA`);
+    if (String(this.itemForm.rma_reference || '').trim()) bits.push('RMA');
+    return bits.join(' · ');
   }
 
   closeItemModal(e: MouseEvent): void {

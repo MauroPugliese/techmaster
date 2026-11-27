@@ -18,6 +18,7 @@ import { FormsModule } from '@angular/forms';
 import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../../core/services/api.service';
+import { AuthService } from '../../../core/services/auth.service';
 import { ConfirmService } from '../../../core/services/confirm.service';
 import { DateFilterService } from '../../../core/services/date-filter.service';
 import { ToastService } from '../../../core/services/toast.service';
@@ -93,6 +94,7 @@ export class MaintenanceWorkOrdersComponent implements OnInit, OnChanges, OnDest
   melActiveOnly = false;
   assetFilter: number | '' = '';
   simulatorFilter: number | '' = '';
+  showAdvancedFilters = false;
   sortBy = 'scheduled_date';
   sortDir: 'ASC' | 'DESC' = 'ASC';
 
@@ -108,6 +110,7 @@ export class MaintenanceWorkOrdersComponent implements OnInit, OnChanges, OnDest
   bulkBusy = false;
 
   constructor(
+    public auth: AuthService,
     private api: ApiService,
     private dateFilter: DateFilterService,
     private uiCustomization: UiCustomizationService,
@@ -115,6 +118,10 @@ export class MaintenanceWorkOrdersComponent implements OnInit, OnChanges, OnDest
     private confirm: ConfirmService,
     private cdr: ChangeDetectorRef
   ) {}
+
+  trackByRecordId(_: number, r: MaintenanceRecord): number {
+    return r.id;
+  }
 
   ngOnInit(): void {
     if (this.externalStatusFilter) {
@@ -282,6 +289,18 @@ export class MaintenanceWorkOrdersComponent implements OnInit, OnChanges, OnDest
   filterByKpi(status: string): void {
     this.statusFilter = this.statusFilter === status ? '' : status;
     this.applyFilters();
+  }
+
+  get advancedFilterCount(): number {
+    let count = 0;
+    if (this.priorityFilter) count++;
+    if (this.typeFilter) count++;
+    if (this.severityFilter) count++;
+    if (this.subsystemFilter) count++;
+    if (this.assetFilter !== '') count++;
+    if (this.snagsOnly) count++;
+    if (this.melActiveOnly) count++;
+    return count;
   }
 
   get hasActiveFilters(): boolean {
@@ -452,6 +471,12 @@ export class MaintenanceWorkOrdersComponent implements OnInit, OnChanges, OnDest
     if (this.showTableField('asset') && r.asset?.name) {
       parts.push(r.asset.name);
       if (r.asset.serial_number) parts.push(`S/N ${r.asset.serial_number}`);
+    }
+    if (r.part_number) {
+      parts.push(`P/N ${r.part_number}`);
+    }
+    if (r.broken_serial_number || r.new_serial_number) {
+      parts.push(`S/N ${r.broken_serial_number || '—'} → ${r.new_serial_number || '—'}`);
     }
     if (this.showTableField('type') && r.type) {
       parts.push(formatEnumLabel(r.type));

@@ -15,19 +15,22 @@ import {
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject } from 'rxjs';
-import { takeUntil } from 'rxjs/operators';
+import { debounceTime, takeUntil } from 'rxjs/operators';
 import {
+  ExternalCrewSuggestions,
   ShiftUsageStatus,
   SimulatorDailySheetResponse,
   SimulatorDailyShift,
   SimulatorShiftEntry,
+  SimulatorShiftPreset,
   SimulatorStationKind
 } from '../../../core/models/interfaces';
-import { ApiService, ConfirmService, ToastService } from '../../../core/services/services';
+import { ApiService, AuthService, ConfirmService, SocketService, ToastService } from '../../../core/services/services';
 import {
   formatMinutesHhMm,
   SHIFT_USAGE_STATUS_META
 } from '../simulator-helpers';
+import { WEATHER_PRESETS } from '../../operations/operation-helpers';
 import {
   BulkSimTimeModalComponent,
   BulkTimeMode
@@ -81,7 +84,7 @@ export class StationDailyOpsComponent implements OnInit, OnChanges, OnDestroy {
   private readonly destroy$ = new Subject<void>();
   private loadSeq = 0;
 
-  @Input() stationKind: 'TEST_PLACE' | 'IOS_CONSOLE' = 'TEST_PLACE';
+  @Input() stationKind: SimulatorStationKind = 'TEST_PLACE';
   @Input() refreshTick = 0;
   @Input() initialDate: string | null = null;
 
@@ -99,9 +102,33 @@ export class StationDailyOpsComponent implements OnInit, OnChanges, OnDestroy {
   statusFilter: 'ALL' | ShiftUsageStatus = 'ALL';
 
   showDailyNote = false;
+  showDaySettings = false;
   openStatusMenuEntryId: number | null = null;
   noteModalEntry: SimulatorShiftEntry | null = null;
   noteModalText = '';
+
+  // Optional Shift Mission & External Crew Modal
+  sessionModalEntry: SimulatorShiftEntry | null = null;
+  sessionForm = {
+    sim_testing_start: '00:00',
+    sim_testing_end: '00:00',
+    mission_name: '',
+    instructor_name: '',
+    pilot_name: '',
+    copilot_name: '',
+    scenario_code: '',
+    weather_profile: '',
+    notes: ''
+  };
+  savingSessionModal = false;
+  crewSuggestions: ExternalCrewSuggestions = {
+    instructors: [],
+    pilots: [],
+    missions: [],
+    scenarios: [],
+    customers: []
+  };
+  readonly weatherPresets = WEATHER_PRESETS;
 
   loading = false;
   savingLog = false;
@@ -137,13 +164,24 @@ export class StationDailyOpsComponent implements OnInit, OnChanges, OnDestroy {
   };
 
   readonly statusChoices: ShiftUsageStatus[] = ['IN_USE', 'READY', 'NA'];
+  unlockingShift = false;
 
   constructor(
+    public auth: AuthService,
     private api: ApiService,
+    private socketService: SocketService,
     private toast: ToastService,
     private confirm: ConfirmService,
     private cdr: ChangeDetectorRef
   ) {}
+
+  get isShiftLocked(): boolean {
+    return Boolean(this.activeShift?.signed_off_at);
+  }
+
+  get canEditSheet(): boolean {
+    return this.auth.canWrite && !this.isShiftLocked;
+  }
 
   @HostListener('document:click')
   onDocClick(): void {
@@ -155,6 +193,9 @@ export class StationDailyOpsComponent implements OnInit, OnChanges, OnDestroy {
 
   @HostListener('document:keydown.escape')
   onEscape(): void {
+    if (typeof document !== 'undefined' && document.querySelector('.confirm-overlay, .cdk-overlay-pane')) {
+      return;
+    }
     let changed = false;
     if (this.openStatusMenuEntryId !== null) {
       this.openStatusMenuEntryId = null;
@@ -162,6 +203,10 @@ export class StationDailyOpsComponent implements OnInit, OnChanges, OnDestroy {
     }
     if (this.noteModalEntry) {
       this.noteModalEntry = null;
+      changed = true;
+    }
+    if (this.sessionModalEntry) {
+      this.sessionModalEntry = null;
       changed = true;
     }
     if (this.faultWoEntry) {
@@ -177,6 +222,30 @@ export class StationDailyOpsComponent implements OnInit, OnChanges, OnDestroy {
     }
     this.syncExportParams();
     this.loadSheet();
+    this.loadCrewSuggestions();
+
+    this.socketService.domainUpdates$
+      .pipe(debounceTime(450), takeUntil(this.destroy$))
+      .subscribe(evt => {
+        const d = evt?.domain;
+        if (!d || d === 'daily-ops' || d === 'simulators') {
+          this.loadSheet();
+        }
+      });
+  }
+
+  private loadCrewSuggestions(): void {
+    this.api.get<{ data: ExternalCrewSuggestions }>('/simulators/crew-suggestions')
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (res) => {
+          if (res?.data) {
+            this.crewSuggestions = res.data;
+            this.cdr.markForCheck();
+          }
+        },
+        error: () => {}
+      });
   }
 
   ngOnDestroy(): void {
@@ -213,9 +282,9 @@ export class StationDailyOpsComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   get preFlightTooltip(): string {
-    return this.stationKind === 'IOS_CONSOLE'
-      ? 'Pre-Flight Test of IOS Consoles'
-      : 'Pre-Flight Test of TPs';
+    if (this.stationKind === 'IOS_CONSOLE') return 'Pre-Flight Test of IOS Consoles';
+    if (this.stationKind === 'FFS_BAY') return 'Pre-Flight Readiness of FFS Bays';
+    return 'Pre-Flight Test of TPs';
   }
 
   get hasDailyNote(): boolean {
@@ -324,7 +393,7 @@ export class StationDailyOpsComponent implements OnInit, OnChanges, OnDestroy {
 
   signOffShift(): void {
     const shift = this.activeShift;
-    if (!shift || this.signingOff) return;
+    if (!shift || this.signingOff || !this.auth.canManage) return;
     this.signingOff = true;
     this.cdr.markForCheck();
 
@@ -344,6 +413,37 @@ export class StationDailyOpsComponent implements OnInit, OnChanges, OnDestroy {
         error: (err) => {
           this.signingOff = false;
           this.toast.error(err?.error?.message || 'Failed to sign off shift.');
+          this.cdr.markForCheck();
+        }
+      });
+  }
+
+  unlockShift(): void {
+    const shift = this.activeShift;
+    if (!shift || !shift.signed_off_at || this.unlockingShift || !this.auth.canManage) return;
+    this.unlockingShift = true;
+    this.cdr.markForCheck();
+
+    this.api
+      .post<{ data: SimulatorDailyShift }>(`/simulators/daily-sheet/shifts/${shift.id}/unlock`, {})
+      .subscribe({
+        next: (res) => {
+          this.unlockingShift = false;
+          if (res?.data) {
+            shift.signed_off_at = res.data.signed_off_at ?? null;
+            shift.signed_off_by = res.data.signed_off_by ?? null;
+            shift.signer = res.data.signer ?? null;
+          } else {
+            shift.signed_off_at = null;
+            shift.signed_off_by = null;
+            shift.signer = null;
+          }
+          this.toast.success(`${shift.shift_name} unlocked for editing.`);
+          this.cdr.markForCheck();
+        },
+        error: (err) => {
+          this.unlockingShift = false;
+          this.toast.error(err?.error?.message || 'Failed to unlock shift.');
           this.cdr.markForCheck();
         }
       });
@@ -753,6 +853,113 @@ export class StationDailyOpsComponent implements OnInit, OnChanges, OnDestroy {
     this.noteDrafts[entry.id] = this.noteModalText;
     this.noteModalEntry = null;
     this.patchEntry(entry, { notes: this.noteModalText }, true);
+  }
+
+  openSessionModal(entry: SimulatorShiftEntry, ev?: Event): void {
+    ev?.stopPropagation();
+    this.sessionModalEntry = entry;
+    this.sessionForm = {
+      sim_testing_start: entry.sim_testing_start || '00:00',
+      sim_testing_end: entry.sim_testing_end || '00:00',
+      mission_name: entry.mission_name || '',
+      instructor_name: entry.instructor_name || '',
+      pilot_name: entry.pilot_name || '',
+      copilot_name: entry.copilot_name || '',
+      scenario_code: entry.scenario_code || '',
+      weather_profile: entry.weather_profile || '',
+      notes: this.noteDrafts[entry.id] ?? entry.notes ?? ''
+    };
+    this.cdr.markForCheck();
+  }
+
+  closeSessionModal(): void {
+    this.sessionModalEntry = null;
+    this.cdr.markForCheck();
+  }
+
+  sessionModalPresets(): SimulatorShiftPreset[] {
+    const presets = this.sessionModalEntry?.station?.schedule_config?.shift_presets;
+    return Array.isArray(presets) ? presets : [];
+  }
+
+  applySessionPreset(preset: SimulatorShiftPreset): void {
+    this.sessionForm = {
+      ...this.sessionForm,
+      sim_testing_start: preset.start || '07:00',
+      sim_testing_end: preset.end || '13:00'
+    };
+    this.cdr.markForCheck();
+  }
+
+  saveSessionModal(): void {
+    const entry = this.sessionModalEntry;
+    if (!entry || this.savingSessionModal) return;
+    this.savingSessionModal = true;
+    this.cdr.markForCheck();
+
+    const payload: Record<string, any> = {
+      sim_testing_start: this.sessionForm.sim_testing_start || '00:00',
+      sim_testing_end: this.sessionForm.sim_testing_end || '00:00',
+      mission_name: this.sessionForm.mission_name.trim() || null,
+      instructor_name: this.sessionForm.instructor_name.trim() || null,
+      pilot_name: this.sessionForm.pilot_name.trim() || null,
+      copilot_name: this.sessionForm.copilot_name.trim() || null,
+      scenario_code: this.sessionForm.scenario_code.trim() || null,
+      weather_profile: this.sessionForm.weather_profile.trim() || null,
+      notes: this.sessionForm.notes.trim() || null
+    };
+
+    this.api
+      .patch<{ data: SimulatorShiftEntry }>(`/simulators/daily-sheet/entries/${entry.id}`, payload)
+      .subscribe({
+        next: (res) => {
+          this.savingSessionModal = false;
+          if (res?.data) {
+            entry.usage_status = res.data.usage_status;
+            entry.sim_testing_start = res.data.sim_testing_start;
+            entry.sim_testing_end = res.data.sim_testing_end;
+            entry.mission_name = res.data.mission_name;
+            entry.instructor_name = res.data.instructor_name;
+            entry.pilot_name = res.data.pilot_name;
+            entry.copilot_name = res.data.copilot_name;
+            entry.scenario_code = res.data.scenario_code;
+            entry.weather_profile = res.data.weather_profile;
+            entry.notes = res.data.notes;
+            entry.duration_minutes = res.data.duration_minutes;
+            this.noteDrafts[entry.id] = res.data.notes || '';
+          }
+          this.sessionModalEntry = null;
+          this.recomputeSummary();
+          this.loadCrewSuggestions();
+          this.toast.success('Shift session details saved.');
+          this.sheetUpdated.emit();
+          this.cdr.markForCheck();
+        },
+        error: (err) => {
+          this.savingSessionModal = false;
+          this.toast.error(err?.error?.message || 'Failed to save session details.');
+          this.cdr.markForCheck();
+        }
+      });
+  }
+
+  hasEntryMissionOrCrew(entry: SimulatorShiftEntry): boolean {
+    return Boolean(
+      entry.mission_name ||
+      entry.instructor_name ||
+      entry.pilot_name ||
+      entry.copilot_name ||
+      entry.scenario_code ||
+      entry.weather_profile
+    );
+  }
+
+  entryCrewSummary(entry: SimulatorShiftEntry): string {
+    const parts: string[] = [];
+    if (entry.instructor_name) parts.push(`Instr: ${entry.instructor_name}`);
+    const pilots = [entry.pilot_name, entry.copilot_name].filter(Boolean).join(' / ');
+    if (pilots) parts.push(`Pilot: ${pilots}`);
+    return parts.join(' · ');
   }
 
   saveEntryNote(entry: SimulatorShiftEntry): void {

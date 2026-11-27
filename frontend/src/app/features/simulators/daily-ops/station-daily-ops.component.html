@@ -1,9 +1,9 @@
 <div class="daily-ops-root">
 
-  <!-- ══ BAR 1: SINGLE-ROW OPERATING HOURS + INLINE STATUS COUNTERS ══ -->
-  <section class="card daily-bar-top" aria-label="Operating hours and live status filters">
+  <!-- ══ UNIFIED OPERATIONAL BAR (Date + Shifts + Status + Day Setup Drawer) ══ -->
+  <section class="card daily-bar-top" aria-label="Daily operating controls and status filters">
     <div class="bar-top-row">
-      <!-- Date Navigator with Interactive SMaRT Calendar -->
+      <!-- Date Navigator -->
       <div class="date-nav-pill" role="group" aria-label="Operating date navigation">
         <button type="button" class="date-nav-arrow" (click)="prevDay()" title="Previous day">
           <span class="mat-i">chevron_left</span>
@@ -27,80 +27,40 @@
         </button>
       </div>
 
-      <!-- Compact Inline Plant Times (SMaRT Custom Time Picker) -->
-      <div class="inline-plant-times">
-        <div class="inline-time-chip" title="System Readiness">
-          <span class="chip-lbl">Readiness</span>
-          <app-time-picker
-            [compact]="true"
-            [borderless]="true"
-            [allowReset]="false"
-            [showIcon]="false"
-            ariaLabel="System Readiness Time"
-            [(ngModel)]="logDraft.system_readiness_time"
-            (valueChange)="saveOperatingHours()">
-          </app-time-picker>
-        </div>
-
-        <div class="inline-time-chip" title="Post Testing Routine">
-          <span class="chip-lbl">Post-Test</span>
-          <app-time-picker
-            [compact]="true"
-            [borderless]="true"
-            [allowReset]="false"
-            [showIcon]="false"
-            ariaLabel="Post Testing Routine Time"
-            [(ngModel)]="logDraft.post_testing_time"
-            (valueChange)="saveOperatingHours()">
-          </app-time-picker>
-        </div>
-
-        <div class="inline-time-chip" title="Plant Logout">
-          <span class="chip-lbl">Logout</span>
-          <app-time-picker
-            [compact]="true"
-            [borderless]="true"
-            [allowReset]="false"
-            [showIcon]="false"
-            ariaLabel="Plant Logout Time"
-            [(ngModel)]="logDraft.logout_time"
-            (valueChange)="saveOperatingHours()">
-          </app-time-picker>
+      <!-- Inline Shift Switcher -->
+      <div class="shift-pills" *ngIf="sheet" role="tablist" aria-label="Daily shifts">
+        <div
+          class="shift-tab-wrap"
+          *ngFor="let s of sheet.shifts; trackBy: trackByShiftId"
+          [class.active]="activeShift?.id === s.id">
+          <button type="button" class="shift-tab-btn" (click)="selectShift(s)">
+            <span>{{ s.shift_name }}</span>
+            <span class="shift-count sim-num" title="Active stations in this shift">{{ countShiftInUse(s) }}</span>
+            <span class="shift-na-dot" *ngIf="countShiftNa(s) > 0" [title]="countShiftNa(s) + ' station(s) NA'"></span>
+          </button>
+          <button
+            type="button"
+            class="shift-del-btn"
+            *ngIf="auth.canManage && sheet.shifts.length > 1 && !s.signed_off_at"
+            (click)="deleteShift(s, $event)"
+            [title]="'Remove ' + s.shift_name">
+            <span class="mat-i">close</span>
+          </button>
         </div>
 
         <button
+          *ngIf="auth.canWrite"
           type="button"
-          class="note-toggle-btn"
-          [class.has-note]="hasDailyNote"
-          [class.open]="showDailyNote"
-          (click)="toggleDailyNote()"
-          title="Daily handover brief">
-          <span class="mat-i">sticky_note_2</span>
-          <span>Brief</span>
-          <span class="note-dot" *ngIf="hasDailyNote"></span>
+          class="add-shift-pill"
+          [disabled]="addingShift"
+          (click)="addShift()"
+          title="Add another shift">
+          <span class="mat-i">add</span>
+          <span>{{ addingShift ? 'Adding...' : 'Shift' }}</span>
         </button>
-
-        <button
-          type="button"
-          class="note-toggle-btn"
-          [disabled]="copyingPrev"
-          (click)="copyPreviousDay()"
-          title="Copy previous operating day schedule and carry over unresolved NA stations">
-          <span class="mat-i">content_copy</span>
-          <span>{{ copyingPrev ? 'Copying…' : 'Copy Prev Day' }}</span>
-        </button>
-
-        <app-export-menu
-          class="daily-export-menu"
-          endpoint="daily-station-ops"
-          [filename]="'daily_station_ops_' + stationKind.toLowerCase() + '_' + selectedDate"
-          [params]="exportParams"
-          [includeDateRange]="false"
-          label="Export">
-        </app-export-menu>
       </div>
 
-      <!-- Compact Inline Status Filter Strip (replaces 5 tall KPI cards) -->
+      <!-- Compact Inline Status Filter Strip -->
       <div class="inline-status-pills" *ngIf="sheet" role="group" aria-label="Filter by status">
         <button
           type="button"
@@ -144,105 +104,182 @@
           {{ fmtDuration(activeShiftStats.shiftMinutes) }}
         </span>
       </div>
-    </div>
 
-    <!-- Collapsible Daily Brief Drawer (Hidden when empty) -->
-    <div class="daily-note-drawer" *ngIf="showDailyNote">
-      <span class="mat-i drawer-ico">sticky_note_2</span>
-      <input
-        type="text"
-        class="form-control drawer-input"
-        placeholder="Daily plant brief / shift handover note..."
-        [(ngModel)]="logDraft.general_notes"
-        (blur)="saveOperatingHours()"
-        (keydown.enter)="saveOperatingHours()" />
-      <span class="save-badge" *ngIf="savingLog">Saving...</span>
-    </div>
-  </section>
-
-  <!-- ══ BAR 2: SINGLE-ROW SHIFT SWITCHER + PRE-FLIGHT + BULK ENTRY ══ -->
-  <section class="card daily-bar-shift" *ngIf="sheet">
-    <div class="shift-pills" role="tablist" aria-label="Daily shifts">
-      <div
-        class="shift-tab-wrap"
-        *ngFor="let s of sheet.shifts; trackBy: trackByShiftId"
-        [class.active]="activeShift?.id === s.id">
-        <button type="button" class="shift-tab-btn" (click)="selectShift(s)">
-          <span>{{ s.shift_name }}</span>
-          <span class="shift-count sim-num" title="Active stations in this shift">{{ countShiftInUse(s) }}</span>
-          <span class="shift-na-dot" *ngIf="countShiftNa(s) > 0" [title]="countShiftNa(s) + ' station(s) NA'"></span>
-        </button>
+      <!-- Right Actions: Day Setup Toggle + Export + Bulk Times (1 Primary CTA) -->
+      <div class="inline-plant-times">
         <button
           type="button"
-          class="shift-del-btn"
-          *ngIf="sheet.shifts.length > 1"
-          (click)="deleteShift(s, $event)"
-          [title]="'Remove ' + s.shift_name">
-          <span class="mat-i">close</span>
+          class="ux-filter-toggle"
+          style="height:32px;padding:0 10px;font-size:0.76rem"
+          [class.active]="showDaySettings"
+          [class.has-active]="hasDailyNote || !!activeShift?.signed_off_at"
+          [attr.aria-expanded]="showDaySettings"
+          (click)="showDaySettings = !showDaySettings"
+          title="Configure plant times, Pre-Flight, Test Leader, Sign-Off &amp; Daily Brief">
+          <span class="mat-i" [style.color]="activeShift?.signed_off_at ? '#16A34A' : ''">
+            {{ activeShift?.signed_off_at ? 'verified' : 'tune' }}
+          </span>
+          <span class="sim-num">Day Setup · {{ logDraft.system_readiness_time }}–{{ logDraft.logout_time }}</span>
+          <span class="mat-i">{{ showDaySettings ? 'expand_less' : 'expand_more' }}</span>
+        </button>
+
+        <app-export-menu
+          class="daily-export-menu"
+          endpoint="daily-station-ops"
+          [filename]="'daily_station_ops_' + stationKind.toLowerCase() + '_' + selectedDate"
+          [params]="exportParams"
+          [includeDateRange]="false"
+          label="Export">
+        </app-export-menu>
+
+        <button
+          *ngIf="activeShift && canEditSheet"
+          type="button"
+          class="btn btn-primary btn-sm"
+          (click)="openBulk('both')"
+          title="Apply Start or End testing time across selected stations in one click">
+          <span class="btn-icon">bolt</span>
+          Bulk Times
         </button>
       </div>
-
-      <button
-        type="button"
-        class="add-shift-pill"
-        [disabled]="addingShift"
-        (click)="addShift()"
-        title="Add another shift">
-        <span class="mat-i">add</span>
-        <span>{{ addingShift ? 'Adding...' : 'Shift' }}</span>
-      </button>
     </div>
 
-    <div class="shift-right-tools" *ngIf="activeShift">
-      <div class="inline-time-chip" [title]="preFlightTooltip">
-        <span class="chip-lbl">Pre-Flight</span>
-        <app-time-picker
-          [compact]="true"
-          [borderless]="true"
-          [allowReset]="false"
-          [showIcon]="false"
-          [ariaLabel]="preFlightTooltip"
-          [(ngModel)]="preFlightDraft"
-          (valueChange)="savePreFlightTime()">
-        </app-time-picker>
+    <!-- Collapsible Day & Shift Setup Drawer (All Plant Times, Leader, Sign-Off & Handover Brief) -->
+    <div class="ux-advanced-drawer" *ngIf="showDaySettings" style="flex-direction:column;align-items:stretch;gap:10px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div class="inline-plant-times">
+          <span class="ux-drawer-label">Plant &amp; Shift Times</span>
+
+          <div class="inline-time-chip" title="System Readiness">
+            <span class="chip-lbl">Readiness</span>
+            <app-time-picker
+              [compact]="true"
+              [borderless]="true"
+              [allowReset]="false"
+              [showIcon]="false"
+              [disabled]="!auth.canWrite"
+              ariaLabel="System Readiness Time"
+              [(ngModel)]="logDraft.system_readiness_time"
+              (valueChange)="saveOperatingHours()">
+            </app-time-picker>
+          </div>
+
+          <div class="inline-time-chip" title="Post Testing Routine">
+            <span class="chip-lbl">Post-Test</span>
+            <app-time-picker
+              [compact]="true"
+              [borderless]="true"
+              [allowReset]="false"
+              [showIcon]="false"
+              [disabled]="!auth.canWrite"
+              ariaLabel="Post Testing Routine Time"
+              [(ngModel)]="logDraft.post_testing_time"
+              (valueChange)="saveOperatingHours()">
+            </app-time-picker>
+          </div>
+
+          <div class="inline-time-chip" title="Plant Logout">
+            <span class="chip-lbl">Logout</span>
+            <app-time-picker
+              [compact]="true"
+              [borderless]="true"
+              [allowReset]="false"
+              [showIcon]="false"
+              [disabled]="!auth.canWrite"
+              ariaLabel="Plant Logout Time"
+              [(ngModel)]="logDraft.logout_time"
+              (valueChange)="saveOperatingHours()">
+            </app-time-picker>
+          </div>
+
+          <div class="inline-time-chip" *ngIf="activeShift" [title]="preFlightTooltip">
+            <span class="chip-lbl">Pre-Flight</span>
+            <app-time-picker
+              [compact]="true"
+              [borderless]="true"
+              [allowReset]="false"
+              [showIcon]="false"
+              [disabled]="!canEditSheet"
+              [ariaLabel]="preFlightTooltip"
+              [(ngModel)]="preFlightDraft"
+              (valueChange)="savePreFlightTime()">
+            </app-time-picker>
+          </div>
+        </div>
+
+        <div class="inline-plant-times" *ngIf="activeShift">
+          <div class="inline-lead-chip" *ngIf="staffList.length > 0" title="Shift Test Leader">
+            <span class="chip-lbl">Leader</span>
+            <app-dropdown
+              class="lead-dd"
+              [disabled]="!canEditSheet"
+              [ngModel]="activeShift.lead_user_id ?? null"
+              (ngModelChange)="saveShiftLead($event)"
+              placeholder="Unassigned">
+              <app-dropdown-option [ngValue]="null">Unassigned</app-dropdown-option>
+              <app-dropdown-option *ngFor="let u of staffList" [ngValue]="u.id">
+                {{ u.first_name }} {{ u.last_name }}
+              </app-dropdown-option>
+            </app-dropdown>
+          </div>
+
+          <button
+            *ngIf="auth.canManage && !activeShift.signed_off_at"
+            type="button"
+            class="signoff-pill-btn"
+            [disabled]="signingOff"
+            (click)="signOffShift()"
+            title="Sign off and lock shift handover">
+            <span class="mat-i">draw</span>
+            <span>{{ signingOff ? 'Signing…' : 'Sign Off' }}</span>
+          </button>
+
+          <span
+            *ngIf="activeShift.signed_off_at"
+            class="signoff-pill-btn is-signed"
+            [title]="'Signed off by ' + (activeShift.signer?.first_name || '') + ' ' + (activeShift.signer?.last_name || '')">
+            <span class="mat-i">verified</span>
+            <span>
+              Signed · {{ activeShift.signer ? (activeShift.signer.first_name + ' ' + activeShift.signer.last_name.slice(0, 1) + '.') : 'Verified' }}
+            </span>
+          </span>
+
+          <button
+            *ngIf="auth.canManage && activeShift.signed_off_at"
+            type="button"
+            class="note-toggle-btn"
+            [disabled]="unlockingShift"
+            (click)="unlockShift()"
+            title="Unlock signed-off shift for authorized edits">
+            <span class="mat-i">lock_open</span>
+            <span>{{ unlockingShift ? 'Unlocking…' : 'Unlock' }}</span>
+          </button>
+
+          <button
+            *ngIf="canEditSheet"
+            type="button"
+            class="note-toggle-btn"
+            [disabled]="copyingPrev"
+            (click)="copyPreviousDay()"
+            title="Copy previous operating day schedule and carry over unresolved NA stations">
+            <span class="mat-i">content_copy</span>
+            <span>{{ copyingPrev ? 'Copying…' : 'Copy Prev Day' }}</span>
+          </button>
+        </div>
       </div>
 
-      <div class="inline-lead-chip" *ngIf="staffList.length > 0" title="Shift Test Leader">
-        <span class="chip-lbl">Leader</span>
-        <app-dropdown
-          class="lead-dd"
-          [ngModel]="activeShift.lead_user_id ?? null"
-          (ngModelChange)="saveShiftLead($event)"
-          placeholder="Unassigned">
-          <app-dropdown-option [ngValue]="null">Unassigned</app-dropdown-option>
-          <app-dropdown-option *ngFor="let u of staffList" [ngValue]="u.id">
-            {{ u.first_name }} {{ u.last_name }}
-          </app-dropdown-option>
-        </app-dropdown>
+      <div class="daily-note-drawer" style="margin-top:0;padding-top:0;border-top:none">
+        <span class="mat-i drawer-ico">sticky_note_2</span>
+        <input
+          type="text"
+          class="form-control drawer-input"
+          [readonly]="!auth.canWrite"
+          placeholder="Daily plant brief / shift handover note..."
+          [(ngModel)]="logDraft.general_notes"
+          (blur)="auth.canWrite && saveOperatingHours()"
+          (keydown.enter)="auth.canWrite && saveOperatingHours()" />
+        <span class="save-badge" *ngIf="savingLog">Saving...</span>
       </div>
-
-      <button
-        type="button"
-        class="signoff-pill-btn"
-        [class.is-signed]="!!activeShift.signed_off_at"
-        [disabled]="signingOff"
-        (click)="signOffShift()"
-        [title]="activeShift.signed_off_at ? ('Signed off by ' + (activeShift.signer?.first_name || '') + ' ' + (activeShift.signer?.last_name || '')) : 'Sign off shift handover'">
-        <span class="mat-i">{{ activeShift.signed_off_at ? 'verified' : 'draw' }}</span>
-        <span *ngIf="!activeShift.signed_off_at">{{ signingOff ? 'Signing…' : 'Sign Off' }}</span>
-        <span *ngIf="activeShift.signed_off_at">
-          Signed · {{ activeShift.signer ? (activeShift.signer.first_name + ' ' + activeShift.signer.last_name.slice(0, 1) + '.') : 'Verified' }}
-        </span>
-      </button>
-
-      <button
-        type="button"
-        class="btn btn-primary btn-sm"
-        (click)="openBulk('both')"
-        title="Apply Start or End testing time across selected stations in one click">
-        <span class="btn-icon">bolt</span>
-        Bulk Times
-      </button>
     </div>
   </section>
 
@@ -261,6 +298,7 @@
           <th style="width: 126px">Status</th>
           <th style="width: 122px">
             <button
+              *ngIf="canEditSheet; else startHdrStatic"
               type="button"
               class="th-bulk-btn"
               (click)="openBulk('start')"
@@ -268,9 +306,11 @@
               <span>Start</span>
               <span class="mat-i">bolt</span>
             </button>
+            <ng-template #startHdrStatic><span>Start</span></ng-template>
           </th>
           <th style="width: 122px">
             <button
+              *ngIf="canEditSheet; else endHdrStatic"
               type="button"
               class="th-bulk-btn"
               (click)="openBulk('end')"
@@ -278,8 +318,10 @@
               <span>End</span>
               <span class="mat-i">bolt</span>
             </button>
+            <ng-template #endHdrStatic><span>End</span></ng-template>
           </th>
           <th style="width: 84px">Hours</th>
+          <th style="width: 210px">Mission &amp; Crew</th>
           <th>Handover Notes</th>
           <th class="text-right" style="width: 86px">Actions</th>
         </tr>
@@ -313,19 +355,20 @@
               <button
                 type="button"
                 class="status-trigger-pill"
+                [disabled]="!canEditSheet"
                 [style.background]="statusMeta(entry.usage_status).bg"
                 [style.color]="statusMeta(entry.usage_status).color"
                 [style.border-color]="statusMeta(entry.usage_status).border"
-                (click)="toggleStatusMenu(entry.id, $event)"
-                title="Change station status">
+                (click)="canEditSheet && toggleStatusMenu(entry.id, $event)"
+                [title]="canEditSheet ? 'Change station status' : (isShiftLocked ? 'Shift is signed off (locked)' : 'Read-only')">
                 <span class="st-dot" [style.background]="statusMeta(entry.usage_status).dot"></span>
                 <span>{{ statusMeta(entry.usage_status).label }}</span>
-                <span class="mat-i st-chev">expand_more</span>
+                <span *ngIf="canEditSheet" class="mat-i st-chev">expand_more</span>
               </button>
 
               <div
                 class="status-popover"
-                *ngIf="openStatusMenuEntryId === entry.id"
+                *ngIf="canEditSheet && openStatusMenuEntryId === entry.id"
                 [class.open-up]="visibleEntries.length >= 4 && i >= visibleEntries.length - 2"
                 (click)="$event.stopPropagation()">
                 <button
@@ -352,6 +395,7 @@
               [compact]="true"
               [dimZero]="true"
               [allowReset]="true"
+              [disabled]="!canEditSheet"
               [ngModel]="entry.sim_testing_start"
               (valueChange)="onEntryTimeChange(entry, 'start', $event)"
               [ariaLabel]="'Start time for ' + (entry.station?.name || 'station')">
@@ -365,6 +409,7 @@
               [compact]="true"
               [dimZero]="true"
               [allowReset]="true"
+              [disabled]="!canEditSheet"
               [ngModel]="entry.sim_testing_end"
               (valueChange)="onEntryTimeChange(entry, 'end', $event)"
               [ariaLabel]="'End time for ' + (entry.station?.name || 'station')">
@@ -378,26 +423,58 @@
             </span>
           </td>
 
+          <!-- Optional Mission & External Crew Cell -->
+          <td>
+            <button
+              type="button"
+              class="shift-crew-cell-btn"
+              [class.has-data]="hasEntryMissionOrCrew(entry)"
+              [disabled]="!canEditSheet && !hasEntryMissionOrCrew(entry)"
+              (click)="openSessionModal(entry, $event)"
+              [title]="canEditSheet ? 'Set optional mission, instructor, pilot, scenario or weather' : 'View mission & crew details'">
+              <ng-container *ngIf="hasEntryMissionOrCrew(entry); else emptyCrewTpl">
+                <div class="shift-mission-line" *ngIf="entry.mission_name || entry.scenario_code">
+                  <span class="mat-i">flag</span>
+                  <span>{{ entry.mission_name || entry.scenario_code }}</span>
+                </div>
+                <div class="shift-crew-line" *ngIf="entryCrewSummary(entry)">
+                  {{ entryCrewSummary(entry) }}
+                </div>
+                <div class="shift-crew-line" *ngIf="!entry.mission_name && !entryCrewSummary(entry) && entry.weather_profile">
+                  {{ entry.weather_profile }}
+                </div>
+              </ng-container>
+              <ng-template #emptyCrewTpl>
+                <span class="shift-crew-placeholder" *ngIf="canEditSheet">
+                  <span class="mat-i">person_add</span>
+                  <span>Mission / Crew</span>
+                </span>
+                <span class="text-xs text-muted" *ngIf="!canEditSheet">—</span>
+              </ng-template>
+            </button>
+          </td>
+
           <!-- Multi-line Auto-Growing Handover Notes -->
           <td class="note-td">
             <div class="note-cell-wrap">
               <textarea
                 class="daily-note-input"
                 [rows]="noteRowCount(entry.id)"
-                [class.is-dirty]="isNoteDirty(entry)"
+                [readonly]="!canEditSheet"
+                [class.is-dirty]="canEditSheet && isNoteDirty(entry)"
                 [class.has-text]="!!(noteDrafts[entry.id] || '').trim()"
                 [class.is-alert]="entry.usage_status === 'NA' && !!(noteDrafts[entry.id] || '').trim()"
                 [(ngModel)]="noteDrafts[entry.id]"
-                placeholder="Add handover note..."
+                [placeholder]="canEditSheet ? 'Add handover note...' : '—'"
                 (input)="autoResizeTextarea($event)"
-                (blur)="saveEntryNote(entry)"
-                (keydown)="onNoteKeydown($event, entry)"></textarea>
+                (blur)="canEditSheet && saveEntryNote(entry)"
+                (keydown)="canEditSheet && onNoteKeydown($event, entry)"></textarea>
 
               <div class="note-cell-actions">
                 <button
                   type="button"
                   class="note-save-mini"
-                  *ngIf="isNoteDirty(entry)"
+                  *ngIf="canEditSheet && isNoteDirty(entry)"
                   [disabled]="savingEntryIds.has(entry.id)"
                   (click)="saveEntryNote(entry)"
                   title="Save note">
@@ -426,7 +503,7 @@
               <button
                 type="button"
                 class="na-log-wo-btn"
-                *ngIf="entry.usage_status === 'NA'"
+                *ngIf="auth.canWrite && entry.usage_status === 'NA'"
                 (click)="openFaultWoModal(entry, $event)"
                 aria-label="Log Corrective Work Order"
                 title="Log Corrective Work Order (Maintenance)">
@@ -436,7 +513,7 @@
               <button
                 type="button"
                 class="mini-ico-btn"
-                *ngIf="entry.usage_status !== 'NA'"
+                *ngIf="!(auth.canWrite && entry.usage_status === 'NA')"
                 (click)="triggerMntModal(entry)"
                 title="Open Rapid Maintenance History (MNT Records)">
                 <span class="mat-i">history</span>
@@ -454,11 +531,16 @@
         </tr>
 
         <tr *ngIf="visibleEntries.length === 0">
-          <td colspan="7" class="empty-matrix-cell">
-            No stations match this status filter.
-            <button type="button" class="btn btn-ghost btn-sm" (click)="statusFilter = 'ALL'">
-              Show all
-            </button>
+          <td colspan="8" class="empty-matrix-cell">
+            <ng-container *ngIf="sheet.stations.length === 0; else filteredEmptyTpl">
+              No stations of this type are currently configured in <strong>Shifts</strong> mode. Switch a station to <strong>Shifts</strong> in Fleet Registry or create a new one.
+            </ng-container>
+            <ng-template #filteredEmptyTpl>
+              No stations match this status filter.
+              <button type="button" class="btn btn-ghost btn-sm" (click)="statusFilter = 'ALL'">
+                Show all
+              </button>
+            </ng-template>
           </td>
         </tr>
       </tbody>
@@ -494,13 +576,14 @@
       <textarea
         class="form-control note-modal-textarea"
         rows="7"
+        [readonly]="!canEditSheet"
         [(ngModel)]="noteModalText"
         placeholder="Write full shift handover, troubleshooting steps, restarts or fault notes..."></textarea>
     </div>
 
     <div class="modal-footer">
-      <button type="button" class="btn btn-ghost" (click)="closeNoteModal()">Cancel</button>
-      <button type="button" class="btn btn-primary" (click)="saveNoteFromModal()">
+      <button type="button" class="btn btn-ghost" (click)="closeNoteModal()">{{ canEditSheet ? 'Cancel' : 'Close' }}</button>
+      <button *ngIf="canEditSheet" type="button" class="btn btn-primary" (click)="saveNoteFromModal()">
         <span class="btn-icon">save</span>
         Save Note
       </button>
@@ -562,6 +645,116 @@
         (click)="submitFaultWo()">
         <span class="btn-icon">build_circle</span>
         {{ savingFaultWo ? 'Creating WO…' : 'Create Maintenance WO' }}
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Optional Shift Mission & External Crew Details Modal -->
+<div class="modal-overlay" *ngIf="sessionModalEntry" (click)="closeSessionModal()">
+  <div class="modal fault-wo-modal" role="dialog" aria-modal="true" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <div>
+        <h3>Shift Session Details · {{ sessionModalEntry.station?.name || sessionModalEntry.station?.code }}</h3>
+        <p class="note-modal-sub">{{ formattedDateShort }} · {{ activeShift?.shift_name }} · All fields optional</p>
+      </div>
+      <button type="button" class="btn btn-ghost btn-icon-only" (click)="closeSessionModal()" title="Close">
+        <span class="btn-icon">close</span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Start Time</label>
+          <app-time-picker
+            [compact]="true"
+            [allowReset]="true"
+            [(ngModel)]="sessionForm.sim_testing_start"
+            ariaLabel="Session start time">
+          </app-time-picker>
+        </div>
+        <div class="form-group">
+          <label class="form-label">End Time</label>
+          <app-time-picker
+            [compact]="true"
+            [allowReset]="true"
+            [(ngModel)]="sessionForm.sim_testing_end"
+            ariaLabel="Session end time">
+          </app-time-picker>
+        </div>
+      </div>
+
+      <div class="shift-preset-chips" *ngIf="sessionModalPresets().length > 0">
+        <button
+          type="button"
+          class="shift-preset-chip sim-num"
+          *ngFor="let p of sessionModalPresets()"
+          (click)="applySessionPreset(p)">
+          {{ p.name }}: {{ p.start }}–{{ p.end }}
+        </button>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Mission (Optional)</label>
+          <input class="form-control" list="daily-mission-list" [(ngModel)]="sessionForm.mission_name" placeholder="e.g. LOFT-04 / SMT Checkout" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Scenario / ICAO (Optional)</label>
+          <input class="form-control" list="daily-scenario-list" [(ngModel)]="sessionForm.scenario_code" placeholder="e.g. LIRF-LIML RNAV" />
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Instructor (External · Optional)</label>
+          <input class="form-control" list="daily-instructor-list" [(ngModel)]="sessionForm.instructor_name" placeholder="Type instructor name…" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Pilot / Trainee (External · Optional)</label>
+          <input class="form-control" list="daily-pilot-list" [(ngModel)]="sessionForm.pilot_name" placeholder="Type pilot name…" />
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Co-Pilot / Pilot 2 (Optional)</label>
+          <input class="form-control" list="daily-pilot-list" [(ngModel)]="sessionForm.copilot_name" placeholder="Optional second pilot…" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Weather Profile (Optional)</label>
+          <input class="form-control" list="daily-weather-list" [(ngModel)]="sessionForm.weather_profile" placeholder="e.g. CAT IIIB / CAVOK" />
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Handover / Session Notes (Optional)</label>
+        <textarea class="form-control" rows="3" [(ngModel)]="sessionForm.notes" placeholder="Optional notes…"></textarea>
+      </div>
+
+      <datalist id="daily-instructor-list">
+        <option *ngFor="let name of crewSuggestions.instructors" [value]="name"></option>
+      </datalist>
+      <datalist id="daily-pilot-list">
+        <option *ngFor="let name of crewSuggestions.pilots" [value]="name"></option>
+      </datalist>
+      <datalist id="daily-mission-list">
+        <option *ngFor="let m of crewSuggestions.missions" [value]="m"></option>
+      </datalist>
+      <datalist id="daily-scenario-list">
+        <option *ngFor="let s of crewSuggestions.scenarios" [value]="s"></option>
+      </datalist>
+      <datalist id="daily-weather-list">
+        <option *ngFor="let w of weatherPresets" [value]="w"></option>
+      </datalist>
+    </div>
+
+    <div class="modal-footer">
+      <button type="button" class="btn btn-ghost" (click)="closeSessionModal()">{{ canEditSheet ? 'Cancel' : 'Close' }}</button>
+      <button *ngIf="canEditSheet" type="button" class="btn btn-primary" [disabled]="savingSessionModal" (click)="saveSessionModal()">
+        <span class="btn-icon">save</span>
+        {{ savingSessionModal ? 'Saving…' : 'Save Details' }}
       </button>
     </div>
   </div>

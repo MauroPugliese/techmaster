@@ -11,7 +11,7 @@
       <app-export-menu endpoint="warehouse"
                        filename="Warehouse_Inventory"
                        [params]="exportParams"></app-export-menu>
-      <button type="button" class="btn btn-primary" (click)="openAddItem()">
+      <button *ngIf="auth.canWrite" type="button" class="btn btn-primary" (click)="openAddItem()">
         <span class="btn-icon">add</span> Add Item
       </button>
     </div>
